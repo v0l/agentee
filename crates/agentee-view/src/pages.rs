@@ -34,7 +34,7 @@ pub struct PageState {
     pub map_values: Vec<f32>,
     pub show_fields: bool,
     pub show_tdr: bool,
-    pub tdr_cache: Option<((u64, usize), Vec<(String, Vec<f64>, Vec<f64>)>)>,
+    pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
 }
 
 impl Default for PageState {

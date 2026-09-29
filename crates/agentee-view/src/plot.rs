@@ -324,7 +324,9 @@ pub fn smith(ui: &mut Ui, r: &SimResult, hidden: &[(usize, usize)], size: f32) {
     );
 }
 
-pub fn tdr_series(r: &SimResult, s: &agentee_core::sim::Sim) -> Vec<(String, Vec<f64>, Vec<f64>)> {
+pub type Series = (String, Vec<f64>, Vec<f64>);
+
+pub fn tdr_series(r: &SimResult, s: &agentee_core::sim::Sim) -> Vec<Series> {
     use agentee_core::rf::Cx;
     let fmax = *r.freqs.last().unwrap_or(&1e9);
     let rise = (1.3 / fmax).max(10e-12);
