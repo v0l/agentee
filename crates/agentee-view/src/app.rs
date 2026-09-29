@@ -8,6 +8,18 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
+fn changes_content(kind: &notify::EventKind) -> bool {
+    use notify::EventKind;
+    use notify::event::{AccessKind, AccessMode, ModifyKind};
+    match kind {
+        EventKind::Create(_) | EventKind::Remove(_) => true,
+        EventKind::Modify(ModifyKind::Metadata(_)) => false,
+        EventKind::Modify(_) => true,
+        EventKind::Access(AccessKind::Close(AccessMode::Write)) => true,
+        _ => false,
+    }
+}
+
 type Row = (ItemRef, String, Option<Severity>, Option<f32>, bool);
 
 pub struct App {
@@ -21,6 +33,7 @@ pub struct App {
     events: Option<Receiver<()>>,
     _watcher: Option<notify::RecommendedWatcher>,
     dirty: Option<Instant>,
+    loading: Option<Receiver<Result<Project, String>>>,
     loaded: Instant,
     progress: std::collections::HashMap<String, agentee_core::sim::SimProgress>,
     polled: Instant,
@@ -41,6 +54,7 @@ impl App {
             events: None,
             _watcher: None,
             dirty: None,
+            loading: None,
             loaded: Instant::now(),
             progress: Default::default(),
             polled: Instant::now() - Duration::from_secs(5),
@@ -59,6 +73,7 @@ impl App {
         let (tx, rx) = channel();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(e) = res
+                && changes_content(&e.kind)
                 && e.paths
                     .iter()
                     .any(|p| Kind::of(p).is_some() || p.to_string_lossy().ends_with(".result.json"))
@@ -86,14 +101,28 @@ impl App {
     }
 
     fn reload(&mut self) {
-        match Project::load(&self.path) {
+        self.apply(Project::load(&self.path).map_err(|e| e.to_string()));
+    }
+
+    fn apply(&mut self, loaded: Result<Project, String>) {
+        match loaded {
             Ok(p) => {
                 self.project = p;
                 self.error = None;
             }
-            Err(e) => self.error = Some(e.to_string()),
+            Err(e) => self.error = Some(e),
         }
         self.loaded = Instant::now();
+    }
+
+    fn reload_in_background(&mut self, ctx: &egui::Context) {
+        let (tx, rx) = channel();
+        let (path, ctx) = (self.path.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(Project::load(&path).map_err(|e| e.to_string()));
+            ctx.request_repaint();
+        });
+        self.loading = Some(rx);
     }
 
     fn select(&mut self, r: ItemRef) {
@@ -133,11 +162,21 @@ impl App {
                 self.dirty = Some(Instant::now());
             }
         }
+        if let Some(rx) = &self.loading {
+            match rx.try_recv() {
+                Ok(loaded) => {
+                    self.loading = None;
+                    self.apply(loaded);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => return,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.loading = None,
+            }
+        }
         if let Some(t) = self.dirty {
             let wait = Duration::from_millis(150);
             if t.elapsed() >= wait {
                 self.dirty = None;
-                self.reload();
+                self.reload_in_background(ctx);
             } else {
                 ctx.request_repaint_after(wait - t.elapsed());
             }
