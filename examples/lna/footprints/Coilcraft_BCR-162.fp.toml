@@ -3,6 +3,7 @@ description = "Coilcraft BCR-162/-221/-232/-531/-802 SMT broadband conical induc
 tags = ["inductor", "conical", "bias tee"]
 mount = "smd"
 height = "4.06mm"
+model = "3dmodels/Coilcraft_BCR-162.wrl"
 
 [[pads]]
 number = "1"
