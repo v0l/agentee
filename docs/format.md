@@ -531,6 +531,15 @@ extrapolates the real part to DC, applies a Gaussian edge (default 10-90% rise o
 frequency) and integrates the impulse response; it warns when the edge is faster than the data
 supports. The viewer shows the same TDR for every driven port under the `tdr` tab.
 
+### Losses in the FDTD
+
+Dielectrics carry their loss tangent as a conductivity fixed at the band centre, which lands within
+3% of the Hammerstad filling-factor formula on a 50 ohm microstrip. Copper layers are resistive
+sheets with the skin-effect surface resistance at the band centre, times the stackup roughness
+factor. A sheet carries the whole current on one face, so a trace with current on both faces
+reads up to about 25% more copper loss than the 2D field solver; for insertion loss budgets on
+narrow lines, `calc field --sweep` is the reference.
+
 ### Field maps and emissions
 
 An FDTD sim can also record the field in the prepreg between the first two copper layers and

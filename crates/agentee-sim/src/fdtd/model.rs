@@ -10,6 +10,7 @@ use agentee_core::sim::{Model, Sim as Spec};
 pub struct Sheet {
     pub name: String,
     pub z: f64,
+    pub thickness: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -91,6 +92,7 @@ pub struct PcbModel {
     pub features_x: Vec<f64>,
     pub features_y: Vec<f64>,
     pub region: Option<[f64; 4]>,
+    pub roughness: crate::loss::Roughness,
 }
 
 pub struct Meshing {
@@ -130,7 +132,7 @@ pub fn stack(board: &Board) -> (Vec<Sheet>, Vec<Dielectric>) {
                 let (er, tan) = if last_er.0 > 0.0 { last_er } else { below };
                 diel.push(Dielectric { z0: bottom, z1: top, er, tan, pinned: false });
             }
-            sheets.push(Sheet { name: l.name.clone(), z: at });
+            sheets.push(Sheet { name: l.name.clone(), z: at, thickness: t });
             seen += 1;
         } else {
             diel.push(Dielectric {
@@ -201,6 +203,11 @@ impl PcbModel {
             outline: layout.outline.clone(),
             sheets: sheets.clone(),
             dielectrics,
+            roughness: crate::loss::Roughness {
+                rms_um: board.stackup.roughness_um,
+                huray_radius_um: board.stackup.huray.map(|h| h.0),
+                huray_ratio: board.stackup.huray.map(|h| h.1),
+            },
             ..Default::default()
         };
         for part in &layout.parts {
@@ -354,6 +361,17 @@ impl PcbModel {
         Grid { x, y, z, pml: opt.pml }
     }
 
+    fn sheet_ohms(&self, opt: &Meshing) -> Vec<f64> {
+        let f = opt.f0.max(1e6);
+        let pi = std::f64::consts::PI;
+        let rs = (pi * f * engine::MU0 * crate::loss::COPPER).sqrt();
+        let skin = (crate::loss::COPPER / (pi * f * engine::MU0)).sqrt();
+        self.sheets
+            .iter()
+            .map(|s| if s.thickness > 0.0 { rs * self.roughness.factor(skin) } else { 0.0 })
+            .collect()
+    }
+
     pub fn build(&self, opt: &Meshing) -> Result<Sim, String> {
         let grid = self.mesh(opt);
         let n = grid.dims();
@@ -465,6 +483,29 @@ impl PcbModel {
             }
             lumped.push(Lumped { name: e.name.clone(), edges, element: e.element });
         }
+        let mut resistive: Vec<(usize, usize, f64)> = Vec::new();
+        for (s, rs) in self.sheet_ohms(opt).into_iter().enumerate() {
+            if rs <= 0.0 {
+                continue;
+            }
+            let k = ks[s];
+            for i in 0..nx {
+                for j in 0..ny {
+                    if sheet_x[s][i * ny + j] && i + 1 < nx && j + 1 < ny {
+                        let (along, across) =
+                            (grid.x[i + 1] - grid.x[i], grid.y[j + 1] - grid.y[j]);
+                        resistive.push((0, engine::idx(n, i, j, k), rs * along / across));
+                    }
+                    if sheet_y[s][i * ny + j] && j + 1 < ny && i + 1 < nx {
+                        let (along, across) =
+                            (grid.y[j + 1] - grid.y[j], grid.x[i + 1] - grid.x[i]);
+                        resistive.push((1, engine::idx(n, i, j, k), rs * along / across));
+                    }
+                }
+            }
+        }
+        let resistive_set: std::collections::HashSet<(usize, usize)> =
+            resistive.iter().map(|(c, id, _)| (*c, *id)).collect();
         let lumped_edges: std::collections::HashSet<(usize, [usize; 3])> =
             lumped.iter().flat_map(|l| l.edges.iter().map(|e| (e.comp, e.at))).collect();
         let sheet_of_k: Vec<Option<usize>> =
@@ -478,7 +519,8 @@ impl PcbModel {
                 _ => match sheet_of_k[at[2]] {
                     Some(s) => {
                         let id = at[0] * ny + at[1];
-                        if c == 0 { sheet_x[s][id] } else { sheet_y[s][id] }
+                        let on = if c == 0 { sheet_x[s][id] } else { sheet_y[s][id] };
+                        on && !resistive_set.contains(&(c, engine::idx(n, at[0], at[1], at[2])))
                     }
                     None => false,
                 },
@@ -490,7 +532,7 @@ impl PcbModel {
             z: grid.z.iter().map(|v| v * 1e-3).collect(),
             pml: grid.pml,
         };
-        Ok(Sim::new(metres, &mats, &pec, &lumped, ports))
+        Ok(Sim::new(metres, &mats, &pec, &lumped, ports, &resistive))
     }
 }
 

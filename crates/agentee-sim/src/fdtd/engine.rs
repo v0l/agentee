@@ -245,6 +245,7 @@ impl Sim {
         pec: &dyn Fn(usize, [usize; 3]) -> bool,
         lumped: &[Lumped],
         ports: Vec<PortDef>,
+        resistive: &[(usize, usize, f64)],
     ) -> Sim {
         let dt = time_step(&grid);
         let pml = grid.pml;
@@ -340,6 +341,7 @@ impl Sim {
             cb[e.comp][id] = (dt / (eps * (1.0 + beta))) as f32;
             dt / (eps * (1.0 + beta) * r * area(e))
         };
+        series_r.extend(resistive.iter().copied());
         for (comp, id, r) in &series_r {
             let at = unidx(n, *id);
             resistor(&mut ca, &mut cb, &Edge { comp: *comp, at }, *r);

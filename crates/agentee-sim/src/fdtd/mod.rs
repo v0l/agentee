@@ -307,6 +307,21 @@ mod tests {
 
     fn line(len: f64) -> SimResult {
         let (w, h, er) = (2.9, 1.51, 4.5);
+        run_line(len, w, h, er, 0.0, 0.0, (0.5e9, 4e9), 0.12)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_line(
+        len: f64,
+        w: f64,
+        h: f64,
+        er: f64,
+        tan: f64,
+        copper: f64,
+        band: (f64, f64),
+        cell: f64,
+    ) -> SimResult {
+        let port_r = if w < 1.0 { 85.0 } else { 50.0 };
         let strip = |x: f64| {
             vec![
                 [x - 0.05, -w / 2.0],
@@ -318,10 +333,10 @@ mod tests {
         let m = PcbModel {
             outline: vec![[0.0, -5.0], [len, -5.0], [len, 5.0], [0.0, 5.0]],
             sheets: vec![
-                Sheet { name: "F.Cu".into(), z: 0.0 },
-                Sheet { name: "B.Cu".into(), z: -h },
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: copper },
+                Sheet { name: "B.Cu".into(), z: -h, thickness: copper },
             ],
-            dielectrics: vec![Dielectric { z0: -h, z1: 0.0, er, tan: 0.0, pinned: true }],
+            dielectrics: vec![Dielectric { z0: -h, z1: 0.0, er, tan, pinned: true }],
             copper: vec![
                 (0, Copper::Seg([0.5, 0.0], [len - 0.5, 0.0], w)),
                 (1, Copper::Poly(vec![[0.0, -5.0], [len, -5.0], [len, 5.0], [0.0, 5.0]])),
@@ -334,7 +349,7 @@ mod tests {
                     area: strip(0.5),
                     sheet: 0,
                     reference: 1,
-                    r: 50.0,
+                    r: port_r,
                 },
                 ModelPort {
                     name: "P2".into(),
@@ -342,16 +357,17 @@ mod tests {
                     area: strip(len - 0.5),
                     sheet: 0,
                     reference: 1,
-                    r: 50.0,
+                    r: port_r,
                 },
             ],
             elements: vec![],
             features_x: vec![],
             features_y: vec![-w / 2.0, w / 2.0],
             region: None,
+            roughness: Default::default(),
         };
-        let mut p = plan(&m, 0.5e9, 4e9, 36, 0.12, vec![0], 80_000).unwrap();
-        if len < 30.0 {
+        let mut p = plan(&m, band.0, band.1, 36, cell, vec![0], 80_000).unwrap();
+        if len < 30.0 && tan == 0.0 && copper == 0.0 {
             p.fields = vec![2e9, 3.5e9];
             p.far_field = true;
         }
@@ -413,5 +429,80 @@ mod tests {
         let reference = 3.4388f64.sqrt() / engine::C0 * 1e-3;
         eprintln!("{:.3} ps/mm, Kirschning-Jansen {:.3} ps/mm", per_mm * 1e12, reference * 1e12);
         assert!((per_mm - reference).abs() / reference < 0.03);
+    }
+
+    fn db_at(r: &SimResult, f: f64) -> f64 {
+        let i = r.freqs.iter().position(|x| *x >= f - 1.0).unwrap();
+        let s21 = 10f64.powf(r.db(1, 0)[i] / 10.0);
+        let s11 = 10f64.powf(r.db(0, 0)[i] / 10.0);
+        10.0 * (s21 / (1.0 - s11)).log10()
+    }
+
+    #[test]
+    fn dielectric_loss_matches_the_microstrip_filling_factor() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let (w, h, er, tan, len) = (2.9, 1.51, 4.5, 0.02, 20.0);
+        let clean = run_line(len, w, h, er, 0.0, 0.0, (0.5e9, 4e9), 0.12);
+        let lossy = run_line(len, w, h, er, tan, 0.0, (0.5e9, 4e9), 0.12);
+        let eeff: f64 = 3.4388;
+        let f0 = 2.25e9;
+        let q = (eeff - 1.0) / (er - 1.0);
+        let want = 20.0 / std::f64::consts::LN_10 * std::f64::consts::PI * f0 / engine::C0 * er
+            / eeff.sqrt()
+            * q
+            * tan
+            * len
+            * 1e-3;
+        for f in [1.5e9, 2.2e9, 3.0e9] {
+            let got = db_at(&clean, f) - db_at(&lossy, f);
+            eprintln!(
+                "{} GHz: dielectric loss {got:.4} dB, filling factor formula {want:.4} dB",
+                f / 1e9
+            );
+            assert!((got - want).abs() / want < 0.1, "{got} {want}");
+        }
+    }
+
+    #[test]
+    fn copper_sheets_add_the_skin_effect_loss() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let (w, h, len) = (0.3, 0.15, 20.0);
+        let clean = run_line(len, w, h, 1.0, 0.0, 0.0, (1e9, 6e9), 0.05);
+        let lossy = run_line(len, w, h, 1.0, 0.0, 0.035, (1e9, 6e9), 0.05);
+        let stack = crate::xsection::Stack {
+            above: vec![],
+            below: vec![(h, 1.0, 0.0)],
+            plane_above: false,
+            plane_below: true,
+            copper: 0.035,
+            fill_er: 1.0,
+            mask: None,
+        };
+        let trace = crate::xsection::Trace { width: w, diff_gap: None, coplanar_gap: None };
+        let res = &crate::xsection::Resolution::FAST;
+        let (g, _) = crate::xsection::build(&stack, &trace, res).unwrap();
+        let geom = crate::loss::wheeler(&stack, &trace, res, false, 1e-8).unwrap();
+        let f0 = 3.5e9;
+        let sweep = crate::loss::sweep(
+            &g,
+            false,
+            w * 0.035,
+            geom,
+            &Default::default(),
+            &[f0],
+            "single",
+            1e-8,
+        );
+        let field = sweep.points[0].conductor_db_per_m * len * 1e-3;
+        let got = db_at(&clean, 3.5e9) - db_at(&lossy, 3.5e9);
+        eprintln!(
+            "copper loss at 3.5 GHz: FDTD sheets {got:.4} dB, field solver {field:.4} dB, ratio {:.3}",
+            got / field
+        );
+        assert!(got > 0.0 && (got / field) > 0.9 && (got / field) < 1.35, "{got} {field}");
     }
 }
