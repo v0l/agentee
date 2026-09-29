@@ -7,6 +7,7 @@ pub mod graphic;
 pub mod layout;
 pub mod project;
 pub mod schematic;
+pub mod sim;
 pub mod symbol;
 pub mod units;
 

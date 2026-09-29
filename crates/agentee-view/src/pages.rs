@@ -26,6 +26,7 @@ pub struct PageState {
     pub zone_key: Option<(u64, usize)>,
     pub zone_tex: Vec<egui::TextureHandle>,
     pub region: Option<agentee_core::graphic::Bounds>,
+    pub hidden_curves: Vec<(usize, usize)>,
 }
 
 impl Default for PageState {
@@ -43,6 +44,7 @@ impl Default for PageState {
             zone_key: None,
             zone_tex: Vec::new(),
             region: None,
+            hidden_curves: Vec::new(),
         }
     }
 }
@@ -68,6 +70,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
             ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
             ItemRef::Schematic(i) => schematic_canvas(ui, &project.schematics[i].item, st),
             ItemRef::Layout(i) => layout_canvas(ui, project, i, st),
+            ItemRef::Sim(i) => sim_canvas(ui, &project.sims[i].item, st),
             ItemRef::Board(i) => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                     board_sheet(ui, &project.boards[i].item, st);
@@ -92,6 +95,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
                 ItemRef::Board(i) => board_props(ui, &project.boards[i].item),
                 ItemRef::Schematic(i) => schematic_props(ui, &project.schematics[i].item),
                 ItemRef::Layout(i) => layout_props(ui, &project.layouts[i].item, st),
+                ItemRef::Sim(i) => sim_props(ui, project, &project.sims[i].item, st),
             });
         });
     egui::CentralPanel::no_frame().show(ui, |ui| match item {
@@ -99,6 +103,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
         ItemRef::Schematic(i) => schematic_canvas(ui, &project.schematics[i].item, st),
         ItemRef::Layout(i) => layout_canvas(ui, project, i, st),
+        ItemRef::Sim(i) => sim_canvas(ui, &project.sims[i].item, st),
         ItemRef::Board(i) => {
             egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                 scroll(ui, st.interactive, "board", |ui| {
@@ -888,5 +893,133 @@ fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
             (format!("{} open", n.unrouted), FAULT)
         };
         cell(p, r, at(4), cols[4].1, &s, c);
+    });
+}
+
+fn sim_canvas(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
+    egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
+        ui.set_min_size(ui.available_size());
+        let Some(r) = &s.result else {
+            section(ui, "not run yet", "", |ui| {
+                note(
+                    ui,
+                    format!(
+                        "Run it with `agentee sim {}`, the plot appears here when it finishes.",
+                        s.name
+                    ),
+                    VALUE,
+                );
+            });
+            return;
+        };
+        let h = ui.available_height();
+        section(ui, "s-parameters", "magnitude, dB", |ui| {
+            crate::plot::db_plot(ui, r, &st.hidden_curves, (h * 0.55).max(220.0), st.interactive);
+        });
+        ui.add_space(8.0);
+        let side = (ui.available_height() - 40.0).min(ui.available_width() * 0.5).max(160.0);
+        section(
+            ui,
+            "reflection",
+            "S11, S22 ... from the start (dot) to the stop (ring) frequency",
+            |ui| {
+                crate::plot::smith(ui, r, &st.hidden_curves, side);
+            },
+        );
+    });
+}
+
+fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mut PageState) {
+    let layout = project.layouts.iter().find(|l| l.name == s.layout).map(|l| &l.item);
+    card(
+        ui,
+        Some(if s.result.is_some() { OK } else { READOUT }),
+        |ui| {
+            Line::new().legend("fdtd").value(&s.name).elided(ui);
+        },
+        |ui| {
+            let band = format!("{}-{} GHz", trim(s.start / 1e9, 2), trim(s.stop / 1e9, 2));
+            readouts(
+                ui,
+                &[
+                    ("ports", s.ports.len().to_string(), VALUE),
+                    ("band", band, READOUT),
+                    ("cell", format!("{} mm", trim(s.cell, 3)), READOUT),
+                ],
+            );
+            if !s.description.is_empty() {
+                note(ui, &s.description, VALUE);
+            }
+            reading(ui, "layout", s.layout.clone());
+            if let Some(r) = &s.result {
+                reading(
+                    ui,
+                    "grid",
+                    format!(
+                        "{} x {} x {}, {:.1} M cells",
+                        r.grid[0],
+                        r.grid[1],
+                        r.grid[2],
+                        r.cells as f64 / 1e6
+                    ),
+                );
+                reading(
+                    ui,
+                    "steps",
+                    r.steps.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" / "),
+                );
+                reading(ui, "run", format!("{:.1} s on {}", r.seconds, r.device));
+            }
+        },
+    );
+    ui.add_space(8.0);
+    if let Some(r) = &s.result {
+        Line::new().legend("curves").show(ui);
+        ui.horizontal_wrapped(|ui| {
+            for (i, j) in crate::plot::curves(r) {
+                let on = !st.hidden_curves.contains(&(i, j));
+                if toggle(ui, &crate::plot::label(i, j), on).clicked() {
+                    if on {
+                        st.hidden_curves.push((i, j));
+                    } else {
+                        st.hidden_curves.retain(|c| *c != (i, j));
+                    }
+                }
+            }
+        });
+        ui.add_space(6.0);
+    }
+    Line::new().legend("ports").show(ui);
+    let cols = [("#", 26.0), ("name", 90.0), ("pad", 70.0), ("layers", 124.0), ("z", 50.0)];
+    Table::new(&cols, s.ports.len()).show(ui, |i, p, r, at| {
+        let port = &s.ports[i];
+        let pad = layout
+            .map(|l| {
+                format!(
+                    "{}.{}",
+                    l.parts[port.part].reference, l.parts[port.part].pads[port.pad].number
+                )
+            })
+            .unwrap_or_default();
+        cell(p, r, at(0), cols[0].1, &(i + 1).to_string(), READOUT);
+        cell(p, r, at(1), cols[1].1, &port.name, VALUE);
+        cell(p, r, at(2), cols[2].1, &pad, TRACE);
+        cell(p, r, at(3), cols[3].1, &format!("{} / {}", port.layer, port.reference), LEGEND);
+        cell(p, r, at(4), cols[4].1, &format!("{}", port.impedance), LEGEND);
+    });
+    ui.add_space(8.0);
+    Line::new().legend("lumped models").show(ui);
+    let cols = [("ref", 50.0), ("model", 110.0), ("layer", 80.0)];
+    Table::new(&cols, s.elements.len()).show(ui, |i, p, r, at| {
+        let e = &s.elements[i];
+        let text = match e.model {
+            agentee_core::sim::Model::Capacitor(c) => format!("{} pF", trim(c * 1e12, 3)),
+            agentee_core::sim::Model::Inductor(l) => format!("{} nH", trim(l * 1e9, 3)),
+            agentee_core::sim::Model::Resistor(v) => format!("{} ohm", trim(v, 3)),
+            agentee_core::sim::Model::Open => "open".into(),
+        };
+        cell(p, r, at(0), cols[0].1, &e.reference, READOUT);
+        cell(p, r, at(1), cols[1].1, &text, VALUE);
+        cell(p, r, at(2), cols[2].1, &e.layer, LEGEND);
     });
 }

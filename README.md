@@ -19,6 +19,7 @@ the KiCad libraries so an agent rarely draws a part by hand.
 | `*.fp.toml` | a footprint, with pad rows (`count` / `pitch`) instead of one entry per pad |
 | `*.sch.toml` | a schematic: parts, nets, and wires routed for you or drawn by hand |
 | `*.pcb.toml` | a layout: placement, tracks, vias, zones, checked for connectivity and clearance |
+| `*.sim.toml` | an FDTD simulation of a layout: ports on pads, lumped parts, S-parameters out |
 
 The full reference is [docs/format.md](docs/format.md), also printed by `agentee docs` and served
 over MCP as `format_reference`. `examples/demo` is a small project that passes `check`, and
@@ -43,10 +44,24 @@ agentee view                                   # live window, reloads on save
 
 `check` exits 1 when there are errors, so it fits in a loop or CI.
 
+## Simulation on the GPU
+
+Both solvers run through wgpu (Vulkan, Metal or DX12) and fall back to the CPU only for the 2D one.
+
+- `agentee calc field --netclass RF` solves the trace cross-section: a finite difference Laplace
+  solve on a graded node mesh with copper thickness, solder mask, coplanar grounds and pairs. It
+  lands within 0.5% of Cohn's exact stripline and 0.4% of Hammerstad-Jensen microstrip. Net
+  classes with `solver = "field"` are checked with it and get a suggested width when off target.
+- `agentee sim NAME` runs a 3D FDTD of a layout (Yee grid with CPML, graded mesh, lumped ports over
+  whole pads, lumped R/L/C for the passives) and writes S-parameters as JSON and Touchstone. The
+  update kernels come from [antenna-toolbox](https://github.com/v0l/antenna-toolbox). On a 50 ohm
+  microstrip it gives return loss under -25 dB and phase velocity within 1.2% of
+  Kirschning-Jansen.
+
 ## MCP
 
 `agentee mcp <project>` serves the project on stdio. Tools: `format_reference`, `check`,
-`list_items`, `show_item`, `render_item` (returns the PNG), `kicad_search`,
+`list_items`, `show_item`, `render_item` (returns the PNG), `run_sim`, `field_solve`, `kicad_search`,
 `import_kicad_symbol`, `import_kicad_footprint`, `new_item`, `trace_width`, `impedance`.
 
 ```json

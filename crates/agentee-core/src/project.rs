@@ -3,6 +3,7 @@ use crate::diag::{Diagnostic, Diags, Severity};
 use crate::footprint::{Footprint, FootprintFile, natural_cmp};
 use crate::layout::{Context, Layout, LayoutFile};
 use crate::schematic::{Library, Schematic, SchematicFile};
+use crate::sim::{Sim, SimFile, SimResult};
 use crate::symbol::{Symbol, SymbolFile};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -12,6 +13,7 @@ pub const SYMBOL_EXT: &str = ".sym.toml";
 pub const FOOTPRINT_EXT: &str = ".fp.toml";
 pub const SCHEMATIC_EXT: &str = ".sch.toml";
 pub const LAYOUT_EXT: &str = ".pcb.toml";
+pub const SIM_EXT: &str = ".sim.toml";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -21,6 +23,7 @@ pub enum Kind {
     Footprint,
     Schematic,
     Layout,
+    Sim,
 }
 
 impl Kind {
@@ -36,6 +39,8 @@ impl Kind {
             Some(Kind::Schematic)
         } else if name.ends_with(LAYOUT_EXT) {
             Some(Kind::Layout)
+        } else if name.ends_with(SIM_EXT) {
+            Some(Kind::Sim)
         } else {
             None
         }
@@ -48,6 +53,7 @@ impl Kind {
             Kind::Footprint => FOOTPRINT_EXT,
             Kind::Schematic => SCHEMATIC_EXT,
             Kind::Layout => LAYOUT_EXT,
+            Kind::Sim => SIM_EXT,
         }
     }
 }
@@ -77,6 +83,7 @@ pub enum ItemRef {
     Footprint(usize),
     Schematic(usize),
     Layout(usize),
+    Sim(usize),
 }
 
 impl ItemRef {
@@ -87,6 +94,7 @@ impl ItemRef {
             ItemRef::Footprint(_) => Kind::Footprint,
             ItemRef::Schematic(_) => Kind::Schematic,
             ItemRef::Layout(_) => Kind::Layout,
+            ItemRef::Sim(_) => Kind::Sim,
         }
     }
 }
@@ -100,6 +108,7 @@ pub struct Project {
     pub footprints: Vec<Entry<Footprint>>,
     pub schematics: Vec<Entry<Schematic>>,
     pub layouts: Vec<Entry<Layout>>,
+    pub sims: Vec<Entry<Sim>>,
     pub failures: Vec<Diagnostic>,
 }
 
@@ -169,6 +178,7 @@ impl Project {
         let mut fp_files = Vec::new();
         let mut sch_files = Vec::new();
         let mut pcb_files = Vec::new();
+        let mut sim_files = Vec::new();
         for f in files {
             let src = match std::fs::read_to_string(&f) {
                 Ok(s) => s,
@@ -206,6 +216,10 @@ impl Project {
                 },
                 Some(Kind::Layout) => match parse::<LayoutFile>(&src) {
                     Ok(s) => pcb_files.push((f, s)),
+                    Err((at, msg)) => p.fail(&f, &at, msg),
+                },
+                Some(Kind::Sim) => match parse::<SimFile>(&src) {
+                    Ok(s) => sim_files.push((f, s, crate::sim::hash(&src))),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 None => {}
@@ -252,6 +266,32 @@ impl Project {
             };
             let item = file.resolve(&cx, &mut d);
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
+        }
+        for (f, file, hash) in sim_files {
+            let mut d = Diags::new(&file.name);
+            let layout = match &file.layout {
+                Some(n) => p.layouts.iter().find(|l| &l.name == n),
+                None => p.layouts.first().filter(|_| p.layouts.len() == 1),
+            };
+            let Some(layout) = layout else {
+                d.error("layout", "name the layout to simulate with `layout`");
+                p.failures.extend(tag(d, &f));
+                continue;
+            };
+            let copper = layout.item.copper.clone();
+            let mut item = file.resolve(&layout.item, &copper, &mut d);
+            match SimResult::load(&crate::sim::result_path(&f)) {
+                Some(r) if r.spec_hash == hash => item.result = Some(r),
+                Some(r) => {
+                    d.info(
+                        "result",
+                        "the spec changed since the last run, the result shown is stale",
+                    );
+                    item.result = Some(r);
+                }
+                None => d.info("result", "not run yet, `agentee sim` runs it"),
+            }
+            p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         Ok(p)
     }
@@ -373,6 +413,7 @@ impl Project {
                 "footprint" | "fp" => (Some(Kind::Footprint), n),
                 "schematic" | "sch" => (Some(Kind::Schematic), n),
                 "layout" | "pcb" => (Some(Kind::Layout), n),
+                "sim" => (Some(Kind::Sim), n),
                 _ => (None, n),
             },
             None => (None, name),
@@ -391,6 +432,7 @@ impl Project {
             ItemRef::Footprint(i) => &self.footprints[i].name,
             ItemRef::Schematic(i) => &self.schematics[i].name,
             ItemRef::Layout(i) => &self.layouts[i].name,
+            ItemRef::Sim(i) => &self.sims[i].name,
         }
     }
 
@@ -401,6 +443,7 @@ impl Project {
             ItemRef::Footprint(i) => &self.footprints[i].diags,
             ItemRef::Schematic(i) => &self.schematics[i].diags,
             ItemRef::Layout(i) => &self.layouts[i].diags,
+            ItemRef::Sim(i) => &self.sims[i].diags,
         }
     }
 
@@ -411,12 +454,14 @@ impl Project {
             ItemRef::Footprint(i) => &self.footprints[i].path,
             ItemRef::Schematic(i) => &self.schematics[i].path,
             ItemRef::Layout(i) => &self.layouts[i].path,
+            ItemRef::Sim(i) => &self.sims[i].path,
         }
     }
 
     pub fn all_refs(&self) -> Vec<ItemRef> {
-        (0..self.layouts.len())
-            .map(ItemRef::Layout)
+        (0..self.sims.len())
+            .map(ItemRef::Sim)
+            .chain((0..self.layouts.len()).map(ItemRef::Layout))
             .chain((0..self.schematics.len()).map(ItemRef::Schematic))
             .chain((0..self.boards.len()).map(ItemRef::Board))
             .chain((0..self.symbols.len()).map(ItemRef::Symbol))

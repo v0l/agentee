@@ -27,7 +27,7 @@ pub struct Rect {
     pub y1: f64,
 }
 
-fn lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
+pub fn lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
     let mut fixed: Vec<f64> = fixed.to_vec();
     fixed.sort_by(f64::total_cmp);
     fixed.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
@@ -543,6 +543,21 @@ pub fn build(stack: &Stack, trace: &Trace, res: &Resolution) -> Result<(Grid, bo
         g.metal(full(bottom, bottom), GROUND);
     }
     Ok((g, trace.diff_gap.is_some()))
+}
+
+pub fn line_raw(w: f64, h: f64, t: f64, er: f64) -> Result<Line, String> {
+    let stack = Stack {
+        above: vec![],
+        below: vec![(h, er)],
+        plane_above: false,
+        plane_below: true,
+        copper: t,
+        fill_er: er,
+        mask: None,
+    };
+    let (g, d) =
+        build(&stack, &Trace { width: w, diff_gap: None, coplanar_gap: None }, &Resolution::FAST)?;
+    Ok(solve(g, d, true, 1e-8))
 }
 
 pub fn line(

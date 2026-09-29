@@ -138,6 +138,12 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         limit: usize,
     },
+    /// Run an FDTD simulation (*.sim.toml) on the GPU and save S-parameters
+    Sim {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Trace calculators
     Calc {
         #[command(subcommand)]
@@ -375,6 +381,18 @@ fn run(cli: Cli) -> Result<bool, String> {
                 h: h.as_deref(),
                 er,
                 t: t.as_deref(),
+            })?;
+            print_json(&v);
+            Ok(true)
+        }
+        Cmd::Sim { name, project } => {
+            let p = ops::load(&project)?;
+            let mut last = std::time::Instant::now();
+            let v = ops::run_sim(&p, &name, &mut |port, steps, db| {
+                if last.elapsed().as_secs_f64() > 2.0 {
+                    eprintln!("{port}: {steps} steps, fields down {db:.1} dB");
+                    last = std::time::Instant::now();
+                }
             })?;
             print_json(&v);
             Ok(true)

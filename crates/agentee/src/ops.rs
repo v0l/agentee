@@ -55,7 +55,8 @@ pub fn check_report(p: &Project, item: Option<ItemRef>, min: Severity) -> (Strin
     let scope = match item {
         Some(r) => p.name_of(r).to_string(),
         None => format!(
-            "{} layouts, {} schematics, {} boards, {} symbols, {} footprints",
+            "{} sims, {} layouts, {} schematics, {} boards, {} symbols, {} footprints",
+            p.sims.len(),
             p.layouts.len(),
             p.schematics.len(),
             p.boards.len(),
@@ -89,6 +90,23 @@ pub fn list(p: &Project) -> Value {
 
 pub fn show(p: &Project, r: ItemRef) -> Value {
     match r {
+        ItemRef::Sim(i) => {
+            let s = &p.sims[i].item;
+            json!({
+                "kind": "sim",
+                "file": p.sims[i].path,
+                "sim": s,
+                "result": s.result.as_ref().map(|r| json!({
+                    "ports": r.ports,
+                    "freqs_hz": [r.freqs.first(), r.freqs.last(), r.freqs.len()],
+                    "cells": r.cells,
+                    "steps": r.steps,
+                    "seconds": r.seconds,
+                    "path": agentee_core::sim::result_path(&p.sims[i].path),
+                })),
+                "diagnostics": p.sims[i].diags,
+            })
+        }
         ItemRef::Schematic(i) => {
             let s = &p.schematics[i].item;
             let nets: Vec<Value> = s
@@ -283,6 +301,9 @@ pub fn new_item(kind: Kind, name: &str, dir: &Path) -> Result<PathBuf, String> {
         Kind::Footprint => crate::templates::footprint(name),
         Kind::Schematic => format!("name = \"{name}\"\n"),
         Kind::Layout => format!("name = \"{name}\"\n"),
+        Kind::Sim => format!(
+            "name = \"{name}\"\n\n[frequency]\nstart = \"100MHz\"\nstop = \"4GHz\"\n\n[[ports]]\nname = \"IN\"\npad = \"J1.1\"\n"
+        ),
     };
     write_new(dir, name, kind, &text, false)
 }
@@ -309,6 +330,70 @@ pub fn trace_width(
         "min_width_mm": (w * 1e4).round() / 1e4,
         "min_width_mil": (w / agentee_core::units::MM_PER_MIL * 100.0).round() / 100.0,
         "method": "IPC-2221",
+    }))
+}
+
+pub fn run_sim(
+    p: &Project,
+    name: &str,
+    progress: &mut dyn FnMut(&str, usize, f64),
+) -> Result<Value, String> {
+    let r = find(p, &format!("sim:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Sim(i) = r else {
+        return Err(format!("`{name}` is not a simulation"));
+    };
+    let entry = &p.sims[i];
+    if entry.diags.iter().any(|d| d.severity == Severity::Error) {
+        return Err(format!("{} has errors, fix them first (agentee check)", entry.name));
+    }
+    let spec = &entry.item;
+    let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
+    let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
+    let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
+    let model = agentee_sim::fdtd::model::PcbModel::from_layout(&layout.item, &board.item, spec)?;
+    let plan = agentee_sim::fdtd::plan(
+        &model,
+        spec.start,
+        spec.stop,
+        spec.points,
+        spec.cell,
+        spec.excite.clone(),
+        spec.max_steps,
+    )?;
+    let result =
+        agentee_sim::fdtd::execute(&plan, &spec.name, agentee_core::sim::hash(&src), progress)?;
+    let json_path = agentee_core::sim::result_path(&entry.path);
+    std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let touch = json_path.with_extension("").with_extension(format!("s{}p", result.ports.len()));
+    std::fs::write(&touch, agentee_sim::fdtd::touchstone(&result)).map_err(|e| e.to_string())?;
+    let marks: Vec<f64> = [0.1, 0.25, 0.5, 0.75, 1.0]
+        .iter()
+        .map(|k| spec.start + k * (spec.stop - spec.start))
+        .collect();
+    let mut table = Vec::new();
+    for f in marks {
+        let k = result.freqs.iter().position(|x| *x >= f - 1.0).unwrap_or(result.freqs.len() - 1);
+        let mut row = json!({ "freq_hz": result.freqs[k] });
+        for j in (0..result.ports.len()).filter(|j| result.excited[*j]) {
+            for i in 0..result.ports.len() {
+                row[format!("S{}{} dB", i + 1, j + 1)] =
+                    json!((result.db(i, j)[k] * 100.0).round() / 100.0);
+            }
+        }
+        table.push(row);
+    }
+    Ok(json!({
+        "sim": spec.name,
+        "ports": result.ports,
+        "cells": result.cells,
+        "grid": result.grid,
+        "steps": result.steps,
+        "seconds": (result.seconds * 10.0).round() / 10.0,
+        "device": result.device,
+        "result": json_path,
+        "touchstone": touch,
+        "summary": table,
     }))
 }
 

@@ -106,6 +106,11 @@ fn tools() -> Value {
             }), &["current"]),
         },
         {
+            "name": "run_sim",
+            "description": "Run an FDTD simulation (*.sim.toml) of a layout on the GPU: ports on pads, lumped models for passives, S-parameters saved as JSON and Touchstone next to the spec. Render the sim afterwards to see the plot.",
+            "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
+        },
+        {
             "name": "field_solve",
             "description": "Solve a trace cross-section with the GPU field solver: impedance, effective permittivity, C and L per metre, delay. Includes solder mask, thickness, coplanar grounds and differential pairs. Within 0.5% of exact references with fine = true.",
             "inputSchema": s(json!({
@@ -292,6 +297,11 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 arg(a, "temp_rise").unwrap_or("10C"),
                 flag(a, "internal"),
             )?;
+            Ok(ok(vec![text(pretty(&v))]))
+        }
+        "run_sim" => {
+            let p = ops::load(root)?;
+            let v = ops::run_sim(&p, arg(a, "name").ok_or("name is required")?, &mut |_, _, _| {})?;
             Ok(ok(vec![text(pretty(&v))]))
         }
         "field_solve" => {

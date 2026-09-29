@@ -1,0 +1,32 @@
+name = "lna-rf"
+description = "Passive RF paths around the amplifier: J1 to the U1 input and the U1 output to J2, with the chokes, DC blocks, bypass caps and ESD clamp as lumped parts. U1 itself is replaced by two ports."
+layout = "lna"
+cell = 0.05
+excite = ["IN", "AMP_OUT"]
+
+[frequency]
+start = "100MHz"
+stop = "4GHz"
+points = 391
+
+[[ports]]
+name = "IN"
+pad = "J1.1"
+reference = "In2.Cu"
+
+[[ports]]
+name = "AMP_IN"
+pad = "U1.1"
+
+[[ports]]
+name = "AMP_OUT"
+pad = "U1.3"
+
+[[ports]]
+name = "OUT"
+pad = "J2.1"
+reference = "In2.Cu"
+
+[[models]]
+ref = "D3"
+capacitor = "0.23pF"
