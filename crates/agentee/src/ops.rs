@@ -554,6 +554,42 @@ fn run_cascade(
     }))
 }
 
+pub fn serpentine(
+    from: &str,
+    to: &str,
+    add: &str,
+    amplitude: &str,
+    pitch: &str,
+) -> Result<Value, String> {
+    let point = |v: &str| -> Result<[f64; 2], String> {
+        let parts: Vec<f64> = v
+            .split(',')
+            .map(|x| x.trim().parse::<f64>())
+            .collect::<Result<_, _>>()
+            .map_err(|_| format!("`{v}` is not x,y"))?;
+        match parts.as_slice() {
+            [x, y] => Ok([*x, *y]),
+            _ => Err(format!("`{v}` is not x,y")),
+        }
+    };
+    let mm = |v: &str, what| parse(v, Length::parse, what).map(Length::to_mm);
+    let pts = agentee_core::layout::serpentine(
+        point(from)?,
+        point(to)?,
+        mm(add, "add")?,
+        mm(amplitude, "amplitude")?,
+        mm(pitch, "pitch")?,
+    )?;
+    let len: f64 = pts
+        .windows(2)
+        .map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt())
+        .sum();
+    Ok(json!({
+        "points": pts.iter().map(|p| [(p[0] * 1e4).round() / 1e4, (p[1] * 1e4).round() / 1e4]).collect::<Vec<_>>(),
+        "length_mm": len,
+    }))
+}
+
 pub struct SparamQuery<'a> {
     pub tdr: Option<&'a str>,
     pub rise: Option<&'a str>,

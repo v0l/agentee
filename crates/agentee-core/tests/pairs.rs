@@ -1,0 +1,152 @@
+use agentee_core::Project;
+use agentee_core::diag::Severity;
+use std::path::Path;
+
+fn project(extra_pcb: &str, tracks: &str) -> Project {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let k = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let dir = std::env::temp_dir().join(format!("agentee-pairs-{}-{k}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("symbols")).unwrap();
+    std::fs::create_dir_all(dir.join("footprints")).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    std::fs::copy(lna.join("symbols/R.sym.toml"), dir.join("symbols/R.sym.toml")).unwrap();
+    std::fs::copy(
+        lna.join("footprints/R_0402_1005Metric.fp.toml"),
+        dir.join("footprints/R_0402_1005Metric.fp.toml"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("t.board.toml"),
+        r#"name = "t"
+fab = "jlcpcb"
+[outline]
+size = [30, 10]
+[stackup]
+preset = "jlcpcb-4l-1.6mm-7628"
+[[netclasses]]
+name = "Default"
+track_width = "0.2mm"
+clearance = "0.15mm"
+[[netclasses]]
+name = "USB"
+track_width = "0.15mm"
+clearance = "0.15mm"
+diff_gap = "0.15mm"
+impedance = "90ohm"
+max_skew = "0.1mm"
+layers = ["F.Cu"]
+"#,
+    )
+    .unwrap();
+    let mut sch = String::from("name = \"t\"\nboard = \"t\"\n");
+    for (i, r) in ["R1", "R2", "R3", "R4"].iter().enumerate() {
+        sch += &format!(
+            "\n[[parts]]\nref = \"{r}\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [{}, 20]\n",
+            10.16 * (i + 1) as f64
+        );
+    }
+    sch += "\n[[nets]]\nname = \"USB_DP\"\nclass = \"USB\"\npins = [\"R1.1\", \"R3.1\"]\n";
+    sch += "\n[[nets]]\nname = \"USB_DN\"\nclass = \"USB\"\npins = [\"R2.1\", \"R4.1\"]\n";
+    sch += "\n[[nets]]\nname = \"A\"\npins = [\"R1.2\"]\n\n[[nets]]\nname = \"B\"\npins = [\"R2.2\"]\n";
+    sch += "\n[[nets]]\nname = \"C\"\npins = [\"R3.2\"]\n\n[[nets]]\nname = \"D\"\npins = [\"R4.2\"]\n";
+    std::fs::write(dir.join("t.sch.toml"), sch).unwrap();
+    let pcb = format!(
+        r#"name = "t"
+board = "t"
+schematic = "t"
+
+[[footprints]]
+ref = "R1"
+at = [3, 4]
+
+[[footprints]]
+ref = "R2"
+at = [3, 6]
+
+[[footprints]]
+ref = "R3"
+at = [27, 4]
+
+[[footprints]]
+ref = "R4"
+at = [27, 6]
+{tracks}
+{extra_pcb}
+"#
+    );
+    std::fs::write(dir.join("t.pcb.toml"), pcb).unwrap();
+    Project::load(&dir).unwrap()
+}
+
+fn messages(p: &Project) -> Vec<(Severity, String)> {
+    p.layouts[0].diags.iter().map(|d| (d.severity, d.message.clone())).collect()
+}
+
+#[test]
+fn a_well_routed_pair_passes_and_a_skewed_one_is_flagged() {
+    let good = r#"
+[[tracks]]
+net = "USB_DP"
+layer = "F.Cu"
+points = [[2.49, 4], [2.49, 4.85], [27.49, 4.85], [27.49, 4]]
+
+[[tracks]]
+net = "USB_DN"
+layer = "F.Cu"
+points = [[2.49, 6], [2.49, 5.15], [27.49, 5.15], [27.49, 6]]
+"#;
+    let p = project("", good);
+    let m = messages(&p);
+    assert!(!m.iter().any(|(s, t)| *s == Severity::Error && t.contains("skew")), "{m:?}");
+    assert!(!m.iter().any(|(_, t)| t.contains("gap, the class")), "{m:?}");
+    assert_eq!(p.layouts[0].item.pairs.len(), 1);
+    let pair = &p.layouts[0].item.pairs[0];
+    assert!(pair.coupled_mm > 24.9, "{}", pair.coupled_mm);
+
+    let skewed = good.replace(
+        "[27.49, 5.15], [27.49, 6]",
+        "[27.49, 5.15], [27.49, 5.5], [27.2, 5.5], [27.2, 6], [27.49, 6]",
+    );
+    let p = project("", &skewed);
+    let m = messages(&p);
+    assert!(
+        m.iter().any(|(s, t)| *s == Severity::Error
+            && t.contains("skew")
+            && t.contains("lengthen USB_DP")),
+        "{m:?}"
+    );
+
+    let wide = good.replace("5.15", "5.35");
+    let p = project("", &wide);
+    assert!(
+        messages(&p).iter().any(|(s, t)| *s == Severity::Error && t.contains("0.350 mm gap")),
+        "{:?}",
+        messages(&p)
+    );
+}
+
+#[test]
+fn match_groups_report_what_to_add() {
+    let tracks = r#"
+[[tracks]]
+net = "USB_DP"
+layer = "F.Cu"
+points = [[2.49, 4], [2.49, 4.85], [27.49, 4.85], [27.49, 4]]
+
+[[tracks]]
+net = "USB_DN"
+layer = "F.Cu"
+points = [[2.49, 6], [2.49, 5.15], [27.49, 5.15], [27.49, 6]]
+"#;
+    let group = r#"
+[[match_groups]]
+name = "usb"
+nets = ["USB_D?"]
+tolerance = "0.05mm"
+target = "27mm"
+"#;
+    let p = project(group, tracks);
+    let m = messages(&p);
+    assert!(m.iter().any(|(_, t)| t.contains("USB_DP is 26.700 mm, 0.300 mm short of the 27.000 mm target")), "{m:?}");
+}

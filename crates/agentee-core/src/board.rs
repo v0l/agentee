@@ -140,6 +140,8 @@ pub struct NetclassFile {
     pub diff_gap: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coplanar_gap: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_skew: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<String>,
 }
@@ -398,6 +400,7 @@ pub struct Netclass {
     pub solver: Solver,
     pub diff_gap: Option<Length>,
     pub coplanar_gap: Option<Length>,
+    pub max_skew: Option<Length>,
     pub layers: Vec<String>,
 }
 
@@ -503,6 +506,7 @@ impl BoardFile {
                     solver: n.solver.unwrap_or_default(),
                     diff_gap: n.diff_gap,
                     coplanar_gap: n.coplanar_gap,
+                    max_skew: n.max_skew,
                     layers,
                 }
             })

@@ -144,9 +144,49 @@ pub struct LayoutFile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cutouts: Vec<CutoutFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pairs: Vec<PairFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub match_groups: Vec<MatchFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphics: Vec<crate::graphic::GraphicFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artwork: Vec<ArtworkFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PairFile {
+    pub p: String,
+    pub n: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_skew: Option<Length>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MatchFile {
+    pub name: String,
+    pub nets: Vec<String>,
+    pub tolerance: Length,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<Length>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Pair {
+    pub p: usize,
+    pub n: usize,
+    pub skew_mm: f64,
+    pub skew_ps: f64,
+    pub coupled_mm: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct MatchGroup {
+    pub name: String,
+    pub nets: Vec<usize>,
+    pub target_mm: f64,
+    pub tolerance_mm: f64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -299,6 +339,7 @@ pub struct LayoutNet {
     pub clearance: f64,
     pub unrouted: usize,
     pub length_mm: f64,
+    pub delay_ps: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -317,6 +358,8 @@ pub struct Layout {
     pub cutouts: Vec<(Vec<String>, Vec<P>)>,
     pub graphics: Vec<crate::graphic::Graphic>,
     pub artwork: Vec<Artwork>,
+    pub pairs: Vec<Pair>,
+    pub match_groups: Vec<MatchGroup>,
 }
 
 impl Layout {
@@ -483,6 +526,7 @@ impl LayoutFile {
                         .unwrap_or(board.rules.min_clearance.to_mm()),
                     unrouted: 0,
                     length_mm: 0.0,
+                    delay_ps: 0.0,
                 }
             })
             .collect();
@@ -1044,6 +1088,18 @@ impl LayoutFile {
             n.unrouted = unrouted;
             n.length_mm = length;
         }
+        for (ni, n) in nets.iter_mut().enumerate() {
+            n.delay_ps = tracks
+                .iter()
+                .filter(|t| t.net == ni)
+                .map(|t| {
+                    let len: f64 = t.points.windows(2).map(|w| geom::dist(w[0], w[1])).sum();
+                    len * delay_per_mm(board, &t.layer, t.width)
+                })
+                .sum();
+        }
+        let pairs = self.pairs_of(board, &nets, &tracks, d);
+        let match_groups = self.matches_of(&nets, d);
         Layout {
             name: self.name.clone(),
             board: board.name.clone(),
@@ -1059,7 +1115,151 @@ impl LayoutFile {
             cutouts,
             graphics,
             artwork,
+            pairs,
+            match_groups,
         }
+    }
+
+    fn pairs_of(
+        &self,
+        board: &Board,
+        nets: &[LayoutNet],
+        tracks: &[Track],
+        d: &mut Diags,
+    ) -> Vec<Pair> {
+        let index = |n: &str| nets.iter().position(|x| x.name == n);
+        let mut found: Vec<(usize, usize, Option<f64>)> = Vec::new();
+        for (i, pf) in self.pairs.iter().enumerate() {
+            match (index(&pf.p), index(&pf.n)) {
+                (Some(a), Some(b)) => found.push((a, b, pf.max_skew.map(Length::to_mm))),
+                _ => d.error(
+                    format!("pairs[{i}]"),
+                    format!("`{}` / `{}` are not nets of the layout", pf.p, pf.n),
+                ),
+            }
+        }
+        for (a, na) in nets.iter().enumerate() {
+            let Some(base) = pair_base(&na.name, true) else { continue };
+            if found.iter().any(|f| f.0 == a || f.1 == a) {
+                continue;
+            }
+            let pair = class_of(board, &na.class).is_some_and(|c| c.diff_gap.is_some());
+            if let Some(b) = nets
+                .iter()
+                .position(|nb| pair_base(&nb.name, false).as_deref() == Some(base.as_str()))
+                && pair
+            {
+                found.push((a, b, None));
+            }
+        }
+        let mut out = Vec::new();
+        for (a, b, skew_limit) in found {
+            let (pa, pb) = (&nets[a], &nets[b]);
+            let class = class_of(board, &pa.class);
+            let gap = class.and_then(|c| c.diff_gap.map(Length::to_mm));
+            let at = format!("pair {}/{}", pa.name, pb.name);
+            let skew_mm = pa.length_mm - pb.length_mm;
+            let skew_ps = pa.delay_ps - pb.delay_ps;
+            let limit = skew_limit.or(class.and_then(|c| c.max_skew.map(Length::to_mm)));
+            match limit {
+                Some(l) if skew_mm.abs() > l + 1e-9 => d.error(
+                    &at,
+                    format!(
+                        "skew {:.3} mm ({:.2} ps), limit {l} mm: lengthen {} by {:.3} mm",
+                        skew_mm,
+                        skew_ps,
+                        if skew_mm > 0.0 { &pb.name } else { &pa.name },
+                        skew_mm.abs() - l
+                    ),
+                ),
+                _ => d.info(&at, format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps)),
+            }
+            let mut coupled = 0.0;
+            let mut wrong: Option<(f64, f64)> = None;
+            if let Some(g) = gap {
+                for ta in tracks.iter().filter(|t| t.net == a) {
+                    for tb in tracks.iter().filter(|t| t.net == b && t.layer == ta.layer) {
+                        for sa in ta.points.windows(2) {
+                            for sb in tb.points.windows(2) {
+                                if let Some((overlap, sep)) =
+                                    parallel_overlap(sa[0], sa[1], sb[0], sb[1])
+                                {
+                                    let want = g + (ta.width + tb.width) / 2.0;
+                                    if (sep - want).abs() <= 0.1 * g + 0.005 {
+                                        coupled += overlap;
+                                    } else if sep < want + 2.0 * g && overlap > 0.05 {
+                                        wrong = Some((sep - (ta.width + tb.width) / 2.0, overlap));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some((got, len)) = wrong {
+                    d.error(
+                        &at,
+                        format!("runs {len:.2} mm at a {got:.3} mm gap, the class wants {g} mm"),
+                    );
+                }
+                let longest = pa.length_mm.max(pb.length_mm);
+                if longest > 0.0 && coupled < 0.8 * longest {
+                    d.warn(
+                        &at,
+                        format!(
+                            "only {coupled:.2} of {longest:.2} mm run side by side at the pair gap"
+                        ),
+                    );
+                }
+            }
+            out.push(Pair { p: a, n: b, skew_mm, skew_ps, coupled_mm: coupled });
+        }
+        out
+    }
+
+    fn matches_of(&self, nets: &[LayoutNet], d: &mut Diags) -> Vec<MatchGroup> {
+        let mut out = Vec::new();
+        for (i, m) in self.match_groups.iter().enumerate() {
+            let at = format!("match_groups[{i}] {}", m.name);
+            let members: Vec<usize> = nets
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| m.nets.iter().any(|pat| glob(pat, &n.name)))
+                .map(|(k, _)| k)
+                .collect();
+            if members.len() < 2 {
+                d.error(&at, "matches fewer than two nets");
+                continue;
+            }
+            let target = m
+                .target
+                .map(Length::to_mm)
+                .unwrap_or_else(|| members.iter().map(|k| nets[*k].length_mm).fold(0.0, f64::max));
+            let tol = m.tolerance.to_mm();
+            for k in &members {
+                let n = &nets[*k];
+                let off = n.length_mm - target;
+                if off.abs() > tol + 1e-9 {
+                    d.error(
+                        &at,
+                        format!(
+                            "{} is {:.3} mm, {:.3} mm {} the {:.3} mm target",
+                            n.name,
+                            n.length_mm,
+                            off.abs(),
+                            if off < 0.0 { "short of" } else { "over" },
+                            target
+                        ),
+                    );
+                }
+            }
+            out.push(MatchGroup {
+                name: m.name.clone(),
+                nets: members,
+                target_mm: target,
+                tolerance_mm: tol,
+            });
+        }
+        out
     }
 
     fn artwork_of(
@@ -1471,4 +1671,109 @@ fn fill_zone(
         },
         touched,
     )
+}
+
+fn pair_base(name: &str, positive: bool) -> Option<String> {
+    let upper = name.to_uppercase();
+    for (p, n) in [("_DP", "_DN"), ("_P", "_N"), ("+", "-"), ("P", "N")] {
+        let suffix = if positive { p } else { n };
+        if upper.ends_with(suffix) && name.len() > suffix.len() {
+            return Some(format!("{}|{p}", &name[..name.len() - suffix.len()]));
+        }
+    }
+    None
+}
+
+fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
+    let da = [a1[0] - a0[0], a1[1] - a0[1]];
+    let la = (da[0] * da[0] + da[1] * da[1]).sqrt();
+    let db = [b1[0] - b0[0], b1[1] - b0[1]];
+    let lb = (db[0] * db[0] + db[1] * db[1]).sqrt();
+    if la < 1e-9 || lb < 1e-9 {
+        return None;
+    }
+    let u = [da[0] / la, da[1] / la];
+    let cross = (u[0] * db[1] - u[1] * db[0]).abs() / lb;
+    if cross > 0.02 {
+        return None;
+    }
+    let proj = |p: P| (p[0] - a0[0]) * u[0] + (p[1] - a0[1]) * u[1];
+    let (s0, s1) = (proj(b0).min(proj(b1)), proj(b0).max(proj(b1)));
+    let overlap = s1.min(la) - s0.max(0.0);
+    if overlap <= 0.0 {
+        return None;
+    }
+    let mid = [b0[0] - a0[0], b0[1] - a0[1]];
+    Some((overlap, (u[0] * mid[1] - u[1] * mid[0]).abs()))
+}
+
+fn glob(pat: &str, s: &str) -> bool {
+    fn go(p: &[char], s: &[char]) -> bool {
+        match (p.first(), s.first()) {
+            (None, None) => true,
+            (Some('*'), _) => go(&p[1..], s) || (!s.is_empty() && go(p, &s[1..])),
+            (Some('?'), Some(_)) => go(&p[1..], &s[1..]),
+            (Some(a), Some(b)) if a == b => go(&p[1..], &s[1..]),
+            _ => false,
+        }
+    }
+    go(&pat.chars().collect::<Vec<_>>(), &s.chars().collect::<Vec<_>>())
+}
+
+pub fn delay_per_mm(board: &Board, layer: &str, width: f64) -> f64 {
+    let eeff = board.stackup.geometry(layer).map(|g| g.eeff(width)).unwrap_or(1.0);
+    eeff.sqrt() / 0.299_792_458
+}
+
+pub fn serpentine(a: P, b: P, add: f64, amplitude: f64, pitch: f64) -> Result<Vec<P>, String> {
+    let l = geom::dist(a, b);
+    if add <= 0.0 {
+        return Ok(vec![a, b]);
+    }
+    let bumps = (add / (2.0 * amplitude)).ceil().max(1.0);
+    let height = add / (2.0 * bumps);
+    let run = 2.0 * pitch * bumps;
+    if run > l {
+        return Err(format!(
+            "{bumps} bumps at a {pitch} mm pitch need {run:.3} mm of straight track, the segment is {l:.3} mm"
+        ));
+    }
+    let u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+    let n = [-u[1], u[0]];
+    let at = |s: f64, h: f64| [a[0] + u[0] * s + n[0] * h, a[1] + u[1] * s + n[1] * h];
+    let mut s = (l - run) / 2.0;
+    let mut out = vec![a, at(s, 0.0)];
+    for _ in 0..bumps as usize {
+        out.push(at(s, height));
+        s += pitch;
+        out.push(at(s, height));
+        out.push(at(s, 0.0));
+        s += pitch;
+        out.push(at(s, 0.0));
+    }
+    out.push(b);
+    out.dedup_by(|x, y| geom::dist(*x, *y) < 1e-9);
+    Ok(out)
+}
+
+#[cfg(test)]
+mod pair_tests {
+    use super::*;
+
+    #[test]
+    fn pair_names_meet_their_partner() {
+        for (p, n) in [("USB_DP", "USB_DN"), ("CLK_P", "CLK_N"), ("RX+", "RX-"), ("TXP", "TXN")] {
+            assert_eq!(pair_base(p, true), pair_base(n, false), "{p} {n}");
+        }
+        assert_ne!(pair_base("USB_DP", true), pair_base("CLK_N", false));
+    }
+
+    #[test]
+    fn a_serpentine_adds_exactly_what_was_asked() {
+        let pts = serpentine([0.0, 0.0], [10.0, 0.0], 2.5, 0.6, 0.4).unwrap();
+        let len: f64 = pts.windows(2).map(|w| geom::dist(w[0], w[1])).sum();
+        assert!((len - 12.5).abs() < 1e-9, "{len}");
+        assert!(serpentine([0.0, 0.0], [1.0, 0.0], 5.0, 0.3, 0.4).is_err());
+        assert!(glob("DQ?", "DQ7") && glob("DQ*", "DQ15") && !glob("DQ?", "DQS0"));
+    }
 }

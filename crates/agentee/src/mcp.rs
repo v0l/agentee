@@ -111,6 +111,17 @@ fn tools() -> Value {
             "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
         },
         {
+            "name": "serpentine",
+            "description": "Points for a track that replaces a straight segment and adds a given length as trombone bumps to one side. Paste them into the track's points.",
+            "inputSchema": s(json!({
+                "from": { "type": "string", "description": "x,y in mm" },
+                "to": { "type": "string", "description": "x,y in mm" },
+                "add": { "type": "string", "description": "e.g. 2.5mm" },
+                "amplitude": { "type": "string", "default": "0.6mm" },
+                "pitch": { "type": "string", "default": "0.4mm" },
+            }), &["from", "to", "add"]),
+        },
+        {
             "name": "sparam",
             "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
             "inputSchema": s(json!({
@@ -326,6 +337,13 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             )?;
             Ok(ok(vec![text(pretty(&v))]))
         }
+        "serpentine" => Ok(ok(vec![text(pretty(&ops::serpentine(
+            arg(a, "from").ok_or("from is required")?,
+            arg(a, "to").ok_or("to is required")?,
+            arg(a, "add").ok_or("add is required")?,
+            arg(a, "amplitude").unwrap_or("0.6mm"),
+            arg(a, "pitch").unwrap_or("0.4mm"),
+        )?))])),
         "sparam" => {
             let p = ops::load(root)?;
             let q = ops::SparamQuery {

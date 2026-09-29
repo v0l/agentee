@@ -69,6 +69,13 @@ impl TraceGeometry {
         }
     }
 
+    pub fn eeff(&self, w_mm: f64) -> f64 {
+        match *self {
+            TraceGeometry::Microstrip { h_mm, er, .. } => hj_eeff(w_mm / h_mm, er),
+            TraceGeometry::Stripline { er, .. } => er,
+        }
+    }
+
     pub fn width_for(&self, target: f64, line: Line) -> Option<f64> {
         solve_decreasing(|w| self.impedance(w, line), target, 0.01, 20.0)
     }

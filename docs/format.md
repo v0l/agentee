@@ -382,6 +382,27 @@ Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fill
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
 artwork get the same checks as reference labels: overlap, pads, silk outlines, board edge.
 
+Pairs and length rules live in the layout too:
+
+```toml
+[[pairs]]                      # optional: nets ending _P/_N, _DP/_DN, +/-, P/N in a class
+p = "USB_DP"                   # with diff_gap are paired on their own
+n = "USB_DN"
+max_skew = "0.1mm"             # or `max_skew` on the net class
+
+[[match_groups]]
+name = "ddr-dq0"
+nets = ["DQ?", "DQS0_*"]       # * and ? globs
+tolerance = "0.5mm"
+# target = "42mm"              # default the longest member
+```
+
+Check reports each pair's skew in mm and ps (from the layer's effective permittivity), a stretch
+of the pair run at the wrong gap, and pairs that spend less than 80% of their length side by side.
+Match groups say which net is short or over and by how much. `agentee calc serpentine --from x,y
+--to x,y --add 2.5mm` (MCP `serpentine`) returns the points of a trombone meander that adds exactly
+that length to a straight segment. Net lengths and delays are in `agentee show pcb:NAME`.
+
 Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
 clearance to every other net and to the board edge, and islands that reach nothing are removed.
 Check reports unrouted connections (with the ratsnest), shorts, clearance violations, tracks

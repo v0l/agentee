@@ -195,6 +195,24 @@ enum Calc {
         #[arg(long)]
         internal: bool,
     },
+    /// Meander points that add length to a straight segment
+    Serpentine {
+        /// Segment start x,y in mm
+        #[arg(long)]
+        from: String,
+        /// Segment end x,y in mm
+        #[arg(long)]
+        to: String,
+        /// Length to add, e.g. 2.5mm
+        #[arg(long)]
+        add: String,
+        /// Largest bump height
+        #[arg(long, default_value = "0.6mm")]
+        amplitude: String,
+        /// Distance between the legs of a bump
+        #[arg(long, default_value = "0.4mm")]
+        pitch: String,
+    },
     /// Solve the trace cross-section on the GPU (2D field solver)
     Field {
         #[arg(short, long, default_value = ".")]
@@ -403,6 +421,10 @@ fn run(cli: Cli) -> Result<bool, String> {
                 },
             )?;
             print_json(&v);
+            Ok(true)
+        }
+        Cmd::Calc { calc: Calc::Serpentine { from, to, add, amplitude, pitch } } => {
+            print_json(&ops::serpentine(&from, &to, &add, &amplitude, &pitch)?);
             Ok(true)
         }
         Cmd::Calc { calc: Calc::TraceWidth { current, copper, rise, internal } } => {
