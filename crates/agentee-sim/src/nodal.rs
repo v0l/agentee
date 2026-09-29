@@ -187,9 +187,9 @@ impl Problem {
             full[*id] = x[(k, 0)] as f32;
             delta[*id] = x[(k, 0)];
         }
-        for id in 0..len {
+        for (id, d) in delta.iter_mut().enumerate() {
             if let Some(v) = self.fixed[id] {
-                delta[id] = v as f64 - self.off(id);
+                *d = v as f64 - self.off(id);
             }
         }
         Ok(Solution {

@@ -161,6 +161,14 @@ pub struct Link {
     pub ohms: f64,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct MapGrid {
+    pub origin: [f64; 2],
+    pub cell: f64,
+    pub width: usize,
+    pub height: usize,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LayerMap {
     pub layer: String,
@@ -180,12 +188,10 @@ impl LayerMap {
         layer: &str,
         quantity: &str,
         unit: &str,
-        origin: [f64; 2],
-        cell: f64,
-        width: usize,
-        height: usize,
+        grid: MapGrid,
         values: &[f32],
     ) -> LayerMap {
+        let MapGrid { origin, cell, width, height } = grid;
         let finite = values.iter().filter(|v| v.is_finite());
         let min = finite.clone().fold(f32::MAX, |a, b| a.min(*b));
         let max = finite.fold(f32::MIN, |a, b| a.max(*b));

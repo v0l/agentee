@@ -4,7 +4,7 @@ use agentee_core::board::{Board, LayerKind};
 use agentee_core::geom::{self, P};
 use agentee_core::graphic::Bounds;
 use agentee_core::layout::Layout;
-use agentee_core::sim::{LayerMap, MapResult, PadRef, Reading, Sim, SimKind};
+use agentee_core::sim::{LayerMap, MapGrid, MapResult, PadRef, Reading, Sim, SimKind};
 
 const SIGMA_CU: f64 = 5.8e7;
 const K_CU: f64 = 390.0;
@@ -260,7 +260,7 @@ pub fn dc(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<MapRe
         }
         i
     }
-    let mut join = |parent: &mut Vec<usize>, a: usize, b: usize| {
+    let join = |parent: &mut Vec<usize>, a: usize, b: usize| {
         let (ra, rb) = (root(parent, a), root(parent, b));
         if ra != rb {
             parent[ra] = rb;
@@ -299,6 +299,7 @@ pub fn dc(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<MapRe
     let sol = p.solve_direct()?;
     let v = &sol.phi;
     let dv = &sol.delta;
+    let grid = MapGrid { origin: r.origin, cell: r.cell, width: r.nx, height: r.ny };
     let mut maps = Vec::new();
     let mut drops = Vec::new();
     let mut volts_maps = Vec::new();
@@ -352,19 +353,9 @@ pub fn dc(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<MapRe
                     if volts[k].is_finite() { (dv[n].abs() * 1e3) as f32 } else { f32::NAN }
                 })
                 .collect();
-            drops.push(LayerMap::encode(name, "drop", "mV", r.origin, r.cell, r.nx, r.ny, &drop));
-            maps.push(LayerMap::encode(
-                name,
-                "current density",
-                "A/mm2",
-                r.origin,
-                r.cell,
-                r.nx,
-                r.ny,
-                &dens,
-            ));
-            volts_maps
-                .push(LayerMap::encode(name, "voltage", "V", r.origin, r.cell, r.nx, r.ny, &volts));
+            drops.push(LayerMap::encode(name, "drop", "mV", grid, &drop));
+            maps.push(LayerMap::encode(name, "current density", "A/mm2", grid, &dens));
+            volts_maps.push(LayerMap::encode(name, "voltage", "V", grid, &volts));
         }
     }
     drops.extend(maps);
@@ -576,6 +567,7 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
     }
     let sol = p.solve(1e-7, 50_000);
     let t = &sol.phi;
+    let grid = MapGrid { origin: r.origin, cell: r.cell, width: r.nx, height: r.ny };
     let mut maps = Vec::new();
     let mut peak = (f64::MIN, String::new());
     for (s, sh) in model.sheets.iter().enumerate() {
@@ -594,16 +586,7 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
                 }
             }
         }
-        maps.push(LayerMap::encode(
-            &sh.name,
-            "temperature",
-            "C",
-            r.origin,
-            r.cell,
-            r.nx,
-            r.ny,
-            &vals,
-        ));
+        maps.push(LayerMap::encode(&sh.name, "temperature", "C", grid, &vals));
     }
     let mut readings = vec![Reading {
         label: "board peak".into(),
