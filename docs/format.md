@@ -484,6 +484,7 @@ cell = 0.05                    # finest mesh cell in mm, default 0.05; the mesh 
 excite = ["IN", "AMP_OUT"]     # ports to drive, one run each; default all
 # region = [0, 0, 30, 20]      # crop to x0, y0, x1, y1 in mm, default the board
 # max_steps = 150000
+# end_db = 50                  # stop once the field energy is this far under its peak, as openEMS does
 
 [frequency]
 start = "100MHz"

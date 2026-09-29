@@ -181,6 +181,30 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
+    /// Route nets of a layout on a grid and append the tracks and vias to its file
+    Route {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Nets to route, globs allowed, comma separated or repeated
+        #[arg(long, required = true, value_delimiter = ',')]
+        nets: Vec<String>,
+        /// Copper layers to route on, default every layer
+        #[arg(long, value_delimiter = ',')]
+        layers: Vec<String>,
+        /// Grid cell in mm
+        #[arg(long, default_value_t = 0.05)]
+        grid: f64,
+        /// Via from the board to use, default the net class via
+        #[arg(long)]
+        via: Option<String>,
+        /// Cost of a via in mm of track
+        #[arg(long, default_value_t = 1.0)]
+        via_cost: f64,
+        /// Report without writing the file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Trace calculators
     Calc {
         #[command(subcommand)]
@@ -491,6 +515,21 @@ fn run(cli: Cli) -> Result<bool, String> {
             let p = ops::load(&project)?;
             print_json(&ops::fab(&p, &name, &out)?);
             Ok(true)
+        }
+        Cmd::Route { name, project, nets, layers, grid, via, via_cost, dry_run } => {
+            let p = ops::load(&project)?;
+            let opts = agentee_core::route::RouteOptions {
+                nets,
+                layers,
+                grid,
+                via,
+                via_cost,
+                ..Default::default()
+            };
+            let r = ops::route(&p, &name, &opts, !dry_run)?;
+            let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
         }
         Cmd::Docs => {
             print!("{FORMAT}");

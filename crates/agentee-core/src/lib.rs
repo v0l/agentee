@@ -11,6 +11,7 @@ pub mod ibis;
 pub mod layout;
 pub mod project;
 pub mod rf;
+pub mod route;
 pub mod schematic;
 pub mod sim;
 pub mod sparam;

@@ -398,16 +398,16 @@ pub fn run_sim(
     )?;
     plan.fields = spec.fields.clone();
     plan.far_field = spec.far_field;
+    plan.end_db = spec.end_db;
     if dry {
         let g = &plan.sim.grid;
         let min = |v: &[f64]| v.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min) * 1e3;
-        let min_steps = ((1.5 / spec.start) / plan.sim.dt) as usize;
         return Ok(json!({
             "grid": g.dims(),
             "cells_millions": g.cells() as f64 / 1e6,
             "smallest_mm": [min(&g.x), min(&g.y), min(&g.z)],
             "dt_fs": plan.sim.dt * 1e15,
-            "min_steps": min_steps.min(spec.max_steps),
+            "end_db": spec.end_db,
             "max_steps": spec.max_steps,
             "runs": plan.excite.len(),
             "inductor_edges": plan.sim.inductors.len(),
@@ -1207,4 +1207,60 @@ pub fn impedance(q: &ImpedanceQuery) -> Result<Value, String> {
         return Err("give width, target, or both".into());
     }
     Ok(v)
+}
+
+pub fn route(
+    p: &Project,
+    name: &str,
+    opts: &agentee_core::route::RouteOptions,
+    write: bool,
+) -> Result<Value, String> {
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    let board = p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
+    let result = agentee_core::route::route(layout, &board.item, opts)?;
+    if write && (!result.tracks.is_empty() || !result.vias.is_empty()) {
+        let f = |v: f64| {
+            let s = format!("{:.4}", v);
+            let s = s.trim_end_matches('0');
+            if s.ends_with('.') { format!("{s}0") } else { s.to_string() }
+        };
+        let pt = |q: [f64; 2]| format!("[{}, {}]", f(q[0]), f(q[1]));
+        let mut text = format!("\n# agentee route {}\n", opts.nets.join(" "));
+        for t in &result.tracks {
+            let pts: Vec<String> = t.points.iter().map(|q| pt(*q)).collect();
+            text += &format!(
+                "\n[[tracks]]\nnet = \"{}\"\nlayer = \"{}\"\npoints = [{}]\n",
+                t.net,
+                t.layer,
+                pts.join(", ")
+            );
+        }
+        for v in &result.vias {
+            text += &format!(
+                "\n[[vias]]\nnet = \"{}\"\nat = {}\nvia = \"{}\"\n",
+                v.net,
+                pt(v.at),
+                v.via
+            );
+        }
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&entry.path)
+            .map_err(|e| format!("{}: {e}", entry.path.display()))?;
+        std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    Ok(json!({
+        "layout": entry.name,
+        "written": write,
+        "connections": result.connections,
+        "routed": result.routed,
+        "tracks": result.tracks.len(),
+        "vias": result.vias.len(),
+        "failed": result.failed,
+    }))
 }
