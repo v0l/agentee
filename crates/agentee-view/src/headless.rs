@@ -12,6 +12,9 @@ pub struct RenderOptions {
     pub unit: u32,
     pub panels: bool,
     pub hidden_pins: bool,
+    pub show: Vec<String>,
+    pub hide: Vec<String>,
+    pub region: Option<[f64; 4]>,
 }
 
 impl Default for RenderOptions {
@@ -23,6 +26,9 @@ impl Default for RenderOptions {
             unit: 1,
             panels: true,
             hidden_pins: false,
+            show: Vec::new(),
+            hide: Vec::new(),
+            region: None,
         }
     }
 }
@@ -50,6 +56,16 @@ pub fn render_rgba(
     };
     st.select(item);
     st.unit = opts.unit.max(1);
+    for layers in [&mut st.layers, &mut st.pcb_layers] {
+        layers.hidden.retain(|h| !opts.show.contains(h));
+        layers.hidden.extend(opts.hide.iter().cloned());
+    }
+    st.region = opts.region.map(|[x0, y0, x1, y1]| {
+        let mut b = agentee_core::graphic::Bounds::EMPTY;
+        b.add([x0, y0]);
+        b.add([x1, y1]);
+        b
+    });
     let mut textures = Textures::default();
     let mut last = None;
     for _ in 0..3 {

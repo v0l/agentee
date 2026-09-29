@@ -25,6 +25,7 @@ pub struct PageState {
     pub ratsnest: bool,
     pub zone_key: Option<(u64, usize)>,
     pub zone_tex: Vec<egui::TextureHandle>,
+    pub region: Option<agentee_core::graphic::Bounds>,
 }
 
 impl Default for PageState {
@@ -41,6 +42,7 @@ impl Default for PageState {
             ratsnest: true,
             zone_key: None,
             zone_tex: Vec::new(),
+            region: None,
         }
     }
 }
@@ -167,8 +169,8 @@ fn symbol_canvas(ui: &mut Ui, s: &Symbol, st: &mut PageState) {
         padded.add([b.min[0], b.min[1] - 2.5]);
         padded.add([b.max[0], b.max[1] + 2.5]);
     }
-    st.view.max_fit = 45.0;
-    let (resp, xf) = st.view.show(ui, &padded, 40.0);
+    st.view.max_fit = if st.region.is_some() { 4000.0 } else { 45.0 };
+    let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(padded), 40.0);
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 1.27);
     let hover = if st.interactive { resp.hover_pos() } else { None };
@@ -195,7 +197,7 @@ fn symbol_canvas(ui: &mut Ui, s: &Symbol, st: &mut PageState) {
 
 fn footprint_canvas(ui: &mut Ui, fp: &Footprint, st: &mut PageState) {
     st.view.max_fit = 2000.0;
-    let (resp, xf) = st.view.show(ui, &fp.bounds(), 40.0);
+    let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(fp.bounds()), 40.0);
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 0.5);
     let hover = if st.interactive { resp.hover_pos() } else { None };
@@ -733,8 +735,8 @@ fn netclasses(ui: &mut Ui, b: &Board) {
 }
 
 fn schematic_canvas(ui: &mut Ui, s: &Schematic, st: &mut PageState) {
-    st.view.max_fit = 45.0;
-    let (resp, xf) = st.view.show(ui, &s.bounds(), 50.0);
+    st.view.max_fit = if st.region.is_some() { 4000.0 } else { 45.0 };
+    let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(s.bounds()), 50.0);
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 2.54);
     let hover = if st.interactive { resp.hover_pos() } else { None };
@@ -803,7 +805,7 @@ fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
         st.zone_key = Some(key);
     }
     st.view.max_fit = 2000.0;
-    let (resp, xf) = st.view.show(ui, &l.bounds(), 30.0);
+    let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(l.bounds()), 30.0);
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 1.0);
     let hover = if st.interactive { resp.hover_pos() } else { None };
@@ -858,7 +860,8 @@ fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
     Line::new().legend("layers").show(ui);
     let mut names: Vec<String> = l.copper.clone();
     names.extend(
-        ["F.SilkS", "B.SilkS", "F.Fab", "F.CrtYd", "Edge.Cuts", "Cutouts"].map(String::from),
+        ["F.SilkS", "B.SilkS", "F.Fab", "F.CrtYd", "F.Mask", "Edge.Cuts", "Cutouts"]
+            .map(String::from),
     );
     ui.horizontal_wrapped(|ui| {
         for n in &names {

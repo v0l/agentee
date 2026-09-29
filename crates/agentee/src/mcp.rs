@@ -52,6 +52,9 @@ fn tools() -> Value {
                 "canvas_only": { "type": "boolean", "description": "drop the side panels" },
                 "hidden_pins": { "type": "boolean" },
                 "save_to": { "type": "string", "description": "also write the PNG here, relative to the project" },
+                "show": { "type": "array", "items": { "type": "string" }, "description": "layers to turn on, e.g. F.Fab, F.Mask, In1.Cu" },
+                "hide": { "type": "array", "items": { "type": "string" } },
+                "region": { "type": "array", "items": { "type": "number" }, "description": "zoom to [x0, y0, x1, y1] in mm" },
             }), &["name"]),
         },
         {
@@ -137,6 +140,13 @@ fn flag(a: &Value, k: &str) -> bool {
     a.get(k).and_then(Value::as_bool).unwrap_or(false)
 }
 
+fn strings(a: &Value, k: &str) -> Vec<String> {
+    a.get(k)
+        .and_then(Value::as_array)
+        .map(|v| v.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
 fn int(a: &Value, k: &str, d: u64) -> u64 {
     a.get(k).and_then(Value::as_u64).unwrap_or(d)
 }
@@ -171,6 +181,14 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 unit: int(a, "unit", 1) as u32,
                 panels: !flag(a, "canvas_only"),
                 hidden_pins: flag(a, "hidden_pins"),
+                show: strings(a, "show"),
+                hide: strings(a, "hide"),
+                region: a.get("region").and_then(Value::as_array).filter(|v| v.len() == 4).map(
+                    |v| {
+                        let f = |i: usize| v[i].as_f64().unwrap_or(0.0);
+                        [f(0), f(1), f(2), f(3)]
+                    },
+                ),
                 ..Default::default()
             };
             let png = agentee_view::render_png(&p, r, &opts);

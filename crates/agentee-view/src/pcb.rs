@@ -149,7 +149,11 @@ pub fn layout(
                 if !pad.copper.iter().any(|c| c == layer) {
                     continue;
                 }
-                let c = if pad.copper.len() > 1 { paint::PTH } else { color };
+                let c = if pad.copper.len() > 1 {
+                    paint::PTH
+                } else {
+                    color.lerp_to_gamma(Color32::WHITE, 0.22)
+                };
                 let lit = hit.net.is_some() && pad.net == hit.net || hit.pad == Some((pi, k));
                 let c = if lit { c.lerp_to_gamma(Color32::WHITE, 0.35) } else { c };
                 for o in &pad.outlines {
@@ -195,13 +199,65 @@ pub fn layout(
                 || !layers.shows(&layer)
                 || layer.ends_with("Mask")
                 || layer.ends_with("Paste")
-                || (layer.ends_with(".SilkS") && matches!(g.shape, Shape::Text { .. }))
+                || ((layer.ends_with(".SilkS") || layer.ends_with(".Fab"))
+                    && matches!(g.shape, Shape::Text { .. }))
             {
                 continue;
             }
             let g = substitute(g, &part.reference, &part.value);
             let col = layer_color(&layer);
             paint::graphic(p, &placed, &g, col, col.gamma_multiply(0.25));
+        }
+        for side in ["F", "B"] {
+            let fab = format!("{side}.Fab");
+            if !layers.shows(&fab) {
+                continue;
+            }
+            let mut body = agentee_core::graphic::Bounds::EMPTY;
+            for g in part.footprint.graphics.iter().filter(|g| part.flip_layer(&g.layer) == fab) {
+                if !matches!(g.shape, Shape::Text { .. }) {
+                    body.union(&g.bounds());
+                }
+            }
+            if body.is_empty() {
+                continue;
+            }
+            let t = part.transform();
+            let mut world = agentee_core::graphic::Bounds::EMPTY;
+            for c in [body.min, body.max] {
+                world.add(t.apply(c));
+            }
+            let [w, h] = world.size();
+            let (long, short, angle) =
+                if h > w { (h, w, -std::f32::consts::FRAC_PI_2) } else { (w, h, 0.0) };
+            let chars = part.reference.chars().count().max(1) as f64;
+            let size = (long * 0.8 / (0.62 * chars)).min(short * 0.6).min(1.0);
+            if xf.len(size) < 3.0 {
+                continue;
+            }
+            text(
+                p,
+                xf.world(world.center()),
+                &part.reference,
+                Ink {
+                    px: xf.len(size) * 1.25,
+                    color: layer_color(&fab),
+                    angle,
+                    anchor: Align2::CENTER_CENTER,
+                    font: FontFamily::Proportional,
+                },
+            );
+        }
+        for side in ["F.Mask", "B.Mask"] {
+            if !layers.shows(side) {
+                continue;
+            }
+            for pad in part.pads.iter().filter(|q| q.mask.iter().any(|m| m == side)) {
+                for o in &pad.outlines {
+                    let pts: Vec<Pos2> = o.iter().map(|q| xf.world(*q)).collect();
+                    p.add(PathShape::closed_line(pts, Stroke::new(1.2, layer_color(side))));
+                }
+            }
         }
         for t in part.silk_texts(pi) {
             if !layers.shows(&t.layer) {

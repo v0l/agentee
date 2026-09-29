@@ -150,6 +150,7 @@ pub struct PlacedPad {
     pub kind: PadKind,
     pub outlines: Vec<Vec<P>>,
     pub copper: Vec<String>,
+    pub mask: Vec<String>,
     pub drill: Option<(P, [f64; 2], f64)>,
 }
 
@@ -505,6 +506,11 @@ impl LayoutFile {
                             .map(|o| o.into_iter().map(|p| t.apply(p)).collect())
                             .collect(),
                         copper: layers,
+                        mask: ["F.Mask", "B.Mask"]
+                            .into_iter()
+                            .filter(|m| pad.on_layer(m))
+                            .map(|m| flip(m, bottom))
+                            .collect(),
                         drill: pad.drill.map(|dr| {
                             let s = dr.size().to_mm();
                             (t.apply(pad.at.to_mm()), s, pad.rotation + rotation)

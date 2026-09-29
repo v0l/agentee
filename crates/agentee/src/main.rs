@@ -83,6 +83,15 @@ enum Cmd {
         canvas_only: bool,
         #[arg(long)]
         hidden_pins: bool,
+        /// Layers to turn on, comma separated (F.Fab,F.Mask,In1.Cu)
+        #[arg(long, value_delimiter = ',')]
+        show: Vec<String>,
+        /// Layers to turn off, comma separated
+        #[arg(long, value_delimiter = ',')]
+        hide: Vec<String>,
+        /// Zoom to x0,y0,x1,y1 in mm
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        region: Option<Vec<f64>>,
     },
     /// Open the viewer, it reloads when files change
     View {
@@ -216,6 +225,9 @@ fn run(cli: Cli) -> Result<bool, String> {
             unit,
             canvas_only,
             hidden_pins,
+            show,
+            hide,
+            region,
         } => {
             let p = ops::load(&project)?;
             let r = ops::find(&p, &name)?;
@@ -226,6 +238,9 @@ fn run(cli: Cli) -> Result<bool, String> {
                 unit,
                 panels: !canvas_only,
                 hidden_pins,
+                show,
+                hide,
+                region: region.filter(|r| r.len() == 4).map(|r| [r[0], r[1], r[2], r[3]]),
             };
             let png = agentee_view::render_png(&p, r, &opts);
             std::fs::write(&out, png).map_err(|e| format!("{}: {e}", out.display()))?;
