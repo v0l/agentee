@@ -219,15 +219,63 @@ pub struct Sim {
     pub port_src: Vec<Vec<(usize, usize, f32)>>,
     pub inductors: Vec<(usize, usize, f32, f32)>,
     pub sheets: Vec<SheetEdge>,
+    pub skin: Skin,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct SheetEdge {
     pub comp: usize,
     pub id: usize,
+    pub r: f64,
+    pub adaptive: bool,
+    pub len: f64,
+    pub c: f64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Skin {
+    pub branches: Vec<(f64, f64)>,
     pub g: f64,
-    pub x_sig: f64,
-    pub c0: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SkinBand {
+    pub omega0: f64,
+    pub x_min: f64,
+    pub x_max: f64,
+}
+
+pub fn skin_poles(x_min: f64, x_max: f64) -> (Vec<(f64, f64)>, f64) {
+    let span = (x_max / x_min).ln();
+    let n = (span / 0.6).ceil().max(1.0) as usize;
+    let h = span / n as f64;
+    let pi = std::f64::consts::PI;
+    let poles = (0..=n)
+        .map(|k| {
+            let x = x_min * (k as f64 * h).exp();
+            let mut w = if k == 0 || k == n { 0.5 * h } else { h } * x.sqrt() / pi;
+            if k == 0 {
+                w += 2.0 * x_min.sqrt() / pi;
+            }
+            (x, w)
+        })
+        .collect();
+    (poles, 2.0 / (pi * x_max.sqrt()))
+}
+
+impl Skin {
+    fn new(band: SkinBand, dt: f64) -> Skin {
+        let (poles, g) = skin_poles(band.x_min, band.x_max);
+        let scale = (0.5 * band.omega0).sqrt();
+        let branches = poles
+            .into_iter()
+            .map(|(x, w)| {
+                let d = 1.0 + 0.5 * x * dt;
+                ((1.0 - 0.5 * x * dt) / d, scale * w * dt / (2.0 * d))
+            })
+            .collect();
+        Skin { branches, g: scale * g }
+    }
 }
 
 pub struct Materials {
@@ -256,6 +304,7 @@ impl Sim {
         lumped: &[Lumped],
         ports: Vec<PortDef>,
         resistive: &[(usize, usize, f64, bool)],
+        band: SkinBand,
     ) -> Sim {
         let dt = time_step(&grid);
         let pml = grid.pml;
@@ -358,19 +407,16 @@ impl Sim {
         let mut sheets = Vec::new();
         for (comp, id, r, adaptive) in resistive {
             let e = Edge { comp: *comp, at: unidx(n, *id) };
-            resistor(&mut ca, &mut cb, &e, *r);
-            if !adaptive {
-                continue;
-            }
-            let eps = eps_edge[*comp][*id];
             sheets.push(SheetEdge {
                 comp: *comp,
                 id: *id,
-                g: dt * length(&e) / (2.0 * r * eps * area(&e)),
-                x_sig: sig_edge[*comp][*id] * dt / (2.0 * eps),
-                c0: dt / eps,
+                r: *r,
+                adaptive: *adaptive,
+                len: length(&e),
+                c: cb[*comp][*id] as f64 / area(&e),
             });
         }
+        let skin = Skin::new(band, dt);
         let mut port_src = Vec::new();
         for p in &ports {
             let cols = p.columns.len().max(1) as f64;
@@ -396,7 +442,7 @@ impl Sim {
                 }
             }
         }
-        Sim { grid, ax, dt, ca, cb, pml, ports, port_src, inductors, sheets }
+        Sim { grid, ax, dt, ca, cb, pml, ports, port_src, inductors, sheets, skin }
     }
 
     pub fn dims(&self) -> [usize; 3] {
@@ -411,4 +457,26 @@ pub fn unidx(n: [usize; 3], id: usize) -> [usize; 3] {
 pub fn pulse_shape(fc: f64) -> (f64, f64) {
     let tau = 10f64.ln().sqrt() / (std::f64::consts::PI * fc);
     (4.0 * tau, tau)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn skin_poles_follow_one_over_root_s() {
+        let (poles, g) = skin_poles(1e6, 1e13);
+        for w in [2e7, 1e9, 3e10, 5e11] {
+            let mut y = (g, 0.0);
+            for (x, a) in &poles {
+                let d = x * x + w * w;
+                y.0 += a * x / d;
+                y.1 -= a * w / d;
+            }
+            let exact = (1.0 / (2.0 * w).sqrt(), -1.0 / (2.0 * w).sqrt());
+            let err = ((y.0 - exact.0).powi(2) + (y.1 - exact.1).powi(2)).sqrt()
+                / (exact.0.powi(2) + exact.1.powi(2)).sqrt();
+            assert!(err < 0.01, "{w}: {y:?} vs {exact:?}");
+        }
+    }
 }

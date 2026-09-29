@@ -43,8 +43,9 @@ struct Params {
 @group(1) @binding(5) var<storage, read_write> plane_acc: array<f32>;
 @group(1) @binding(6) var<storage, read> patch_idx: array<u32>;
 @group(1) @binding(7) var<storage, read_write> ntff_acc: array<f32>;
-@group(1) @binding(8) var<storage, read_write> coef_rw: array<f32>;
+@group(1) @binding(8) var<storage, read> branch: array<f32>;
 @group(1) @binding(9) var<storage, read_write> sheet: array<f32>;
+@group(1) @binding(10) var<storage, read_write> current: array<f32>;
 
 const STRIDE: u32 = 10u;
 
@@ -155,31 +156,56 @@ fn update_e(@builtin(global_invocation_id) g: vec3<u32>) {
     curl_e(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
 }
 
+const SHEET: u32 = 12u;
+
 @compute @workgroup_size(64, 1, 1)
-fn sheets(@builtin(global_invocation_id) g: vec3<u32>) {
+fn sheet_pre(@builtin(global_invocation_id) g: vec3<u32>) {
     let s = g.x;
     if s >= P.sheets { return; }
-    let b = s * 10u;
-    let f = bitcast<u32>(sheet[b]);
+    let b = s * SHEET;
+    sheet[b + 11u] = e[bitcast<u32>(sheet[b])];
+    if sheet[b + 6u] == 0.0 { return; }
     let ha = h_ro[bitcast<u32>(sheet[b + 1u])];
     let hb = h_ro[bitcast<u32>(sheet[b + 2u])];
-    let aa = sheet[b + 6u] + ha * ha;
-    let bb = sheet[b + 7u] + hb * hb;
-    let ab = sheet[b + 8u] + ha * hb;
-    sheet[b + 6u] = aa;
-    sheet[b + 7u] = bb;
-    sheet[b + 8u] = ab;
+    let aa = sheet[b + 7u] + ha * ha;
+    let bb = sheet[b + 8u] + hb * hb;
+    let ab = sheet[b + 9u] + ha * hb;
+    sheet[b + 7u] = aa;
+    sheet[b + 8u] = bb;
+    sheet[b + 9u] = ab;
     let total = aa + bb - 2.0 * ab;
-    var factor = 1.0;
     if total > 1e-30 {
-        factor = clamp((aa + bb) / total, 0.5, 4.0);
+        sheet[b + 10u] = clamp((aa + bb) / total, 0.5, 4.0);
     }
-    if abs(factor - sheet[b + 9u]) < 1e-3 { return; }
-    sheet[b + 9u] = factor;
-    let beta = sheet[b + 3u] / factor + sheet[b + 4u];
-    coef_rw[f] = (1.0 - beta) / (1.0 + beta);
-    let c = f / P.nn;
-    coef_rw[(3u + c) * P.nn + (f % P.nn)] = sheet[b + 5u] / (1.0 + beta);
+}
+
+@compute @workgroup_size(64, 1, 1)
+fn sheet_post(@builtin(global_invocation_id) g: vec3<u32>) {
+    let s = g.x;
+    if s >= P.sheets { return; }
+    let b = s * SHEET;
+    let f = bitcast<u32>(sheet[b]);
+    let len = sheet[b + 3u];
+    let c = sheet[b + 4u];
+    let y = sheet[b + 5u] / sheet[b + 10u];
+    let old = sheet[b + 11u];
+    let nb = u32(branch[0]);
+    let base = s * nb;
+    var s0 = 0.0;
+    var bsum = branch[1];
+    for (var k = 0u; k < nb; k++) {
+        let alpha = branch[2u + 2u * k];
+        s0 += 0.5 * (1.0 + alpha) * current[base + k];
+        bsum += branch[3u + 2u * k];
+    }
+    let q = 0.5 * c * len * y * bsum;
+    let next = (e[f] - c * s0 - q * old) / (1.0 + q);
+    e[f] = next;
+    let v = len * (next + old);
+    for (var k = 0u; k < nb; k++) {
+        let alpha = branch[2u + 2u * k];
+        current[base + k] = alpha * current[base + k] + y * branch[3u + 2u * k] * v;
+    }
 }
 
 fn pulse(t: f32) -> f32 {

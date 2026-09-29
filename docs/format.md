@@ -583,9 +583,13 @@ supports. The viewer shows the same TDR for every driven port under the `tdr` ta
 ### Losses in the FDTD
 
 Dielectrics carry their loss tangent as a conductivity fixed at the band centre, which lands within
-3% of the Hammerstad filling-factor formula on a 50 ohm microstrip. Copper layers are resistive
-sheets with the skin-effect surface resistance at the band centre, times the stackup roughness
-factor. A zero-thickness sheet has one current, while real copper carries it on two faces, so
+3% of the Hammerstad filling-factor formula on a 50 ohm microstrip. Copper layers are sheets
+with the skin-effect surface impedance, sqrt(j w mu / sigma), so both the resistance and the
+internal inductance follow sqrt(f) across the band. In the time domain that impedance is a sum
+of about 20 RL branches per sheet edge (poles log-spaced from the frequency where the skin depth
+reaches the copper thickness up to 100 times the top frequency, within 1% of sqrt(f)), updated
+implicitly so the sheet stays stable at any time step. The stackup roughness factor is taken at
+the band centre. A zero-thickness sheet has one current, while real copper carries it on two faces, so
 each sheet edge tracks the magnetic field just above and below it through the run and scales its
 resistance by (Jtop^2 + Jbottom^2) / (Jtop + Jbottom)^2: one half for a centred stripline, close to
 one for a trace over a plane. The current crowding at a trace edge is narrower than a cell, so

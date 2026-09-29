@@ -114,6 +114,10 @@ pub fn run(
         inductor.extend_from_slice(&[*comp as f32, *id as f32, *ke, *ki, 0.0]);
     }
     let mut sheets = Vec::new();
+    let mut branches = vec![sim.skin.branches.len() as f32, sim.skin.g as f32];
+    for (a, b) in &sim.skin.branches {
+        branches.extend_from_slice(&[*a as f32, *b as f32]);
+    }
     for s in &sim.sheets {
         let (hc, ok) = match s.comp {
             0 => (1usize, true),
@@ -128,16 +132,18 @@ pub fn run(
             bits(s.comp * nn + s.id),
             bits(hc * nn + s.id),
             bits(hc * nn + s.id - 1),
-            s.g as f32,
-            s.x_sig as f32,
-            s.c0 as f32,
+            s.len as f32,
+            s.c as f32,
+            (1.0 / s.r) as f32,
+            if s.adaptive { 1.0 } else { 0.0 },
             0.0,
             0.0,
             0.0,
+            1.0,
             0.0,
         ]);
     }
-    let sheet_count = sheets.len() / 10;
+    let sheet_count = sheets.len() / 12;
     let mut probe_def = Vec::new();
     let mut port_edges = Vec::new();
     let mut loops = Vec::new();
@@ -252,6 +258,9 @@ pub fn run(
     );
     let b_ntff = g.zeroed("ntff", ((patches * nf * 12).max(1) * 4) as u64);
     let b_sheets = g.storage("sheets", &nonempty(sheets));
+    let b_branches = g.storage("branches", &branches);
+    let b_currents =
+        g.zeroed("currents", ((sheet_count * sim.skin.branches.len()).max(1) * 4) as u64);
     let module = unsafe {
         g.device.create_shader_module_trusted(
             wgpu::ShaderModuleDescriptor {
@@ -274,7 +283,7 @@ pub fn run(
         (9, &b_h),
         (10, &b_h),
     ];
-    let group1: [(u32, &wgpu::Buffer); 10] = [
+    let group1: [(u32, &wgpu::Buffer); 11] = [
         (0, &b_inductor),
         (1, &b_probe),
         (2, &b_partial),
@@ -283,8 +292,9 @@ pub fn run(
         (5, &b_plane),
         (6, &b_patch),
         (7, &b_ntff),
-        (8, &b_coef),
+        (8, &b_branches),
         (9, &b_sheets),
+        (10, &b_currents),
     ];
     let make = |entry: &str, uses0: &[u32], uses1: &[u32]| {
         let pipe = g.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -322,11 +332,15 @@ pub fn run(
     let grid = [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), n[0] as u32];
     let lumped_n = (sim.port_src[driven].len().max(sim.inductors.len()) as u32).div_ceil(64).max(1);
     let mut pipes = vec![(make("update_h", &[2, 3, 4, 8, 9], &[]), grid)];
+    let sheet_groups = [(sheet_count as u32).div_ceil(64), 1, 1];
     if sheet_count > 0 {
-        pipes.push((make("sheets", &[4, 10], &[8, 9]), [(sheet_count as u32).div_ceil(64), 1, 1]));
+        pipes.push((make("sheet_pre", &[0, 4, 10], &[9]), sheet_groups));
+    }
+    pipes.extend([(make("update_e", &[0, 1, 2, 3, 4, 10], &[]), grid)]);
+    if sheet_count > 0 {
+        pipes.push((make("sheet_post", &[0, 4], &[8, 9, 10]), sheet_groups));
     }
     pipes.extend([
-        (make("update_e", &[0, 1, 2, 3, 4, 10], &[]), grid),
         (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),
         (make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [(ports as u32).div_ceil(64), 1, 1]),
     ]);

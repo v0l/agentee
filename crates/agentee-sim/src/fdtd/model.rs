@@ -595,7 +595,22 @@ impl PcbModel {
             z: grid.z.iter().map(|v| v * 1e-3).collect(),
             pml: grid.pml,
         };
-        Ok(Sim::new(metres, &mats, &pec, &lumped, ports, &resistive))
+        let pi = std::f64::consts::PI;
+        let thinnest =
+            self.sheets.iter().map(|s| s.thickness).filter(|t| *t > 0.0).fold(f64::MAX, f64::min);
+        let dc = if thinnest < f64::MAX {
+            let t = thinnest * 1e-3;
+            crate::loss::COPPER / (engine::MU0 * t * t)
+        } else {
+            0.0
+        };
+        let omega0 = 2.0 * pi * opt.f0.max(1e6);
+        let band = engine::SkinBand {
+            omega0,
+            x_min: (omega0 / 1000.0).max(dc),
+            x_max: 2.0 * pi * opt.f_max.max(opt.f0) * 100.0,
+        };
+        Ok(Sim::new(metres, &mats, &pec, &lumped, ports, &resistive, band))
     }
 }
 
