@@ -567,3 +567,26 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 3. `agentee new board NAME`, pick a stackup preset and fab, add net classes.
 4. `agentee check` until there are no errors, `agentee render NAME -o out.png` to look.
 5. `agentee view` keeps a live window open for a human.
+6. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
+
+## Fab package
+
+`agentee fab pcb:NAME -o DIR` (MCP `fab`) writes:
+
+| file | what |
+|---|---|
+| `F_Cu.gbr` ... `B_Cu.gbr` | copper per layer, RS-274X with X2 file attributes, zone fills as regions |
+| `F_Mask.gbr`, `B_Mask.gbr` | mask openings at the pad outlines, vias tented |
+| `F_Paste.gbr`, `B_Paste.gbr` | paste on SMD pads |
+| `F_SilkS.gbr`, `B_SilkS.gbr` | silk lines, artwork and text in the Hershey stroke font |
+| `Edge_Cuts.gbr` | the board outline |
+| `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
+| `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
+| `cpl.csv` | placement, JLCPCB columns |
+| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill |
+| `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |
+
+Coordinates are mm with Y up, the same in the Gerbers and the placement file. Parts marked `dnp`,
+with `assembly = "no"` in their fields, or on MountingHole and Fiducial footprints stay off the
+BOM and placement file. The silk font is the one the viewer draws, so text sizes and overlaps
+read the same on screen as on the board.

@@ -1,0 +1,432 @@
+pub mod contour;
+pub mod gerber;
+
+use agentee_core::board::{Board, LayerKind};
+use agentee_core::font;
+use agentee_core::footprint::{PadKind, graphic_path};
+use agentee_core::geom::P;
+use agentee_core::graphic::{Fill, Shape};
+use agentee_core::layout::Layout;
+use agentee_core::schematic::Schematic;
+use gerber::Gerber;
+use serde::Serialize;
+use std::fmt::Write;
+use std::path::Path;
+
+#[derive(Serialize)]
+pub struct Report {
+    pub dir: String,
+    pub files: Vec<String>,
+    pub parts_placed: usize,
+    pub bom_lines: usize,
+    pub holes: usize,
+}
+
+fn layer_file(name: &str) -> String {
+    name.replace('.', "_")
+}
+
+fn copper_function(i: usize, n: usize) -> String {
+    let side = if i == 0 {
+        "Top"
+    } else if i + 1 == n {
+        "Bot"
+    } else {
+        "Inr"
+    };
+    format!("Copper,L{},{side}", i + 1)
+}
+
+type Rings = Vec<Vec<P>>;
+type Filled = (Rings, Rings);
+type BomKey = (String, String, String, String);
+
+fn copper(layout: &Layout, layer: &str, function: &str) -> Gerber {
+    let mut g = Gerber::new(function);
+    let mut zones: Vec<Filled> = Vec::new();
+    for z in layout.zones.iter().filter(|z| z.layer == layer) {
+        let rings = contour::loops(&z.mask, z.width, z.height, z.origin, z.cell);
+        let (outer, holes): (Vec<_>, Vec<_>) =
+            rings.into_iter().partition(|r| contour::area(r) > 0.0);
+        zones.push((outer, holes));
+    }
+    let depth = |k: usize| {
+        let Some(p) = zones[k].0.first().and_then(|r| r.first()) else { return 0 };
+        zones
+            .iter()
+            .enumerate()
+            .filter(|(j, z)| {
+                *j != k && z.1.iter().any(|h| agentee_core::geom::point_in_polygon(*p, h))
+            })
+            .count()
+    };
+    let mut order: Vec<usize> = (0..zones.len()).collect();
+    order.sort_by_key(|k| depth(*k));
+    for k in order {
+        g.polarity(true);
+        for r in &zones[k].0 {
+            g.region(r);
+        }
+        g.polarity(false);
+        for r in &zones[k].1 {
+            g.region(r);
+        }
+    }
+    g.polarity(true);
+    for t in layout.tracks.iter().filter(|t| t.layer == layer) {
+        g.stroke(&t.points, t.width);
+    }
+    for part in &layout.parts {
+        for pad in part.pads.iter().filter(|q| q.copper.iter().any(|c| c == layer)) {
+            for o in &pad.outlines {
+                g.region(o);
+            }
+        }
+    }
+    for v in layout.vias.iter().filter(|v| v.layers.iter().any(|l| l == layer)) {
+        g.flash_circle(v.at, v.diameter);
+    }
+    g
+}
+
+fn openings(layout: &Layout, layer: &str, function: &str, paste: bool) -> Gerber {
+    let mut g = Gerber::new(function);
+    for part in &layout.parts {
+        for pad in &part.pads {
+            let on = if paste {
+                pad.paste.iter().any(|m| m == layer)
+            } else {
+                pad.mask.iter().any(|m| m == layer)
+            };
+            if on {
+                for o in &pad.outlines {
+                    g.region(o);
+                }
+            }
+        }
+    }
+    g
+}
+
+fn silk(layout: &Layout, board: &Board, layer: &str, function: &str) -> Gerber {
+    let mut g = Gerber::new(function);
+    let min = board.rules.min_silk_width.to_mm();
+    for a in layout.artwork.iter().filter(|a| a.layer == layer) {
+        for r in &a.polygons {
+            g.region(r);
+        }
+    }
+    let draw = |g: &mut Gerber,
+                gr: &agentee_core::graphic::Graphic,
+                tf: &agentee_core::geom::Transform| {
+        if matches!(gr.shape, Shape::Text { .. }) {
+            return;
+        }
+        let path: Vec<P> = graphic_path(gr).into_iter().map(|p| tf.apply(p)).collect();
+        if gr.fill == Fill::Solid && path.len() >= 3 {
+            g.region(&path);
+        }
+        g.stroke(&path, gr.width.to_mm().max(min));
+    };
+    let identity = agentee_core::geom::Transform { at: [0.0, 0.0], rotation: 0.0, mirror: false };
+    for gr in layout.graphics.iter().filter(|g| g.layer == layer) {
+        draw(&mut g, gr, &identity);
+    }
+    for part in &layout.parts {
+        let tf = part.transform();
+        for gr in &part.footprint.graphics {
+            if part.flip_layer(&gr.layer) == layer {
+                draw(&mut g, gr, &tf);
+            }
+        }
+    }
+    let mut texts: Vec<_> =
+        layout.parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
+    texts.extend(layout.board_texts());
+    let bottom = layer.starts_with("B.");
+    for t in texts.iter().filter(|t| t.layer == layer) {
+        let w = font::default_thickness(t.size).max(min);
+        for st in font::strokes(&t.text, t.at, t.size, t.rotation, t.anchor, bottom) {
+            g.stroke(&st, w);
+        }
+    }
+    g
+}
+
+fn edge(layout: &Layout) -> Gerber {
+    let mut g = Gerber::new("Profile,NP");
+    let mut ring = layout.outline.clone();
+    if let Some(f) = ring.first().copied() {
+        ring.push(f);
+    }
+    g.stroke(&ring, 0.1);
+    g
+}
+
+struct Hole {
+    at: P,
+    size: [f64; 2],
+    rotation: f64,
+    plated: bool,
+}
+
+fn holes(layout: &Layout) -> Vec<Hole> {
+    let mut v: Vec<Hole> = layout
+        .vias
+        .iter()
+        .map(|x| Hole { at: x.at, size: [x.drill, x.drill], rotation: 0.0, plated: true })
+        .collect();
+    for part in &layout.parts {
+        for pad in &part.pads {
+            if let Some((at, size, rot)) = pad.drill {
+                v.push(Hole { at, size, rotation: rot, plated: pad.kind != PadKind::Npth });
+            }
+        }
+    }
+    v
+}
+
+fn excellon(holes: &[&Hole], plated: bool, layers: usize) -> String {
+    let mut tools: Vec<f64> = Vec::new();
+    for h in holes {
+        let d = (h.size[0].min(h.size[1]) * 1000.0).round() / 1000.0;
+        if !tools.iter().any(|t| (t - d).abs() < 1e-9) {
+            tools.push(d);
+        }
+    }
+    tools.sort_by(f64::total_cmp);
+    let mut out = String::new();
+    out += "M48\n";
+    let _ = writeln!(
+        out,
+        "; #@! TF.FileFunction,{},1,{},{}",
+        if plated { "Plated" } else { "NonPlated" },
+        layers,
+        if plated { "PTH" } else { "NPTH" }
+    );
+    out += "FMAT,2\nMETRIC\n";
+    for (i, t) in tools.iter().enumerate() {
+        let _ = writeln!(out, "T{}C{:.3}", i + 1, t);
+    }
+    out += "%\nG90\nG05\n";
+    let c = |v: f64| format!("{:.3}", v);
+    for (i, t) in tools.iter().enumerate() {
+        let mine: Vec<&&Hole> = holes
+            .iter()
+            .filter(|h| ((h.size[0].min(h.size[1]) * 1000.0).round() / 1000.0 - t).abs() < 1e-9)
+            .collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let _ = writeln!(out, "T{}", i + 1);
+        for h in mine {
+            let (w, hgt) = (h.size[0], h.size[1]);
+            if (w - hgt).abs() < 1e-6 {
+                let _ = writeln!(out, "X{}Y{}", c(h.at[0]), c(-h.at[1]));
+            } else {
+                let half = (w.max(hgt) - w.min(hgt)) / 2.0;
+                let along = if w > hgt { h.rotation } else { h.rotation + 90.0 };
+                let d = agentee_core::geom::rotate([half, 0.0], along);
+                let (a, b) = ([h.at[0] - d[0], h.at[1] - d[1]], [h.at[0] + d[0], h.at[1] + d[1]]);
+                let _ = writeln!(out, "X{}Y{}G85X{}Y{}", c(a[0]), c(-a[1]), c(b[0]), c(-b[1]));
+            }
+        }
+    }
+    out += "M30\n";
+    out
+}
+
+fn csv(cells: &[String]) -> String {
+    cells
+        .iter()
+        .map(|c| {
+            if c.contains([',', '"', '\n']) {
+                format!("\"{}\"", c.replace('"', "\"\""))
+            } else {
+                c.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn assembled(layout: &Layout, sch: &Schematic, reference: &str) -> bool {
+    let part = sch.parts.iter().find(|p| p.reference == reference);
+    let dnp = part.is_some_and(|p| p.dnp || p.fields.get("assembly").is_some_and(|v| v == "no"));
+    let mech = layout.parts.iter().find(|p| p.reference == reference).is_some_and(|p| {
+        p.footprint_name.starts_with("MountingHole") || p.footprint_name.starts_with("Fiducial")
+    });
+    !dnp && !mech
+}
+
+fn bom(layout: &Layout, sch: &Schematic) -> (String, String, usize) {
+    let mut groups: Vec<(BomKey, Vec<String>)> = Vec::new();
+    for p in &sch.parts {
+        if !assembled(layout, sch, &p.reference) {
+            continue;
+        }
+        let fp = p.footprint.clone().unwrap_or_default();
+        let mpn = p.fields.get("mpn").cloned().unwrap_or_default();
+        let lcsc = p.fields.get("lcsc").cloned().unwrap_or_default();
+        let key = (p.value.clone(), fp, mpn, lcsc);
+        match groups.iter_mut().find(|g| g.0 == key) {
+            Some(g) => g.1.push(p.reference.clone()),
+            None => groups.push((key, vec![p.reference.clone()])),
+        }
+    }
+    for g in groups.iter_mut() {
+        g.1.sort_by(|a, b| agentee_core::footprint::natural_cmp(a, b));
+    }
+    groups.sort_by(|a, b| agentee_core::footprint::natural_cmp(&a.1[0], &b.1[0]));
+    let mut generic = String::from("Qty,Designators,Value,Footprint,MPN\n");
+    let mut jlc = String::from("Comment,Designator,Footprint,LCSC Part #\n");
+    for ((value, fp, mpn, lcsc), refs) in &groups {
+        let _ = writeln!(
+            generic,
+            "{}",
+            csv(&[refs.len().to_string(), refs.join(","), value.clone(), fp.clone(), mpn.clone()])
+        );
+        let _ =
+            writeln!(jlc, "{}", csv(&[value.clone(), refs.join(","), fp.clone(), lcsc.clone()]));
+    }
+    (generic, jlc, groups.len())
+}
+
+fn cpl(layout: &Layout, sch: &Schematic) -> (String, usize) {
+    let mut out = String::from("Designator,Mid X,Mid Y,Layer,Rotation\n");
+    let mut n = 0;
+    let mut parts: Vec<_> =
+        layout.parts.iter().filter(|p| assembled(layout, sch, &p.reference)).collect();
+    parts.sort_by(|a, b| agentee_core::footprint::natural_cmp(&a.reference, &b.reference));
+    for p in parts {
+        let at = p.at.to_mm();
+        let _ = writeln!(
+            out,
+            "{}",
+            csv(&[
+                p.reference.clone(),
+                format!("{:.4}mm", at[0]),
+                format!("{:.4}mm", -at[1]),
+                if p.bottom { "Bottom".into() } else { "Top".into() },
+                format!("{}", p.rotation.rem_euclid(360.0)),
+            ])
+        );
+        n += 1;
+    }
+    (out, n)
+}
+
+fn notes(layout: &Layout, board: &Board) -> String {
+    let st = &board.stackup;
+    let mut out = String::new();
+    let _ = writeln!(out, "Board {} ({})", board.name, board.description);
+    let _ = writeln!(out, "Layout {}", layout.name);
+    let mut b = agentee_core::graphic::Bounds::EMPTY;
+    layout.outline.iter().for_each(|p| b.add(*p));
+    if !b.is_empty() {
+        let [w, h] = b.size();
+        let _ = writeln!(out, "Outline {w:.2} x {h:.2} mm");
+    }
+    let _ = writeln!(out, "Finished thickness {:.2} mm", st.thickness().to_mm());
+    let _ = writeln!(out, "Finish {}, mask {}, silk {}", st.finish, st.mask_color, st.silk_color);
+    if let Some(p) = &st.preset {
+        let _ = writeln!(out, "Stackup preset {p}");
+    }
+    out += "\nStackup, top to bottom:\n";
+    for l in &st.layers {
+        let extra = if l.kind.is_dielectric() {
+            format!(", {} er {:.2}", l.material, l.er)
+        } else {
+            String::new()
+        };
+        let _ = writeln!(out, "  {:<10} {:?} {:.4} mm{extra}", l.name, l.kind, l.thickness.to_mm());
+    }
+    let controlled: Vec<_> = board.netclasses.iter().filter(|n| n.impedance.is_some()).collect();
+    if !controlled.is_empty() {
+        out += "\nControlled impedance:\n";
+        for n in controlled {
+            let _ = writeln!(
+                out,
+                "  {}: {} ohm +/-{}%, track {:.3} mm{}",
+                n.name,
+                n.impedance.map(|z| z.0).unwrap_or_default(),
+                n.impedance_tolerance.0,
+                n.track_width.to_mm(),
+                n.coplanar_gap
+                    .map(|g| format!(", coplanar gap {:.3} mm", g.to_mm()))
+                    .unwrap_or_default()
+            );
+        }
+    }
+    let in_pad = layout.vias.iter().filter(|v| {
+        layout.parts.iter().flat_map(|p| p.pads.iter()).any(|q| {
+            q.drill.is_none()
+                && q.outlines.iter().any(|o| agentee_core::geom::point_in_polygon(v.at, o))
+        })
+    });
+    let n = in_pad.count();
+    if n > 0 {
+        let _ = writeln!(out, "\n{n} vias sit in SMD pads: fill and cap them (IPC-4761 type VII).");
+    }
+    out += "\nCoordinates are mm, origin at the board's top-left corner, Y up in the Gerbers.\n";
+    out
+}
+
+pub fn package(
+    layout: &Layout,
+    board: &Board,
+    sch: &Schematic,
+    dir: &Path,
+) -> Result<Report, String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let mut files = Vec::new();
+    let mut write = |name: String, body: String| -> Result<(), String> {
+        std::fs::write(dir.join(&name), body).map_err(|e| format!("{name}: {e}"))?;
+        files.push(name);
+        Ok(())
+    };
+    let cu = &layout.copper;
+    for (i, l) in cu.iter().enumerate() {
+        write(
+            format!("{}.gbr", layer_file(l)),
+            copper(layout, l, &copper_function(i, cu.len())).finish(),
+        )?;
+    }
+    let names: Vec<(String, LayerKind)> =
+        board.stackup.layers.iter().map(|l| (l.name.clone(), l.kind)).collect();
+    for (name, kind) in names {
+        let top = name.starts_with("F.");
+        let side = if top { "Top" } else { "Bot" };
+        let g = match kind {
+            LayerKind::Mask => openings(layout, &name, &format!("Soldermask,{side}"), false),
+            LayerKind::Paste => openings(layout, &name, &format!("Paste,{side}"), true),
+            LayerKind::Silk => silk(layout, board, &name, &format!("Legend,{side}")),
+            _ => continue,
+        };
+        if kind == LayerKind::Paste && g.is_empty() {
+            continue;
+        }
+        write(format!("{}.gbr", layer_file(&name)), g.finish())?;
+    }
+    write("Edge_Cuts.gbr".into(), edge(layout).finish())?;
+    let hs = holes(layout);
+    let pth: Vec<&Hole> = hs.iter().filter(|h| h.plated).collect();
+    let npth: Vec<&Hole> = hs.iter().filter(|h| !h.plated).collect();
+    write("drill-PTH.drl".into(), excellon(&pth, true, cu.len()))?;
+    if !npth.is_empty() {
+        write("drill-NPTH.drl".into(), excellon(&npth, false, cu.len()))?;
+    }
+    let (generic, jlc, lines) = bom(layout, sch);
+    write("bom.csv".into(), generic)?;
+    write("bom-jlcpcb.csv".into(), jlc)?;
+    let (placement, placed) = cpl(layout, sch);
+    write("cpl.csv".into(), placement)?;
+    write("fab-notes.txt".into(), notes(layout, board))?;
+    Ok(Report {
+        dir: dir.display().to_string(),
+        files,
+        parts_placed: placed,
+        bom_lines: lines,
+        holes: hs.len(),
+    })
+}

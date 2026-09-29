@@ -2,6 +2,7 @@ pub mod artwork;
 pub mod board;
 pub mod calc;
 pub mod diag;
+pub mod font;
 pub mod footprint;
 pub mod geom;
 pub mod graphic;

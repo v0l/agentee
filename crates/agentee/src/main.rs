@@ -147,6 +147,14 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Write the fab package for a layout: Gerbers, drill, BOM, placement, notes
+    Fab {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+    },
     /// Trace calculators
     Calc {
         #[command(subcommand)]
@@ -398,6 +406,11 @@ fn run(cli: Cli) -> Result<bool, String> {
                 }
             })?;
             print_json(&v);
+            Ok(true)
+        }
+        Cmd::Fab { name, project, out } => {
+            let p = ops::load(&project)?;
+            print_json(&ops::fab(&p, &name, &out)?);
             Ok(true)
         }
         Cmd::Docs => {

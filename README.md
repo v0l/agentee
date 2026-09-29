@@ -96,3 +96,6 @@ KiCad libraries are found under `/usr/share/kicad` or `KICAD9_SYMBOL_DIR` /
 
 ![symbol](docs/symbol.png)
 ![footprint](docs/footprint.png)
+
+The silkscreen font is Hershey Sans 1-stroke; see `crates/agentee-core/HERSHEY.txt` for its
+acknowledgements.

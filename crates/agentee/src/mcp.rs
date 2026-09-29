@@ -111,6 +111,11 @@ fn tools() -> Value {
             "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
         },
         {
+            "name": "fab",
+            "description": "Write the fab package for a layout into a folder: RS-274X Gerbers (X2) per copper, mask, paste, silk and edge layer, Excellon drills, BOM (generic and JLCPCB), pick-and-place, fab notes and assembly drawings. Refuses while the layout has errors.",
+            "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output folder, relative to the project" } }), &["name", "out"]),
+        },
+        {
             "name": "field_solve",
             "description": "Solve a trace cross-section with the GPU field solver: impedance, effective permittivity, C and L per metre, delay. Includes solder mask, thickness, coplanar grounds and differential pairs. Within 0.5% of exact references with fine = true.",
             "inputSchema": s(json!({
@@ -308,6 +313,15 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 &mut |_, _, _| {},
             )?;
             Ok(ok(vec![text(pretty(&v))]))
+        }
+        "fab" => {
+            let p = ops::load(root)?;
+            let out = root.join(arg(a, "out").ok_or("out is required")?);
+            Ok(ok(vec![text(pretty(&ops::fab(
+                &p,
+                arg(a, "name").ok_or("name is required")?,
+                &out,
+            )?))]))
         }
         "field_solve" => {
             let p = ops::load(root)?;

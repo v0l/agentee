@@ -542,6 +542,67 @@ fn run_cascade(
     }))
 }
 
+pub fn fab(p: &Project, name: &str, out: &std::path::Path) -> Result<Value, String> {
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let entry = &p.layouts[i];
+    let errors: Vec<String> = entry
+        .diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message.clone())
+        .collect();
+    if !errors.is_empty() {
+        return Err(format!("{} has errors, fix them first: {}", entry.name, errors.join("; ")));
+    }
+    let layout = &entry.item;
+    let board = p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
+    let sch =
+        p.schematics.iter().find(|s| s.name == layout.schematic).ok_or("schematic is missing")?;
+    let report = agentee_fab::package(layout, &board.item, &sch.item, out)?;
+    let mut files = report.files.clone();
+    for (side, show, hide) in [
+        (
+            "top",
+            vec!["F.Fab", "F.SilkS", "Edge.Cuts"],
+            vec!["In1.Cu", "In2.Cu", "B.Cu", "B.SilkS", "B.Fab"],
+        ),
+        (
+            "bottom",
+            vec!["B.Fab", "B.SilkS", "Edge.Cuts"],
+            vec!["F.Cu", "In1.Cu", "In2.Cu", "F.SilkS", "F.Fab"],
+        ),
+    ] {
+        let opts = agentee_view::RenderOptions {
+            width: 2000,
+            height: 1400,
+            scale: 1.0,
+            unit: 1,
+            panels: false,
+            hidden_pins: false,
+            show: show.into_iter().map(String::from).collect(),
+            hide: hide.into_iter().map(String::from).collect(),
+            region: None,
+        };
+        let png = agentee_view::render_png(p, r, &opts);
+        let name = format!("assembly-{side}.png");
+        std::fs::write(out.join(&name), png).map_err(|e| e.to_string())?;
+        files.push(name);
+    }
+    let warnings = entry.diags.iter().filter(|d| d.severity == Severity::Warning).count();
+    Ok(json!({
+        "layout": entry.name,
+        "dir": report.dir,
+        "files": files,
+        "parts_placed": report.parts_placed,
+        "bom_lines": report.bom_lines,
+        "holes": report.holes,
+        "warnings": warnings,
+    }))
+}
+
 pub struct FieldQuery<'a> {
     pub board: Option<&'a str>,
     pub layer: &'a str,

@@ -66,8 +66,9 @@ pub struct SilkText {
 
 impl SilkText {
     pub fn outline(&self) -> Vec<P> {
-        let w = self.size * 0.66 * self.text.chars().count() as f64;
-        let h = self.size * 1.1;
+        let pen = crate::font::default_thickness(self.size);
+        let w = crate::font::ink_width(&self.text, self.size) + pen;
+        let h = self.size + pen;
         let x0 = match self.anchor {
             crate::graphic::Anchor::Left => 0.0,
             crate::graphic::Anchor::Center => -w / 2.0,
@@ -179,6 +180,7 @@ pub struct PlacedPad {
     pub outlines: Vec<Vec<P>>,
     pub copper: Vec<String>,
     pub mask: Vec<String>,
+    pub paste: Vec<String>,
     pub drill: Option<(P, [f64; 2], f64)>,
 }
 
@@ -543,6 +545,11 @@ impl LayoutFile {
                             .collect(),
                         copper: layers,
                         mask: ["F.Mask", "B.Mask"]
+                            .into_iter()
+                            .filter(|m| pad.on_layer(m))
+                            .map(|m| flip(m, bottom))
+                            .collect(),
+                        paste: ["F.Paste", "B.Paste"]
                             .into_iter()
                             .filter(|m| pad.on_layer(m))
                             .map(|m| flip(m, bottom))
