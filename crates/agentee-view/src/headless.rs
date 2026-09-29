@@ -60,6 +60,15 @@ pub fn render_rgba(
         layers.hidden.retain(|h| !opts.show.contains(h));
         layers.hidden.extend(opts.hide.iter().cloned());
     }
+    st.view_3d = opts.show.iter().any(|x| x == "3d" || x == "3d-top" || x == "3d-bottom");
+    if opts.show.iter().any(|x| x == "3d-top") {
+        st.camera.pitch = 1.5;
+        st.camera.yaw = 0.0;
+    }
+    if opts.show.iter().any(|x| x == "3d-bottom") {
+        st.camera.pitch = -1.5;
+        st.camera.yaw = 0.0;
+    }
     if let ItemRef::Sim(i) = item {
         let s = &project.sims[i];
         st.sim_progress = agentee_core::sim::SimProgress::load(&s.path);

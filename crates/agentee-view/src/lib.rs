@@ -1,4 +1,5 @@
 pub mod app;
+pub mod board3d;
 pub mod canvas;
 pub mod eye;
 pub mod headless;

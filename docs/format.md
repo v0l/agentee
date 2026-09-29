@@ -234,6 +234,7 @@ name = "SOIC-8_3.9x4.9mm_P1.27mm"
 description = "SOIC, 8 pin"
 tags = ["SOIC", "SO"]
 mount = "smd"                  # smd | tht | other, default from the pads
+height = "1.5mm"               # body height for the 3D view, optional
 model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step"
 
 [[pads]]
@@ -414,6 +415,12 @@ of the pair run at the wrong gap, and pairs that spend less than 80% of their le
 Match groups say which net is short or over and by how much. `agentee calc serpentine --from x,y
 --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of a trombone meander that adds exactly
 that length to a straight segment. Net lengths and delays are in `agentee show pcb:NAME`.
+
+The viewer's layout page has a `3d` tab: the board in its stackup thickness, mask and silk colours
+and finish, copper under the mask, bare pads, drills, and each part as a box over its fab outline.
+Drag to orbit, shift-drag to pan, scroll to zoom, double-click to reset. `agentee render pcb:NAME
+--show 3d` (or `3d-top`, `3d-bottom`) renders the same. A footprint's body height is its `height`
+field, else a guess from the footprint name.
 
 Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
 clearance to every other net and to the board edge, and islands that reach nothing are removed.

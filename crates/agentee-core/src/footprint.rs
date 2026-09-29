@@ -120,6 +120,8 @@ pub struct FootprintFile {
     pub mount: Option<Mount>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -203,6 +205,7 @@ pub struct Footprint {
     pub tags: Vec<String>,
     pub mount: Mount,
     pub model: Option<String>,
+    pub height: Option<f64>,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
 }
@@ -314,6 +317,7 @@ impl FootprintFile {
             tags: self.tags.clone(),
             mount,
             model: self.model.clone(),
+            height: self.height.map(Length::to_mm),
             pads,
             graphics,
         }

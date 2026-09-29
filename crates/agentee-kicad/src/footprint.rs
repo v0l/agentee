@@ -278,6 +278,7 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
             .unwrap_or_default(),
         mount,
         model: root.find("model").and_then(|m| m.arg(0)).map(str::to_string),
+        height: None,
         pads: collapse(pads),
         graphics,
     })

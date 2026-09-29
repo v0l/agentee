@@ -34,6 +34,9 @@ pub struct PageState {
     pub map_values: Vec<f32>,
     pub show_fields: bool,
     pub show_tdr: bool,
+    pub view_3d: bool,
+    pub camera: crate::board3d::Camera,
+    pub scene: Option<((u64, usize), crate::board3d::Scene)>,
     pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
 }
 
@@ -60,6 +63,9 @@ impl Default for PageState {
             map_values: Vec::new(),
             show_fields: false,
             show_tdr: false,
+            view_3d: false,
+            camera: Default::default(),
+            scene: None,
             tdr_cache: None,
         }
     }
@@ -821,6 +827,29 @@ fn schematic_props(ui: &mut Ui, s: &Schematic) {
 
 fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
     let l = &project.layouts[i].item;
+    if st.panels {
+        ui.horizontal(|ui| {
+            ui.add_space(8.0);
+            if toggle(ui, "2d", !st.view_3d).clicked() {
+                st.view_3d = false;
+            }
+            if toggle(ui, "3d", st.view_3d).clicked() {
+                st.view_3d = true;
+            }
+        });
+    }
+    if st.view_3d {
+        let key = (project.generation, i);
+        if st.scene.as_ref().map(|s| s.0) != Some(key)
+            && let Some(board) = project.boards.iter().find(|b| b.name == l.board)
+        {
+            st.scene = Some((key, crate::board3d::build(l, &board.item)));
+        }
+        if let Some((_, scene)) = &st.scene {
+            crate::board3d::show(ui, scene, &mut st.camera, st.interactive);
+        }
+        return;
+    }
     let key = (project.generation, i);
     if st.zone_key != Some(key) {
         st.zone_tex = pcb::zone_textures(ui.ctx(), l);

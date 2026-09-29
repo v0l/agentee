@@ -2,6 +2,7 @@ name = "Coilcraft_BCR-162"
 description = "Coilcraft BCR-162/-221/-232/-531/-802 SMT broadband conical inductor, land pattern from Document 334R-2. Pad 1 is the narrow end, for the RF line. The MP pads only hold the bracket and must stay unconnected."
 tags = ["inductor", "conical", "bias tee"]
 mount = "smd"
+height = "4.06mm"
 
 [[pads]]
 number = "1"
