@@ -354,7 +354,7 @@ pub fn run(
         pipes.push((make("ntff", &[4, 5, 8, 10], &[6, 7]), [(patches as u32).div_ceil(64), 1, 1]));
     }
     pipes.push((make("tick", &[5], &[]), [1, 1, 1]));
-    let energy = make("energy", &[4, 8], &[2]);
+    let energy = make("energy", &[4, 8, 10], &[2]);
     let chunk = 1000;
     let mut steps = 0;
     let mut peak: f64 = 0.0;

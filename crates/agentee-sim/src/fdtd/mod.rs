@@ -19,6 +19,7 @@ pub struct Plan {
     pub points: usize,
     pub excite: Vec<usize>,
     pub max_steps: usize,
+    pub end_db: f64,
 }
 
 pub fn plan(
@@ -47,6 +48,7 @@ pub fn plan(
         points,
         excite,
         max_steps,
+        end_db: 50.0,
         fields: Vec::new(),
         far_field: false,
         plane_k,
@@ -109,7 +111,6 @@ pub fn execute(
         f0: 0.5 * (plan.f_start + plan.f_stop),
         fc: 0.5 * (plan.f_stop - plan.f_start) * 1.1,
     };
-    let min_steps = ((1.5 / plan.f_start) / sim.dt) as usize;
     for &j in &plan.excite {
         let label = sim.ports[j].name.clone();
         let patches = if plan.far_field && !plan.fields.is_empty() {
@@ -118,9 +119,9 @@ pub fn execute(
             None
         };
         let extras = run::Extras {
-            min_steps: min_steps.min(plan.max_steps),
+            min_steps: 0,
             max_steps: plan.max_steps,
-            decay_db: 40.0,
+            decay_db: plan.end_db,
             freqs: plan.fields.clone(),
             plane_k: if plan.fields.is_empty() { None } else { plan.plane_k },
             ntff: patches.as_ref().map(|p| p.gpu.clone()),

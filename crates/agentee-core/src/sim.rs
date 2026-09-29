@@ -57,6 +57,8 @@ pub struct SimFile {
     pub region: Option<[f64; 4]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_steps: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_db: Option<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub excite: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -631,6 +633,7 @@ pub struct Sim {
     pub cell: f64,
     pub region: Option<[f64; 4]>,
     pub max_steps: usize,
+    pub end_db: f64,
     pub excite: Vec<usize>,
     pub ports: Vec<Port>,
     pub elements: Vec<Element>,
@@ -1354,6 +1357,7 @@ impl SimFile {
             cell,
             region: self.region,
             max_steps: self.max_steps.unwrap_or(150_000),
+            end_db: self.end_db.unwrap_or(50.0).clamp(20.0, 120.0),
             excite,
             ports,
             elements,

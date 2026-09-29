@@ -89,6 +89,10 @@ fn main() {
             200_000,
         )
         .unwrap();
+        let mut p = p;
+        if let Some(db) = std::env::var("END_DB").ok().and_then(|v| v.parse().ok()) {
+            p.end_db = db;
+        }
         let t = std::time::Instant::now();
         let r = execute(&p, name, 0, &mut |_, _, _| {}).unwrap();
         eprintln!("{name}: {:?} cells {:.1}s", p.sim.grid.dims(), t.elapsed().as_secs_f64());

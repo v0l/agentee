@@ -274,7 +274,8 @@ fn energy(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation
     var i = w.x * 256u + l.x;
     while i < total {
         let x = e_ro[i];
-        s += x * x;
+        let y = h_ro[i] * 376.73;
+        s += x * x + y * y;
         i += stride;
     }
     scratch[l.x] = s;
