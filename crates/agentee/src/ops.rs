@@ -554,6 +554,143 @@ fn run_cascade(
     }))
 }
 
+pub struct SparamQuery<'a> {
+    pub tdr: Option<&'a str>,
+    pub rise: Option<&'a str>,
+    pub pair: Option<&'a str>,
+    pub xtalk: Option<&'a str>,
+}
+
+fn parse_time(v: &str) -> Option<f64> {
+    let v = v.trim().to_lowercase();
+    for (suffix, scale) in [("fs", 1e-15), ("ps", 1e-12), ("ns", 1e-9), ("us", 1e-6), ("s", 1.0)] {
+        if let Some(n) = v.strip_suffix(suffix) {
+            return n.trim().parse::<f64>().ok().map(|x| x * scale);
+        }
+    }
+    None
+}
+
+fn thin(v: &[f64], n: usize) -> Vec<f64> {
+    let step = (v.len() / n.max(1)).max(1);
+    v.iter().step_by(step).map(|x| (x * 1000.0).round() / 1000.0).collect()
+}
+
+pub fn sparam(p: &Project, name: &str, q: &SparamQuery) -> Result<Value, String> {
+    use agentee_core::rf::Cx;
+    use agentee_core::sparam as sp;
+    let r = find(p, &format!("sim:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Sim(i) = r else { return Err(format!("`{name}` is not a simulation")) };
+    let res = p.sims[i].item.result.as_ref().ok_or("not run yet")?;
+    let np = res.ports.len();
+    let port = |n: &str| -> Result<usize, String> {
+        res.ports
+            .iter()
+            .position(|x| x == n)
+            .or_else(|| n.parse::<usize>().ok().filter(|k| *k >= 1 && *k <= np).map(|k| k - 1))
+            .ok_or(format!("no port `{n}`, there is {}", res.ports.join(", ")))
+    };
+    let at = |k: usize| -> agentee_core::rf::Matrix {
+        (0..np)
+            .map(|a| (0..np).map(|b| Cx::new(res.s[a][b][k][0], res.s[a][b][k][1])).collect())
+            .collect()
+    };
+    let full = res.excited.iter().all(|e| *e);
+    let (mut worst_gain, mut worst_f, mut recip) = (0.0f64, 0.0, 0.0f64);
+    if full {
+        for (k, f) in res.freqs.iter().enumerate() {
+            let m = at(k);
+            let g = sp::passivity(&m);
+            if g > worst_gain {
+                worst_gain = g;
+                worst_f = *f;
+            }
+            recip = recip.max(sp::reciprocity(&m));
+        }
+    }
+    let fmax = *res.freqs.last().unwrap();
+    let rise = match q.rise {
+        Some(v) => parse_time(v).ok_or(format!("cannot read `{v}` as a time, like 35ps"))?,
+        None => (1.3 / fmax).max(10e-12),
+    };
+    let mut out = json!({
+        "sim": res.name,
+        "ports": res.ports,
+        "fully_excited": full,
+        "passivity": if full { json!({ "largest_gain": worst_gain, "at_hz": worst_f, "passive": worst_gain <= 1.0 + 1e-3 }) } else { Value::Null },
+        "reciprocity_error": if full { json!(recip) } else { Value::Null },
+    });
+    if let Some(t) = q.tdr {
+        let k = port(t)?;
+        let s11: Vec<Cx> = res.s[k][k].iter().map(|c| Cx::new(c[0], c[1])).collect();
+        let st = sp::step(&res.freqs, &s11, rise, Some(40.0 * rise));
+        let z0 = p.sims[i].item.ports.get(k).map(|x| x.impedance).unwrap_or(50.0);
+        let z = sp::tdr_impedance(&st, z0);
+        let settled: Vec<(f64, f64)> = st
+            .time_ps
+            .iter()
+            .zip(&z)
+            .filter(|(t, _)| **t > 2.0 * rise * 1e12)
+            .map(|(t, z)| (*t, *z))
+            .collect();
+        let lo = settled.iter().copied().min_by(|a, b| a.1.total_cmp(&b.1));
+        let hi = settled.iter().copied().max_by(|a, b| a.1.total_cmp(&b.1));
+        out["tdr"] = json!({
+            "port": res.ports[k],
+            "rise_ps": st.rise_ps,
+            "warning": st.warning,
+            "lowest": lo.map(|x| json!({ "ohm": x.1, "at_ps": x.0 })),
+            "highest": hi.map(|x| json!({ "ohm": x.1, "at_ps": x.0 })),
+            "time_ps": thin(&st.time_ps, 400),
+            "ohm": thin(&z, 400),
+        });
+    }
+    if let Some(spec) = q.pair {
+        let ids = spec.split(',').map(|x| port(x.trim())).collect::<Result<Vec<_>, _>>()?;
+        let [a, b, c, d] = ids.as_slice() else {
+            return Err("pair is IN+,IN-,OUT+,OUT-".into());
+        };
+        if !full {
+            return Err("mixed mode needs every port driven".into());
+        }
+        let mm: Vec<[[Cx; 4]; 4]> =
+            (0..res.freqs.len()).map(|k| sp::mixed_mode(&at(k), [*a, *c], [*b, *d])).collect();
+        let db = |i: usize, j: usize| -> Vec<f64> {
+            mm.iter().map(|m| (m[i][j].db() * 100.0).round() / 100.0).collect()
+        };
+        out["mixed_mode"] = json!({
+            "freq_hz": res.freqs,
+            "sdd21_db": db(1, 0),
+            "sdd11_db": db(0, 0),
+            "scc21_db": db(3, 2),
+            "scd21_db": db(3, 0),
+            "sdc21_db": db(1, 2),
+        });
+    }
+    if let Some(spec) = q.xtalk {
+        let ids = spec.split(',').map(|x| port(x.trim())).collect::<Result<Vec<_>, _>>()?;
+        let [from, to] = ids.as_slice() else { return Err("xtalk is FROM,TO".into()) };
+        if !res.excited[*from] {
+            return Err(format!("{} was not driven", res.ports[*from]));
+        }
+        let s: Vec<Cx> = res.s[*to][*from].iter().map(|c| Cx::new(c[0], c[1])).collect();
+        let st = sp::step(&res.freqs, &s, rise, Some(40.0 * rise));
+        let peak =
+            st.value.iter().copied().fold(0.0f64, |a, v| if v.abs() > a.abs() { v } else { a });
+        let worst =
+            s.iter().zip(&res.freqs).map(|(c, f)| (c.db(), *f)).max_by(|a, b| a.0.total_cmp(&b.0));
+        out["crosstalk"] = json!({
+            "from": res.ports[*from],
+            "to": res.ports[*to],
+            "worst_db": worst.map(|w| w.0),
+            "worst_at_hz": worst.map(|w| w.1),
+            "step_peak": peak,
+            "rise_ps": st.rise_ps,
+        });
+    }
+    Ok(out)
+}
+
 pub fn fab(p: &Project, name: &str, out: &std::path::Path) -> Result<Value, String> {
     let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
     let ItemRef::Layout(i) = r else {

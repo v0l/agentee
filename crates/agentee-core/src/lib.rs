@@ -11,6 +11,7 @@ pub mod project;
 pub mod rf;
 pub mod schematic;
 pub mod sim;
+pub mod sparam;
 pub mod symbol;
 pub mod units;
 

@@ -64,6 +64,7 @@ pub fn render_rgba(
         let s = &project.sims[i];
         st.sim_progress = agentee_core::sim::SimProgress::load(&s.path);
         st.show_fields = opts.show.iter().any(|x| x == "fields");
+        st.show_tdr = opts.show.iter().any(|x| x == "tdr");
         let maps = s.item.maps.as_ref().map(|m| &m.maps[..]).or(s
             .item
             .result

@@ -147,6 +147,24 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Analyse a sim result: TDR, mixed mode, crosstalk, passivity and reciprocity
+    Sparam {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Port for a TDR (name or number)
+        #[arg(long)]
+        tdr: Option<String>,
+        /// 10-90% rise time, default 1.3 / the top frequency
+        #[arg(long)]
+        rise: Option<String>,
+        /// Mixed mode: IN+,IN-,OUT+,OUT-
+        #[arg(long)]
+        pair: Option<String>,
+        /// Crosstalk from one port to another: FROM,TO
+        #[arg(long)]
+        xtalk: Option<String>,
+    },
     /// Write the fab package for a layout: Gerbers, drill, BOM, placement, notes
     Fab {
         name: String,
@@ -421,6 +439,17 @@ fn run(cli: Cli) -> Result<bool, String> {
                 }
             })?;
             print_json(&v);
+            Ok(true)
+        }
+        Cmd::Sparam { name, project, tdr, rise, pair, xtalk } => {
+            let p = ops::load(&project)?;
+            let q = ops::SparamQuery {
+                tdr: tdr.as_deref(),
+                rise: rise.as_deref(),
+                pair: pair.as_deref(),
+                xtalk: xtalk.as_deref(),
+            };
+            print_json(&ops::sparam(&p, &name, &q)?);
             Ok(true)
         }
         Cmd::Fab { name, project, out } => {

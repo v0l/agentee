@@ -33,6 +33,8 @@ pub struct PageState {
     pub map_tex: Option<egui::TextureHandle>,
     pub map_values: Vec<f32>,
     pub show_fields: bool,
+    pub show_tdr: bool,
+    pub tdr_cache: Option<((u64, usize), Vec<(String, Vec<f64>, Vec<f64>)>)>,
 }
 
 impl Default for PageState {
@@ -57,6 +59,8 @@ impl Default for PageState {
             map_tex: None,
             map_values: Vec::new(),
             show_fields: false,
+            show_tdr: false,
+            tdr_cache: None,
         }
     }
 }
@@ -935,20 +939,36 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             crate::heat::canvas(ui, project, s, index, &m.maps, st);
             return;
         }
-        if let Some(r) = &s.result
-            && !r.maps.is_empty()
-        {
+        if let Some(r) = &s.result {
             ui.horizontal(|ui| {
-                if toggle(ui, "s-parameters", !st.show_fields).clicked() {
+                if toggle(ui, "s-parameters", !st.show_fields && !st.show_tdr).clicked() {
+                    st.show_fields = false;
+                    st.show_tdr = false;
+                }
+                if toggle(ui, "tdr", st.show_tdr).clicked() {
+                    st.show_tdr = true;
                     st.show_fields = false;
                 }
-                if toggle(ui, "fields", st.show_fields).clicked() {
+                if !r.maps.is_empty() && toggle(ui, "fields", st.show_fields).clicked() {
                     st.show_fields = true;
+                    st.show_tdr = false;
                 }
             });
             ui.add_space(6.0);
-            if st.show_fields {
+            if st.show_fields && !r.maps.is_empty() {
                 crate::heat::canvas(ui, project, s, index, &r.maps, st);
+                return;
+            }
+            if st.show_tdr {
+                let key = (project.generation, index);
+                if st.tdr_cache.as_ref().map(|c| c.0) != Some(key) {
+                    st.tdr_cache = Some((key, crate::plot::tdr_series(r, s)));
+                }
+                let series = &st.tdr_cache.as_ref().unwrap().1;
+                let h = ui.available_height();
+                section(ui, "tdr", "impedance seen from each driven port, Gaussian edge at 1.3 / the top frequency", |ui| {
+                    crate::plot::xy_plot(ui, series, "ps", "ohm", egui::vec2(ui.available_width(), (h - 40.0).max(200.0)));
+                });
                 return;
             }
         }

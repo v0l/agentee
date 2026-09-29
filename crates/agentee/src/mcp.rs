@@ -111,6 +111,17 @@ fn tools() -> Value {
             "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
         },
         {
+            "name": "sparam",
+            "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "tdr": { "type": "string", "description": "port name or number" },
+                "rise": { "type": "string", "description": "10-90% rise, e.g. 35ps" },
+                "pair": { "type": "string" },
+                "xtalk": { "type": "string" },
+            }), &["name"]),
+        },
+        {
             "name": "fab",
             "description": "Write the fab package for a layout into a folder: RS-274X Gerbers (X2) per copper, mask, paste, silk and edge layer, Excellon drills, a zip of those for upload, BOM (generic and JLCPCB), pick-and-place, fab notes and assembly drawings. Refuses while the layout has errors.",
             "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output folder, relative to the project" } }), &["name", "out"]),
@@ -314,6 +325,20 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 &mut |_, _, _| {},
             )?;
             Ok(ok(vec![text(pretty(&v))]))
+        }
+        "sparam" => {
+            let p = ops::load(root)?;
+            let q = ops::SparamQuery {
+                tdr: arg(a, "tdr"),
+                rise: arg(a, "rise"),
+                pair: arg(a, "pair"),
+                xtalk: arg(a, "xtalk"),
+            };
+            Ok(ok(vec![text(pretty(&ops::sparam(
+                &p,
+                arg(a, "name").ok_or("name is required")?,
+                &q,
+            )?))]))
         }
         "fab" => {
             let p = ops::load(root)?;
