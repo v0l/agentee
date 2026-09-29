@@ -152,34 +152,46 @@ impl Pad {
         self.layers.iter().any(|l| l.ends_with(".Cu"))
     }
 
-    pub fn outline(&self) -> Vec<P> {
+    pub fn outlines(&self) -> Vec<Vec<P>> {
         let [w, h] = self.size.to_mm();
-        let local: Vec<P> = match self.shape {
-            PadShape::Rect => geom::rounded_rect(w, h, 0.0, 0),
-            PadShape::Roundrect => geom::rounded_rect(w, h, w.min(h) * self.roundrect_ratio, 4),
-            PadShape::Circle => geom::circle([0.0, 0.0], w / 2.0, 32),
-            PadShape::Oval => geom::rounded_rect(w, h, w.min(h) / 2.0, 8),
+        let mut local: Vec<Vec<P>> = Vec::new();
+        match self.shape {
+            PadShape::Rect => local.push(geom::rounded_rect(w, h, 0.0, 0)),
+            PadShape::Roundrect => {
+                local.push(geom::rounded_rect(w, h, w.min(h) * self.roundrect_ratio, 4))
+            }
+            PadShape::Circle => local.push(geom::circle([0.0, 0.0], w / 2.0, 32)),
+            PadShape::Oval => local.push(geom::rounded_rect(w, h, w.min(h) / 2.0, 8)),
             PadShape::Custom => {
+                if w > 0.0 && h > 0.0 {
+                    local.push(geom::rounded_rect(w, h, 0.0, 0));
+                }
                 if self.points.len() >= 3 {
-                    self.points.iter().map(|p| p.to_mm()).collect()
-                } else {
-                    geom::rounded_rect(w, h, 0.0, 0)
+                    local.push(self.points.iter().map(|p| p.to_mm()).collect());
                 }
             }
-        };
+        }
         let [ax, ay] = self.at.to_mm();
         local
             .into_iter()
-            .map(|p| {
-                let [x, y] = geom::rotate(p, self.rotation);
-                [x + ax, y + ay]
+            .map(|poly| {
+                poly.into_iter()
+                    .map(|p| {
+                        let [x, y] = geom::rotate(p, self.rotation);
+                        [x + ax, y + ay]
+                    })
+                    .collect()
             })
             .collect()
     }
 
+    pub fn contains(&self, p: P) -> bool {
+        self.outlines().iter().any(|o| geom::point_in_polygon(p, o))
+    }
+
     pub fn bounds(&self) -> Bounds {
         let mut b = Bounds::EMPTY;
-        self.outline().into_iter().for_each(|p| b.add(p));
+        self.outlines().into_iter().flatten().for_each(|p| b.add(p));
         b
     }
 }
@@ -449,7 +461,7 @@ impl Footprint {
             );
         }
 
-        let outlines: Vec<Vec<P>> = self.pads.iter().map(|p| p.outline()).collect();
+        let outlines: Vec<Vec<Vec<P>>> = self.pads.iter().map(|p| p.outlines()).collect();
         let min_clear = rules.min_clearance.to_mm();
         let mut overlaps = Vec::new();
         let mut close: Vec<(f64, String)> = Vec::new();
@@ -468,7 +480,10 @@ impl Footprint {
                 if !grown.overlaps(&bb) {
                     continue;
                 }
-                let gap = geom::polygon_distance(&outlines[i], &outlines[j]);
+                let gap = outlines[i]
+                    .iter()
+                    .flat_map(|a| outlines[j].iter().map(move |b| geom::polygon_distance(a, b)))
+                    .fold(f64::MAX, f64::min);
                 let pair = format!("{}/{}", or_dash(&a.number), or_dash(&b.number));
                 if gap == 0.0 {
                     overlaps.push(pair);
@@ -546,7 +561,7 @@ impl Footprint {
                 let exposed =
                     p.on_layer(&format!("{side}.Mask")) || p.on_layer(&format!("{side}.Cu"));
                 if exposed
-                    && geom::polyline_polygon_distance(&path, o) < half
+                    && o.iter().any(|poly| geom::polyline_polygon_distance(&path, poly) < half)
                     && !over_pads.contains(&p.number.as_str())
                 {
                     over_pads.push(&p.number);

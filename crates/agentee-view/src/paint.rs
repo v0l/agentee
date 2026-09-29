@@ -138,7 +138,21 @@ fn fill_polygon(p: &Painter, pts: Vec<Pos2>, fill: Color32, stroke: Stroke) {
     if pts.len() < 3 {
         return;
     }
-    p.add(PathShape::convex_polygon(pts, fill, stroke));
+    let poly: Vec<[f64; 2]> = pts.iter().map(|q| [q.x as f64, q.y as f64]).collect();
+    if geom::is_convex(&poly) {
+        p.add(PathShape::convex_polygon(pts, fill, stroke));
+        return;
+    }
+    let mut mesh = egui::Mesh::default();
+    for q in &pts {
+        mesh.colored_vertex(*q, fill);
+    }
+    for [a, b, c] in geom::triangulate(&poly) {
+        mesh.add_triangle(a as u32, b as u32, c as u32);
+    }
+    p.add(mesh);
+    let edge = if stroke.width > 0.0 { stroke } else { Stroke::new(0.8, fill) };
+    p.add(PathShape::closed_line(pts, edge));
 }
 
 pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Color32) {
@@ -420,8 +434,8 @@ fn pad_color(pad: &Pad) -> Color32 {
     }
 }
 
-fn outline_px(xf: &Xf, pad: &Pad) -> Vec<Pos2> {
-    pad.outline().into_iter().map(|q| xf.pos(q)).collect()
+fn outlines_px(xf: &Xf, pad: &Pad) -> Vec<Vec<Pos2>> {
+    pad.outlines().into_iter().map(|o| o.into_iter().map(|q| xf.pos(q)).collect()).collect()
 }
 
 fn substitute(g: &Graphic) -> Option<Graphic> {
@@ -467,26 +481,25 @@ pub fn footprint(
                     if !on || (*l == "B.Cu" && pad.on_layer("F.Cu")) {
                         continue;
                     }
-                    let pts = outline_px(xf, pad);
                     let col = pad_color(pad);
-                    if pad.kind == PadKind::Npth {
-                        fill_polygon(p, pts.clone(), WELL, Stroke::new(1.0, ETCH));
-                    } else {
-                        fill_polygon(p, pts.clone(), col, Stroke::NONE);
-                    }
-                    if let Some(h) = hover {
-                        let poly: Vec<[f64; 2]> = pad.outline();
-                        if geom::point_in_polygon(xf.mm(h), &poly) {
-                            hovered = Some(i);
+                    for pts in outlines_px(xf, pad) {
+                        if pad.kind == PadKind::Npth {
+                            fill_polygon(p, pts, WELL, Stroke::new(1.0, ETCH));
+                        } else {
+                            fill_polygon(p, pts, col, Stroke::NONE);
                         }
+                    }
+                    if hover.is_some_and(|h| pad.contains(xf.mm(h))) {
+                        hovered = Some(i);
                     }
                 }
                 draw_layer(l);
             }
             "F.Mask" | "B.Mask" | "F.Paste" | "B.Paste" => {
                 for pad in fp.pads.iter().filter(|pad| pad.on_layer(l)) {
-                    let pts = outline_px(xf, pad);
-                    p.add(PathShape::closed_line(pts, Stroke::new(1.0, layer_color(l))));
+                    for pts in outlines_px(xf, pad) {
+                        p.add(PathShape::closed_line(pts, Stroke::new(1.0, layer_color(l))));
+                    }
                 }
                 draw_layer(l);
             }
@@ -519,8 +532,9 @@ pub fn footprint(
         );
     }
     if let Some(i) = hovered {
-        let pts = outline_px(xf, &fp.pads[i]);
-        p.add(PathShape::closed_line(pts, Stroke::new(2.0, TRACE)));
+        for pts in outlines_px(xf, &fp.pads[i]) {
+            p.add(PathShape::closed_line(pts, Stroke::new(2.0, TRACE)));
+        }
     }
     hovered
 }
