@@ -245,6 +245,17 @@ impl App {
             })
             .filter(|(_, n, _, _, _)| needle.is_empty() || n.to_lowercase().contains(&needle))
             .collect();
+        let mut rows = rows;
+        if self.tab == Kind::Schematic {
+            for row in rows.iter_mut() {
+                if let ItemRef::Schematic(i) = row.0
+                    && let Some(parent) = &self.project.schematics[i].item.parent
+                {
+                    row.1 = format!("{parent} \u{203a} {}", row.1);
+                }
+            }
+            rows.sort_by(|a, b| a.1.cmp(&b.1));
+        }
         let current = self.current();
         let mut clicked = None;
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(

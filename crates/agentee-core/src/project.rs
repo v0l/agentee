@@ -154,9 +154,9 @@ fn flatten(
     lib: &Library,
     stack: &mut Vec<String>,
     d: &mut Diags,
-) -> SchematicFile {
+) -> (SchematicFile, Vec<crate::schematic::SheetFrame>) {
     if file.sheets.is_empty() {
-        return file.clone();
+        return (file.clone(), Vec::new());
     }
     stack.push(file.name.clone());
     let mut sheets = Vec::new();
@@ -169,7 +169,7 @@ fn flatten(
             d.error("sheets", format!("no schematic named `{name}`"));
             continue;
         };
-        let child = flatten(child, all, lib, stack, &mut Diags::new(name));
+        let (child, _) = flatten(child, all, lib, stack, &mut Diags::new(name));
         let bounds = child.resolve(lib, &mut Diags::new(name)).bounds();
         sheets.push((child, bounds));
     }
@@ -280,9 +280,14 @@ impl Project {
                 footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
                 netclasses: board.map(|b| b.netclasses.iter().map(|n| n.name.clone()).collect()),
             };
-            let whole = flatten(file, &sch_files, &lib, &mut Vec::new(), &mut d);
-            let item = whole.resolve(&lib, &mut d);
+            let (whole, frames) = flatten(file, &sch_files, &lib, &mut Vec::new(), &mut d);
+            let mut item = whole.resolve(&lib, &mut d);
             item.check_as(&lib, &mut d, sheet_names.contains(&file.name));
+            item.sheets = frames;
+            item.parent = sch_files
+                .iter()
+                .find(|(_, s)| s.sheets.contains(&file.name))
+                .map(|(_, s)| s.name.clone());
             p.schematics.push(Entry {
                 name: item.name.clone(),
                 diags: tag(d, f),

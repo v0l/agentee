@@ -772,6 +772,17 @@ fn schematic_canvas(ui: &mut Ui, s: &Schematic, st: &mut PageState) {
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 2.54);
     let hover = if st.interactive { resp.hover_pos() } else { None };
+    for f in &s.sheets {
+        let r = egui::Rect::from_two_pos(xf.world(f.min), xf.world(f.max));
+        p.rect_stroke(r, 0.0, egui::Stroke::new(1.0, LEGEND), egui::StrokeKind::Middle);
+        p.text(
+            r.left_top() + egui::vec2(0.0, -4.0),
+            egui::Align2::LEFT_BOTTOM,
+            &f.name,
+            egui::FontId::monospace(xf.len(5.0).clamp(9.0, 40.0)),
+            LEGEND,
+        );
+    }
     let hit = sheet::schematic(&p, &xf, s, hover, st.show_hidden);
     cursor_readout(ui, &xf, hover);
     if let Some((what, detail)) = sheet::legend_for(s, &hit) {
@@ -803,6 +814,13 @@ fn schematic_props(ui: &mut Ui, s: &Schematic) {
             }
             if let Some(b) = &s.board {
                 reading(ui, "board", b.clone());
+            }
+            if !s.sheets.is_empty() {
+                let names: Vec<&str> = s.sheets.iter().map(|f| f.name.as_str()).collect();
+                reading(ui, "sheets", names.join(", "));
+            }
+            if let Some(parent) = &s.parent {
+                reading(ui, "sheet of", parent.clone());
             }
         },
     );

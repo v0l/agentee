@@ -156,6 +156,15 @@ pub struct Schematic {
     pub parts: Vec<Part>,
     pub nets: Vec<Net>,
     pub no_connect: Vec<PinRef>,
+    pub sheets: Vec<SheetFrame>,
+    pub parent: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SheetFrame {
+    pub name: String,
+    pub min: P,
+    pub max: P,
 }
 
 pub struct Library<'a> {
@@ -168,10 +177,14 @@ fn short(name: &str) -> &str {
     name.rsplit(':').next().unwrap_or(name)
 }
 
-pub const SHEET_GAP_MM: f64 = 25.4;
+pub const SHEET_GAP_MM: f64 = 38.1;
 
 impl SchematicFile {
-    pub fn merge(&self, sheets: &[(&SchematicFile, Bounds)], d: &mut Diags) -> SchematicFile {
+    pub fn merge(
+        &self,
+        sheets: &[(&SchematicFile, Bounds)],
+        d: &mut Diags,
+    ) -> (SchematicFile, Vec<SheetFrame>) {
         let snap = |v: f64| (v / (2.0 * GRID_MM)).round() * 2.0 * GRID_MM;
         let own = self.parts.iter().fold(Bounds::EMPTY, |mut b, p| {
             b.add(p.at.to_mm());
@@ -179,6 +192,7 @@ impl SchematicFile {
         });
         let mut cursor = if own.is_empty() { 0.0 } else { own.max[1] + SHEET_GAP_MM };
         let mut sources: Vec<(&SchematicFile, Point)> = vec![(self, Point::ZERO)];
+        let mut frames = Vec::new();
         for (f, b) in sheets {
             if b.is_empty() {
                 sources.push((f, Point::ZERO));
@@ -187,6 +201,13 @@ impl SchematicFile {
             let offset = Point::mm(snap(-b.min[0]), snap(cursor - b.min[1]));
             cursor += b.max[1] - b.min[1] + SHEET_GAP_MM;
             sources.push((f, offset));
+            let [ox, oy] = offset.to_mm();
+            let pad = 2.0 * GRID_MM * 2.0;
+            frames.push(SheetFrame {
+                name: f.name.clone(),
+                min: [b.min[0] + ox - pad, b.min[1] + oy - pad],
+                max: [b.max[0] + ox + pad, b.max[1] + oy + pad],
+            });
         }
 
         let mut out = SchematicFile {
@@ -239,7 +260,7 @@ impl SchematicFile {
                 }
             }
         }
-        out
+        (out, frames)
     }
 
     pub fn resolve(&self, lib: &Library, d: &mut Diags) -> Schematic {
@@ -351,6 +372,8 @@ impl SchematicFile {
             parts,
             nets,
             no_connect,
+            sheets: Vec::new(),
+            parent: None,
         };
         route(&mut s, d);
         for n in &mut s.nets {
@@ -1020,7 +1043,10 @@ pins = ["{part}.2"]
         assert_eq!(noise(&d), 0, "{:?}", d.list);
         let bounds = |f: &SchematicFile| f.resolve(&lib, &mut Diags::new("x")).bounds();
         let mut d = Diags::new("top");
-        let whole = top.merge(&[(&a, bounds(&a)), (&b, bounds(&b))], &mut d).resolve(&lib, &mut d);
+        let (whole, frames) = top.merge(&[(&a, bounds(&a)), (&b, bounds(&b))], &mut d);
+        assert_eq!(frames.len(), 2);
+        assert!(frames[1].min[1] > frames[0].max[1]);
+        let whole = whole.resolve(&lib, &mut d);
         whole.check(&lib, &mut d);
         assert_eq!(noise(&d), 0, "{:?}", d.list);
         assert_eq!(whole.nets.len(), 2);
