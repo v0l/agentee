@@ -153,6 +153,23 @@ pub struct LayoutFile {
     pub graphics: Vec<crate::graphic::GraphicFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub artwork: Vec<ArtworkFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fanouts: Vec<FanoutFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FanoutFile {
+    #[serde(rename = "ref")]
+    pub reference: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_rings: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub always: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -749,6 +766,82 @@ impl LayoutFile {
                     diameter: spec.diameter.to_mm(),
                     layers: copper[a..=b].to_vec(),
                 });
+            }
+        }
+
+        for (i, f) in self.fanouts.iter().enumerate() {
+            let at = format!("fanouts[{i}] {}", f.reference);
+            let Some(part) = parts.iter().find(|p| p.reference == f.reference) else {
+                d.error(&at, format!("no placed part `{}`", f.reference));
+                continue;
+            };
+            for n in &f.always {
+                if net_index(n).is_none() {
+                    d.error(&at, format!("net `{n}` is not in the schematic"));
+                }
+            }
+            let pads: Vec<(&PlacedPad, P)> = part
+                .pads
+                .iter()
+                .filter(|p| !p.copper.is_empty() && p.kind != PadKind::Tht)
+                .map(|p| {
+                    let mut b = Bounds::EMPTY;
+                    p.outlines.iter().flatten().for_each(|q| b.add(*q));
+                    (p, b.center())
+                })
+                .collect();
+            let mut grid = Bounds::EMPTY;
+            pads.iter().for_each(|(_, c)| grid.add(*c));
+            let pitch = pads
+                .iter()
+                .flat_map(|(_, a)| pads.iter().map(move |(_, b)| geom::dist(*a, *b)))
+                .filter(|d| *d > 1e-3)
+                .fold(f64::MAX, f64::min);
+            let rings = f.skip_rings.unwrap_or(0) as f64;
+            let mut placed = 0;
+            for (pad, c) in &pads {
+                let Some(net) = pad.net else { continue };
+                if f.skip.contains(&pad.number) {
+                    continue;
+                }
+                let edge = (c[0] - grid.min[0])
+                    .min(grid.max[0] - c[0])
+                    .min(c[1] - grid.min[1])
+                    .min(grid.max[1] - c[1]);
+                let ring = (edge / pitch).round();
+                if ring < rings && !f.always.contains(&nets[net].name) {
+                    continue;
+                }
+                let kind = f
+                    .via
+                    .clone()
+                    .or_else(|| class_of(board, &nets[net].class).and_then(|c| c.via.clone()));
+                let Some(spec) = kind
+                    .as_ref()
+                    .and_then(|k| board.vias.iter().find(|x| &x.name == k))
+                    .or(board.vias.first())
+                else {
+                    d.error(&at, "the board defines no [[vias]]");
+                    break;
+                };
+                let (a, b) = (
+                    copper.iter().position(|x| *x == spec.from).unwrap_or(0),
+                    copper
+                        .iter()
+                        .position(|x| *x == spec.to)
+                        .unwrap_or(copper.len().saturating_sub(1)),
+                );
+                vias.push(Via {
+                    net,
+                    at: *c,
+                    drill: spec.drill.to_mm(),
+                    diameter: spec.diameter.to_mm(),
+                    layers: copper[a..=b].to_vec(),
+                });
+                placed += 1;
+            }
+            if placed == 0 {
+                d.warn(&at, "placed no vias: no pad with a net is left after the skips");
             }
         }
 

@@ -375,6 +375,13 @@ at = [7.2, 8.9]
 # count = 6                    # a row, like pads
 # pitch = [1.2, 0]
 
+[[fanouts]]                    # a via in every connected pad of a BGA
+ref = "U3"
+# via = "bga"                  # default: each net's class via
+# skip_rings = 2               # leave the two outer rings for escape on the outer layer
+# always = ["GND", "3V3"]      # nets that get a via even in those rings
+# skip = ["A1", "B7"]          # pads to leave alone
+
 [[zones]]
 net = "GND"
 layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
