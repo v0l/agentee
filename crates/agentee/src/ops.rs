@@ -484,7 +484,7 @@ fn run_cascade(
         let text =
             std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
         let n = agentee_core::rf::ports_from_path(&file).ok_or("device files are named .sNp")?;
-        let net = agentee_core::rf::parse_touchstone(&text, n)?;
+        let mut net = agentee_core::rf::parse_touchstone(&text, n)?;
         let ports = d
             .ports
             .iter()
@@ -492,6 +492,16 @@ fn run_cascade(
                 result.ports.iter().position(|x| x == q).ok_or(format!("{q} is not a board port"))
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if let (Some(mount), Some(&p0)) = (d.mount, ports.first()) {
+            let z = board
+                .item
+                .ports
+                .iter()
+                .find(|q| q.name == result.ports[p0])
+                .map(|q| q.impedance)
+                .unwrap_or(50.0);
+            net = agentee_core::rf::as_one_port(&net, mount, z);
+        }
         placed.push(agentee_sim::cascade::Placed { name: d.file.clone(), net, ports });
         texts.push(text);
     }

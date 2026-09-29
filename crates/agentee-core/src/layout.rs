@@ -54,6 +54,7 @@ pub struct Label {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SilkText {
+    pub owner: String,
     pub part: usize,
     pub text: String,
     pub at: P,
@@ -141,7 +142,34 @@ pub struct LayoutFile {
     pub zones: Vec<ZoneFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cutouts: Vec<CutoutFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub graphics: Vec<crate::graphic::GraphicFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub artwork: Vec<ArtworkFile>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArtworkFile {
+    pub layer: String,
+    pub at: Point,
+    pub height: Length,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Artwork {
+    pub name: String,
+    pub layer: String,
+    pub polygons: Vec<Vec<P>>,
+}
+
+pub const ART_LAYERS: [&str; 4] = ["F.SilkS", "B.SilkS", "F.Fab", "B.Fab"];
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PlacedPad {
@@ -184,6 +212,7 @@ impl Placed {
             let text =
                 text.replace("${REFERENCE}", &self.reference).replace("${VALUE}", &self.value);
             let mut st = SilkText {
+                owner: self.reference.clone(),
                 part: index,
                 text,
                 at: t.apply(at.to_mm()),
@@ -284,9 +313,15 @@ pub struct Layout {
     pub nets: Vec<LayoutNet>,
     pub ratsnest: Vec<(P, P, usize)>,
     pub cutouts: Vec<(Vec<String>, Vec<P>)>,
+    pub graphics: Vec<crate::graphic::Graphic>,
+    pub artwork: Vec<Artwork>,
 }
 
 impl Layout {
+    pub fn board_texts(&self) -> Vec<SilkText> {
+        board_texts(&self.graphics)
+    }
+
     pub fn bounds(&self) -> Bounds {
         let mut b = Bounds::EMPTY;
         self.outline.iter().for_each(|p| b.add(*p));
@@ -387,6 +422,7 @@ struct Item {
 }
 
 pub struct Context<'a> {
+    pub dir: std::path::PathBuf,
     pub board: &'a Board,
     pub schematic: &'a Schematic,
     pub footprints: HashMap<&'a str, &'a Footprint>,
@@ -986,7 +1022,15 @@ impl LayoutFile {
             }
         }
 
-        check_silk(&parts, &outline, board.rules.min_silk_text_height.to_mm(), d);
+        let (graphics, artwork) = self.artwork_of(&cx.dir, d);
+        check_silk(
+            &parts,
+            &graphics,
+            &artwork,
+            &outline,
+            board.rules.min_silk_text_height.to_mm(),
+            d,
+        );
 
         let mut nets = nets;
         for (n, (unrouted, length)) in nets.iter_mut().zip(stats) {
@@ -1006,8 +1050,110 @@ impl LayoutFile {
             nets,
             ratsnest,
             cutouts,
+            graphics,
+            artwork,
         }
     }
+
+    fn artwork_of(
+        &self,
+        dir: &std::path::Path,
+        d: &mut Diags,
+    ) -> (Vec<crate::graphic::Graphic>, Vec<Artwork>) {
+        let def = crate::graphic::GraphicDefaults {
+            width: Length::mm(0.15),
+            text_size: Length::mm(1.0),
+            layer: Some("F.SilkS"),
+        };
+        let mut graphics = Vec::new();
+        for (i, g) in self.graphics.iter().enumerate() {
+            let at = format!("graphics[{i}]");
+            let Some(g) = crate::graphic::resolve(g, &at, d, &def) else { continue };
+            if !ART_LAYERS.contains(&g.layer.as_str()) {
+                d.error(
+                    &at,
+                    format!("layer `{}` is not one of {}", g.layer, ART_LAYERS.join(", ")),
+                );
+                continue;
+            }
+            graphics.push(g);
+        }
+        let mut artwork = Vec::new();
+        for (i, a) in self.artwork.iter().enumerate() {
+            let at = format!("artwork[{i}]");
+            if !ART_LAYERS.contains(&a.layer.as_str()) {
+                d.error(
+                    &at,
+                    format!("layer `{}` is not one of {}", a.layer, ART_LAYERS.join(", ")),
+                );
+                continue;
+            }
+            let (name, svg) = match (&a.icon, &a.file) {
+                (Some(n), None) => match crate::artwork::icon(n) {
+                    Some(s) => (n.clone(), s.to_string()),
+                    None => {
+                        d.error(
+                            &at,
+                            format!(
+                                "no icon `{n}`, there is {}",
+                                crate::artwork::icon_names().join(", ")
+                            ),
+                        );
+                        continue;
+                    }
+                },
+                (None, Some(f)) => match std::fs::read_to_string(dir.join(f)) {
+                    Ok(s) => (f.clone(), s),
+                    Err(e) => {
+                        d.error(&at, format!("cannot read {f}: {e}"));
+                        continue;
+                    }
+                },
+                _ => {
+                    d.error(&at, "give either `icon` or `file` (an SVG)");
+                    continue;
+                }
+            };
+            if !a.height.is_positive() {
+                d.error(&at, "`height` must be positive");
+                continue;
+            }
+            match crate::artwork::svg_polygons(&svg, a.height.to_mm()) {
+                Ok(polys) => artwork.push(Artwork {
+                    name,
+                    layer: a.layer.clone(),
+                    polygons: crate::artwork::place(
+                        &polys,
+                        a.at.to_mm(),
+                        a.rotation.unwrap_or(0.0),
+                        a.layer.starts_with("B."),
+                    ),
+                }),
+                Err(e) => d.error(&at, format!("{name}: {e}")),
+            }
+        }
+        (graphics, artwork)
+    }
+}
+
+fn board_texts(graphics: &[crate::graphic::Graphic]) -> Vec<SilkText> {
+    graphics
+        .iter()
+        .filter(|g| g.layer.ends_with(".SilkS"))
+        .filter_map(|g| match &g.shape {
+            crate::graphic::Shape::Text { at, text, size, rotation, anchor } => Some(SilkText {
+                owner: format!("board text `{text}`"),
+                part: usize::MAX,
+                text: text.clone(),
+                at: at.to_mm(),
+                rotation: *rotation,
+                size: size.to_mm(),
+                anchor: *anchor,
+                layer: g.layer.clone(),
+            }),
+            _ => None,
+        })
+        .collect()
 }
 
 fn readable(deg: f64) -> f64 {
@@ -1015,12 +1161,57 @@ fn readable(deg: f64) -> f64 {
     if a > 90.0 && a <= 270.0 { a - 180.0 } else { a }
 }
 
-fn check_silk(parts: &[Placed], outline: &[P], min_height: f64, d: &mut Diags) {
-    let texts: Vec<SilkText> =
+fn check_silk(
+    parts: &[Placed],
+    graphics: &[crate::graphic::Graphic],
+    artwork: &[Artwork],
+    outline: &[P],
+    min_height: f64,
+    d: &mut Diags,
+) {
+    let mut texts: Vec<SilkText> =
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
+    texts.extend(board_texts(graphics));
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
+    for a in artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
+        let at = format!("silk {}", a.name);
+        let cu = format!("{}.Cu", a.layer.trim_end_matches(".SilkS"));
+        let over: Vec<String> = parts
+            .iter()
+            .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
+            .filter(|(_, q)| {
+                q.copper.contains(&cu)
+                    && q.outlines
+                        .iter()
+                        .any(|o| a.polygons.iter().any(|r| geom::polygon_distance(o, r) <= 0.0))
+            })
+            .map(|(p, q)| format!("{}.{}", p.reference, q.number))
+            .collect();
+        if !over.is_empty() {
+            d.warn(
+                &at,
+                format!("`{}` sits on pads {}, it will be clipped", a.name, over.join(", ")),
+            );
+        }
+        let hit: Vec<&str> = texts
+            .iter()
+            .zip(&boxes)
+            .filter(|(t, b)| {
+                t.layer == a.layer && a.polygons.iter().any(|r| geom::polygon_distance(r, b) <= 0.0)
+            })
+            .map(|(t, _)| t.text.as_str())
+            .collect();
+        if !hit.is_empty() {
+            d.warn(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
+        }
+        if outline.len() >= 3
+            && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
+        {
+            d.warn(&at, format!("`{}` runs off the board", a.name));
+        }
+    }
     for (i, t) in texts.iter().enumerate() {
-        let who = &parts[t.part].reference;
+        let who = &t.owner;
         let at = format!("silk {who}");
         if t.size + 1e-9 < min_height {
             d.warn(
@@ -1035,10 +1226,7 @@ fn check_silk(parts: &[Placed], outline: &[P], min_height: f64, d: &mut Diags) {
         }
         for (j, u) in texts.iter().enumerate().skip(i + 1) {
             if u.layer == t.layer && geom::polygon_distance(&boxes[i], &boxes[j]) <= 0.0 {
-                d.warn(
-                    &at,
-                    format!("`{}` overlaps `{}` of {}", t.text, u.text, parts[u.part].reference),
-                );
+                d.warn(&at, format!("`{}` overlaps `{}` of {}", t.text, u.text, u.owner));
             }
         }
         let side = t.layer.trim_end_matches(".SilkS");

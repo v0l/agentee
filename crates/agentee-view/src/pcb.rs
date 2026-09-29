@@ -191,6 +191,7 @@ pub fn layout(
         }
     }
 
+    board_art(p, xf, l, layers);
     for (pi, part) in l.parts.iter().enumerate() {
         let placed = xf.placed(part.transform());
         for g in &part.footprint.graphics {
@@ -326,4 +327,44 @@ pub fn layout(
         }
     }
     hit
+}
+
+fn board_art(p: &Painter, xf: &Xf, l: &Layout, layers: &Layers) {
+    for a in l.artwork.iter().filter(|a| layers.shows(&a.layer)) {
+        let col = layer_color(&a.layer);
+        for r in &a.polygons {
+            fill_polygon(p, r.iter().map(|q| xf.world(*q)).collect(), col, Stroke::NONE);
+        }
+    }
+    let base =
+        xf.placed(agentee_core::geom::Transform { at: [0.0, 0.0], rotation: 0.0, mirror: false });
+    for g in l.graphics.iter().filter(|g| layers.shows(&g.layer)) {
+        let col = layer_color(&g.layer);
+        if matches!(g.shape, Shape::Text { .. }) && g.layer.ends_with(".SilkS") {
+            continue;
+        }
+        paint::graphic(p, &base, g, col, col.gamma_multiply(0.25));
+    }
+    for t in l.board_texts() {
+        if !layers.shows(&t.layer) {
+            continue;
+        }
+        let anchor = match t.anchor {
+            agentee_core::graphic::Anchor::Left => Align2::LEFT_CENTER,
+            agentee_core::graphic::Anchor::Center => Align2::CENTER_CENTER,
+            agentee_core::graphic::Anchor::Right => Align2::RIGHT_CENTER,
+        };
+        text(
+            p,
+            xf.world(t.at),
+            &t.text,
+            Ink {
+                px: xf.len(t.size) * 1.25,
+                color: layer_color(&t.layer),
+                angle: -(t.rotation.to_radians() as f32),
+                anchor,
+                font: FontFamily::Proportional,
+            },
+        );
+    }
 }

@@ -191,6 +191,39 @@ pub fn parse_touchstone(text: &str, ports: usize) -> Result<Network, String> {
     Ok(net)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mount {
+    Series,
+    Shunt,
+}
+
+pub fn impedance(s: &Matrix, z0: f64, mount: Mount) -> Cx {
+    let s11 = (s[0][0] + s[1][1]) * 0.5;
+    let s21 = (s[1][0] + s[0][1]) * 0.5;
+    let reflect = s11.norm2() < s21.norm2();
+    let z0c = Cx::new(z0, 0.0);
+    match (mount, reflect) {
+        (Mount::Series, true) => z0c * 2.0 * s11 / (Cx::ONE - s11),
+        (Mount::Series, false) => z0c * 2.0 * (Cx::ONE - s21) / s21,
+        (Mount::Shunt, true) => -(z0c * (Cx::ONE + s11)) / (s11 * 2.0),
+        (Mount::Shunt, false) => z0c * s21 / ((Cx::ONE - s21) * 2.0),
+    }
+}
+
+pub fn as_one_port(net: &Network, mount: Mount, z_port: f64) -> Network {
+    let s = net
+        .s
+        .iter()
+        .map(|m| {
+            let z = impedance(m, net.z0, mount);
+            let r = Cx::new(z_port, 0.0);
+            vec![vec![(z - r) / (z + r)]]
+        })
+        .collect();
+    Network { ports: 1, z0: z_port, freqs: net.freqs.clone(), s }
+}
+
 pub fn ports_from_path(path: &std::path::Path) -> Option<usize> {
     let ext = path.extension()?.to_str()?.to_lowercase();
     ext.strip_prefix('s')?.strip_suffix('p')?.parse().ok()
@@ -337,6 +370,26 @@ mod tests {
     fn touchstone_stops_at_the_noise_block() {
         let t = "# GHZ S RI R 50\n1 0 0 1 0 1 0 0 0\n2 0 0 1 0 1 0 0 0\n1 1.5 0.3 45 0.2\n";
         assert_eq!(parse_touchstone(t, 2).unwrap().freqs.len(), 2);
+    }
+
+    #[test]
+    fn series_and_shunt_fixtures_give_back_the_part() {
+        let z0 = 50.0;
+        for z in
+            [Cx::new(0.05, 0.3), Cx::new(2.0, -40.0), Cx::new(30.0, 900.0), Cx::new(5000.0, 2.0)]
+        {
+            let r = Cx::new(z0, 0.0);
+            let series_s11 = z / (z + r * 2.0);
+            let series_s21 = r * 2.0 / (z + r * 2.0);
+            let series = vec![vec![series_s11, series_s21], vec![series_s21, series_s11]];
+            let shunt_s11 = -r / (z * 2.0 + r);
+            let shunt_s21 = z * 2.0 / (z * 2.0 + r);
+            let shunt = vec![vec![shunt_s11, shunt_s21], vec![shunt_s21, shunt_s11]];
+            for (m, mount) in [(series, Mount::Series), (shunt, Mount::Shunt)] {
+                let back = impedance(&m, z0, mount);
+                assert!((back - z).abs() / z.abs() < 1e-9, "{mount:?} {z:?} {back:?}");
+            }
+        }
     }
 
     #[test]

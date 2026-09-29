@@ -340,7 +340,26 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 [[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin
 layers = ["In1.Cu"]
 points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
+
+[[graphics]]                   # board text and lines, same keys as footprint graphics
+kind = "text"
+layer = "F.SilkS"              # F.SilkS, B.SilkS, F.Fab or B.Fab
+at = [7.4, 7.6]
+text = "RF IN"
+size = 1.0                     # mm, the fab minimum is in the board rules
+
+[[artwork]]                    # a filled logo or icon
+layer = "F.SilkS"
+icon = "arrow"                 # built in: arrow, warning, ground, antenna, lightning, pin1, ce
+# file = "logo.svg"            # or any SVG, relative to this file
+at = [7.4, 6.3]                # centre of the artwork
+height = 0.8                   # mm, the width follows the aspect ratio
+# rotation = 90
 ```
+
+Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
+flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
+artwork get the same checks as reference labels: overlap, pads, silk outlines, board edge.
 
 Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
 clearance to every other net and to the board edge, and islands that reach nothing are removed.
@@ -416,7 +435,16 @@ board = "lna-rf"               # the FDTD sim of the board around the devices
 ref = "U1"
 file = "spf5189z.s2p"          # Touchstone 1.x, S parameters, any of MA / DB / RI
 ports = ["AMP_IN", "AMP_OUT"]  # board port for device port 1, 2, ...
+
+[[devices]]                    # a two-terminal part from its vendor fixture data
+ref = "L1"
+file = "models/coilcraft_bcr-162.s2p"
+ports = ["L1"]                 # one board port, at the part's RF pad or across its pads
+mount = "shunt"                # how the vendor measured it: "shunt" to ground or "series"
 ```
+
+A mounted part's impedance is taken from whichever of S11 and S21 is better conditioned, then
+joined to the board port as a one-port.
 
 Device data is interpolated linearly in real and imaginary parts, and the band is cut to where
 every device has data. A two-port result reports gain peak and low, worst S11, S22 and S12, and

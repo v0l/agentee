@@ -153,7 +153,7 @@ pub fn rounded_rect(w: f64, h: f64, r: f64, per_corner: usize) -> Vec<P> {
     out
 }
 
-fn signed_area(poly: &[P]) -> f64 {
+pub fn signed_area(poly: &[P]) -> f64 {
     edges(poly).map(|(a, b)| a[0] * b[1] - b[0] * a[1]).sum::<f64>() / 2.0
 }
 

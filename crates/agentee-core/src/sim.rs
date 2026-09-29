@@ -94,6 +94,8 @@ pub struct DeviceFile {
     pub reference: Option<String>,
     pub file: String,
     pub ports: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<crate::rf::Mount>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -101,6 +103,7 @@ pub struct Device {
     pub reference: String,
     pub file: String,
     pub ports: Vec<String>,
+    pub mount: Option<crate::rf::Mount>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -860,6 +863,7 @@ impl SimFile {
                     reference: x.reference.clone().unwrap_or_default(),
                     file: x.file.clone(),
                     ports: x.ports.clone(),
+                    mount: x.mount,
                 })
                 .collect(),
             maps: None,

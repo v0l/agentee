@@ -260,6 +260,7 @@ impl Project {
                 continue;
             };
             let cx = Context {
+                dir: f.parent().map(Path::to_path_buf).unwrap_or_default(),
                 board: &board,
                 schematic: &schematic,
                 footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
@@ -343,7 +344,11 @@ impl Project {
                 Ok(text) => {
                     match n {
                         None => d.error(&at, "name the file .s2p, .s3p and so on"),
-                        Some(n) if n != dev.ports.len() => d.error(
+                        Some(n) if dev.mount.is_some() && (n != 2 || dev.ports.len() != 1) => d.error(
+                            &at,
+                            "a mounted part is a .s2p fixture measurement joined to one board port",
+                        ),
+                        Some(n) if dev.mount.is_none() && n != dev.ports.len() => d.error(
                             &at,
                             format!("the file has {n} ports, `ports` lists {}", dev.ports.len()),
                         ),
