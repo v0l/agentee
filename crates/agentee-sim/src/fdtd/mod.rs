@@ -530,8 +530,9 @@ mod tests {
             return;
         }
         let (w, h, len) = (0.3, 0.15, 20.0);
-        let clean = run_line(len, w, h, 1.0, 0.0, 0.0, (1e9, 6e9), 0.05);
-        let lossy = run_line(len, w, h, 1.0, 0.0, 0.035, (1e9, 6e9), 0.05);
+        let cell = 0.025;
+        let clean = run_line(len, w, h, 1.0, 0.0, 0.0, (1e9, 6e9), cell);
+        let lossy = run_line(len, w, h, 1.0, 0.0, 0.035, (1e9, 6e9), cell);
         let stack = crate::xsection::Stack {
             above: vec![],
             below: vec![(h, 1.0, 0.0)],
@@ -562,7 +563,66 @@ mod tests {
             "copper loss at 3.5 GHz: FDTD sheets {got:.4} dB, field solver {field:.4} dB, ratio {:.3}",
             got / field
         );
-        assert!(got > 0.0 && (got / field) > 0.9 && (got / field) < 1.35, "{got} {field}");
+        assert!(got > 0.0 && (got / field) > 0.85 && (got / field) < 1.05, "{got} {field}");
+    }
+
+    #[test]
+    fn stripline_copper_loss_splits_over_both_faces() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let (w, h, len, cell) = (0.2, 0.2, 20.0, 0.025);
+        let above = |m: &mut PcbModel| {
+            m.sheets
+                .insert(0, Sheet { name: "T.Cu".into(), z: h, thickness: m.sheets[0].thickness });
+            m.dielectrics.push(Dielectric { z0: 0.0, z1: h, er: 1.0, tan: 0.0, pinned: true });
+            for (s, _) in m.copper.iter_mut() {
+                *s += 1;
+            }
+            m.copper
+                .push((0, Copper::Poly(vec![[0.0, -5.0], [len, -5.0], [len, 5.0], [0.0, 5.0]])));
+            for p in m.ports.iter_mut() {
+                p.sheet += 1;
+                p.reference += 1;
+            }
+            for k in 0..=(len as usize) {
+                for y in [-1.0, 1.0] {
+                    m.vias.push(([k as f64, y], 0.2, 0, 2));
+                }
+            }
+        };
+        let clean = run_line_with(len, w, h, 1.0, 0.0, 0.0, (1e9, 6e9), cell, false, &above);
+        let lossy = run_line_with(len, w, h, 1.0, 0.0, 0.035, (1e9, 6e9), cell, false, &above);
+        let stack = crate::xsection::Stack {
+            above: vec![(h, 1.0, 0.0)],
+            below: vec![(h, 1.0, 0.0)],
+            plane_above: true,
+            plane_below: true,
+            copper: 0.035,
+            fill_er: 1.0,
+            mask: None,
+        };
+        let trace = crate::xsection::Trace { width: w, diff_gap: None, coplanar_gap: None };
+        let res = &crate::xsection::Resolution::FAST;
+        let (g, _) = crate::xsection::build(&stack, &trace, res).unwrap();
+        let geom = crate::loss::wheeler(&stack, &trace, res, false, 1e-8).unwrap();
+        let sweep = crate::loss::sweep(
+            &g,
+            false,
+            w * 0.035,
+            geom,
+            &Default::default(),
+            &[3.5e9],
+            "single",
+            1e-8,
+        );
+        let field = sweep.points[0].conductor_db_per_m * len * 1e-3;
+        let got = db_at(&clean, 3.5e9) - db_at(&lossy, 3.5e9);
+        eprintln!(
+            "stripline copper loss at 3.5 GHz: FDTD {got:.4} dB, field solver {field:.4} dB, ratio {:.3}",
+            got / field
+        );
+        assert!(got > 0.0 && (got / field) > 0.8 && (got / field) < 1.1, "{got} {field}");
     }
 
     #[test]

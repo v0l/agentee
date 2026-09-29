@@ -218,6 +218,16 @@ pub struct Sim {
     pub ports: Vec<PortDef>,
     pub port_src: Vec<Vec<(usize, usize, f32)>>,
     pub inductors: Vec<(usize, usize, f32, f32)>,
+    pub sheets: Vec<SheetEdge>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SheetEdge {
+    pub comp: usize,
+    pub id: usize,
+    pub g: f64,
+    pub x_sig: f64,
+    pub c0: f64,
 }
 
 pub struct Materials {
@@ -341,10 +351,22 @@ impl Sim {
             cb[e.comp][id] = (dt / (eps * (1.0 + beta))) as f32;
             dt / (eps * (1.0 + beta) * r * area(e))
         };
-        series_r.extend(resistive.iter().copied());
         for (comp, id, r) in &series_r {
             let at = unidx(n, *id);
             resistor(&mut ca, &mut cb, &Edge { comp: *comp, at }, *r);
+        }
+        let mut sheets = Vec::new();
+        for (comp, id, r) in resistive {
+            let e = Edge { comp: *comp, at: unidx(n, *id) };
+            resistor(&mut ca, &mut cb, &e, *r);
+            let eps = eps_edge[*comp][*id];
+            sheets.push(SheetEdge {
+                comp: *comp,
+                id: *id,
+                g: dt * length(&e) / (2.0 * r * eps * area(&e)),
+                x_sig: sig_edge[*comp][*id] * dt / (2.0 * eps),
+                c0: dt / eps,
+            });
         }
         let mut port_src = Vec::new();
         for p in &ports {
@@ -371,7 +393,7 @@ impl Sim {
                 }
             }
         }
-        Sim { grid, ax, dt, ca, cb, pml, ports, port_src, inductors }
+        Sim { grid, ax, dt, ca, cb, pml, ports, port_src, inductors, sheets }
     }
 
     pub fn dims(&self) -> [usize; 3] {

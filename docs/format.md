@@ -585,9 +585,13 @@ supports. The viewer shows the same TDR for every driven port under the `tdr` ta
 Dielectrics carry their loss tangent as a conductivity fixed at the band centre, which lands within
 3% of the Hammerstad filling-factor formula on a 50 ohm microstrip. Copper layers are resistive
 sheets with the skin-effect surface resistance at the band centre, times the stackup roughness
-factor. A sheet carries the whole current on one face, so a trace with current on both faces
-reads up to about 25% more copper loss than the 2D field solver; for insertion loss budgets on
-narrow lines, `calc field --sweep` is the reference.
+factor. A zero-thickness sheet has one current, while real copper carries it on two faces, so
+each sheet edge tracks the magnetic field just above and below it through the run and scales its
+resistance by (Jtop^2 + Jbottom^2) / (Jtop + Jbottom)^2: one half for a centred stripline, close to
+one for a trace over a plane. The crowded current at a trace's edges is only resolved as far as
+the cell allows, so copper loss reads low on coarse meshes: on a 0.3 mm microstrip at 3.5 GHz it
+is 22%, 18%, 11% and 7% under the 2D field solver at 0.1, 0.05, 0.025 and 0.0125 mm cells. For
+insertion loss budgets on narrow lines, `calc field --sweep` is the reference.
 
 ### Field maps and emissions
 
