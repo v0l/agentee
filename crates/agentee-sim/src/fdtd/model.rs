@@ -290,6 +290,19 @@ impl PcbModel {
                 }
             }
             fixed.sort_by(f64::total_cmp);
+            let mut spaced: Vec<f64> = Vec::new();
+            for v in fixed {
+                let keep = pinned.iter().any(|p| (p - v).abs() < 1e-9);
+                match spaced.last() {
+                    Some(l) if v - l < opt.cell * 0.6 => {
+                        if keep {
+                            *spaced.last_mut().unwrap() = v;
+                        }
+                    }
+                    _ => spaced.push(v),
+                }
+            }
+            let fixed = spaced;
             let features: Vec<(f64, f64)> = fixed.iter().map(|v| (*v, opt.cell)).collect();
             let inner = lines(&fixed, &features, coarse, ratio);
             pad_pml(inner, opt.pml)

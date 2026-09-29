@@ -336,6 +336,7 @@ pub fn trace_width(
 pub fn run_sim(
     p: &Project,
     name: &str,
+    dry: bool,
     progress: &mut dyn FnMut(&str, usize, f64),
 ) -> Result<Value, String> {
     let r = find(p, &format!("sim:{name}")).or_else(|_| find(p, name))?;
@@ -360,6 +361,21 @@ pub fn run_sim(
         spec.excite.clone(),
         spec.max_steps,
     )?;
+    if dry {
+        let g = &plan.sim.grid;
+        let min = |v: &[f64]| v.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min) * 1e3;
+        let min_steps = ((1.5 / spec.start) / plan.sim.dt) as usize;
+        return Ok(json!({
+            "grid": g.dims(),
+            "cells_millions": g.cells() as f64 / 1e6,
+            "smallest_mm": [min(&g.x), min(&g.y), min(&g.z)],
+            "dt_fs": plan.sim.dt * 1e15,
+            "min_steps": min_steps.min(spec.max_steps),
+            "max_steps": spec.max_steps,
+            "runs": plan.excite.len(),
+            "inductor_edges": plan.sim.inductors.len(),
+        }));
+    }
     let result =
         agentee_sim::fdtd::execute(&plan, &spec.name, agentee_core::sim::hash(&src), progress)?;
     let json_path = agentee_core::sim::result_path(&entry.path);

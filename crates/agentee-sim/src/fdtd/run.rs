@@ -19,6 +19,7 @@ struct Params {
     cap: u32,
     probes: u32,
     pad: u32,
+    base: [u32; 4],
 }
 
 pub struct Pulse {
@@ -52,7 +53,6 @@ pub fn run(
     if nn >= (1 << 24) * 4 {
         return Err(format!("{} cells is too many for one run", sim.grid.cells()));
     }
-    let fields = vec![0f32; 6 * nn];
     let mut coef = Vec::with_capacity(6 * nn);
     for c in 0..3 {
         coef.extend_from_slice(&sim.ca[c]);
@@ -111,27 +111,38 @@ pub fn run(
                 sim.ax[axis].d[e.at[axis]] as f32,
             ]);
         }
-        let loop_first = loops.len() / 5;
-        for col in &p.columns {
-            let q = col[col.len() / 2].at;
-            let mut qu = q;
-            qu[u] -= 1;
-            let mut qv = q;
-            qv[v] -= 1;
-            loops.extend_from_slice(&[
-                idx(n, q[0], q[1], q[2]) as f32,
-                idx(n, qu[0], qu[1], qu[2]) as f32,
-                idx(n, qv[0], qv[1], qv[2]) as f32,
-                sim.ax[v].dd[q[v]] as f32,
-                sim.ax[u].dd[q[u]] as f32,
-            ]);
+        let loop_first = loops.len() / 3;
+        let k = mid[mid.len() / 2].at[axis];
+        let (i0, i1) = (
+            p.columns.iter().map(|c| c[0].at[u]).min().unwrap(),
+            p.columns.iter().map(|c| c[0].at[u]).max().unwrap(),
+        );
+        let (j0, j1) = (
+            p.columns.iter().map(|c| c[0].at[v]).min().unwrap(),
+            p.columns.iter().map(|c| c[0].at[v]).max().unwrap(),
+        );
+        let at = |a: usize, b: usize| {
+            let mut q = [0usize; 3];
+            q[u] = a;
+            q[v] = b;
+            q[axis] = k;
+            idx(n, q[0], q[1], q[2]) as f32
+        };
+        let (hu, hv) = ((3 + u) as f32, (3 + v) as f32);
+        for b in j0..=j1 {
+            let w = sim.ax[v].dd[b] as f32;
+            loops.extend_from_slice(&[at(i1, b), hv, w, at(i0 - 1, b), hv, -w]);
+        }
+        for a in i0..=i1 {
+            let w = sim.ax[u].dd[a] as f32;
+            loops.extend_from_slice(&[at(a, j1), hu, -w, at(a, j0 - 1), hu, w]);
         }
         probe_def.extend_from_slice(&[
             axis as f32,
             first as f32,
             mid.len() as f32,
             loop_first as f32,
-            p.columns.len() as f32,
+            ((loops.len() / 3) - loop_first) as f32,
             u as f32,
             v as f32,
             0.0,
@@ -158,9 +169,11 @@ pub fn run(
         cap: cap as u32,
         probes: ports as u32,
         pad: 0,
+        base: [0, n[0] as u32, (n[0] + n[1]) as u32, 0],
     };
     let nonempty = |v: Vec<f32>| if v.is_empty() { vec![0.0f32; 4] } else { v };
-    let b_fields = g.storage("fields", &fields);
+    let b_e = g.zeroed("e", (3 * nn * 4) as u64);
+    let b_h = g.zeroed("h", (3 * nn * 4) as u64);
     let b_coef = g.storage("coef", &coef);
     let b_psi = g.zeroed("psi", (psi_total.max(1) * 4) as u64);
     let b_axes = g.storage("axes", &axes);
@@ -173,12 +186,17 @@ pub fn run(
     let b_partial = g.zeroed("partial", 1024 * 4);
     let b_edges = g.storage("edges", &nonempty(port_edges));
     let b_loops = g.storage("loops", &nonempty(loops));
-    let module = g.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("fdtd"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("fdtd.wgsl").into()),
-    });
-    let group0: [(u32, &wgpu::Buffer); 8] = [
-        (0, &b_fields),
+    let module = unsafe {
+        g.device.create_shader_module_trusted(
+            wgpu::ShaderModuleDescriptor {
+                label: Some("fdtd"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("fdtd.wgsl").into()),
+            },
+            wgpu::ShaderRuntimeChecks::unchecked(),
+        )
+    };
+    let group0: [(u32, &wgpu::Buffer); 11] = [
+        (0, &b_e),
         (1, &b_coef),
         (2, &b_psi),
         (3, &b_axes),
@@ -186,6 +204,9 @@ pub fn run(
         (5, &b_state),
         (6, &b_series),
         (7, &b_source),
+        (8, &b_e),
+        (9, &b_h),
+        (10, &b_h),
     ];
     let group1: [(u32, &wgpu::Buffer); 5] =
         [(0, &b_inductor), (1, &b_probe), (2, &b_partial), (3, &b_edges), (4, &b_loops)];
@@ -225,13 +246,13 @@ pub fn run(
     let grid = [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), n[0] as u32];
     let lumped_n = (sim.port_src[driven].len().max(sim.inductors.len()) as u32).div_ceil(64).max(1);
     let pipes = vec![
-        (make("update_h", &[0, 2, 3, 4], &[]), grid),
-        (make("update_e", &[0, 1, 2, 3, 4], &[]), grid),
+        (make("update_h", &[2, 3, 4, 8, 9], &[]), grid),
+        (make("update_e", &[0, 1, 2, 3, 4, 10], &[]), grid),
         (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),
-        (make("probe", &[0, 4, 5, 6], &[1, 3, 4]), [(ports as u32).div_ceil(64), 1, 1]),
+        (make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [(ports as u32).div_ceil(64), 1, 1]),
         (make("tick", &[5], &[]), [1, 1, 1]),
     ];
-    let energy = make("energy", &[0, 4], &[2]);
+    let energy = make("energy", &[4, 8], &[2]);
     let chunk = 1000;
     let mut steps = 0;
     let mut peak: f64 = 0.0;

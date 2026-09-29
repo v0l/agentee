@@ -16,9 +16,13 @@ struct Params {
     cap: u32,
     probes: u32,
     pad: u32,
+    base: vec4<u32>,
 }
 
-@group(0) @binding(0) var<storage, read_write> fields: array<f32>;
+@group(0) @binding(0) var<storage, read_write> e: array<f32>;
+@group(0) @binding(8) var<storage, read> e_ro: array<f32>;
+@group(0) @binding(9) var<storage, read_write> h: array<f32>;
+@group(0) @binding(10) var<storage, read> h_ro: array<f32>;
 @group(0) @binding(1) var<storage, read> coef: array<f32>;
 @group(0) @binding(2) var<storage, read_write> psi: array<f32>;
 @group(0) @binding(3) var<storage, read> axes: array<f32>;
@@ -34,122 +38,111 @@ struct Params {
 
 const STRIDE: u32 = 10u;
 
-fn dim(a: u32) -> u32 {
-    if a == 0u { return P.n0; }
-    if a == 1u { return P.n1; }
-    return P.n2;
-}
-
-fn base(a: u32) -> u32 {
-    if a == 0u { return 0u; }
-    if a == 1u { return P.n0; }
-    return P.n0 + P.n1;
-}
-
-fn ax(a: u32, i: u32, f: u32) -> f32 {
-    return axes[(base(a) + i) * STRIDE + f];
-}
-
-fn slot(a: u32, i: u32, f: u32) -> i32 {
-    return i32(ax(a, i, f));
-}
-
-fn idx(p: vec3<u32>) -> u32 {
-    return (p.x * P.n1 + p.y) * P.n2 + p.z;
-}
-
 fn psi_base(e: u32, c: u32, a: u32) -> u32 {
     let k = e * 9u + c * 3u + a;
     return P.psi[k / 4u][k % 4u];
 }
 
-fn psi_idx(a: u32, p: vec3<u32>, s: u32) -> u32 {
+fn axv(a: u32, i: u32, f: u32) -> f32 {
+    return axes[(P.base[a] + i) * STRIDE + f];
+}
+
+fn slotv(a: u32, i: u32, f: u32) -> i32 {
+    return i32(axes[(P.base[a] + i) * STRIDE + f]);
+}
+
+fn psi_at(e: u32, c: u32, a: u32, i: u32, j: u32, k: u32, s: u32) -> u32 {
+    let b = psi_base(e, c, a);
     let w = 2u * P.pml;
-    if a == 0u { return (s * P.n1 + p.y) * P.n2 + p.z; }
-    if a == 1u { return (p.x * w + s) * P.n2 + p.z; }
-    return (p.x * P.n1 + p.y) * w + s;
+    if a == 0u { return b + (s * P.n1 + j) * P.n2 + k; }
+    if a == 1u { return b + (i * w + s) * P.n2 + k; }
+    return b + (i * P.n1 + j) * w + s;
 }
 
-fn comp(p: vec3<u32>, a: u32) -> u32 {
-    if a == 0u { return p.x; }
-    if a == 1u { return p.y; }
-    return p.z;
+fn edge_zone(a: u32, p: u32) -> bool {
+    return p < P.pml + 1u || p + P.pml + 2u > dim_of(a);
 }
 
-fn step_along(p: vec3<u32>, a: u32, d: i32) -> vec3<u32> {
-    var q = vec3<i32>(p);
-    if a == 0u { q.x += d; }
-    if a == 1u { q.y += d; }
-    if a == 2u { q.z += d; }
-    return vec3<u32>(q);
+fn dim_of(a: u32) -> u32 {
+    return select(select(P.n2, P.n1, a == 1u), P.n0, a == 0u);
+}
+
+fn curl_h(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) {
+    let ev = e_ro[v * P.nn + id + du] - e_ro[v * P.nn + id];
+    let eu = e_ro[u * P.nn + id + dv] - e_ro[u * P.nn + id];
+    var t1 = ev * axv(u, pu, 0u);
+    var t2 = eu * axv(v, pv, 0u);
+    if P.pml > 0u && (edge_zone(u, pu) || edge_zone(v, pv)) {
+        let su = slotv(u, pu, 9u);
+        if su >= 0 {
+            let q = psi_at(1u, c, u, i, j, k, u32(su));
+            psi[q] = axv(u, pu, 6u) * psi[q] + axv(u, pu, 7u) * ev * axv(u, pu, 2u);
+            t1 += psi[q];
+        }
+        let sv = slotv(v, pv, 9u);
+        if sv >= 0 {
+            let q = psi_at(1u, c, v, i, j, k, u32(sv));
+            psi[q] = axv(v, pv, 6u) * psi[q] + axv(v, pv, 7u) * eu * axv(v, pv, 2u);
+            t2 += psi[q];
+        }
+    }
+    h[c * P.nn + id] -= P.k_mu * (t1 - t2);
+}
+
+fn curl_e(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) {
+    let f = c * P.nn + id;
+    let cb = coef[(3u + c) * P.nn + id];
+    if cb == 0.0 { return; }
+    let hv = h_ro[v * P.nn + id] - h_ro[v * P.nn + id - du];
+    let hu = h_ro[u * P.nn + id] - h_ro[u * P.nn + id - dv];
+    var t1 = hv * axv(u, pu, 1u);
+    var t2 = hu * axv(v, pv, 1u);
+    if P.pml > 0u && (edge_zone(u, pu) || edge_zone(v, pv)) {
+        let su = slotv(u, pu, 8u);
+        if su >= 0 {
+            let q = psi_at(0u, c, u, i, j, k, u32(su));
+            psi[q] = axv(u, pu, 4u) * psi[q] + axv(u, pu, 5u) * hv * axv(u, pu, 3u);
+            t1 += psi[q];
+        }
+        let sv = slotv(v, pv, 8u);
+        if sv >= 0 {
+            let q = psi_at(0u, c, v, i, j, k, u32(sv));
+            psi[q] = axv(v, pv, 4u) * psi[q] + axv(v, pv, 5u) * hu * axv(v, pv, 3u);
+            t2 += psi[q];
+        }
+    }
+    e[f] = coef[f] * e[f] + cb * (t1 - t2);
 }
 
 @compute @workgroup_size(64, 4, 1)
 fn update_h(@builtin(global_invocation_id) g: vec3<u32>) {
-    let p = vec3<u32>(g.z, g.y, g.x);
-    if p.x >= P.n0 || p.y >= P.n1 || p.z >= P.n2 { return; }
-    let id = idx(p);
-    for (var c = 0u; c < 3u; c++) {
-        let u = (c + 1u) % 3u;
-        let v = (c + 2u) % 3u;
-        let pu = comp(p, u);
-        let pv = comp(p, v);
-        if pu + 1u >= dim(u) || pv + 1u >= dim(v) { continue; }
-        let ev = fields[v * P.nn + idx(step_along(p, u, 1))] - fields[v * P.nn + id];
-        let eu = fields[u * P.nn + idx(step_along(p, v, 1))] - fields[u * P.nn + id];
-        var t1 = ev * ax(u, pu, 0u);
-        var t2 = eu * ax(v, pv, 0u);
-        if P.pml > 0u {
-            let su = slot(u, pu, 9u);
-            if su >= 0 {
-                let q = psi_base(1u, c, u) + psi_idx(u, p, u32(su));
-                psi[q] = ax(u, pu, 6u) * psi[q] + ax(u, pu, 7u) * ev * ax(u, pu, 2u);
-                t1 += psi[q];
-            }
-            let sv = slot(v, pv, 9u);
-            if sv >= 0 {
-                let q = psi_base(1u, c, v) + psi_idx(v, p, u32(sv));
-                psi[q] = ax(v, pv, 6u) * psi[q] + ax(v, pv, 7u) * eu * ax(v, pv, 2u);
-                t2 += psi[q];
-            }
-        }
-        fields[(3u + c) * P.nn + id] -= P.k_mu * (t1 - t2);
-    }
+    let i = g.z;
+    let j = g.y;
+    let k = g.x;
+    if i >= P.n0 || j >= P.n1 || k >= P.n2 { return; }
+    let sx = P.n1 * P.n2;
+    let sy = P.n2;
+    let id = i * sx + j * sy + k;
+    let xi = i + 1u < P.n0;
+    let yj = j + 1u < P.n1;
+    let zk = k + 1u < P.n2;
+    if yj && zk { curl_h(0u, 1u, 2u, id, sy, 1u, j, k, i, j, k); }
+    if zk && xi { curl_h(1u, 2u, 0u, id, 1u, sx, k, i, i, j, k); }
+    if xi && yj { curl_h(2u, 0u, 1u, id, sx, sy, i, j, i, j, k); }
 }
 
 @compute @workgroup_size(64, 4, 1)
 fn update_e(@builtin(global_invocation_id) g: vec3<u32>) {
-    let p = vec3<u32>(g.z, g.y, g.x);
-    if p.x >= P.n0 || p.y >= P.n1 || p.z >= P.n2 { return; }
-    let id = idx(p);
-    for (var c = 0u; c < 3u; c++) {
-        let cb = coef[(3u + c) * P.nn + id];
-        if cb == 0.0 { continue; }
-        let u = (c + 1u) % 3u;
-        let v = (c + 2u) % 3u;
-        let pu = comp(p, u);
-        let pv = comp(p, v);
-        let hv = fields[(3u + v) * P.nn + id] - fields[(3u + v) * P.nn + idx(step_along(p, u, -1))];
-        let hu = fields[(3u + u) * P.nn + id] - fields[(3u + u) * P.nn + idx(step_along(p, v, -1))];
-        var t1 = hv * ax(u, pu, 1u);
-        var t2 = hu * ax(v, pv, 1u);
-        if P.pml > 0u {
-            let su = slot(u, pu, 8u);
-            if su >= 0 {
-                let q = psi_base(0u, c, u) + psi_idx(u, p, u32(su));
-                psi[q] = ax(u, pu, 4u) * psi[q] + ax(u, pu, 5u) * hv * ax(u, pu, 3u);
-                t1 += psi[q];
-            }
-            let sv = slot(v, pv, 8u);
-            if sv >= 0 {
-                let q = psi_base(0u, c, v) + psi_idx(v, p, u32(sv));
-                psi[q] = ax(v, pv, 4u) * psi[q] + ax(v, pv, 5u) * hu * ax(v, pv, 3u);
-                t2 += psi[q];
-            }
-        }
-        let f = c * P.nn + id;
-        fields[f] = coef[f] * fields[f] + cb * (t1 - t2);
-    }
+    let i = g.z;
+    let j = g.y;
+    let k = g.x;
+    if i >= P.n0 || j >= P.n1 || k >= P.n2 { return; }
+    let sx = P.n1 * P.n2;
+    let sy = P.n2;
+    let id = i * sx + j * sy + k;
+    curl_e(0u, 1u, 2u, id, sy, 1u, j, k, i, j, k);
+    curl_e(1u, 2u, 0u, id, 1u, sx, k, i, i, j, k);
+    curl_e(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
 }
 
 fn pulse(t: f32) -> f32 {
@@ -165,14 +158,14 @@ fn lumped(@builtin(global_invocation_id) g: vec3<u32>) {
         let t = (f32(n) + 0.5) * P.dt;
         let id = u32(source[i * 3u]);
         let comp = u32(source[i * 3u + 2u]);
-        fields[comp * P.nn + id] -= source[i * 3u + 1u] * pulse(t);
+        e[comp * P.nn + id] -= source[i * 3u + 1u] * pulse(t);
     }
     if i < P.inductors {
         let b = i * 5u;
         let f = u32(inductor[b]) * P.nn + u32(inductor[b + 1u]);
-        let e = fields[f] - inductor[b + 2u] * inductor[b + 4u];
-        fields[f] = e;
-        inductor[b + 4u] += inductor[b + 3u] * e;
+        let x = e[f] - inductor[b + 2u] * inductor[b + 4u];
+        e[f] = x;
+        inductor[b + 4u] += inductor[b + 3u] * x;
     }
 }
 
@@ -188,20 +181,14 @@ fn probe(@builtin(global_invocation_id) g: vec3<u32>) {
     var v = 0.0;
     for (var e = 0u; e < count; e++) {
         let q = (first + e) * 2u;
-        v -= fields[comp * P.nn + u32(port_edges[q])] * port_edges[q + 1u];
+        v -= e_ro[comp * P.nn + u32(port_edges[q])] * port_edges[q + 1u];
     }
     let lf = u32(probe_def[b + 3u]);
     let lc = u32(probe_def[b + 4u]);
-    let hu = 3u + u32(probe_def[b + 5u]);
-    let hv = 3u + u32(probe_def[b + 6u]);
     var cur = 0.0;
     for (var c = 0u; c < lc; c++) {
-        let q = (lf + c) * 5u;
-        let id = u32(loops[q]);
-        let iu = u32(loops[q + 1u]);
-        let iv = u32(loops[q + 2u]);
-        cur += (fields[hv * P.nn + id] - fields[hv * P.nn + iu]) * loops[q + 3u]
-            - (fields[hu * P.nn + id] - fields[hu * P.nn + iv]) * loops[q + 4u];
+        let q = (lf + c) * 3u;
+        cur += h_ro[(u32(loops[q + 1u]) - 3u) * P.nn + u32(loops[q])] * loops[q + 2u];
     }
     if n < P.cap {
         series[(n * P.ports + k) * 2u] = v;
@@ -223,7 +210,7 @@ fn energy(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation
     let stride = 256u * 1024u;
     var i = w.x * 256u + l.x;
     while i < total {
-        let x = fields[i];
+        let x = e_ro[i];
         s += x * x;
         i += stride;
     }

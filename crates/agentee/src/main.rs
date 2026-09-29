@@ -143,6 +143,9 @@ enum Cmd {
         name: String,
         #[arg(short, long, default_value = ".")]
         project: PathBuf,
+        /// Only mesh it and print the grid, time step and step count
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Trace calculators
     Calc {
@@ -385,10 +388,10 @@ fn run(cli: Cli) -> Result<bool, String> {
             print_json(&v);
             Ok(true)
         }
-        Cmd::Sim { name, project } => {
+        Cmd::Sim { name, project, dry_run } => {
             let p = ops::load(&project)?;
             let mut last = std::time::Instant::now();
-            let v = ops::run_sim(&p, &name, &mut |port, steps, db| {
+            let v = ops::run_sim(&p, &name, dry_run, &mut |port, steps, db| {
                 if last.elapsed().as_secs_f64() > 2.0 {
                     eprintln!("{port}: {steps} steps, fields down {db:.1} dB");
                     last = std::time::Instant::now();

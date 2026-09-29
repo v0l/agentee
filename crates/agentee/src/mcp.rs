@@ -301,7 +301,12 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
         }
         "run_sim" => {
             let p = ops::load(root)?;
-            let v = ops::run_sim(&p, arg(a, "name").ok_or("name is required")?, &mut |_, _, _| {})?;
+            let v = ops::run_sim(
+                &p,
+                arg(a, "name").ok_or("name is required")?,
+                flag(a, "dry_run"),
+                &mut |_, _, _| {},
+            )?;
             Ok(ok(vec![text(pretty(&v))]))
         }
         "field_solve" => {
