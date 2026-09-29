@@ -136,6 +136,13 @@ Cohn's zero-thickness stripline and 0.4% of Hammerstad-Jensen microstrip. When t
 target, check suggests the track width that meets it. `agentee calc field --netclass RF` prints
 the full result (Z0, eeff, C and L per metre, delay, grid).
 
+A class with `diff_gap` is a pair: its `impedance` is the differential impedance, and the solver
+runs both the odd and even modes. `calc field` then adds a `pair` block with Zdiff, Zcommon, the
+odd and even mode impedances and delays, the coupling coefficient (Ze - Zo)/(Ze + Zo), and the
+saturated near-end crosstalk of a long line (half the coupling). The two modes land within 0.5% of
+Cohn's exact edge-coupled stripline. A difference between the odd and even delays is what drives
+far-end crosstalk on microstrip.
+
 ## Symbol (`*.sym.toml`)
 
 ```toml

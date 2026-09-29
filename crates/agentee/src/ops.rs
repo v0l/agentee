@@ -656,6 +656,10 @@ pub fn field_solve(p: &Project, q: &FieldQuery) -> Result<Value, String> {
     };
     let t0 = std::time::Instant::now();
     let r = agentee_sim::xsection::line(board, q.layer, &trace, q.mask, q.fine)?;
+    let pair = match trace.diff_gap {
+        Some(_) => Some(agentee_sim::xsection::pair(board, q.layer, &trace, q.mask, q.fine)?),
+        None => None,
+    };
     let geometry = board.stackup.geometry(q.layer);
     let line = calc::Line { diff_gap_mm: trace.diff_gap, coplanar_gap_mm: trace.coplanar_gap };
     let formula = geometry.map(|g| (g.impedance(width, line) * 100.0).round() / 100.0);
@@ -667,6 +671,7 @@ pub fn field_solve(p: &Project, q: &FieldQuery) -> Result<Value, String> {
         "coplanar_gap_mm": trace.coplanar_gap,
         "solder_mask": q.mask,
         "field": r,
+        "pair": pair,
         "closed_form_uncoated_ohm": formula,
         "seconds": (t0.elapsed().as_secs_f64() * 1000.0).round() / 1000.0,
     }))

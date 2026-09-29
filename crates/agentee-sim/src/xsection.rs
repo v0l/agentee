@@ -426,6 +426,15 @@ impl Resolution {
 }
 
 pub fn build(stack: &Stack, trace: &Trace, res: &Resolution) -> Result<(Grid, bool), String> {
+    build_mode(stack, trace, res, false)
+}
+
+pub fn build_mode(
+    stack: &Stack,
+    trace: &Trace,
+    res: &Resolution,
+    even: bool,
+) -> Result<(Grid, bool), String> {
     let mut stack = stack.clone();
     if stack.above.len() > stack.below.len() && !stack.plane_below {
         std::mem::swap(&mut stack.above, &mut stack.below);
@@ -453,7 +462,10 @@ pub fn build(stack: &Stack, trace: &Trace, res: &Resolution) -> Result<(Grid, bo
     let half = span / 2.0 + reach;
     let x0 = -span / 2.0;
     let strips: Vec<(f64, f64, i8)> = match trace.diff_gap {
-        Some(gap) => vec![(x0, x0 + w, PLUS), (x0 + w + gap, x0 + 2.0 * w + gap, MINUS)],
+        Some(gap) => vec![
+            (x0, x0 + w, PLUS),
+            (x0 + w + gap, x0 + 2.0 * w + gap, if even { PLUS } else { MINUS }),
+        ],
         None => vec![(x0, x0 + w, PLUS)],
     };
     let grounds: Vec<(f64, f64)> = match trace.coplanar_gap {
@@ -572,6 +584,57 @@ pub fn line(
     Ok(solve(g, diff, true, if fine { 1e-8 } else { 1e-7 }))
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct Pair {
+    pub z_diff: f64,
+    pub z_common: f64,
+    pub z_odd: f64,
+    pub z_even: f64,
+    pub coupling: f64,
+    pub next_long_line: f64,
+    pub eeff_odd: f64,
+    pub eeff_even: f64,
+    pub delay_odd_ps_per_mm: f64,
+    pub delay_even_ps_per_mm: f64,
+    pub device: String,
+}
+
+pub fn pair_of(odd: &Line, even: &Line) -> Pair {
+    let (zo, ze) = (odd.z0 / 2.0, even.z0 / 2.0);
+    let k = (ze - zo) / (ze + zo);
+    Pair {
+        z_diff: 2.0 * zo,
+        z_common: ze / 2.0,
+        z_odd: zo,
+        z_even: ze,
+        coupling: k,
+        next_long_line: k / 2.0,
+        eeff_odd: odd.eeff,
+        eeff_even: even.eeff,
+        delay_odd_ps_per_mm: odd.delay_ps_per_mm,
+        delay_even_ps_per_mm: even.delay_ps_per_mm,
+        device: odd.device.clone(),
+    }
+}
+
+pub fn pair(
+    board: &Board,
+    layer: &str,
+    trace: &Trace,
+    mask: bool,
+    fine: bool,
+) -> Result<Pair, String> {
+    if trace.diff_gap.is_none() {
+        return Err("a pair needs a gap".into());
+    }
+    let stack = Stack::from_board(board, layer, mask)?;
+    let res = if fine { &Resolution::FINE } else { &Resolution::FAST };
+    let tol = if fine { 1e-8 } else { 1e-7 };
+    let (go, _) = build_mode(&stack, trace, res, false)?;
+    let (ge, _) = build_mode(&stack, trace, res, true)?;
+    Ok(pair_of(&solve(go, true, true, tol), &solve(ge, true, true, tol)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -641,6 +704,31 @@ mod tests {
             );
             assert!(err.abs() < 0.005, "{err}");
             assert!((r.eeff - er).abs() / er < 0.001);
+        }
+    }
+
+    #[test]
+    fn edge_coupled_stripline_matches_cohn() {
+        let cohn = |w: f64, s: f64, b: f64, er: f64| {
+            let a = (PI * w / (2.0 * b)).tanh();
+            let c = (PI * (w + s) / (2.0 * b)).tanh();
+            let z = |m: f64| 30.0 * PI / er.sqrt() * k((1.0 - m * m).sqrt()) / k(m);
+            (z(a * c), z(a / c))
+        };
+        for (w, s, h, er) in [(0.15, 0.15, 0.2, 4.0), (0.1, 0.25, 0.15, 3.5), (0.3, 0.1, 0.25, 1.0)]
+        {
+            let stack = stripline(h, er);
+            let trace = Trace { width: w, diff_gap: Some(s), coplanar_gap: None };
+            let (go, _) = build_mode(&stack, &trace, &Resolution::FINE, false).unwrap();
+            let (ge, _) = build_mode(&stack, &trace, &Resolution::FINE, true).unwrap();
+            let p = pair_of(&solve(go, true, false, 1e-9), &solve(ge, true, false, 1e-9));
+            let (ze, zo) = cohn(w, s, 2.0 * h, er);
+            eprintln!(
+                "w {w} s {s}: even {:.3} vs {ze:.3}, odd {:.3} vs {zo:.3}",
+                p.z_even, p.z_odd
+            );
+            assert!((p.z_even - ze).abs() / ze < 0.01, "even {} vs {ze}", p.z_even);
+            assert!((p.z_odd - zo).abs() / zo < 0.01, "odd {} vs {zo}", p.z_odd);
         }
     }
 
