@@ -432,7 +432,7 @@ impl PcbModel {
     }
 
     pub fn grown(&self, opt: &Meshing, grid: &Grid) -> Vec<f64> {
-        let z: Vec<f64> = grid.z.iter().map(|v| *v).collect();
+        let z: Vec<f64> = grid.z.to_vec();
         self.sheets
             .iter()
             .map(|sh| {
