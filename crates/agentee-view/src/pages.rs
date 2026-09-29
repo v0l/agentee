@@ -943,6 +943,15 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             crate::eye::canvas(ui, c, index, st, project.generation);
             return;
         }
+        if let Some(r) = &s.result
+            && s.kind == agentee_core::sim::SimKind::Pdn
+        {
+            let h = ui.available_height();
+            section(ui, "impedance", "self impedance at each sink, the other sinks open", |ui| {
+                crate::plot::loglog(ui, r, egui::vec2(ui.available_width(), (h - 40.0).max(240.0)));
+            });
+            return;
+        }
         if let Some(r) = &s.result {
             ui.horizontal(|ui| {
                 if toggle(ui, "s-parameters", !st.show_fields && !st.show_tdr).clicked() {
@@ -1050,6 +1059,14 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
         return;
     }
     let cascade = s.kind == agentee_core::sim::SimKind::Cascade;
+    if let Some(pdn) = &s.pdn {
+        pdn_card(ui, s, pdn, rail);
+        ui.add_space(8.0);
+        if let Some(r) = &s.result {
+            crate::heat::readings(ui, &r.readings);
+        }
+        return;
+    }
     if cascade {
         cascade_card(ui, s, rail);
     } else {
@@ -1069,6 +1086,55 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
         return;
     }
     sim_tables(ui, layout, s);
+}
+
+fn pdn_card(
+    ui: &mut Ui,
+    s: &agentee_core::sim::Sim,
+    pdn: &agentee_core::sim::PdnSpec,
+    rail: Color32,
+) {
+    card(
+        ui,
+        Some(rail),
+        |ui| {
+            Line::new().legend("pdn").value(&s.name).elided(ui);
+        },
+        |ui| {
+            let target =
+                pdn.target.map(|t| format!("{:.1} mohm", t * 1e3)).unwrap_or_else(|| "none".into());
+            readouts(
+                ui,
+                &[
+                    ("sinks", pdn.sinks.len().to_string(), VALUE),
+                    ("decaps", pdn.decaps.len().to_string(), READOUT),
+                    ("target", target, TRACE),
+                ],
+            );
+            if !s.description.is_empty() {
+                note(ui, &s.description, VALUE);
+            }
+            reading(ui, "board", s.board.clone());
+            reading(ui, "sinks", pdn.sinks.join(", "));
+            if let Some((p, r, l)) = &pdn.vrm {
+                reading(ui, "vrm", format!("{p}: {:.1} mohm + {:.1} nH", r * 1e3, l * 1e9));
+            }
+            for c in &pdn.decaps {
+                let what = match &c.model {
+                    agentee_core::sim::DecapModel::File { path, .. } => path.clone(),
+                    agentee_core::sim::DecapModel::Rlc { c, esl, esr } => {
+                        let cap = if *c >= 1e-6 {
+                            format!("{} uF", trim(c * 1e6, 2))
+                        } else {
+                            format!("{} nF", trim(c * 1e9, 2))
+                        };
+                        format!("{cap}, {:.2} nH, {:.1} mohm", esl * 1e9, esr * 1e3)
+                    }
+                };
+                reading(ui, &c.port, format!("{} {what}", c.reference));
+            }
+        },
+    );
 }
 
 fn cascade_card(ui: &mut Ui, s: &agentee_core::sim::Sim, rail: Color32) {

@@ -107,6 +107,75 @@ pub struct SimFile {
     pub ctle: Option<CtleFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dfe_taps: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sinks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decaps: Vec<DecapFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vrm: Option<VrmFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<TargetFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecapFile {
+    pub port: String,
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<crate::rf::Mount>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub c: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub esl: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub esr: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VrmFile {
+    pub port: String,
+    pub r: String,
+    pub l: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impedance: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voltage: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ripple: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transient: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub enum DecapModel {
+    File { path: String, mount: crate::rf::Mount },
+    Rlc { c: f64, esl: f64, esr: f64 },
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Decap {
+    pub port: String,
+    pub reference: String,
+    pub model: DecapModel,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PdnSpec {
+    pub sinks: Vec<String>,
+    pub decaps: Vec<Decap>,
+    pub vrm: Option<(String, f64, f64)>,
+    pub target: Option<f64>,
+    pub band: Option<(f64, f64, usize)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -270,6 +339,7 @@ pub enum SimKind {
     Thermal,
     Cascade,
     Channel,
+    Pdn,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -529,6 +599,7 @@ pub struct Sim {
     pub report: Vec<f64>,
     pub after: Option<StageFile>,
     pub channel_spec: Option<ChannelSpec>,
+    pub pdn: Option<PdnSpec>,
     #[serde(skip)]
     pub channel: Option<ChannelResult>,
     #[serde(skip)]
@@ -692,6 +763,82 @@ pub fn freq(s: &str) -> Option<f64> {
 }
 
 impl SimFile {
+    fn pdn_spec(&self, d: &mut Diags) -> Option<PdnSpec> {
+        if self.sinks.is_empty() {
+            d.error("sinks", "name the ports on the load's power pins in `sinks`");
+            return None;
+        }
+        let value = |v: &Option<String>, what: &str, d: &mut Diags| -> Option<f64> {
+            let s = v.as_deref()?;
+            let x = parse_value(s);
+            if x.is_none() {
+                d.error("decaps", format!("cannot read {what} `{s}`"));
+            }
+            x
+        };
+        let mut decaps = Vec::new();
+        for (i, c) in self.decaps.iter().enumerate() {
+            let model = match (&c.file, c.mount, &c.c) {
+                (Some(f), m, None) => DecapModel::File {
+                    path: f.clone(),
+                    mount: m.unwrap_or(crate::rf::Mount::Series),
+                },
+                (None, None, Some(_)) => {
+                    let cap = value(&c.c, "c", d)?;
+                    DecapModel::Rlc {
+                        c: cap,
+                        esl: value(&c.esl, "esl", d).unwrap_or(0.0),
+                        esr: value(&c.esr, "esr", d).unwrap_or(0.0),
+                    }
+                }
+                _ => {
+                    d.error(
+                        format!("decaps[{i}]"),
+                        "give a vendor `file` (with `mount`), or `c` with `esl` and `esr`",
+                    );
+                    continue;
+                }
+            };
+            decaps.push(Decap {
+                port: c.port.clone(),
+                reference: c.reference.clone().unwrap_or_default(),
+                model,
+            });
+        }
+        let vrm = match &self.vrm {
+            None => None,
+            Some(v) => match (parse_value(&v.r), parse_value(&v.l)) {
+                (Some(r), Some(l)) => Some((v.port.clone(), r, l)),
+                _ => {
+                    d.error("vrm", "vrm needs `r` and `l`, like \"1mohm\" and \"20nH\"");
+                    None
+                }
+            },
+        };
+        let target = match &self.target {
+            None => None,
+            Some(t) => {
+                match (&t.impedance, &t.voltage, t.ripple, &t.transient) {
+                    (Some(z), _, _, _) => parse_value(z),
+                    (None, Some(v), Some(r), Some(i)) => {
+                        match (parse_volts(v), parse_value(i.trim_end_matches(['A', 'a']))) {
+                            (Some(v), Some(i)) if i > 0.0 => Some(v * r / 100.0 / i),
+                            _ => None,
+                        }
+                    }
+                    _ => {
+                        d.error("target", "give `impedance`, or `voltage`, `ripple` (percent) and `transient` (amps)");
+                        None
+                    }
+                }
+            }
+        };
+        let band = self.frequency.as_ref().and_then(|f| {
+            Some((freq(&f.start)?, freq(&f.stop)?, f.points.unwrap_or(200).clamp(2, 5001)))
+        });
+        Some(PdnSpec { sinks: self.sinks.clone(), decaps, vrm, target, band })
+    }
+
     fn channel_spec(&self, d: &mut Diags) -> Option<ChannelSpec> {
         let (through, differential) = match (self.through.len(), self.pair.len()) {
             (2, 0) => (self.through.clone(), false),
@@ -1081,6 +1228,9 @@ impl SimFile {
         if self.far_field && fields.is_empty() {
             d.error("far_field", "far_field needs `fields`, the frequencies to compute it at");
         }
+        if kind == SimKind::Pdn && self.board.is_none() {
+            d.error("board", "a pdn needs `board`, the FDTD sim with ports on the rail");
+        }
         if kind == SimKind::Channel && self.board.is_none() {
             d.error("board", "a channel needs `board`, the FDTD or cascade sim of the link");
         }
@@ -1094,7 +1244,9 @@ impl SimFile {
             if self.devices.is_empty() {
                 d.error("devices", "a cascade needs at least one [[devices]] entry");
             }
-        } else if (self.board.is_some() && kind != SimKind::Channel) || !self.devices.is_empty() {
+        } else if (self.board.is_some() && !matches!(kind, SimKind::Channel | SimKind::Pdn))
+            || !self.devices.is_empty()
+        {
             d.error("devices", "`board` and `devices` belong to kind = \"cascade\"");
         }
         let cell = self.cell.map(Length::to_mm).unwrap_or(if kind == SimKind::Thermal {
@@ -1162,6 +1314,7 @@ impl SimFile {
                 .collect(),
             after: self.after.clone(),
             channel_spec: (kind == SimKind::Channel).then(|| self.channel_spec(d)).flatten(),
+            pdn: (kind == SimKind::Pdn).then(|| self.pdn_spec(d)).flatten(),
             channel: None,
             maps: None,
             description: self.description.clone(),

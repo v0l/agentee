@@ -438,3 +438,89 @@ pub fn xy_plot(
         resp.on_hover_text(lines.join("\n"));
     }
 }
+
+pub fn loglog(ui: &mut Ui, r: &SimResult, size: Vec2) {
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 0.0, WELL);
+    p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
+    let area =
+        Rect::from_min_max(rect.min + Vec2::new(70.0, 14.0), rect.max - Vec2::new(14.0, 30.0));
+    let vals: Vec<f64> = r
+        .curves
+        .iter()
+        .flat_map(|c| c.values.iter().flatten().copied())
+        .filter(|v| *v > 0.0)
+        .collect();
+    if vals.is_empty() || r.freqs.len() < 2 {
+        return;
+    }
+    let (f0, f1) = (r.freqs[0].log10(), r.freqs.last().unwrap().log10());
+    let lo = vals.iter().copied().fold(f64::MAX, f64::min).log10().floor();
+    let hi = vals.iter().copied().fold(f64::MIN, f64::max).log10().ceil().max(lo + 1.0);
+    let x = |f: f64| area.left() + ((f.log10() - f0) / (f1 - f0)) as f32 * area.width();
+    let y =
+        |v: f64| area.bottom() - ((v.max(1e-12).log10() - lo) / (hi - lo)) as f32 * area.height();
+    let grid = Stroke::new(1.0, ETCH);
+    let ohm =
+        |v: f64| if v >= 1.0 { format!("{v:.0} ohm") } else { format!("{:.0} mohm", v * 1e3) };
+    let mut e = lo;
+    while e <= hi + 1e-9 {
+        let v = 10f64.powf(e);
+        p.line_segment([Pos2::new(area.left(), y(v)), Pos2::new(area.right(), y(v))], grid);
+        p.text(
+            Pos2::new(area.left() - 6.0, y(v)),
+            Align2::RIGHT_CENTER,
+            ohm(v),
+            theme::figure(10.5),
+            LEGEND,
+        );
+        e += 1.0;
+    }
+    let mut d = f0.ceil();
+    while d <= f1 + 1e-9 {
+        let f = 10f64.powf(d);
+        p.line_segment([Pos2::new(x(f), area.top()), Pos2::new(x(f), area.bottom())], grid);
+        p.text(
+            Pos2::new(x(f), area.bottom() + 6.0),
+            Align2::CENTER_TOP,
+            freq_text(f),
+            theme::figure(10.5),
+            LEGEND,
+        );
+        d += 1.0;
+    }
+    for (k, c) in r.curves.iter().enumerate() {
+        let target = c.name == "target";
+        let colour = if target { FAULT } else { color(k) };
+        let pts: Vec<Pos2> = r
+            .freqs
+            .iter()
+            .zip(&c.values)
+            .filter_map(|(f, v)| v.filter(|v| *v > 0.0).map(|v| Pos2::new(x(*f), y(v))))
+            .collect();
+        p.add(PathShape::line(pts, Stroke::new(if target { 1.2 } else { 1.8 }, colour)));
+        let at = Pos2::new(area.right() - 60.0, area.top() + 6.0 + 15.0 * k as f32);
+        p.line_segment([at, at + Vec2::new(14.0, 0.0)], Stroke::new(2.0, colour));
+        p.text(
+            at + Vec2::new(-6.0, 0.0),
+            Align2::RIGHT_CENTER,
+            &c.name,
+            theme::legend_font(10.5),
+            colour,
+        );
+    }
+    if let Some(h) = resp.hover_pos()
+        && area.contains(h)
+    {
+        let f = 10f64.powf(f0 + ((h.x - area.left()) / area.width()) as f64 * (f1 - f0));
+        let i = r.freqs.iter().position(|v| *v >= f).unwrap_or(r.freqs.len() - 1);
+        let mut lines = vec![freq_text(r.freqs[i])];
+        for c in &r.curves {
+            if let Some(Some(v)) = c.values.get(i) {
+                lines.push(format!("{} {}", c.name, ohm(*v)));
+            }
+        }
+        resp.on_hover_text(lines.join("\n"));
+    }
+}

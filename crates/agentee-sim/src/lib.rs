@@ -6,4 +6,5 @@ pub mod fdtd;
 pub mod gpu;
 pub mod loss;
 pub mod nodal;
+pub mod pdn;
 pub mod xsection;

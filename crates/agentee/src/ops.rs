@@ -357,6 +357,9 @@ pub fn run_sim(
     if spec.kind == agentee_core::sim::SimKind::Channel {
         return run_channel(p, entry, &src);
     }
+    if spec.kind == agentee_core::sim::SimKind::Pdn {
+        return run_pdn(p, entry, &src);
+    }
     if spec.kind != agentee_core::sim::SimKind::Fdtd {
         let hash = agentee_core::sim::hash(&src);
         let result = match spec.kind {
@@ -468,6 +471,72 @@ pub fn run_sim(
         "touchstone": touch,
         "summary": table,
         "readings": result.readings,
+    }))
+}
+
+fn run_pdn(
+    p: &Project,
+    entry: &agentee_core::project::Entry<agentee_core::sim::Sim>,
+    src: &str,
+) -> Result<Value, String> {
+    use agentee_sim::pdn::{Attach, Part};
+    let spec = &entry.item;
+    let ps = spec.pdn.as_ref().ok_or("the pdn spec has errors")?;
+    let board = p.sims.iter().find(|s| s.name == spec.board).ok_or("the board sim is missing")?;
+    let r = board.item.result.as_ref().ok_or("the board sim has not run")?;
+    let port = |n: &String| r.ports.iter().position(|x| x == n).ok_or(format!("{n} is not a port"));
+    let z0s: Vec<f64> = r
+        .ports
+        .iter()
+        .map(|n| {
+            board.item.ports.iter().find(|q| &q.name == n).map(|q| q.impedance).unwrap_or(50.0)
+        })
+        .collect();
+    let z0 = z0s[0];
+    if z0s.iter().any(|z| (z - z0).abs() > 1e-9) {
+        return Err("every port of the board sim needs the same impedance for a pdn".into());
+    }
+    let dir = entry.path.parent().unwrap_or(std::path::Path::new("."));
+    let mut parts = Vec::new();
+    let mut texts = Vec::new();
+    for c in &ps.decaps {
+        let attach = match &c.model {
+            agentee_core::sim::DecapModel::Rlc { c, esl, esr } => {
+                Attach::Series { r: *esr, l: *esl, c: Some(*c) }
+            }
+            agentee_core::sim::DecapModel::File { path, mount } => {
+                let file = dir.join(path);
+                let text = std::fs::read_to_string(&file)
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
+                let net = agentee_core::rf::parse_touchstone(&text, 2)?;
+                texts.push(text);
+                Attach::Measured(agentee_core::rf::as_one_port(&net, *mount, z0).0)
+            }
+        };
+        parts.push(Part { name: c.reference.clone(), port: port(&c.port)?, attach });
+    }
+    if let Some((vp, vr, vl)) = &ps.vrm {
+        parts.push(Part {
+            name: "vrm".into(),
+            port: port(vp)?,
+            attach: Attach::Series { r: *vr, l: *vl, c: None },
+        });
+    }
+    let sinks = ps.sinks.iter().map(port).collect::<Result<Vec<_>, _>>()?;
+    let (a, b, n) = ps.band.unwrap_or((1e5, *r.freqs.last().unwrap(), 200));
+    let freqs: Vec<f64> =
+        (0..n).map(|k| a * (b / a).powf(k as f64 / (n - 1).max(1) as f64)).collect();
+    let hash = agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), r.spec_hash, &texts);
+    let out = agentee_sim::pdn::run(&spec.name, r, z0, &sinks, &parts, &freqs, ps.target, hash)?;
+    let json_path = agentee_core::sim::result_path(&entry.path);
+    std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(json!({
+        "sim": spec.name,
+        "kind": spec.kind,
+        "target_ohm": ps.target,
+        "result": json_path,
+        "readings": out.readings,
     }))
 }
 

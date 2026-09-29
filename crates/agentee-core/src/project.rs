@@ -269,7 +269,14 @@ impl Project {
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         let cascade = |f: &SimFile| {
-            matches!(f.kind, Some(crate::sim::SimKind::Cascade | crate::sim::SimKind::Channel))
+            matches!(
+                f.kind,
+                Some(
+                    crate::sim::SimKind::Cascade
+                        | crate::sim::SimKind::Channel
+                        | crate::sim::SimKind::Pdn
+                )
+            )
         };
         sim_files.sort_by_key(|(_, f, _)| cascade(f));
         let layouts_of: Vec<(String, Option<String>)> =
@@ -301,6 +308,9 @@ impl Project {
             if file.kind == Some(crate::sim::SimKind::Channel) {
                 hash = p.check_channel(&item, hash, &mut d);
             }
+            if file.kind == Some(crate::sim::SimKind::Pdn) {
+                hash = p.check_pdn(&f, &item, hash, &mut d);
+            }
             let path = crate::sim::result_path(&f);
             let text = std::fs::read_to_string(&path).ok();
             let fdtd = text.as_deref().and_then(|t| serde_json::from_str::<SimResult>(t).ok());
@@ -331,6 +341,53 @@ impl Project {
             p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         Ok(p)
+    }
+
+    fn check_pdn(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
+        let Some(board) = self.sims.iter().find(|s| s.name == sim.board) else {
+            if !sim.board.is_empty() {
+                d.error("board", format!("no sim named `{}`", sim.board));
+            }
+            return hash;
+        };
+        let Some(r) = &board.item.result else {
+            d.error("board", format!("`{}` has not run yet", sim.board));
+            return hash;
+        };
+        let Some(spec) = &sim.pdn else { return hash };
+        let mut texts = Vec::new();
+        let mut named: Vec<&String> = spec.sinks.iter().collect();
+        named.extend(spec.decaps.iter().map(|c| &c.port));
+        if let Some(v) = &spec.vrm {
+            named.push(&v.0);
+        }
+        for n in named {
+            if !r.ports.contains(n) {
+                d.error(
+                    "ports",
+                    format!(
+                        "`{n}` is not a port of {}, there is {}",
+                        sim.board,
+                        r.ports.join(", ")
+                    ),
+                );
+            }
+        }
+        if !r.excited.iter().all(|e| *e) {
+            d.error("board", format!("`{}` must drive every port (drop `excite`)", sim.board));
+        }
+        for c in &spec.decaps {
+            if let crate::sim::DecapModel::File { path: f, .. } = &c.model {
+                match std::fs::read_to_string(path.parent().unwrap_or(Path::new(".")).join(f)) {
+                    Ok(t) => texts.push(t),
+                    Err(e) => d.error("decaps", format!("cannot read {f}: {e}")),
+                }
+            }
+        }
+        if board.item.stale {
+            d.warn("board", format!("the result of `{}` is stale", sim.board));
+        }
+        crate::sim::cascade_hash(hash, r.spec_hash, &texts)
     }
 
     fn check_channel(&self, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
