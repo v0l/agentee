@@ -157,6 +157,119 @@ pub fn db_plot(
     }
 }
 
+pub fn curve_plot(
+    ui: &mut Ui,
+    r: &SimResult,
+    c: &agentee_core::sim::Curve,
+    colour: Color32,
+    size: Vec2,
+    interactive: bool,
+) {
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 0.0, WELL);
+    p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
+    let area =
+        Rect::from_min_max(rect.min + Vec2::new(52.0, 18.0), rect.max - Vec2::new(14.0, 26.0));
+    let known: Vec<(f64, f64)> = r
+        .freqs
+        .iter()
+        .zip(&c.values)
+        .filter_map(|(f, v)| v.filter(|v| v.is_finite()).map(|v| (*f, v)))
+        .collect();
+    p.text(
+        rect.left_top() + Vec2::new(6.0, 4.0),
+        Align2::LEFT_TOP,
+        if c.unit.is_empty() { c.name.clone() } else { format!("{}, {}", c.name, c.unit) },
+        theme::legend_font(10.5),
+        colour,
+    );
+    if known.len() < 2 {
+        p.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            "no data in this band",
+            theme::legend_font(10.5),
+            LEGEND,
+        );
+        return;
+    }
+    let (f0, f1) = (r.freqs[0], *r.freqs.last().unwrap());
+    let lo = known.iter().map(|v| v.1).fold(f64::MAX, f64::min);
+    let hi = known.iter().map(|v| v.1).fold(f64::MIN, f64::max);
+    let step = nice(((hi - lo).max(1e-3)) / 4.0);
+    let (lo, hi) =
+        ((lo / step).floor() * step, (hi / step).ceil() * step + if hi == lo { step } else { 0.0 });
+    let x = |f: f64| area.left() + ((f - f0) / (f1 - f0)) as f32 * area.width();
+    let y = |v: f64| area.bottom() - ((v - lo) / (hi - lo)) as f32 * area.height();
+    let grid = Stroke::new(1.0, ETCH);
+    let mut v = lo;
+    while v <= hi + step * 0.01 {
+        p.line_segment([Pos2::new(area.left(), y(v)), Pos2::new(area.right(), y(v))], grid);
+        p.text(
+            Pos2::new(area.left() - 6.0, y(v)),
+            Align2::RIGHT_CENTER,
+            trim_num(v, step),
+            theme::figure(10.5),
+            LEGEND,
+        );
+        v += step;
+    }
+    let xstep = nice((f1 - f0) / 5.0);
+    let mut f = (f0 / xstep).ceil() * xstep;
+    while f <= f1 + 1.0 {
+        p.line_segment([Pos2::new(x(f), area.top()), Pos2::new(x(f), area.bottom())], grid);
+        p.text(
+            Pos2::new(x(f), area.bottom() + 5.0),
+            Align2::CENTER_TOP,
+            freq_text(f),
+            theme::figure(10.5),
+            LEGEND,
+        );
+        f += xstep;
+    }
+    let mut run: Vec<Pos2> = Vec::new();
+    for (f, v) in r.freqs.iter().zip(&c.values) {
+        match v {
+            Some(v) if v.is_finite() => run.push(Pos2::new(x(*f), y(*v))),
+            _ => {
+                if run.len() > 1 {
+                    p.add(PathShape::line(std::mem::take(&mut run), Stroke::new(1.8, colour)));
+                }
+                run.clear();
+            }
+        }
+    }
+    if run.len() > 1 {
+        p.add(PathShape::line(run, Stroke::new(1.8, colour)));
+    }
+    if interactive
+        && let Some(h) = resp.hover_pos()
+        && area.contains(h)
+    {
+        let fh = f0 + ((h.x - area.left()) / area.width()) as f64 * (f1 - f0);
+        let idx = r.freqs.iter().position(|v| *v >= fh).unwrap_or(r.freqs.len() - 1);
+        if let Some(Some(v)) = c.values.get(idx) {
+            resp.on_hover_text(format!(
+                "{}\n{} {v:.3} {}",
+                freq_text(r.freqs[idx]),
+                c.name,
+                c.unit
+            ));
+        }
+    }
+}
+
+fn trim_num(v: f64, step: f64) -> String {
+    if step >= 1.0 {
+        format!("{v:.0}")
+    } else if step >= 0.1 {
+        format!("{v:.1}")
+    } else {
+        format!("{v:.2}")
+    }
+}
+
 pub fn smith(ui: &mut Ui, r: &SimResult, hidden: &[(usize, usize)], size: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     let p = ui.painter_at(rect);

@@ -979,7 +979,28 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             "reflection",
             "S11, S22 ... from the start (dot) to the stop (ring) frequency",
             |ui| {
-                crate::plot::smith(ui, r, &st.hidden_curves, side);
+                ui.horizontal_top(|ui| {
+                    crate::plot::smith(ui, r, &st.hidden_curves, side);
+                    if !r.curves.is_empty() {
+                        ui.add_space(8.0);
+                        ui.vertical(|ui| {
+                            let n = r.curves.len() as f32;
+                            let size =
+                                egui::vec2(ui.available_width(), (side - 6.0 * (n - 1.0)) / n);
+                            for (k, c) in r.curves.iter().enumerate() {
+                                crate::plot::curve_plot(
+                                    ui,
+                                    r,
+                                    c,
+                                    crate::plot::color(k + 4),
+                                    size,
+                                    st.interactive,
+                                );
+                                ui.add_space(6.0);
+                            }
+                        });
+                    }
+                });
             },
         );
     });

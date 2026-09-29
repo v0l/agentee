@@ -502,7 +502,12 @@ fn run_cascade(
                 .unwrap_or(50.0);
             net = agentee_core::rf::as_one_port(&net, mount, z);
         }
-        placed.push(agentee_sim::cascade::Placed { name: d.file.clone(), net, ports });
+        placed.push(agentee_sim::cascade::Placed {
+            name: d.file.clone(),
+            net,
+            ports,
+            datasheet: d.datasheet.clone(),
+        });
         texts.push(text);
     }
     let z0: Vec<f64> = result
@@ -514,7 +519,13 @@ fn run_cascade(
         .collect();
     let hash =
         agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), result.spec_hash, &texts);
-    let out = agentee_sim::cascade::run(&spec.name, result, &z0, &placed, hash)?;
+    let budget = agentee_sim::cascade::Budget {
+        kelvin: spec.ambient + 273.15,
+        bandwidth: spec.bandwidth,
+        report: spec.report.clone(),
+        after: spec.after.clone(),
+    };
+    let out = agentee_sim::cascade::run(&spec.name, result, &z0, &placed, &budget, hash)?;
     let json_path = agentee_core::sim::result_path(&entry.path);
     std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;

@@ -87,9 +87,28 @@ pub struct Network {
     pub z0: f64,
     pub freqs: Vec<f64>,
     pub s: Vec<Matrix>,
+    pub noise: Vec<(f64, NoiseParams)>,
 }
 
 impl Network {
+    pub fn noise_at(&self, f: f64) -> Option<NoiseParams> {
+        let (first, last) = (self.noise.first()?.0, self.noise.last()?.0);
+        if f < first * (1.0 - 1e-9) || f > last * (1.0 + 1e-9) {
+            return None;
+        }
+        let k = self.noise.partition_point(|x| x.0 < f).min(self.noise.len() - 1);
+        if k == 0 || self.noise[k].0 == f {
+            return Some(self.noise[k].1);
+        }
+        let ((f0, a), (f1, b)) = (self.noise[k - 1], self.noise[k]);
+        let t = (f - f0) / (f1 - f0);
+        Some(NoiseParams {
+            fmin: a.fmin * (1.0 - t) + b.fmin * t,
+            gamma_opt: a.gamma_opt * (1.0 - t) + b.gamma_opt * t,
+            rn: a.rn * (1.0 - t) + b.rn * t,
+        })
+    }
+
     pub fn at(&self, f: f64) -> Option<Matrix> {
         let (first, last) = (*self.freqs.first()?, *self.freqs.last()?);
         if f < first * (1.0 - 1e-9) || f > last * (1.0 + 1e-9) {
@@ -158,12 +177,15 @@ pub fn parse_touchstone(text: &str, ports: usize) -> Result<Network, String> {
         }
     }
     let per = 1 + 2 * ports * ports;
-    let mut net = Network { ports, z0, freqs: Vec::new(), s: Vec::new() };
-    for rec in numbers.chunks(per) {
-        let f = rec[0] * scale;
+    let mut net = Network { ports, z0, freqs: Vec::new(), s: Vec::new(), noise: Vec::new() };
+    let mut pos = 0;
+    while pos < numbers.len() {
+        let f = numbers[pos] * scale;
         if net.freqs.last().is_some_and(|last| f <= *last) {
             break;
         }
+        let rec = &numbers[pos..(pos + per).min(numbers.len())];
+        pos += per;
         if rec.len() < per {
             return Err(format!("the record at {} Hz is short", f));
         }
@@ -187,6 +209,21 @@ pub fn parse_touchstone(text: &str, ports: usize) -> Result<Network, String> {
     }
     if net.freqs.is_empty() {
         return Err("no frequency points".into());
+    }
+    if ports == 2 {
+        for rec in numbers[pos.min(numbers.len())..].chunks(5) {
+            if rec.len() < 5 {
+                return Err("the noise block ends in the middle of a record".into());
+            }
+            net.noise.push((
+                rec[0] * scale,
+                NoiseParams {
+                    fmin: 10f64.powf(rec[1] / 10.0),
+                    gamma_opt: Cx::polar(rec[2], rec[3]),
+                    rn: rec[4] * z0,
+                },
+            ));
+        }
     }
     Ok(net)
 }
@@ -221,7 +258,7 @@ pub fn as_one_port(net: &Network, mount: Mount, z_port: f64) -> Network {
             vec![vec![(z - r) / (z + r)]]
         })
         .collect();
-    Network { ports: 1, z0: z_port, freqs: net.freqs.clone(), s }
+    Network { ports: 1, z0: z_port, freqs: net.freqs.clone(), s, noise: Vec::new() }
 }
 
 pub fn ports_from_path(path: &std::path::Path) -> Option<usize> {
@@ -262,7 +299,91 @@ pub fn solve(mut a: Matrix, mut b: Matrix) -> Option<Matrix> {
     Some(b)
 }
 
+pub struct Joined {
+    pub s: Matrix,
+    pub external: Vec<usize>,
+    pub transfer: Matrix,
+    pub internal: Vec<usize>,
+    pub response: Matrix,
+}
+
 pub fn connect(s: &Matrix, pairs: &[(usize, usize)]) -> Option<(Matrix, Vec<usize>)> {
+    join(s, pairs).map(|j| (j.s, j.external))
+}
+
+pub fn mul(a: &Matrix, b: &Matrix) -> Matrix {
+    let (r, k, c) = (a.len(), b.len(), b.first().map(|x| x.len()).unwrap_or(0));
+    (0..r)
+        .map(|i| (0..c).map(|j| (0..k).fold(Cx::ZERO, |acc, t| acc + a[i][t] * b[t][j])).collect())
+        .collect()
+}
+
+pub fn adjoint(a: &Matrix) -> Matrix {
+    let (r, c) = (a.len(), a.first().map(|x| x.len()).unwrap_or(0));
+    (0..c).map(|j| (0..r).map(|i| a[i][j].conj()).collect()).collect()
+}
+
+pub const K_B: f64 = 1.380649e-23;
+pub const T0: f64 = 290.0;
+
+pub fn passive_noise(s: &Matrix, kelvin: f64) -> Matrix {
+    let ss = mul(s, &adjoint(s));
+    let n = s.len();
+    (0..n)
+        .map(|i| {
+            (0..n)
+                .map(|j| (if i == j { Cx::ONE } else { Cx::ZERO } - ss[i][j]) * (K_B * kelvin))
+                .collect()
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct NoiseParams {
+    pub fmin: f64,
+    pub gamma_opt: Cx,
+    pub rn: f64,
+}
+
+pub fn active_noise(s: &Matrix, np: NoiseParams, z0: f64) -> Option<Matrix> {
+    let (s11, s12, s21, s22) = (s[0][0], s[0][1], s[1][0], s[1][1]);
+    let two = s21 * 2.0;
+    let a = ((Cx::ONE + s11) * (Cx::ONE - s22) + s12 * s21) / two;
+    let b = ((Cx::ONE + s11) * (Cx::ONE + s22) - s12 * s21) * z0 / two;
+    let c = ((Cx::ONE - s11) * (Cx::ONE - s22) - s12 * s21) / (two * z0);
+    let d = ((Cx::ONE - s11) * (Cx::ONE + s22) + s12 * s21) / two;
+    let z = Cx::new(z0, 0.0);
+    let yopt = (Cx::ONE - np.gamma_opt) / ((Cx::ONE + np.gamma_opt) * z0);
+    let k4 = 4.0 * K_B * T0;
+    let cvi = (Cx::new((np.fmin - 1.0) / 2.0, 0.0) - yopt.conj() * np.rn) * k4;
+    let ca = vec![
+        vec![Cx::new(np.rn * k4, 0.0), cvi],
+        vec![cvi.conj(), Cx::new(np.rn * yopt.norm2() * k4, 0.0)],
+    ];
+    let mut t = vec![vec![Cx::ZERO; 2]; 2];
+    for src in 0..2 {
+        let m = vec![
+            vec![Cx::ONE, z, Cx::ZERO, Cx::ZERO],
+            vec![Cx::ONE, Cx::ZERO, -a, -b],
+            vec![Cx::ZERO, Cx::ONE, -c, -d],
+            vec![Cx::ZERO, Cx::ZERO, Cx::ONE, -z],
+        ];
+        let mut rhs = vec![vec![Cx::ZERO]; 4];
+        rhs[1 + src][0] = Cx::ONE;
+        let x = solve(m, rhs)?;
+        let (v1, i1, v2, i2) = (x[0][0], x[1][0], x[2][0], x[3][0]);
+        let scale = 1.0 / (2.0 * z0.sqrt());
+        t[0][src] = (v1 - z * i1) * scale;
+        t[1][src] = (v2 + z * i2) * scale;
+    }
+    Some(mul(&mul(&t, &ca), &adjoint(&t)))
+}
+
+pub fn noise_figure(s21: Cx, c22: f64) -> f64 {
+    1.0 + c22 / (K_B * T0 * s21.norm2())
+}
+
+pub fn join(s: &Matrix, pairs: &[(usize, usize)]) -> Option<Joined> {
     let n = s.len();
     let internal: Vec<usize> = pairs.iter().flat_map(|(a, b)| [*a, *b]).collect();
     let external: Vec<usize> = (0..n).filter(|p| !internal.contains(p)).collect();
@@ -276,14 +397,6 @@ pub fn connect(s: &Matrix, pairs: &[(usize, usize)]) -> Option<(Matrix, Vec<usiz
     let sub = |rows: &[usize], cols: &[usize]| -> Matrix {
         rows.iter().map(|r| cols.iter().map(|c| s[*r][*c]).collect()).collect()
     };
-    let mul = |a: &Matrix, b: &Matrix| -> Matrix {
-        let (r, k, c) = (a.len(), b.len(), b.first().map(|x| x.len()).unwrap_or(0));
-        (0..r)
-            .map(|i| {
-                (0..c).map(|j| (0..k).fold(Cx::ZERO, |acc, t| acc + a[i][t] * b[t][j])).collect()
-            })
-            .collect()
-    };
     let (see, sei, sie, sii) = (
         sub(&external, &external),
         sub(&external, &internal),
@@ -294,12 +407,26 @@ pub fn connect(s: &Matrix, pairs: &[(usize, usize)]) -> Option<(Matrix, Vec<usiz
     let lhs: Matrix = (0..ni)
         .map(|i| (0..ni).map(|j| if i == j { Cx::ONE - sg[i][j] } else { -sg[i][j] }).collect())
         .collect();
-    let bi = solve(lhs, sie)?;
-    let tail = mul(&mul(&sei, &gamma), &bi);
-    let out = (0..external.len())
-        .map(|i| (0..external.len()).map(|j| see[i][j] + tail[i][j]).collect())
-        .collect();
-    Some((out, external))
+    let ne = external.len();
+    let mut rhs = sie.clone();
+    for (r, row) in rhs.iter_mut().enumerate() {
+        row.extend((0..ni).map(|c| if c == r { Cx::ONE } else { Cx::ZERO }));
+    }
+    let x = solve(lhs, rhs)?;
+    let bi: Matrix = x.iter().map(|r| r[..ne].to_vec()).collect();
+    let inv: Matrix = x.iter().map(|r| r[ne..].to_vec()).collect();
+    let sg_e = mul(&sei, &gamma);
+    let tail = mul(&sg_e, &bi);
+    let out = (0..ne).map(|i| (0..ne).map(|j| see[i][j] + tail[i][j]).collect()).collect();
+    let via = mul(&sg_e, &inv);
+    let mut transfer = vec![vec![Cx::ZERO; n]; ne];
+    for (i, row) in transfer.iter_mut().enumerate() {
+        row[external[i]] = Cx::ONE;
+        for (k, p) in internal.iter().enumerate() {
+            row[*p] = via[i][k];
+        }
+    }
+    Some(Joined { s: out, external, transfer, internal, response: bi })
 }
 
 pub fn block_diag(parts: &[&Matrix]) -> Matrix {
@@ -367,9 +494,14 @@ mod tests {
     }
 
     #[test]
-    fn touchstone_stops_at_the_noise_block() {
-        let t = "# GHZ S RI R 50\n1 0 0 1 0 1 0 0 0\n2 0 0 1 0 1 0 0 0\n1 1.5 0.3 45 0.2\n";
-        assert_eq!(parse_touchstone(t, 2).unwrap().freqs.len(), 2);
+    fn touchstone_reads_the_noise_block() {
+        let t = "# GHZ S RI R 50\n1 0 0 1 0 1 0 0 0\n2 0 0 1 0 1 0 0 0\n1 1.5 0.3 45 0.2\n2 2.5 0.4 90 0.3\n";
+        let n = parse_touchstone(t, 2).unwrap();
+        assert_eq!(n.freqs.len(), 2);
+        assert_eq!(n.noise.len(), 2);
+        let mid = n.noise_at(1.5e9).unwrap();
+        assert!((10.0 * mid.fmin.log10() - 2.0).abs() < 0.05);
+        assert!((mid.rn - 12.5).abs() < 1e-9);
     }
 
     #[test]
@@ -407,6 +539,79 @@ mod tests {
                 assert!(close(s[i][j], dev[i][j]), "{i}{j}");
             }
         }
+    }
+
+    fn noise_out(s: &Matrix, cs: &Matrix, pairs: &[(usize, usize)]) -> f64 {
+        let j = join(s, pairs).unwrap();
+        let c = mul(&mul(&j.transfer, cs), &adjoint(&j.transfer));
+        noise_figure(j.s[1][0], c[1][1].re)
+    }
+
+    #[test]
+    fn a_matched_attenuator_at_t0_has_its_loss_as_noise_figure() {
+        let a = 10f64.powf(-6.0 / 20.0);
+        let pad = vec![vec![Cx::ZERO, Cx::new(a, 0.0)], vec![Cx::new(a, 0.0), Cx::ZERO]];
+        let cs = passive_noise(&pad, T0);
+        let f = noise_figure(pad[1][0], cs[1][1].re);
+        assert!((10.0 * f.log10() - 6.0).abs() < 1e-9);
+        let both = block_diag(&[&pad, &pad]);
+        let f2 = noise_out(&both, &passive_noise(&both, T0), &[(1, 2)]);
+        assert!((10.0 * f2.log10() - 12.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_device_behind_a_lossless_mismatch_follows_the_noise_parameter_formula() {
+        let dev = vec![
+            vec![Cx::polar(0.35, -60.0), Cx::polar(0.04, 30.0)],
+            vec![Cx::polar(6.0, 110.0), Cx::polar(0.3, -40.0)],
+        ];
+        let np = NoiseParams { fmin: 10f64.powf(0.06), gamma_opt: Cx::polar(0.45, 70.0), rn: 12.0 };
+        let cd = active_noise(&dev, np, 50.0).unwrap();
+        let f50 = noise_figure(dev[1][0], cd[1][1].re);
+        let want50 =
+            np.fmin + 4.0 * np.rn / 50.0 * np.gamma_opt.norm2() / (Cx::ONE + np.gamma_opt).norm2();
+        assert!((f50 - want50).abs() < 1e-9, "{f50} {want50}");
+        for (b, deg) in [(0.4, 30.0), (1.2, -80.0), (0.05, 170.0)] {
+            let y = Cx::new(0.0, b);
+            let den = y + Cx::new(2.0, 0.0);
+            let (s11, s21) = (-y / den, Cx::new(2.0, 0.0) / den);
+            let shunt = vec![vec![s11, s21], vec![s21, s11]];
+            let line =
+                vec![vec![Cx::ZERO, Cx::polar(1.0, deg)], vec![Cx::polar(1.0, deg), Cx::ZERO]];
+            let (m, _) = connect(&block_diag(&[&shunt, &line]), &[(1, 2)]).unwrap();
+            let all = block_diag(&[&m, &dev]);
+            let mut cs = vec![vec![Cx::ZERO; 4]; 4];
+            for i in 0..2 {
+                for j in 0..2 {
+                    cs[2 + i][2 + j] = cd[i][j];
+                }
+            }
+            let f = noise_out(&all, &cs, &[(1, 2)]);
+            let gs = m[1][1];
+            let want = np.fmin
+                + 4.0 * np.rn / 50.0 * (gs - np.gamma_opt).norm2()
+                    / ((1.0 - gs.norm2()) * (Cx::ONE + np.gamma_opt).norm2());
+            assert!((f - want).abs() < 1e-9, "{f} {want} at {gs:?}");
+        }
+    }
+
+    #[test]
+    fn friis_holds_for_an_amplifier_then_a_pad() {
+        let dev = vec![vec![Cx::ZERO, Cx::ZERO], vec![Cx::new(10.0, 0.0), Cx::ZERO]];
+        let np = NoiseParams { fmin: 2.0, gamma_opt: Cx::ZERO, rn: 5.0 };
+        let a = 0.5f64.sqrt();
+        let pad = vec![vec![Cx::ZERO, Cx::new(a, 0.0)], vec![Cx::new(a, 0.0), Cx::ZERO]];
+        let all = block_diag(&[&dev, &pad]);
+        let mut cs = passive_noise(&all, T0);
+        let cd = active_noise(&dev, np, 50.0).unwrap();
+        for i in 0..2 {
+            for j in 0..2 {
+                cs[i][j] = cd[i][j];
+            }
+        }
+        let f = noise_out(&all, &cs, &[(1, 2)]);
+        let want = 2.0 + (2.0 - 1.0) / 100.0;
+        assert!((f - want).abs() < 1e-9, "{f} {want}");
     }
 
     #[test]

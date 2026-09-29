@@ -85,6 +85,12 @@ pub struct SimFile {
     pub board: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub devices: Vec<DeviceFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandwidth: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub report: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<StageFile>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -96,6 +102,38 @@ pub struct DeviceFile {
     pub ports: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount: Option<crate::rf::Mount>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub datasheet: Vec<DatasheetFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DatasheetFile {
+    pub freq: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nf: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oip3: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p1db: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct DatasheetRow {
+    pub freq: f64,
+    pub nf: Option<f64>,
+    pub oip3: Option<f64>,
+    pub p1db: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StageFile {
+    pub nf: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iip3: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub p1db_in: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -104,6 +142,25 @@ pub struct Device {
     pub file: String,
     pub ports: Vec<String>,
     pub mount: Option<crate::rf::Mount>,
+    pub datasheet: Vec<DatasheetRow>,
+}
+
+pub fn datasheet_at(
+    rows: &[DatasheetRow],
+    f: f64,
+    pick: fn(&DatasheetRow) -> Option<f64>,
+) -> Option<f64> {
+    let pts: Vec<(f64, f64)> = rows.iter().filter_map(|r| pick(r).map(|v| (r.freq, v))).collect();
+    let (first, last) = (pts.first()?, pts.last()?);
+    if f < first.0 * (1.0 - 1e-9) || f > last.0 * (1.0 + 1e-9) {
+        return None;
+    }
+    let k = pts.partition_point(|p| p.0 < f).min(pts.len() - 1);
+    if k == 0 || pts[k].0 == f {
+        return Some(pts[k].1);
+    }
+    let ((f0, a), (f1, b)) = (pts[k - 1], pts[k]);
+    Some(a + (b - a) * (f - f0) / (f1 - f0))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -369,6 +426,9 @@ pub struct Sim {
     pub far_field: bool,
     pub board: String,
     pub devices: Vec<Device>,
+    pub bandwidth: Option<f64>,
+    pub report: Vec<f64>,
+    pub after: Option<StageFile>,
     #[serde(skip)]
     pub maps: Option<MapResult>,
     pub description: String,
@@ -405,6 +465,15 @@ pub struct SimResult {
     pub maps: Vec<LayerMap>,
     #[serde(default)]
     pub readings: Vec<Reading>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub curves: Vec<Curve>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Curve {
+    pub name: String,
+    pub unit: String,
+    pub values: Vec<Option<f64>>,
 }
 
 impl SimResult {
@@ -591,6 +660,24 @@ impl SimFile {
         }
         if ports.is_empty() && fdtd {
             d.error("ports", "an FDTD simulation needs at least one port");
+        }
+        for p in &ports {
+            let covered = layout.zones.iter().any(|z| z.layer == p.reference && z.filled(p.at))
+                || layout.tracks.iter().any(|t| {
+                    t.layer == p.reference
+                        && t.points.windows(2).any(|w| {
+                            crate::geom::point_segment_distance(p.at, w[0], w[1]) <= t.width / 2.0
+                        })
+                });
+            if fdtd && !covered {
+                d.error(
+                    format!("ports {}", p.name),
+                    format!(
+                        "{} has no copper under the pad, the port would float; pick another `reference`",
+                        p.reference
+                    ),
+                );
+            }
         }
         let part_of = |r: &str, d: &mut Diags, at: &str| -> Option<usize> {
             let i = layout.parts.iter().position(|p| p.reference == r);
@@ -864,8 +951,41 @@ impl SimFile {
                     file: x.file.clone(),
                     ports: x.ports.clone(),
                     mount: x.mount,
+                    datasheet: x
+                        .datasheet
+                        .iter()
+                        .filter_map(|r| {
+                            let f = freq(&r.freq);
+                            if f.is_none() {
+                                d.error(
+                                    "devices",
+                                    format!("cannot read the frequency `{}`", r.freq),
+                                );
+                            }
+                            Some(DatasheetRow { freq: f?, nf: r.nf, oip3: r.oip3, p1db: r.p1db })
+                        })
+                        .collect(),
                 })
                 .collect(),
+            bandwidth: self.bandwidth.as_deref().and_then(|b| {
+                let v = freq(b);
+                if v.is_none() {
+                    d.error("bandwidth", format!("cannot read `{b}`, give it like \"2MHz\""));
+                }
+                v
+            }),
+            report: self
+                .report
+                .iter()
+                .filter_map(|f| {
+                    let v = freq(f);
+                    if v.is_none() {
+                        d.error("report", format!("cannot read the frequency `{f}`"));
+                    }
+                    v
+                })
+                .collect(),
+            after: self.after.clone(),
             maps: None,
             description: self.description.clone(),
             layout: layout.name.clone(),

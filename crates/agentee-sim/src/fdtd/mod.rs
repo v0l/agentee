@@ -160,6 +160,7 @@ pub fn execute(
         spec_hash,
         maps,
         readings,
+        curves: Vec::new(),
     })
 }
 
