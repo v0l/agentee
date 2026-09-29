@@ -378,6 +378,13 @@ height = 0.8                   # mm, the width follows the aspect ratio
 # rotation = 90
 ```
 
+Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
+vias and other parts' bodies, and stay on the board. When a reference label fails, check names a
+spot that passes every rule, as a `label = { at = [...] }` line to paste.
+
+Zone fills are exact polygons: the zone outline less every other net's copper grown by its
+clearance, with round corners, so pours render and plot without stair steps.
+
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
 artwork get the same checks as reference labels: overlap, pads, silk outlines, board edge.

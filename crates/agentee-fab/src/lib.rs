@@ -1,4 +1,3 @@
-pub mod contour;
 pub mod gerber;
 
 use agentee_core::board::{Board, LayerKind};
@@ -45,9 +44,8 @@ fn copper(layout: &Layout, layer: &str, function: &str) -> Gerber {
     let mut g = Gerber::new(function);
     let mut zones: Vec<Filled> = Vec::new();
     for z in layout.zones.iter().filter(|z| z.layer == layer) {
-        let rings = contour::loops(&z.mask, z.width, z.height, z.origin, z.cell);
         let (outer, holes): (Vec<_>, Vec<_>) =
-            rings.into_iter().partition(|r| contour::area(r) > 0.0);
+            z.rings.iter().cloned().partition(|r| agentee_core::contour::area(r) > 0.0);
         zones.push((outer, holes));
     }
     let depth = |k: usize| {

@@ -185,6 +185,9 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                 "vias": l.vias,
                 "zones": l.zones.iter().map(|z| json!({ "net": l.nets[z.net].name, "layer": z.layer, "islands_removed": z.islands_removed })).collect::<Vec<_>>(),
                 "unrouted": ratsnest,
+                "silk": l.silk,
+                "pairs": l.pairs,
+                "match_groups": l.match_groups,
                 "diagnostics": p.layouts[i].diags,
             })
         }

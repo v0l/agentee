@@ -5,8 +5,7 @@ use agentee_core::graphic::{Graphic, Shape};
 use agentee_core::layout::Layout;
 use egui::epaint::PathShape;
 use egui::{
-    Align2, Color32, ColorImage, FontFamily, Painter, Pos2, Rect, Stroke, TextureHandle,
-    TextureOptions,
+    Align2, Color32, ColorImage, FontFamily, Painter, Pos2, Stroke, TextureHandle, TextureOptions,
 };
 use egui_bench::theme::{self, ETCH, TRACE, VALUE, WELL};
 
@@ -120,21 +119,22 @@ pub fn layout(
             continue;
         }
         let color = copper_color(layer);
-        for (z, tex) in l.zones.iter().zip(zones) {
-            if &z.layer != layer {
-                continue;
+        let _ = zones;
+        for z in l.zones.iter().filter(|z| &z.layer == layer) {
+            let fill = copper_color(&z.layer).gamma_multiply(0.55);
+            let mut mesh = egui::Mesh::default();
+            for t in &z.triangles {
+                let base = mesh.vertices.len() as u32;
+                for q in t {
+                    mesh.colored_vertex(xf.world(*q), fill);
+                }
+                mesh.add_triangle(base, base + 1, base + 2);
             }
-            let min = xf.world(z.origin);
-            let max = xf.world([
-                z.origin[0] + z.width as f64 * z.cell,
-                z.origin[1] + z.height as f64 * z.cell,
-            ]);
-            p.image(
-                tex.id(),
-                Rect::from_min_max(min, max),
-                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
+            p.add(mesh);
+            let edge = Stroke::new(1.0, fill);
+            for r in &z.rings {
+                p.add(PathShape::closed_line(r.iter().map(|q| xf.world(*q)).collect(), edge));
+            }
         }
         for t in l.tracks.iter().filter(|t| &t.layer == layer) {
             let c = if hit.net == Some(t.net) {

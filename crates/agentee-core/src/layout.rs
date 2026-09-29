@@ -329,6 +329,10 @@ pub struct ZoneFill {
     #[serde(skip)]
     pub mask: Vec<u8>,
     pub islands_removed: usize,
+    #[serde(skip)]
+    pub rings: Vec<Vec<P>>,
+    #[serde(skip)]
+    pub triangles: Vec<[P; 3]>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -360,6 +364,14 @@ pub struct Layout {
     pub artwork: Vec<Artwork>,
     pub pairs: Vec<Pair>,
     pub match_groups: Vec<MatchGroup>,
+    pub silk: Vec<SilkBox>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SilkBox {
+    pub text: String,
+    pub layer: String,
+    pub outline: Vec<P>,
 }
 
 impl Layout {
@@ -1074,8 +1086,17 @@ impl LayoutFile {
         }
 
         let (graphics, artwork) = self.artwork_of(&cx.dir, d);
+        let silk: Vec<SilkBox> = parts
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.silk_texts(i))
+            .chain(board_texts(&graphics))
+            .map(|t| SilkBox { outline: t.outline(), text: t.text, layer: t.layer })
+            .collect();
         check_silk(
             &parts,
+            &vias,
+            &tracks,
             &graphics,
             &artwork,
             &outline,
@@ -1117,6 +1138,7 @@ impl LayoutFile {
             artwork,
             pairs,
             match_groups,
+            silk,
         }
     }
 
@@ -1368,8 +1390,11 @@ fn readable(deg: f64) -> f64 {
     if a > 90.0 && a <= 270.0 { a - 180.0 } else { a }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn check_silk(
     parts: &[Placed],
+    vias: &[Via],
+    tracks: &[Track],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
     outline: &[P],
@@ -1431,55 +1456,203 @@ fn check_silk(
                 ),
             );
         }
-        for (j, u) in texts.iter().enumerate().skip(i + 1) {
-            if u.layer == t.layer && geom::polygon_distance(&boxes[i], &boxes[j]) <= 0.0 {
-                d.warn(&at, format!("`{}` overlaps `{}` of {}", t.text, u.text, u.owner));
+        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, outline);
+        if found.is_empty() {
+            continue;
+        }
+        let hint = match (t.part != usize::MAX).then(|| parts.get(t.part)).flatten() {
+            Some(p) if t.text == p.reference => {
+                free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, outline)
+                    .map(|(at, rot)| {
+                        let r =
+                            if rot != 0.0 { format!(", rotation = {rot}") } else { String::new() };
+                        format!("; label = {{ at = [{:.2}, {:.2}]{r} }} is clear", at[0], at[1])
+                    })
+                    .unwrap_or_default()
             }
-        }
-        let side = t.layer.trim_end_matches(".SilkS");
-        let cu = format!("{side}.Cu");
-        let over: Vec<String> = parts
-            .iter()
-            .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
-            .filter(|(_, q)| {
-                q.copper.contains(&cu)
-                    && q.outlines.iter().any(|o| geom::polygon_distance(o, &boxes[i]) <= 0.0)
-            })
-            .map(|(p, q)| format!("{}.{}", p.reference, q.number))
-            .collect();
-        if !over.is_empty() {
-            d.warn(
-                &at,
-                format!("`{}` sits on pads {}, it will be clipped", t.text, over.join(", ")),
-            );
-        }
-        let crossed: Vec<&str> = parts
-            .iter()
-            .filter(|p| {
-                let tf = p.transform();
-                p.footprint.graphics.iter().any(|g| {
-                    p.flip_layer(&g.layer) == t.layer
-                        && !matches!(g.shape, crate::graphic::Shape::Text { .. })
-                        && {
-                            let path: Vec<P> = crate::footprint::graphic_path(g)
-                                .into_iter()
-                                .map(|q| tf.apply(q))
-                                .collect();
-                            path.len() >= 2
-                                && geom::polyline_polygon_distance(&path, &boxes[i])
-                                    < g.width.to_mm() / 2.0
-                        }
-                })
-            })
-            .map(|p| p.reference.as_str())
-            .collect();
-        if !crossed.is_empty() {
-            d.warn(&at, format!("`{}` crosses the silk outline of {}", t.text, crossed.join(", ")));
-        }
-        if outline.len() >= 3 && boxes[i].iter().any(|c| !geom::point_in_polygon(*c, outline)) {
-            d.warn(&at, format!("`{}` runs off the board", t.text));
+            _ => String::new(),
+        };
+        d.warn(&at, format!("`{}` {}{hint}", t.text, found.join(", ")));
+    }
+}
+
+const SILK_GAP: f64 = 0.4;
+
+#[allow(clippy::too_many_arguments)]
+fn silk_issues(
+    t: &SilkText,
+    bx: &[P],
+    me: usize,
+    texts: &[SilkText],
+    boxes: &[Vec<P>],
+    parts: &[Placed],
+    vias: &[Via],
+    outline: &[P],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for (j, u) in texts.iter().enumerate() {
+        if j != me && u.layer == t.layer && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP {
+            out.push(format!("crowds `{}` of {}", u.text, u.owner));
         }
     }
+    let side = t.layer.trim_end_matches(".SilkS");
+    let cu = format!("{side}.Cu");
+    let pads: Vec<String> = parts
+        .iter()
+        .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
+        .filter(|(_, q)| {
+            (q.copper.contains(&cu) || q.drill.is_some())
+                && q.outlines.iter().any(|o| geom::polygon_distance(o, bx) <= 0.0)
+        })
+        .map(|(p, q)| format!("{}.{}", p.reference, q.number))
+        .collect();
+    if !pads.is_empty() {
+        out.push(format!("sits on pads {}, it will be clipped", pads.join(", ")));
+    }
+    let on_vias = vias
+        .iter()
+        .filter(|v| {
+            geom::point_in_polygon(v.at, bx)
+                || geom::polyline_polygon_distance(&[v.at, v.at], bx) < v.diameter / 2.0
+        })
+        .count();
+    if on_vias > 0 {
+        out.push(format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }));
+    }
+    let crossed: Vec<&str> = parts
+        .iter()
+        .filter(|p| {
+            let tf = p.transform();
+            p.footprint.graphics.iter().any(|g| {
+                p.flip_layer(&g.layer) == t.layer
+                    && !matches!(g.shape, crate::graphic::Shape::Text { .. })
+                    && {
+                        let path: Vec<P> = crate::footprint::graphic_path(g)
+                            .into_iter()
+                            .map(|q| tf.apply(q))
+                            .collect();
+                        path.len() >= 2
+                            && geom::polyline_polygon_distance(&path, bx)
+                                < g.width.to_mm() / 2.0 + SILK_GAP / 2.0
+                    }
+            })
+        })
+        .map(|p| p.reference.as_str())
+        .collect();
+    if !crossed.is_empty() {
+        out.push(format!("crosses the silk outline of {}", crossed.join(", ")));
+    }
+    if outline.len() >= 3 && bx.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
+        out.push("runs off the board".into());
+    }
+    let side = if t.layer.starts_with("B.") { "B" } else { "F" };
+    let hidden: Vec<&str> = parts
+        .iter()
+        .enumerate()
+        .filter(|(k, p)| {
+            *k != t.part && body_box(p, side).is_some_and(|b| geom::polygon_distance(&b, bx) <= 0.0)
+        })
+        .map(|(_, p)| p.reference.as_str())
+        .collect();
+    if !hidden.is_empty() {
+        out.push(format!("hides under the body of {}", hidden.join(", ")));
+    }
+    out
+}
+
+fn body_box(p: &Placed, side: &str) -> Option<Vec<P>> {
+    let layer =
+        format!("{}.Fab", if p.bottom { if side == "F" { "B" } else { "F" } } else { side });
+    let mut b = Bounds::EMPTY;
+    for g in p
+        .footprint
+        .graphics
+        .iter()
+        .filter(|g| g.layer == layer && !matches!(g.shape, crate::graphic::Shape::Text { .. }))
+    {
+        b.union(&g.bounds());
+    }
+    if b.is_empty() || (p.bottom != (side == "B")) {
+        return None;
+    }
+    let tf = p.transform();
+    Some(
+        [b.min, [b.max[0], b.min[1]], b.max, [b.min[0], b.max[1]]]
+            .into_iter()
+            .map(|q| tf.apply(q))
+            .collect(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn free_spot(
+    t: &SilkText,
+    part: &Placed,
+    texts: &[SilkText],
+    boxes: &[Vec<P>],
+    me: usize,
+    parts: &[Placed],
+    vias: &[Via],
+    tracks: &[Track],
+    outline: &[P],
+) -> Option<(P, f64)> {
+    let mut b = Bounds::EMPTY;
+    for q in &part.pads {
+        q.outlines.iter().flatten().for_each(|p| b.add(*p));
+    }
+    let side = if t.layer.starts_with("B.") { "B" } else { "F" };
+    let court = part.footprint.courtyard(if part.bottom {
+        if side == "F" { "B" } else { "F" }
+    } else {
+        side
+    });
+    if !court.is_empty() {
+        let tf = part.transform();
+        for c in [court.min, court.max, [court.min[0], court.max[1]], [court.max[0], court.min[1]]]
+        {
+            b.add(tf.apply(c));
+        }
+    }
+    if b.is_empty() {
+        return None;
+    }
+    let c = b.center();
+    let half = [(b.max[0] - b.min[0]) / 2.0, (b.max[1] - b.min[1]) / 2.0];
+    let pen = crate::font::default_thickness(t.size);
+    let w = crate::font::ink_width(&t.text, t.size) + pen;
+    let h = t.size + pen;
+    let mut candidates: Vec<(P, f64)> = Vec::new();
+    for step in 0..6 {
+        let gap = SILK_GAP + step as f64 * 0.35;
+        candidates.push(([c[0], b.min[1] - gap - h / 2.0], 0.0));
+        candidates.push(([c[0], b.max[1] + gap + h / 2.0], 0.0));
+        candidates.push(([b.max[0] + gap + w / 2.0, c[1]], 0.0));
+        candidates.push(([b.min[0] - gap - w / 2.0, c[1]], 0.0));
+        candidates.push(([b.max[0] + gap + h / 2.0, c[1]], 90.0));
+        candidates.push(([b.min[0] - gap - h / 2.0, c[1]], 90.0));
+        for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            candidates.push((
+                [c[0] + sx * (half[0] + gap + w / 2.0), c[1] + sy * (half[1] + gap + h / 2.0)],
+                0.0,
+            ));
+        }
+    }
+    let cu = format!("{side}.Cu");
+    let round = |v: f64| (v * 100.0).round() / 100.0;
+    candidates.into_iter().map(|(at, rot)| ([round(at[0]), round(at[1])], rot)).find(|(at, rot)| {
+        let trial = SilkText {
+            at: *at,
+            rotation: *rot,
+            anchor: crate::graphic::Anchor::Center,
+            ..t.clone()
+        };
+        let bx = trial.outline();
+        silk_issues(&trial, &bx, me, texts, boxes, parts, vias, outline).is_empty()
+            && !tracks.iter().any(|tr| {
+                tr.layer == cu
+                    && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
+            })
+    })
 }
 
 fn is_interior_join(t: &Track, end: P) -> bool {
@@ -1542,7 +1715,9 @@ fn fill_zone(
             }
         }
     }
+    let margin = 1.75 * cell;
     let clear_near = |mask: &mut Vec<u8>, bb: Bounds, grow: f64, test: &dyn Fn(P) -> bool| {
+        let grow = grow + margin;
         let x0 = (((bb.min[0] - grow - origin[0]) / cell).floor().max(0.0)) as usize;
         let y0 = (((bb.min[1] - grow - origin[1]) / cell).floor().max(0.0)) as usize;
         let x1 =
@@ -1563,7 +1738,7 @@ fn fill_zone(
             bb.add(a);
             bb.add(c);
             clear_near(&mut mask, bb, edge_clear, &|p| {
-                geom::point_segment_distance(p, a, c) < edge_clear
+                geom::point_segment_distance(p, a, c) < edge_clear + margin
             });
         }
         for y in 0..h {
@@ -1577,7 +1752,10 @@ fn fill_zone(
     for c in cutouts {
         let mut bb = Bounds::EMPTY;
         c.iter().for_each(|p| bb.add(*p));
-        clear_near(&mut mask, bb, 0.0, &|p| geom::point_in_polygon(p, c));
+        clear_near(&mut mask, bb, 0.0, &|p| {
+            geom::point_in_polygon(p, c)
+                || edges(c).any(|(a, b)| geom::point_segment_distance(p, a, b) < margin)
+        });
     }
     for it in items.iter().filter(|it| it.layers.iter().any(|l| l == layer)) {
         if it.net == Some(net) && it.owner != Owner::Hole {
@@ -1585,7 +1763,7 @@ fn fill_zone(
         }
         let gap = clearance.max(clearance_of(it.net));
         let shape = &it.shape;
-        clear_near(&mut mask, it.bounds, gap, &|p| shape.point_distance(p) < gap);
+        clear_near(&mut mask, it.bounds, gap, &|p| shape.point_distance(p) < gap + margin);
     }
 
     let mut label = vec![0u32; w * h];
@@ -1658,19 +1836,135 @@ fn fill_zone(
         }
     }
     let touched: Vec<Vec<usize>> = island_items.into_values().collect();
-    (
-        ZoneFill {
-            net,
-            layer: layer.to_string(),
-            origin,
-            cell,
-            width: w,
-            height: h,
-            mask,
-            islands_removed: removed,
-        },
-        touched,
-    )
+    let mut fill = ZoneFill {
+        net,
+        layer: layer.to_string(),
+        origin,
+        cell,
+        width: w,
+        height: h,
+        mask,
+        islands_removed: removed,
+        rings: Vec::new(),
+        triangles: Vec::new(),
+    };
+    fill.rings =
+        vector_fill(&fill, poly, board, edge_clear, clearance, items, clearance_of, cutouts);
+    fill.triangles = crate::contour::triangles(&fill.rings);
+    (fill, touched)
+}
+
+fn arc_steps(r: f64) -> usize {
+    let tol = 0.002f64.min(r * 0.5);
+    ((std::f64::consts::PI / (1.0 - tol / r).clamp(-1.0, 1.0).acos()).ceil() as usize)
+        .clamp(12, 180)
+}
+
+fn capsule(a: P, b: P, r: f64) -> Vec<P> {
+    let n = arc_steps(r);
+    let ang = (b[1] - a[1]).atan2(b[0] - a[0]);
+    let mut out = Vec::with_capacity(n + 2);
+    for (c, start) in
+        [(b, ang - std::f64::consts::FRAC_PI_2), (a, ang + std::f64::consts::FRAC_PI_2)]
+    {
+        for k in 0..=n / 2 {
+            let t = start + std::f64::consts::PI * k as f64 / (n / 2) as f64;
+            out.push([c[0] + r * t.cos(), c[1] + r * t.sin()]);
+        }
+    }
+    out
+}
+
+fn inflated(shape: &Shape, gap: f64) -> Vec<Vec<P>> {
+    match shape {
+        Shape::Circle(c, r) => {
+            let r = r + gap;
+            let n = arc_steps(r);
+            vec![
+                (0..n)
+                    .map(|k| {
+                        let t = std::f64::consts::TAU * k as f64 / n as f64;
+                        [c[0] + r * t.cos(), c[1] + r * t.sin()]
+                    })
+                    .collect(),
+            ]
+        }
+        Shape::Seg(a, b, hw) => vec![capsule(*a, *b, hw + gap)],
+        Shape::Poly(rings) => {
+            let mut out = Vec::new();
+            for ring in rings {
+                out.push(ring.clone());
+                if gap > 0.0 {
+                    for (a, b) in edges(ring) {
+                        out.push(capsule(a, b, gap));
+                    }
+                }
+            }
+            out
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vector_fill(
+    raster: &ZoneFill,
+    poly: &[P],
+    board: &[P],
+    edge_clear: f64,
+    clearance: f64,
+    items: &[Item],
+    clearance_of: &dyn Fn(Option<usize>) -> f64,
+    cutouts: &[&Vec<P>],
+) -> Vec<Vec<P>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    let area_of = |r: &[P]| crate::contour::area(r);
+    let subject: Vec<Vec<P>> = if board.len() >= 3 && poly.len() >= 3 {
+        poly.to_vec()
+            .overlay(&board.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
+            .into_iter()
+            .flatten()
+            .collect()
+    } else {
+        vec![poly.to_vec()]
+    };
+    let mut clip: Vec<Vec<P>> = Vec::new();
+    if board.len() >= 3 && edge_clear > 0.0 {
+        for (a, b) in edges(board) {
+            clip.push(capsule(a, b, edge_clear));
+        }
+    }
+    for c in cutouts {
+        clip.push(c.to_vec());
+    }
+    for it in items.iter().filter(|it| it.layers.iter().any(|l| l == &raster.layer)) {
+        if it.net == Some(raster.net) && it.owner != Owner::Hole {
+            continue;
+        }
+        let gap = clearance.max(clearance_of(it.net));
+        clip.extend(inflated(&it.shape, gap));
+    }
+    let shapes = subject.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+    let mut rings = Vec::new();
+    for shape in shapes {
+        let tris = crate::contour::triangles(&shape);
+        let probe = tris
+            .iter()
+            .max_by(|a, b| area_of(a.as_ref()).abs().total_cmp(&area_of(b.as_ref()).abs()))
+            .map(|t| [(t[0][0] + t[1][0] + t[2][0]) / 3.0, (t[0][1] + t[1][1] + t[2][1]) / 3.0]);
+        if !probe.is_some_and(|p| raster.filled(p)) {
+            continue;
+        }
+        for (k, mut r) in shape.into_iter().enumerate() {
+            let outer = k == 0;
+            if (area_of(&r) > 0.0) != outer {
+                r.reverse();
+            }
+            rings.push(r);
+        }
+    }
+    rings
 }
 
 fn pair_base(name: &str, positive: bool) -> Option<String> {

@@ -88,6 +88,12 @@ impl Canvas {
         let y1 = (p.iter().map(|q| q[1]).fold(f32::MIN, f32::max).ceil() as i64).min(clip[3]);
         let col: [[f32; 4]; 3] = v.map(|x| x.color.to_array().map(|c| c as f32 / 255.0));
         let inv = 1.0 / area;
+        let top_left = |a: [f32; 2], b: [f32; 2]| {
+            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+            let (dx, dy) = if area > 0.0 { (dx, dy) } else { (-dx, -dy) };
+            (dy == 0.0 && dx > 0.0) || dy < 0.0
+        };
+        let tl = [top_left(p[1], p[2]), top_left(p[2], p[0]), top_left(p[0], p[1])];
         let edge = |a: [f32; 2], b: [f32; 2], x: f32, y: f32| {
             (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
         };
@@ -98,7 +104,11 @@ impl Canvas {
                 let w0 = edge(p[1], p[2], px, py) * inv;
                 let w1 = edge(p[2], p[0], px, py) * inv;
                 let w2 = 1.0 - w0 - w1;
-                if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+                let inside = |w: f64, top_left: bool| w > 0.0 || (w == 0.0 && top_left);
+                if !(inside(w0 as f64, tl[0])
+                    && inside(w1 as f64, tl[1])
+                    && inside(w2 as f64, tl[2]))
+                {
                     continue;
                 }
                 let mut c = [0.0f32; 4];
