@@ -10,6 +10,7 @@ description = "Electronic design for agents: board spec, symbols, footprints"
 agentee-core.workspace = true
 agentee-kicad.workspace = true
 agentee-view.workspace = true
+agentee-sim.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

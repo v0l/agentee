@@ -26,10 +26,11 @@ via = "std"
 name = "RF"
 description = "RF_IN, RF_AMP_IN, RF_AMP_OUT, RF_OUT: grounded coplanar over the In1.Cu plane, stitch the pour every 2 mm"
 impedance = "50ohm"
-impedance_tolerance = "10%"
-track_width = "0.36mm"
+impedance_tolerance = "5%"
+track_width = "0.3mm"
 clearance = "0.2mm"
 coplanar_gap = "0.2mm"
+solver = "field"
 layers = ["F.Cu"]
 via = "std"
 

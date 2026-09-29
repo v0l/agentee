@@ -13,6 +13,7 @@ repository = "https://github.com/v0l/agentee"
 agentee-core = { path = "crates/agentee-core" }
 agentee-kicad = { path = "crates/agentee-kicad" }
 agentee-view = { path = "crates/agentee-view" }
+agentee-sim = { path = "crates/agentee-sim" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"

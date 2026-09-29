@@ -63,9 +63,11 @@ the footprints was widened from KiCad's 0.12 mm to JLCPCB's 0.15 mm minimum.
 
 `lna.board.toml`: 30 x 20 mm, JLC04161H-7628 4 layer, ENIG, black mask.
 
-- The RF class is grounded coplanar on F.Cu over the In1.Cu plane: 0.36 mm track, 0.2 mm gap to
-  the pour, 51.2 ohm by agentee's conformal-mapping model (uncoated). The thin 0.21 mm prepreg is
-  why the line is narrow enough to meet 0402 pads without a taper.
+- The RF class is grounded coplanar on F.Cu over the In1.Cu plane: 0.30 mm track, 0.2 mm gap to
+  the pour, 50.0 ohm with solder mask from the GPU field solver (`solver = "field"`). The
+  zero-thickness closed form said 51.2 ohm at 0.36 mm; the solver puts that width at 45.8 ohm once
+  the 35 um copper walls facing the gap and the mask are counted. The thin 0.21 mm prepreg is why
+  the line is narrow enough to meet 0402 pads without a taper.
 - Power is 0.4 mm on the outer layers, good for 1.2 A at a 10 C rise against a 105 mA worst case.
 - In1.Cu is solid ground under the whole RF path. In2.Cu carries VCC and the rest of ground.
 
@@ -84,8 +86,6 @@ the footprints was widened from KiCad's 0.12 mm to JLCPCB's 0.15 mm minimum.
 
 ## Still to do
 
-- Model the RF line with solder mask in agentee (`crates/agentee-core/src/calc.rs`), or order
-  the RF section mask-free; with mask it lands a few ohm under 51.2.
 - Measure S21 and S22 from 50 MHz to 4 GHz on the first boards. The L1/L2 choke pair is a
   starting point built from two single-band evaluation boards, not a verified wideband network.
 - Check that JLCPCB assembly can place the SG-WLL-2-3 package for D3, or swap D3 for a larger

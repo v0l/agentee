@@ -77,6 +77,7 @@ name = "RF"
 impedance = "50ohm"
 coplanar_gap = "0.2mm"         # grounded coplanar: pour this far either side, plane below
 layers = ["F.Cu"]              # outer layers only
+solver = "field"               # check with the GPU field solver (mask, thickness) instead of formulas
 ```
 
 ### Stackup presets
@@ -126,6 +127,13 @@ are microstrip, inner layers are stripline between the nearest copper above and 
 impedance (Hammerstad-Jensen microstrip, Wheeler stripline, conformal-mapping grounded coplanar,
 all uncoated and zero-thickness for coplanar), the width that meets the
 target, and the IPC-2221 current capacity. `agentee show <board>` prints all of it as JSON.
+
+With `solver = "field"` the class is checked by the 2D field solver instead: a node-based finite
+difference Laplace solve on a graded mesh, run on the GPU through wgpu, with copper thickness,
+solder mask, coplanar grounds and pairs included. On exact references it lands within 0.5% of
+Cohn's zero-thickness stripline and 0.4% of Hammerstad-Jensen microstrip. When the class is off
+target, check suggests the track width that meets it. `agentee calc field --netclass RF` prints
+the full result (Z0, eeff, C and L per metre, delay, grid).
 
 ## Symbol (`*.sym.toml`)
 

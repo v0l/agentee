@@ -106,6 +106,20 @@ fn tools() -> Value {
             }), &["current"]),
         },
         {
+            "name": "field_solve",
+            "description": "Solve a trace cross-section with the GPU field solver: impedance, effective permittivity, C and L per metre, delay. Includes solder mask, thickness, coplanar grounds and differential pairs. Within 0.5% of exact references with fine = true.",
+            "inputSchema": s(json!({
+                "board": { "type": "string" },
+                "layer": { "type": "string", "default": "F.Cu" },
+                "netclass": { "type": "string", "description": "take width and gaps from this class" },
+                "width": { "type": "string" },
+                "gap": { "type": "string", "description": "differential pair gap" },
+                "coplanar_gap": { "type": "string" },
+                "no_mask": { "type": "boolean" },
+                "fine": { "type": "boolean" },
+            }), &[]),
+        },
+        {
             "name": "impedance",
             "description": "Trace impedance on a board layer for a width (and pair gap), or the width that hits a target.",
             "inputSchema": s(json!({
@@ -160,7 +174,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
     match name {
         "format_reference" => Ok(ok(vec![text(crate::FORMAT)])),
         "check" => {
-            let p = ops::load(root)?;
+            let p = ops::load_checked(root)?;
             let item = arg(a, "item").map(|n| ops::find(&p, n)).transpose()?;
             let min = if flag(a, "include_info") { Severity::Info } else { Severity::Warning };
             let (t, _, _) = ops::check_report(&p, item, min);
@@ -277,6 +291,23 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 arg(a, "copper").unwrap_or("1oz"),
                 arg(a, "temp_rise").unwrap_or("10C"),
                 flag(a, "internal"),
+            )?;
+            Ok(ok(vec![text(pretty(&v))]))
+        }
+        "field_solve" => {
+            let p = ops::load(root)?;
+            let v = ops::field_solve(
+                &p,
+                &ops::FieldQuery {
+                    board: arg(a, "board"),
+                    layer: arg(a, "layer").unwrap_or("F.Cu"),
+                    width: arg(a, "width"),
+                    netclass: arg(a, "netclass"),
+                    gap: arg(a, "gap"),
+                    coplanar_gap: arg(a, "coplanar_gap"),
+                    mask: !flag(a, "no_mask"),
+                    fine: flag(a, "fine"),
+                },
             )?;
             Ok(ok(vec![text(pretty(&v))]))
         }

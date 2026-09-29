@@ -9,6 +9,12 @@ pub fn load(path: &Path) -> Result<Project, String> {
     Project::load(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+pub fn load_checked(path: &Path) -> Result<Project, String> {
+    let mut p = load(path)?;
+    agentee_sim::checks::apply(&mut p);
+    Ok(p)
+}
+
 pub fn find(p: &Project, name: &str) -> Result<ItemRef, String> {
     p.find(name).ok_or_else(|| {
         let mut names: Vec<&str> = p.all_refs().into_iter().map(|r| p.name_of(r)).collect();
@@ -303,6 +309,63 @@ pub fn trace_width(
         "min_width_mm": (w * 1e4).round() / 1e4,
         "min_width_mil": (w / agentee_core::units::MM_PER_MIL * 100.0).round() / 100.0,
         "method": "IPC-2221",
+    }))
+}
+
+pub struct FieldQuery<'a> {
+    pub board: Option<&'a str>,
+    pub layer: &'a str,
+    pub width: Option<&'a str>,
+    pub netclass: Option<&'a str>,
+    pub gap: Option<&'a str>,
+    pub coplanar_gap: Option<&'a str>,
+    pub mask: bool,
+    pub fine: bool,
+}
+
+pub fn field_solve(p: &Project, q: &FieldQuery) -> Result<Value, String> {
+    let board = match q.board {
+        Some(n) => match find(p, &format!("board:{n}"))? {
+            ItemRef::Board(i) => &p.boards[i].item,
+            _ => unreachable!(),
+        },
+        None => match p.boards.as_slice() {
+            [one] => &one.item,
+            [] => return Err("no board in the project".into()),
+            _ => return Err("several boards, name one with board".into()),
+        },
+    };
+    let class = q
+        .netclass
+        .map(|n| board.netclasses.iter().find(|c| c.name == n).ok_or(format!("no netclass `{n}`")))
+        .transpose()?;
+    let len = |s: Option<&str>, what| {
+        s.map(|v| parse(v, Length::parse, what).map(Length::to_mm)).transpose()
+    };
+    let width = len(q.width, "width")?
+        .or(class.map(|c| c.track_width.to_mm()))
+        .ok_or("give width or netclass")?;
+    let trace = agentee_sim::xsection::Trace {
+        width,
+        diff_gap: len(q.gap, "gap")?.or(class.and_then(|c| c.diff_gap.map(Length::to_mm))),
+        coplanar_gap: len(q.coplanar_gap, "coplanar_gap")?
+            .or(class.and_then(|c| c.coplanar_gap.map(Length::to_mm))),
+    };
+    let t0 = std::time::Instant::now();
+    let r = agentee_sim::xsection::line(board, q.layer, &trace, q.mask, q.fine)?;
+    let geometry = board.stackup.geometry(q.layer);
+    let line = calc::Line { diff_gap_mm: trace.diff_gap, coplanar_gap_mm: trace.coplanar_gap };
+    let formula = geometry.map(|g| (g.impedance(width, line) * 100.0).round() / 100.0);
+    Ok(json!({
+        "board": board.name,
+        "layer": q.layer,
+        "width_mm": width,
+        "diff_gap_mm": trace.diff_gap,
+        "coplanar_gap_mm": trace.coplanar_gap,
+        "solder_mask": q.mask,
+        "field": r,
+        "closed_form_uncoated_ohm": formula,
+        "seconds": (t0.elapsed().as_secs_f64() * 1000.0).round() / 1000.0,
     }))
 }
 

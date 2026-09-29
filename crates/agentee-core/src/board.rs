@@ -95,6 +95,14 @@ pub struct ViaFile {
     pub to: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Solver {
+    #[default]
+    Formula,
+    Field,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NetclassFile {
@@ -115,6 +123,8 @@ pub struct NetclassFile {
     pub impedance: Option<Ohms>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub impedance_tolerance: Option<Percent>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solver: Option<Solver>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_gap: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -372,6 +382,7 @@ pub struct Netclass {
     pub max_temp_rise: Kelvin,
     pub impedance: Option<Ohms>,
     pub impedance_tolerance: Percent,
+    pub solver: Solver,
     pub diff_gap: Option<Length>,
     pub coplanar_gap: Option<Length>,
     pub layers: Vec<String>,
@@ -476,6 +487,7 @@ impl BoardFile {
                     max_temp_rise: n.max_temp_rise.unwrap_or(Kelvin(10.0)),
                     impedance: n.impedance,
                     impedance_tolerance: n.impedance_tolerance.unwrap_or(Percent(10.0)),
+                    solver: n.solver.unwrap_or_default(),
                     diff_gap: n.diff_gap,
                     coplanar_gap: n.coplanar_gap,
                     layers,
@@ -569,6 +581,10 @@ impl BoardFile {
             layers,
         }
     }
+}
+
+fn n_of<'a>(v: &'a [Netclass], name: &str) -> &'a Netclass {
+    v.iter().find(|n| n.name == name).unwrap()
 }
 
 impl Board {
@@ -753,8 +769,8 @@ impl Board {
 
         for a in self.analyze() {
             let at = format!("netclass {} on {}", a.netclass, a.layer);
-            let n = self.netclasses.iter().find(|n| n.name == a.netclass).unwrap();
-            if a.impedance_ok == Some(false) {
+            let n = n_of(&self.netclasses, &a.netclass);
+            if a.impedance_ok == Some(false) && n.solver != Solver::Field {
                 let target = n.impedance.unwrap();
                 let hint = match a.width_for_impedance {
                     Some(w) => format!(", use track_width = \"{w}\""),

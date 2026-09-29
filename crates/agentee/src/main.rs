@@ -160,6 +160,29 @@ enum Calc {
         #[arg(long)]
         internal: bool,
     },
+    /// Solve the trace cross-section on the GPU (2D field solver)
+    Field {
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        board: Option<String>,
+        #[arg(long, default_value = "F.Cu")]
+        layer: String,
+        #[arg(long)]
+        width: Option<String>,
+        /// Take width and gaps from this net class
+        #[arg(long)]
+        netclass: Option<String>,
+        #[arg(long)]
+        gap: Option<String>,
+        #[arg(long)]
+        coplanar_gap: Option<String>,
+        /// Leave off the solder mask the stackup puts over outer layers
+        #[arg(long)]
+        no_mask: bool,
+        #[arg(long)]
+        fine: bool,
+    },
     /// Impedance on a board layer, or the width for a target
     Impedance {
         #[arg(short, long, default_value = ".")]
@@ -194,7 +217,7 @@ fn print_json(v: &serde_json::Value) {
 fn run(cli: Cli) -> Result<bool, String> {
     match cli.cmd {
         Cmd::Check { path, item, info, json } => {
-            let p = ops::load(&path)?;
+            let p = ops::load_checked(&path)?;
             let item = item.map(|n| ops::find(&p, &n)).transpose()?;
             let min = if info { Severity::Info } else { Severity::Warning };
             let (text, v, ok) = ops::check_report(&p, item, min);
@@ -310,6 +333,27 @@ fn run(cli: Cli) -> Result<bool, String> {
                 println!("{}:{}", h.library, h.name);
             }
             Ok(!hits.is_empty())
+        }
+        Cmd::Calc {
+            calc:
+                Calc::Field { project, board, layer, width, netclass, gap, coplanar_gap, no_mask, fine },
+        } => {
+            let p = ops::load(&project)?;
+            let v = ops::field_solve(
+                &p,
+                &ops::FieldQuery {
+                    board: board.as_deref(),
+                    layer: &layer,
+                    width: width.as_deref(),
+                    netclass: netclass.as_deref(),
+                    gap: gap.as_deref(),
+                    coplanar_gap: coplanar_gap.as_deref(),
+                    mask: !no_mask,
+                    fine,
+                },
+            )?;
+            print_json(&v);
+            Ok(true)
         }
         Cmd::Calc { calc: Calc::TraceWidth { current, copper, rise, internal } } => {
             print_json(&ops::trace_width(&current, &copper, &rise, internal)?);
