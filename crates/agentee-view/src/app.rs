@@ -53,7 +53,9 @@ impl App {
         let (tx, rx) = channel();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
             if let Ok(e) = res
-                && e.paths.iter().any(|p| Kind::of(p).is_some())
+                && e.paths
+                    .iter()
+                    .any(|p| Kind::of(p).is_some() || p.to_string_lossy().ends_with(".result.json"))
             {
                 let _ = tx.send(());
                 ctx.request_repaint();
@@ -135,6 +137,7 @@ impl App {
         });
         ui.add_space(4.0);
         let opts = [
+            (Kind::Sim, format!("sims {}", self.project.sims.len())),
             (Kind::Layout, format!("layouts {}", self.project.layouts.len())),
             (Kind::Schematic, format!("schematics {}", self.project.schematics.len())),
             (Kind::Board, format!("boards {}", self.project.boards.len())),
