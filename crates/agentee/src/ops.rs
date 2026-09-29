@@ -351,6 +351,9 @@ pub fn run_sim(
     let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
     let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
     let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
+    if spec.kind == agentee_core::sim::SimKind::Cascade {
+        return run_cascade(p, entry, &src);
+    }
     if spec.kind != agentee_core::sim::SimKind::Fdtd {
         let hash = agentee_core::sim::hash(&src);
         let result = match spec.kind {
@@ -462,6 +465,59 @@ pub fn run_sim(
         "touchstone": touch,
         "summary": table,
         "readings": result.readings,
+    }))
+}
+
+fn run_cascade(
+    p: &Project,
+    entry: &agentee_core::project::Entry<agentee_core::sim::Sim>,
+    src: &str,
+) -> Result<Value, String> {
+    let spec = &entry.item;
+    let board = p.sims.iter().find(|s| s.name == spec.board).ok_or("the board sim is missing")?;
+    let result = board.item.result.as_ref().ok_or("the board sim has not run")?;
+    let dir = entry.path.parent().unwrap_or(std::path::Path::new("."));
+    let mut placed = Vec::new();
+    let mut texts = Vec::new();
+    for d in &spec.devices {
+        let file = dir.join(&d.file);
+        let text =
+            std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+        let n = agentee_core::rf::ports_from_path(&file).ok_or("device files are named .sNp")?;
+        let net = agentee_core::rf::parse_touchstone(&text, n)?;
+        let ports = d
+            .ports
+            .iter()
+            .map(|q| {
+                result.ports.iter().position(|x| x == q).ok_or(format!("{q} is not a board port"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        placed.push(agentee_sim::cascade::Placed { name: d.file.clone(), net, ports });
+        texts.push(text);
+    }
+    let z0: Vec<f64> = result
+        .ports
+        .iter()
+        .map(|n| {
+            board.item.ports.iter().find(|q| &q.name == n).map(|q| q.impedance).unwrap_or(50.0)
+        })
+        .collect();
+    let hash =
+        agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), result.spec_hash, &texts);
+    let out = agentee_sim::cascade::run(&spec.name, result, &z0, &placed, hash)?;
+    let json_path = agentee_core::sim::result_path(&entry.path);
+    std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let touch = json_path.with_extension("").with_extension(format!("s{}p", out.ports.len()));
+    std::fs::write(&touch, agentee_sim::fdtd::touchstone(&out)).map_err(|e| e.to_string())?;
+    Ok(json!({
+        "sim": spec.name,
+        "kind": spec.kind,
+        "ports": out.ports,
+        "points": out.freqs.len(),
+        "result": json_path,
+        "touchstone": touch,
+        "readings": out.readings,
     }))
 }
 

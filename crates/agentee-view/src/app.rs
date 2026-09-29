@@ -300,6 +300,7 @@ impl eframe::App for App {
         egui::Panel::left("items")
             .resizable(true)
             .default_size(260.0)
+            .min_size(200.0)
             .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
             .show(ui, |ui| {
                 self.failures(ui);

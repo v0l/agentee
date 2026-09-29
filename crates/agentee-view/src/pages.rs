@@ -99,6 +99,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
     egui::Panel::right("properties")
         .resizable(st.interactive)
         .default_size(SIDE_W)
+        .min_size(340.0)
         .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
         .show(ui, |ui| {
             scroll(ui, st.interactive, "props", |ui| match item {
@@ -995,6 +996,58 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
         crate::heat::props(ui, s, m, rail);
         return;
     }
+    let cascade = s.kind == agentee_core::sim::SimKind::Cascade;
+    if cascade {
+        cascade_card(ui, s, rail);
+    } else {
+        fdtd_card(ui, s, rail);
+    }
+    ui.add_space(8.0);
+    sim_curves_and_readings(ui, s, st);
+    if cascade {
+        Line::new().legend("devices").show(ui);
+        let cols = [("ref", 50.0), ("file", 150.0), ("ports", 160.0)];
+        Table::new(&cols, s.devices.len()).show(ui, |i, p, r, at| {
+            let d = &s.devices[i];
+            cell(p, r, at(0), cols[0].1, &d.reference, READOUT);
+            cell(p, r, at(1), cols[1].1, &d.file, VALUE);
+            cell(p, r, at(2), cols[2].1, &d.ports.join(", "), LEGEND);
+        });
+        return;
+    }
+    sim_tables(ui, layout, s);
+}
+
+fn cascade_card(ui: &mut Ui, s: &agentee_core::sim::Sim, rail: Color32) {
+    card(
+        ui,
+        Some(rail),
+        |ui| {
+            Line::new().legend("cascade").value(&s.name).elided(ui);
+        },
+        |ui| {
+            if let Some(r) = &s.result {
+                let (a, b) = (r.freqs[0], *r.freqs.last().unwrap());
+                readouts(
+                    ui,
+                    &[
+                        ("ports", r.ports.len().to_string(), VALUE),
+                        ("band", format!("{}-{} GHz", trim(a / 1e9, 2), trim(b / 1e9, 2)), READOUT),
+                    ],
+                );
+            }
+            if !s.description.is_empty() {
+                note(ui, &s.description, VALUE);
+            }
+            reading(ui, "board", s.board.clone());
+            if let Some(r) = &s.result {
+                reading(ui, "ports", r.ports.join(", "));
+            }
+        },
+    );
+}
+
+fn fdtd_card(ui: &mut Ui, s: &agentee_core::sim::Sim, rail: Color32) {
     card(
         ui,
         Some(rail),
@@ -1036,7 +1089,9 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
             }
         },
     );
-    ui.add_space(8.0);
+}
+
+fn sim_curves_and_readings(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
     if let Some(r) = &s.result {
         Line::new().legend("curves").show(ui);
         ui.horizontal_wrapped(|ui| {
@@ -1059,6 +1114,9 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
         crate::heat::readings(ui, &r.readings);
         ui.add_space(8.0);
     }
+}
+
+fn sim_tables(ui: &mut Ui, layout: Option<&Layout>, s: &agentee_core::sim::Sim) {
     Line::new().legend("ports").show(ui);
     let cols = [("#", 26.0), ("name", 90.0), ("pad", 70.0), ("layers", 124.0), ("z", 50.0)];
     Table::new(&cols, s.ports.len()).show(ui, |i, p, r, at| {

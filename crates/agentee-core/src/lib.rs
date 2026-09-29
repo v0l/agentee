@@ -6,6 +6,7 @@ pub mod geom;
 pub mod graphic;
 pub mod layout;
 pub mod project;
+pub mod rf;
 pub mod schematic;
 pub mod sim;
 pub mod symbol;

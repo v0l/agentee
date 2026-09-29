@@ -81,6 +81,26 @@ pub struct SimFile {
     pub fields: Vec<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub far_field: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<DeviceFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceFile {
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    pub file: String,
+    pub ports: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Device {
+    pub reference: String,
+    pub file: String,
+    pub ports: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,6 +110,7 @@ pub enum SimKind {
     Fdtd,
     Dc,
     Thermal,
+    Cascade,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -343,6 +364,8 @@ pub struct Sim {
     pub links: Vec<Link>,
     pub fields: Vec<f64>,
     pub far_field: bool,
+    pub board: String,
+    pub devices: Vec<Device>,
     #[serde(skip)]
     pub maps: Option<MapResult>,
     pub description: String,
@@ -463,6 +486,14 @@ pub fn parse_value(s: &str) -> Option<f64> {
         return Some(v * m);
     }
     body.parse().ok()
+}
+
+pub fn cascade_hash(src: u64, board: u64, devices: &[String]) -> u64 {
+    let mut h = src ^ board.rotate_left(17);
+    for d in devices {
+        h = h.rotate_left(7) ^ hash(d);
+    }
+    h
 }
 
 pub fn hash(src: &str) -> u64 {
@@ -788,6 +819,19 @@ impl SimFile {
         if self.far_field && fields.is_empty() {
             d.error("far_field", "far_field needs `fields`, the frequencies to compute it at");
         }
+        if kind == SimKind::Cascade {
+            if self.board.is_none() {
+                d.error(
+                    "board",
+                    "a cascade needs `board`, the FDTD sim of the board around the devices",
+                );
+            }
+            if self.devices.is_empty() {
+                d.error("devices", "a cascade needs at least one [[devices]] entry");
+            }
+        } else if self.board.is_some() || !self.devices.is_empty() {
+            d.error("devices", "`board` and `devices` belong to kind = \"cascade\"");
+        }
         let cell = self.cell.map(Length::to_mm).unwrap_or(if kind == SimKind::Thermal {
             0.2
         } else {
@@ -808,6 +852,16 @@ impl SimFile {
             links,
             fields,
             far_field: self.far_field,
+            board: self.board.clone().unwrap_or_default(),
+            devices: self
+                .devices
+                .iter()
+                .map(|x| Device {
+                    reference: x.reference.clone().unwrap_or_default(),
+                    file: x.file.clone(),
+                    ports: x.ports.clone(),
+                })
+                .collect(),
             maps: None,
             description: self.description.clone(),
             layout: layout.name.clone(),

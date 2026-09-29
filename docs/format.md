@@ -9,7 +9,7 @@ A project is a directory. Every file below it is loaded by its suffix:
 | `*.fp.toml` | one footprint |
 | `*.sch.toml` | a schematic: placed parts, nets, wires |
 | `*.pcb.toml` | a layout: footprint placement, tracks, vias, zones |
-| `*.sim.toml` | a simulation of a layout: FDTD S-parameters, DC drop or thermal (`kind`) |
+| `*.sim.toml` | a simulation of a layout: FDTD S-parameters, cascade, DC drop or thermal (`kind`) |
 
 Names are unique per kind. A symbol links a footprint by its `name`, and a `Library:Name` reference
 matches on the part after the colon.
@@ -400,6 +400,28 @@ Maps: E (dBV/m) and H (dBA/m) for 1 mW incident on the port, 60 dB deep. The far
 a near-to-far transform on a box just inside the absorbing boundary. Readings: radiated power as a
 fraction of the input, directivity, and the peak field at 3 m for 1 mW in, against FCC class B.
 Ports are matched loads at the pads, so cables and connectors are not part of the radiator.
+
+### Cascade (`kind = "cascade"`)
+
+Drops measured devices into the S-parameters of a board sim. Every port of the board sim must
+have been driven (leave `excite` out). The ports not joined to a device are the ports of the
+result, which is written as `<name>.result.json` and a Touchstone file like any FDTD run.
+
+```toml
+name = "lna-cascade"
+kind = "cascade"
+board = "lna-rf"               # the FDTD sim of the board around the devices
+
+[[devices]]
+ref = "U1"
+file = "spf5189z.s2p"          # Touchstone 1.x, S parameters, any of MA / DB / RI
+ports = ["AMP_IN", "AMP_OUT"]  # board port for device port 1, 2, ...
+```
+
+Device data is interpolated linearly in real and imaginary parts, and the band is cut to where
+every device has data. A two-port result reports gain peak and low, worst S11, S22 and S12, and
+the lowest Edwards-Sinsky mu and Rollett K (mu above 1 at every frequency is unconditionally
+stable). The result goes stale when the spec, the board result or a device file changes.
 
 ### DC drop (`kind = "dc"`)
 

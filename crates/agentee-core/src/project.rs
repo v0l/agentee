@@ -267,9 +267,21 @@ impl Project {
             let item = file.resolve(&cx, &mut d);
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
-        for (f, file, hash) in sim_files {
+        let cascade = |f: &SimFile| f.kind == Some(crate::sim::SimKind::Cascade);
+        sim_files.sort_by_key(|(_, f, _)| cascade(f));
+        let layouts_of: Vec<(String, Option<String>)> =
+            sim_files.iter().map(|(_, f, _)| (f.name.clone(), f.layout.clone())).collect();
+        for (f, file, mut hash) in sim_files {
             let mut d = Diags::new(&file.name);
-            let layout = match &file.layout {
+            let own = if cascade(&file) && file.layout.is_none() {
+                layouts_of
+                    .iter()
+                    .find(|(n, _)| Some(n) == file.board.as_ref())
+                    .and_then(|(_, l)| l.clone())
+            } else {
+                file.layout.clone()
+            };
+            let layout = match &own {
                 Some(n) => p.layouts.iter().find(|l| &l.name == n),
                 None => p.layouts.first().filter(|_| p.layouts.len() == 1),
             };
@@ -280,6 +292,9 @@ impl Project {
             };
             let copper = layout.item.copper.clone();
             let mut item = file.resolve(&layout.item, &copper, &mut d);
+            if cascade(&file) {
+                hash = p.check_cascade(&f, &item, hash, &mut d);
+            }
             let path = crate::sim::result_path(&f);
             let text = std::fs::read_to_string(&path).ok();
             let fdtd = text.as_deref().and_then(|t| serde_json::from_str::<SimResult>(t).ok());
@@ -303,6 +318,86 @@ impl Project {
             p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         Ok(p)
+    }
+
+    fn check_cascade(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
+        let Some(board) = self.sims.iter().find(|s| s.name == sim.board) else {
+            if !sim.board.is_empty() {
+                d.error("board", format!("no FDTD sim named `{}`", sim.board));
+            }
+            return hash;
+        };
+        if board.item.kind != crate::sim::SimKind::Fdtd {
+            d.error("board", format!("`{}` is not an FDTD sim", sim.board));
+            return hash;
+        }
+        let names: Vec<&str> = board.item.ports.iter().map(|p| p.name.as_str()).collect();
+        let mut used: Vec<&str> = Vec::new();
+        let mut texts = Vec::new();
+        for (i, dev) in sim.devices.iter().enumerate() {
+            let at = format!("devices[{i}] {}", dev.file);
+            let file = path.parent().unwrap_or(Path::new(".")).join(&dev.file);
+            let n = crate::rf::ports_from_path(&file);
+            match std::fs::read_to_string(&file) {
+                Err(e) => d.error(&at, format!("cannot read {}: {e}", file.display())),
+                Ok(text) => {
+                    match n {
+                        None => d.error(&at, "name the file .s2p, .s3p and so on"),
+                        Some(n) if n != dev.ports.len() => d.error(
+                            &at,
+                            format!("the file has {n} ports, `ports` lists {}", dev.ports.len()),
+                        ),
+                        Some(n) => {
+                            if let Err(e) = crate::rf::parse_touchstone(&text, n) {
+                                d.error(&at, e);
+                            }
+                        }
+                    }
+                    texts.push(text);
+                }
+            }
+            for p in &dev.ports {
+                if !names.contains(&p.as_str()) {
+                    d.error(&at, format!("`{p}` is not a port of {}", sim.board));
+                } else if used.contains(&p.as_str()) {
+                    d.error(&at, format!("`{p}` is joined to two devices"));
+                }
+                used.push(p);
+            }
+        }
+        if used.len() >= names.len() {
+            d.error("devices", "every board port is joined to a device, none is left to measure");
+        }
+        match &board.item.result {
+            None => d.error(
+                "board",
+                format!("`{}` has not run yet, `agentee sim {}` first", sim.board, sim.board),
+            ),
+            Some(r) => {
+                let missing: Vec<&str> = r
+                    .ports
+                    .iter()
+                    .zip(&r.excited)
+                    .filter(|(_, e)| !**e)
+                    .map(|(n, _)| n.as_str())
+                    .collect();
+                if !missing.is_empty() {
+                    d.error(
+                        "board",
+                        format!(
+                            "`{}` did not excite {}, a cascade needs every port driven (drop `excite`)",
+                            sim.board,
+                            missing.join(", ")
+                        ),
+                    );
+                }
+                if board.item.stale {
+                    d.warn("board", format!("the result of `{}` is stale", sim.board));
+                }
+                return crate::sim::cascade_hash(hash, r.spec_hash, &texts);
+            }
+        }
+        hash
     }
 
     fn pick_board(&self, name: Option<&str>, d: &mut Diags) -> Option<&Board> {

@@ -67,16 +67,17 @@ pub fn db_plot(
     let shown: Vec<(usize, (usize, usize))> =
         curves(r).into_iter().enumerate().filter(|(_, c)| !hidden.contains(c)).collect();
     let (f0, f1) = (r.freqs[0], *r.freqs.last().unwrap());
-    let mut lo = f64::MAX;
+    let (mut lo, mut top) = (f64::MAX, f64::MIN);
     for (_, (i, j)) in &shown {
         for v in r.db(*i, *j) {
             if v.is_finite() {
                 lo = lo.min(v);
+                top = top.max(v);
             }
         }
     }
     let lo = (lo.max(-80.0) / 10.0).floor() * 10.0 - 5.0;
-    let hi = 5.0;
+    let hi = if top > 0.0 { (top / 10.0).ceil() * 10.0 + 5.0 } else { 5.0 };
     let x = |f: f64| area.left() + ((f - f0) / (f1 - f0)) as f32 * area.width();
     let y = |d: f64| area.bottom() - ((d.clamp(lo, hi) - lo) / (hi - lo)) as f32 * area.height();
     let grid = Stroke::new(1.0, ETCH);

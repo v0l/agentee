@@ -1,0 +1,9 @@
+name = "lna-cascade"
+kind = "cascade"
+description = "The whole amplifier from J1 to J2: the lna-rf board network with the Qorvo SPF5189Z S-parameters (5 V, 87 mA, de-embedded to the leads) dropped in between AMP_IN and AMP_OUT."
+board = "lna-rf"
+
+[[devices]]
+ref = "U1"
+file = "spf5189z.s2p"
+ports = ["AMP_IN", "AMP_OUT"]

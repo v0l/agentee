@@ -2,7 +2,6 @@ name = "lna-rf"
 description = "Passive RF paths around the amplifier: J1 to the U1 input and the U1 output to J2, with the chokes, DC blocks, bypass caps and ESD clamp as lumped parts. U1 itself is replaced by two ports."
 layout = "lna"
 cell = 0.1
-excite = ["IN", "AMP_OUT"]
 
 [frequency]
 start = "100MHz"

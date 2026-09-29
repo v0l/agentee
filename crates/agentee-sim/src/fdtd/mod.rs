@@ -279,8 +279,7 @@ fn extra_outputs(
 
 pub fn touchstone(r: &SimResult) -> String {
     let np = r.ports.len();
-    let mut out =
-        format!("! agentee FDTD {}\n! ports {}\n# Hz S RI R 50\n", r.name, r.ports.join(" "));
+    let mut out = format!("! agentee {}\n! ports {}\n# Hz S RI R 50\n", r.name, r.ports.join(" "));
     for (fi, f) in r.freqs.iter().enumerate() {
         out += &format!("{f:.6e}");
         let order: Vec<(usize, usize)> = if np == 2 {
