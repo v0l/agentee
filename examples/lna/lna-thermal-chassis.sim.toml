@@ -1,0 +1,16 @@
+name = "lna-thermal-chassis"
+kind = "thermal"
+description = "In the enclosure: the whole bottom face on a 1 mm, 3 W/mK gap pad (Bergquist Gap Pad 3000S30) to a 70 C baseplate, the top in still air. The SPF5189Z is rated to an 85 C lead temperature."
+layout = "lna"
+ambient = 70.0
+h_bottom = 3000.0
+
+[[sources]]
+ref = "U1"
+power = "0.45W"
+theta_jc = 65.0
+pads = ["2"]
+
+[[sources]]
+ref = "D2"
+power = "30mW"

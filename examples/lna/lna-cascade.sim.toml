@@ -1,9 +1,21 @@
 name = "lna-cascade"
 kind = "cascade"
-description = "The whole amplifier from J1 to J2: the lna-rf board network with the Qorvo SPF5189Z S-parameters (5 V, 87 mA, de-embedded to the leads) dropped in between AMP_IN and AMP_OUT."
+description = "The whole amplifier from J1 to J2: the lna-rf board with the measured Qorvo SPF5189Z (5 V, 87 mA, de-embedded to the leads) between AMP_IN and AMP_OUT, and the Coilcraft BCR-162 conical chokes (shunt fixture data) on their RF pads."
 board = "lna-rf"
 
 [[devices]]
 ref = "U1"
-file = "spf5189z.s2p"
+file = "models/qorvo_spf5189z.s2p"
 ports = ["AMP_IN", "AMP_OUT"]
+
+[[devices]]
+ref = "L1"
+file = "models/coilcraft_bcr-162.s2p"
+ports = ["L1"]
+mount = "shunt"
+
+[[devices]]
+ref = "L3"
+file = "models/coilcraft_bcr-162.s2p"
+ports = ["L3"]
+mount = "shunt"

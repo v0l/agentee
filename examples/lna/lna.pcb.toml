@@ -4,323 +4,767 @@ schematic = "lna"
 
 [[footprints]]
 ref = "J1"
-at = [2.54, 10.0]
+at = [2.54, 12.0]
 rotation = 180
 
 [[footprints]]
 ref = "J2"
-at = [27.46, 10.0]
+at = [33.46, 12.0]
 
 [[footprints]]
 ref = "D3"
-at = [6.2, 9.6]
+at = [6.2, 11.6]
 rotation = 90
-label = { at = [4.3, 7.9] }
+label = { at = [4.3, 9.9] }
 
 [[footprints]]
 ref = "C1"
-at = [8.5, 10.0]
-label = { at = [8.5, 8.6] }
+at = [8.5, 12.0]
+label = { at = [8.5, 10.6] }
 
 [[footprints]]
 ref = "U1"
-at = [13.0, 8.05]
+at = [13.0, 10.05]
 rotation = 90
-label = { at = [9.9, 7.4], rotation = 90 }
+label = { at = [13.0, 6.9] }
 
 [[footprints]]
 ref = "C2"
-at = [18.2, 10.0]
-label = { at = [18.2, 11.9] }
+at = [18.8, 12.0]
+label = { at = [18.8, 13.4] }
 
 [[footprints]]
 ref = "L1"
-at = [16.3, 8.2]
+at = [14.775, 16.415]
 rotation = 90
-label = { at = [17.6, 8.0], rotation = 90 }
-
-[[footprints]]
-ref = "L2"
-at = [16.3, 5.2]
-rotation = 90
-label = { at = [17.6, 5.2], rotation = 90 }
+label = { at = [11.3, 15.3], rotation = 90 }
 
 [[footprints]]
 ref = "L3"
-at = [21.5, 8.2]
-rotation = 90
-label = { at = [20.15, 7.9], rotation = 90 }
-
-[[footprints]]
-ref = "L4"
-at = [21.5, 5.2]
-rotation = 90
-label = { at = [20.15, 5.2], rotation = 90 }
+at = [22.525, 8.585]
+rotation = 270
+label = { at = [26.6, 9.6] }
 
 [[footprints]]
 ref = "C5"
-at = [23.3, 4.4125]
-label = { at = [22.9, 1.4] }
+at = [25.8, 6.17]
+label = { at = [26.2, 4.9] }
 
 [[footprints]]
 ref = "D1"
-at = [18.9, 2.6]
+at = [24.05, 3.6]
+rotation = 270
+label = { at = [21.9, 3.6], rotation = 90 }
 
 [[footprints]]
 ref = "C3"
-at = [15.0, 3.6]
-rotation = 270
-label = { at = [15.3, 1.3] }
+at = [11.5, 18.83]
+rotation = 180
+label = { at = [11.4, 17.6] }
 
 [[footprints]]
 ref = "C4"
-at = [13.9, 3.6]
+at = [15.2, 20.78]
 rotation = 270
-label = { at = [13.6, 1.3] }
+label = { at = [14.6, 23.3] }
 
 [[footprints]]
 ref = "C6"
-at = [12.8, 3.6]
+at = [16.5, 20.78]
 rotation = 270
-label = { at = [11.9, 1.3] }
+label = { at = [17.1, 23.3] }
 
 [[footprints]]
 ref = "J3"
-at = [10.5, 16.2]
+at = [9.6, 21.6]
 rotation = 270
-label = { at = [9.2, 18.6] }
+label = { hide = true }
 
 [[footprints]]
 ref = "D2"
-at = [13.9, 16.2]
+at = [13.0, 21.6]
 rotation = 180
+label = { at = [13.0, 23.1] }
+
+[[footprints]]
+ref = "H1"
+at = [2.7, 2.7]
+label = { hide = true }
+
+[[footprints]]
+ref = "H2"
+at = [33.3, 2.7]
+label = { hide = true }
+
+[[footprints]]
+ref = "H3"
+at = [2.7, 21.3]
+label = { hide = true }
+
+[[footprints]]
+ref = "H4"
+at = [33.3, 21.3]
+label = { hide = true }
 
 [[footprints]]
 ref = "R1"
-at = [17.0, 16.2]
+at = [20.5, 20.3]
+label = { at = [20.5, 21.5] }
 
 [[footprints]]
 ref = "D4"
-at = [19.6, 16.2]
+at = [23.0, 20.3]
 rotation = 180
+label = { at = [23.0, 21.7] }
 
 [[tracks]]
 net = "RF_IN"
 layer = "F.Cu"
-points = [[4.5, 10.0], [8.02, 10.0]]
+points = [[5.08, 12.0], [8.02, 12.0]]
 
 [[tracks]]
 net = "RF_AMP_IN"
 layer = "F.Cu"
-points = [[8.98, 10.0], [11.5, 10.0]]
+points = [[8.98, 12.0], [11.5, 12.0]]
 
 [[tracks]]
 net = "RF_AMP_OUT"
 layer = "F.Cu"
-points = [[14.5, 10.0], [17.72, 10.0]]
+points = [[14.5, 12.0], [18.32, 12.0]]
 
 [[tracks]]
 net = "RF_AMP_OUT"
 layer = "F.Cu"
-points = [[16.3, 10.0], [16.3, 8.9875]]
+points = [[16.3, 12.0], [16.3, 14.0]]
 
 [[tracks]]
 net = "RF_OUT"
 layer = "F.Cu"
-points = [[18.68, 10.0], [25.5, 10.0]]
+points = [[19.28, 12.0], [30.92, 12.0]]
 
 [[tracks]]
 net = "RF_OUT"
 layer = "F.Cu"
-points = [[21.5, 10.0], [21.5, 8.9875]]
-
-[[tracks]]
-net = "CHOKE_A"
-layer = "F.Cu"
-points = [[16.3, 7.4125], [16.3, 5.9875]]
-
-[[tracks]]
-net = "CHOKE_B"
-layer = "F.Cu"
-points = [[21.5, 7.4125], [21.5, 5.9875]]
+points = [[21.0, 12.0], [21.0, 11.0]]
 
 [[tracks]]
 net = "VBIAS"
 layer = "F.Cu"
-points = [[22.82, 4.4125], [21.5, 4.4125], [21.5, 2.6], [19.95, 2.6]]
+points = [[24.05, 6.17], [24.05, 4.65]]
+
+[[tracks]]
+net = "VBIAS"
+layer = "F.Cu"
+points = [[24.05, 6.17], [25.32, 6.17]]
 
 [[tracks]]
 net = "VCC"
 layer = "F.Cu"
-points = [[11.8, 3.12], [16.3, 3.12], [16.3, 4.4125]]
+points = [[24.05, 2.55], [24.05, 1.5]]
+
+[[tracks]]
+net = "VCC"
+layer = "In2.Cu"
+points = [[24.05, 1.5], [19.0, 1.5], [19.0, 20.3]]
 
 [[tracks]]
 net = "VCC"
 layer = "F.Cu"
-points = [[16.3, 3.12], [16.3, 2.6], [17.85, 2.6]]
+points = [[13.25, 18.83], [11.98, 18.83]]
+
+[[tracks]]
+net = "VCC"
+layer = "F.Cu"
+points = [[13.25, 18.83], [13.25, 20.3]]
+
+[[tracks]]
+net = "VCC"
+layer = "F.Cu"
+points = [[14.05, 21.6], [14.05, 20.3]]
+
+[[tracks]]
+net = "VCC"
+layer = "F.Cu"
+points = [[13.25, 20.3], [19.99, 20.3]]
 
 [[tracks]]
 net = "VEXT"
 layer = "F.Cu"
-points = [[10.5, 16.2], [12.85, 16.2]]
-
-[[tracks]]
-net = "VCC"
-layer = "F.Cu"
-points = [[14.95, 16.2], [16.49, 16.2]]
-
-[[tracks]]
-net = "VCC"
-layer = "F.Cu"
-points = [[15.7, 16.2], [15.7, 15.0]]
-
-[[tracks]]
-net = "VCC"
-layer = "B.Cu"
-points = [[15.7, 15.0], [11.8, 11.1], [11.8, 3.12]]
+points = [[9.6, 21.6], [11.95, 21.6]]
 
 [[tracks]]
 net = "LED_A"
 layer = "F.Cu"
-points = [[17.51, 16.2], [18.8125, 16.2]]
+points = [[21.01, 20.3], [22.21, 20.3]]
 
 [[tracks]]
 net = "GND"
 layer = "F.Cu"
-points = [[20.3875, 16.2], [21.4, 16.2]]
+points = [[6.2, 11.35], [6.2, 10.6]]
 
 [[tracks]]
 net = "GND"
 layer = "F.Cu"
-points = [[6.2, 9.35], [6.2, 8.6]]
+points = [[26.28, 6.17], [26.28, 7.2]]
 
 [[tracks]]
 net = "GND"
 layer = "F.Cu"
-points = [[23.78, 4.4125], [24.0, 3.3]]
+points = [[11.02, 18.83], [10.1, 18.83]]
 
 [[tracks]]
 net = "GND"
 layer = "F.Cu"
-points = [[12.8, 4.08], [12.8, 5.0]]
+points = [[15.2, 21.26], [15.2, 22.3]]
 
 [[tracks]]
 net = "GND"
 layer = "F.Cu"
-points = [[13.9, 4.08], [13.9, 5.0]]
+points = [[16.5, 21.26], [16.5, 22.3]]
 
 [[tracks]]
 net = "GND"
 layer = "F.Cu"
-points = [[15.0, 4.08], [15.0, 5.0]]
+points = [[23.79, 20.3], [24.8, 20.3]]
 
 [[vias]]
 net = "VCC"
-at = [15.7, 15.0]
+at = [24.05, 1.5]
 
 [[vias]]
 net = "VCC"
-at = [11.8, 3.12]
+at = [19.0, 20.3]
 
 [[vias]]
 net = "GND"
-at = [21.4, 16.2]
+at = [6.2, 10.6]
 
 [[vias]]
 net = "GND"
-at = [6.2, 8.6]
+at = [26.28, 7.2]
 
 [[vias]]
 net = "GND"
-at = [24.0, 3.3]
+at = [10.1, 18.83]
 
 [[vias]]
 net = "GND"
-at = [12.8, 5.0]
+at = [15.2, 22.3]
 
 [[vias]]
 net = "GND"
-at = [13.9, 5.0]
+at = [16.5, 22.3]
 
 [[vias]]
 net = "GND"
-at = [15.0, 5.0]
+at = [24.8, 20.3]
 
 [[vias]]
 net = "GND"
-at = [12.55, 6.8]
+at = [12.55, 8.6]
 
 [[vias]]
 net = "GND"
-at = [13.45, 6.8]
+at = [12.55, 9.4]
 
 [[vias]]
 net = "GND"
-at = [12.55, 7.9]
+at = [12.55, 10.2]
 
 [[vias]]
 net = "GND"
-at = [13.45, 7.9]
+at = [12.55, 11.0]
 
 [[vias]]
 net = "GND"
-at = [7.2, 8.9]
+at = [13.45, 8.6]
 
 [[vias]]
 net = "GND"
-at = [9.6, 8.9]
+at = [13.45, 9.4]
 
 [[vias]]
 net = "GND"
-at = [18.9, 8.9]
+at = [13.45, 10.2]
 
 [[vias]]
 net = "GND"
-at = [20.2, 8.9]
+at = [13.45, 11.0]
 
 [[vias]]
 net = "GND"
-at = [23.0, 8.9]
+at = [5.3, 0.8]
 
 [[vias]]
 net = "GND"
-at = [24.2, 8.9]
+at = [5.3, 23.2]
 
 [[vias]]
 net = "GND"
-at = [6.2, 11.1]
+at = [6.8, 0.8]
 
 [[vias]]
 net = "GND"
-at = [7.6, 11.1]
+at = [6.8, 23.2]
 
 [[vias]]
 net = "GND"
-at = [9.6, 11.1]
+at = [8.3, 0.8]
 
 [[vias]]
 net = "GND"
-at = [13.0, 11.1]
+at = [8.3, 23.2]
 
 [[vias]]
 net = "GND"
-at = [17.0, 11.1]
+at = [9.8, 0.8]
 
 [[vias]]
 net = "GND"
-at = [19.6, 11.1]
+at = [9.8, 23.2]
 
 [[vias]]
 net = "GND"
-at = [20.9, 11.1]
+at = [11.3, 0.8]
 
 [[vias]]
 net = "GND"
-at = [22.5, 11.1]
+at = [11.3, 23.2]
 
 [[vias]]
 net = "GND"
-at = [23.8, 11.1]
+at = [12.8, 0.8]
+
+[[vias]]
+net = "GND"
+at = [12.8, 23.2]
+
+[[vias]]
+net = "GND"
+at = [14.3, 0.8]
+
+[[vias]]
+net = "GND"
+at = [14.3, 23.2]
+
+[[vias]]
+net = "GND"
+at = [15.8, 0.8]
+
+[[vias]]
+net = "GND"
+at = [15.8, 23.2]
+
+[[vias]]
+net = "GND"
+at = [17.3, 0.8]
+
+[[vias]]
+net = "GND"
+at = [17.3, 23.2]
+
+[[vias]]
+net = "GND"
+at = [18.8, 23.2]
+
+[[vias]]
+net = "GND"
+at = [20.3, 23.2]
+
+[[vias]]
+net = "GND"
+at = [21.8, 23.2]
+
+[[vias]]
+net = "GND"
+at = [23.3, 23.2]
+
+[[vias]]
+net = "GND"
+at = [24.8, 0.8]
+
+[[vias]]
+net = "GND"
+at = [24.8, 23.2]
+
+[[vias]]
+net = "GND"
+at = [26.3, 0.8]
+
+[[vias]]
+net = "GND"
+at = [26.3, 23.2]
+
+[[vias]]
+net = "GND"
+at = [27.8, 0.8]
+
+[[vias]]
+net = "GND"
+at = [27.8, 23.2]
+
+[[vias]]
+net = "GND"
+at = [29.3, 0.8]
+
+[[vias]]
+net = "GND"
+at = [29.3, 23.2]
+
+[[vias]]
+net = "GND"
+at = [0.8, 5.3]
+
+[[vias]]
+net = "GND"
+at = [35.2, 5.3]
+
+[[vias]]
+net = "GND"
+at = [0.8, 9.8]
+
+[[vias]]
+net = "GND"
+at = [35.2, 9.8]
+
+[[vias]]
+net = "GND"
+at = [0.8, 14.3]
+
+[[vias]]
+net = "GND"
+at = [35.2, 14.3]
+
+[[vias]]
+net = "GND"
+at = [6.28, 13.0]
+
+[[vias]]
+net = "GND"
+at = [7.48, 11.0]
+
+[[vias]]
+net = "GND"
+at = [7.48, 13.0]
+
+[[vias]]
+net = "GND"
+at = [8.98, 11.0]
+
+[[vias]]
+net = "GND"
+at = [8.98, 13.0]
+
+[[vias]]
+net = "GND"
+at = [10.18, 11.0]
+
+[[vias]]
+net = "GND"
+at = [10.18, 13.0]
+
+[[vias]]
+net = "GND"
+at = [15.7, 11.0]
+
+[[vias]]
+net = "GND"
+at = [16.9, 11.0]
+
+[[vias]]
+net = "GND"
+at = [18.1, 11.0]
+
+[[vias]]
+net = "GND"
+at = [18.1, 13.0]
+
+[[vias]]
+net = "GND"
+at = [20.48, 13.0]
+
+[[vias]]
+net = "GND"
+at = [21.68, 13.0]
+
+[[vias]]
+net = "GND"
+at = [22.88, 11.0]
+
+[[vias]]
+net = "GND"
+at = [22.88, 13.0]
+
+[[vias]]
+net = "GND"
+at = [24.08, 13.0]
+
+[[vias]]
+net = "GND"
+at = [25.28, 11.0]
+
+[[vias]]
+net = "GND"
+at = [25.28, 13.0]
+
+[[vias]]
+net = "GND"
+at = [26.48, 11.0]
+
+[[vias]]
+net = "GND"
+at = [26.48, 13.0]
+
+[[vias]]
+net = "GND"
+at = [27.68, 11.0]
+
+[[vias]]
+net = "GND"
+at = [27.68, 13.0]
+
+[[vias]]
+net = "GND"
+at = [28.88, 11.0]
+
+[[vias]]
+net = "GND"
+at = [28.88, 13.0]
+
+[[vias]]
+net = "GND"
+at = [30.08, 11.0]
+
+[[vias]]
+net = "GND"
+at = [30.08, 13.0]
+
+[[vias]]
+net = "GND"
+at = [5.8, 3.3]
+
+[[vias]]
+net = "GND"
+at = [8.3, 3.3]
+
+[[vias]]
+net = "GND"
+at = [10.8, 3.3]
+
+[[vias]]
+net = "GND"
+at = [13.3, 3.3]
+
+[[vias]]
+net = "GND"
+at = [15.8, 3.3]
+
+[[vias]]
+net = "GND"
+at = [20.8, 3.3]
+
+[[vias]]
+net = "GND"
+at = [23.3, 3.3]
+
+[[vias]]
+net = "GND"
+at = [25.8, 3.3]
+
+[[vias]]
+net = "GND"
+at = [28.3, 3.3]
+
+[[vias]]
+net = "GND"
+at = [3.3, 5.8]
+
+[[vias]]
+net = "GND"
+at = [10.8, 5.8]
+
+[[vias]]
+net = "GND"
+at = [13.3, 5.8]
+
+[[vias]]
+net = "GND"
+at = [15.8, 5.8]
+
+[[vias]]
+net = "GND"
+at = [30.8, 5.8]
+
+[[vias]]
+net = "GND"
+at = [33.3, 5.8]
+
+[[vias]]
+net = "GND"
+at = [10.8, 8.3]
+
+[[vias]]
+net = "GND"
+at = [15.8, 8.3]
+
+[[vias]]
+net = "GND"
+at = [20.8, 8.3]
+
+[[vias]]
+net = "GND"
+at = [23.3, 8.3]
+
+[[vias]]
+net = "GND"
+at = [25.8, 8.3]
+
+[[vias]]
+net = "GND"
+at = [5.8, 15.8]
+
+[[vias]]
+net = "GND"
+at = [8.3, 15.8]
+
+[[vias]]
+net = "GND"
+at = [10.8, 15.8]
+
+[[vias]]
+net = "GND"
+at = [13.3, 15.8]
+
+[[vias]]
+net = "GND"
+at = [15.8, 15.8]
+
+[[vias]]
+net = "GND"
+at = [20.8, 15.8]
+
+[[vias]]
+net = "GND"
+at = [23.3, 15.8]
+
+[[vias]]
+net = "GND"
+at = [25.8, 15.8]
+
+[[vias]]
+net = "GND"
+at = [28.3, 15.8]
+
+[[vias]]
+net = "GND"
+at = [3.3, 18.3]
+
+[[vias]]
+net = "GND"
+at = [5.8, 18.3]
+
+[[vias]]
+net = "GND"
+at = [8.3, 18.3]
+
+[[vias]]
+net = "GND"
+at = [20.8, 18.3]
+
+[[vias]]
+net = "GND"
+at = [23.3, 18.3]
+
+[[vias]]
+net = "GND"
+at = [25.8, 18.3]
+
+[[vias]]
+net = "GND"
+at = [28.3, 18.3]
+
+[[vias]]
+net = "GND"
+at = [30.8, 18.3]
+
+[[vias]]
+net = "GND"
+at = [33.3, 18.3]
+
+[[vias]]
+net = "GND"
+at = [5.8, 20.8]
+
+[[vias]]
+net = "GND"
+at = [25.8, 20.8]
+
+[[vias]]
+net = "GND"
+at = [28.3, 20.8]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [7.4, 7.6]
+text = "RF IN"
+size = 1.0
+
+[[artwork]]
+layer = "F.SilkS"
+icon = "arrow"
+at = [7.4, 6.3]
+height = 0.8
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [28.6, 7.6]
+text = "RF OUT"
+size = 1.0
+
+[[artwork]]
+layer = "F.SilkS"
+icon = "arrow"
+at = [28.6, 6.3]
+height = 0.8
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [9.6, 19.4]
+text = "+5V"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [7.06, 19.4]
+text = "GND"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "B.SilkS"
+at = [18.0, 12.0]
+text = "agentee LNA rev B, 50 MHz - 6 GHz"
+size = 1.2
+
+[[cutouts]]
+layers = ["In1.Cu"]
+points = [[10.900, 11.200], [12.100, 11.200], [12.100, 12.800], [10.900, 12.800]]
+
+[[cutouts]]
+layers = ["In1.Cu"]
+points = [[13.900, 11.200], [15.100, 11.200], [15.100, 12.800], [13.900, 12.800]]
+
+[[cutouts]]
+layers = ["In1.Cu"]
+points = [[15.640, 13.340], [16.960, 13.340], [16.960, 14.660], [15.640, 14.660]]
+
+[[cutouts]]
+layers = ["In1.Cu"]
+points = [[20.340, 10.340], [21.660, 10.340], [21.660, 11.660], [20.340, 11.660]]
 
 [[zones]]
 net = "GND"
@@ -328,8 +772,8 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 
 [[cutouts]]
 layers = ["In1.Cu"]
-points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
+points = [[0, 11.0], [5.4, 11.0], [5.4, 13.0], [0, 13.0]]
 
 [[cutouts]]
 layers = ["In1.Cu"]
-points = [[24.6, 9], [30, 9], [30, 11], [24.6, 11]]
+points = [[30.6, 11.0], [36.0, 11.0], [36.0, 13.0], [30.6, 13.0]]

@@ -1,0 +1,128 @@
+name = "Coilcraft_BCR-162"
+description = "Coilcraft BCR-162/-221/-232/-531/-802 SMT broadband conical inductor, land pattern from Document 334R-2. Pad 1 is the narrow end, for the RF line. The MP pads only hold the bracket and must stay unconnected."
+tags = ["inductor", "conical", "bias tee"]
+mount = "smd"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [2.4150, 1.5250]
+size = [1.02, 1.02]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [-2.4150, -1.5250]
+size = [1.02, 1.02]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "MP"
+kind = "smd"
+shape = "rect"
+at = [2.4150, -1.5250]
+size = [1.02, 1.02]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "MP"
+kind = "smd"
+shape = "rect"
+at = [-2.4150, 1.5250]
+size = [1.02, 1.02]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.7950, -1.9050]
+end = [2.7950, -1.9050]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.7950, -1.9050]
+end = [2.7950, 1.9050]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.7950, 1.9050]
+end = [-2.7950, 1.9050]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.7950, 1.9050]
+end = [-2.7950, -1.9050]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.1750, -2.2850]
+end = [3.1750, -2.2850]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.1750, -2.2850]
+end = [3.1750, 2.2850]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.1750, 2.2850]
+end = [-3.1750, 2.2850]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.1750, 2.2850]
+end = [-3.1750, -2.2850]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.6, -2.25]
+end = [1.6, -2.25]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.6, 2.25]
+end = [1.6, 2.25]
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [1.0, 2.65]
+radius = 0.15
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -3.2]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${VALUE}"
+size = 0.8

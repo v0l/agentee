@@ -1,0 +1,25 @@
+# imported from KiCad Mechanical:MountingHole_Pad
+name = "MountingHole_Pad"
+reference = "H"
+description = "Mounting Hole with connection"
+keywords = ["mounting", "hole"]
+footprint = "MountingHole_2.2mm_M2_Pad_Via"
+footprint_filters = ["MountingHole*Pad*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "circle"
+center = [0.0, -1.27]
+radius = 1.27
+width = 1.27
+
+[[pins]]
+number = "1"
+name = "1"
+type = "input"
+at = [0.0, 2.54]
+side = "bottom"
+length = 2.54
+unit = 1

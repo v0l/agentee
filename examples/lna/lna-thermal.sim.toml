@@ -1,6 +1,6 @@
 name = "lna-thermal"
 kind = "thermal"
-description = "Still air, board on its own: the SPF5189Z at 5 V and 90 mA, and the OR-ing Schottky carrying the same current."
+description = "Still air, bare board on stand-offs, 25 C: the SPF5189Z at 5 V and 90 mA, and the OR-ing Schottky carrying the same current."
 layout = "lna"
 ambient = 25.0
 

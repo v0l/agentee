@@ -21,10 +21,10 @@ fields = { mpn = "Infineon ESD131-B1-W0201" }
 [[parts]]
 ref = "C1"
 symbol = "C"
-value = "100p"
+value = "100n"
 at = [48.26, 50.8]
 rotation = 90
-fields = { mpn = "Murata GRM1555C1H101JA01D" }
+fields = { mpn = "Murata GRM155R71C104KA88D" }
 
 [[parts]]
 ref = "U1"
@@ -36,10 +36,10 @@ fields = { mpn = "Qorvo SPF5189Z" }
 [[parts]]
 ref = "C2"
 symbol = "C"
-value = "100p"
+value = "100n"
 at = [83.82, 50.8]
 rotation = 90
-fields = { mpn = "Murata GRM1555C1H101JA01D" }
+fields = { mpn = "Murata GRM155R71C104KA88D" }
 
 [[parts]]
 ref = "J2"
@@ -51,34 +51,20 @@ fields = { mpn = "Amphenol 132289" }
 [[parts]]
 ref = "L1"
 symbol = "L"
-value = "47n"
+value = "1.65u"
+footprint = "Coilcraft_BCR-162"
 at = [76.2, 40.64]
 rotation = 180
-fields = { mpn = "Coilcraft 0603HC-47NXJRW" }
-
-[[parts]]
-ref = "L2"
-symbol = "L"
-value = "150n"
-at = [76.2, 30.48]
-rotation = 180
-fields = { mpn = "Coilcraft 0603CS-R15XJLW" }
+fields = { mpn = "Coilcraft BCR-162JLC" }
 
 [[parts]]
 ref = "L3"
 symbol = "L"
-value = "47n"
+value = "1.65u"
+footprint = "Coilcraft_BCR-162"
 at = [93.98, 40.64]
 rotation = 180
-fields = { mpn = "Coilcraft 0603HC-47NXJRW" }
-
-[[parts]]
-ref = "L4"
-symbol = "L"
-value = "150n"
-at = [93.98, 30.48]
-rotation = 180
-fields = { mpn = "Coilcraft 0603CS-R15XJLW" }
+fields = { mpn = "Coilcraft BCR-162JLC" }
 
 [[parts]]
 ref = "D1"
@@ -90,23 +76,23 @@ fields = { mpn = "Infineon BAT60A" }
 [[parts]]
 ref = "C5"
 symbol = "C"
-value = "100p"
+value = "100n"
 at = [101.6, 30.48]
-fields = { mpn = "Murata GRM1555C1H101JA01D" }
+fields = { mpn = "Murata GRM155R71C104KA88D" }
 
 [[parts]]
 ref = "C3"
 symbol = "C"
-value = "100p"
+value = "100n"
 at = [68.58, 30.48]
-fields = { mpn = "Murata GRM1555C1H101JA01D" }
+fields = { mpn = "Murata GRM155R71C104KA88D" }
 
 [[parts]]
 ref = "C4"
 symbol = "C"
-value = "100n"
+value = "1u"
 at = [60.96, 30.48]
-fields = { mpn = "Murata GRM155R71C104KA88D" }
+fields = { mpn = "Murata GRM155R61A105KE15D" }
 
 [[parts]]
 ref = "C6"
@@ -143,6 +129,34 @@ value = "green"
 at = [45.72, 40.64]
 rotation = 90
 
+[[parts]]
+ref = "H1"
+symbol = "MountingHole_Pad"
+value = "M2"
+at = [114.3, 25.4]
+fields = { mpn = "M2 screw to the enclosure, plated and grounded" }
+
+[[parts]]
+ref = "H2"
+symbol = "MountingHole_Pad"
+value = "M2"
+at = [124.46, 25.4]
+fields = { mpn = "M2 screw to the enclosure, plated and grounded" }
+
+[[parts]]
+ref = "H3"
+symbol = "MountingHole_Pad"
+value = "M2"
+at = [114.3, 35.56]
+fields = { mpn = "M2 screw to the enclosure, plated and grounded" }
+
+[[parts]]
+ref = "H4"
+symbol = "MountingHole_Pad"
+value = "M2"
+at = [124.46, 35.56]
+fields = { mpn = "M2 screw to the enclosure, plated and grounded" }
+
 [[nets]]
 name = "RF_IN"
 class = "RF"
@@ -164,17 +178,9 @@ class = "RF"
 pins = ["C2.2", "J2.1", "L3.1"]
 
 [[nets]]
-name = "CHOKE_A"
-pins = ["L1.2", "L2.1"]
-
-[[nets]]
-name = "CHOKE_B"
-pins = ["L3.2", "L4.1"]
-
-[[nets]]
 name = "VBIAS"
 class = "Power"
-pins = ["L4.2", "C5.1", "D1.2"]
+pins = ["L3.2", "C5.1", "D1.2"]
 
 [[nets]]
 name = "VEXT"
@@ -184,7 +190,7 @@ pins = ["J3.1", "D2.2"]
 [[nets]]
 name = "VCC"
 class = "Power"
-pins = ["D1.1", "D2.1", "L2.2", "C3.1", "C4.1", "C6.1", "R1.1"]
+pins = ["D1.1", "D2.1", "L1.2", "C3.1", "C4.1", "C6.1", "R1.1"]
 
 [[nets]]
 name = "LED_A"
@@ -193,4 +199,4 @@ pins = ["R1.2", "D4.2"]
 [[nets]]
 name = "GND"
 style = "power"
-pins = ["U1.2", "J1.2", "J2.2", "J3.2", "D3.2", "C3.2", "C4.2", "C5.2", "C6.2", "D4.1"]
+pins = ["U1.2", "J1.2", "J2.2", "J3.2", "D3.2", "C3.2", "C4.2", "C5.2", "C6.2", "D4.1", "H1.1", "H2.1", "H3.1", "H4.1"]

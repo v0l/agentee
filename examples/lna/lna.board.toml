@@ -3,7 +3,7 @@ description = "Wideband 50 MHz to 4 GHz LNA for RTL-SDR style receivers, SPF5189
 fab = "jlcpcb"
 
 [outline]
-size = [30, 20]
+size = [36, 24]
 corner_radius = 1
 
 [stackup]
@@ -41,5 +41,5 @@ track_width = "0.4mm"
 clearance = "0.2mm"
 current = "150mA"
 max_temp_rise = "10C"
-layers = ["F.Cu", "B.Cu"]
+layers = ["F.Cu", "In2.Cu"]
 via = "std"

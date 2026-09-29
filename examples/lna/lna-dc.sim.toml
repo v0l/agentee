@@ -1,6 +1,6 @@
 name = "lna-dc"
 kind = "dc"
-description = "Supply drop from the VCC node to the SPF5189Z drain, through the chokes and the RF line, with the return through the tab and the ground pours."
+description = "Supply drop from the VCC node to the SPF5189Z drain, through the conical choke (0.6 ohm, the BCR-162 maximum DCR) and the RF line, with the return through the tab and the ground pours."
 layout = "lna"
 cell = 0.05
 
@@ -19,8 +19,4 @@ return = "U1.2"
 
 [[links]]
 ref = "L1"
-resistance = "0.2ohm"
-
-[[links]]
-ref = "L2"
-resistance = "1.4ohm"
+resistance = "0.6ohm"

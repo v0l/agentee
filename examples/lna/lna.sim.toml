@@ -1,12 +1,12 @@
 name = "lna-rf"
-description = "Passive RF paths around the amplifier: J1 to the U1 input and the U1 output to J2, with the chokes, DC blocks, bypass caps and ESD clamp as lumped parts. U1 itself is replaced by two ports."
+description = "The passive board around the amplifier from 50 MHz to 6 GHz. U1 is replaced by two ports and each conical bias choke by a port at its RF pad, so lna-cascade can drop in the measured Qorvo and Coilcraft data. The DC blocks are their Murata ESL."
 layout = "lna"
 cell = 0.1
 
 [frequency]
-start = "100MHz"
-stop = "4GHz"
-points = 391
+start = "50MHz"
+stop = "6GHz"
+points = 596
 
 [[ports]]
 name = "IN"
@@ -26,6 +26,30 @@ name = "OUT"
 pad = "J2.1"
 reference = "In2.Cu"
 
+[[ports]]
+name = "L1"
+pad = "L1.1"
+
+[[ports]]
+name = "L3"
+pad = "L3.1"
+
 [[models]]
 ref = "D3"
 capacitor = "0.23pF"
+
+[[models]]
+ref = "C1"
+inductor = "0.24nH"
+
+[[models]]
+ref = "C2"
+inductor = "0.24nH"
+
+[[models]]
+ref = "L1"
+open = true
+
+[[models]]
+ref = "L3"
+open = true
