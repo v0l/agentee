@@ -178,8 +178,15 @@ impl PcbModel {
                 r: p.impedance,
             });
         }
+        let inside = |p: P| {
+            spec.region
+                .is_none_or(|[x0, y0, x1, y1]| p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1)
+        };
         for e in &spec.elements {
             let Some(s) = sheet(&e.layer) else { continue };
+            if !inside(e.a) && !inside(e.b) {
+                continue;
+            }
             let element = match e.model {
                 Model::Capacitor(c) => Element::Capacitor(c),
                 Model::Inductor(l) => Element::Inductor(l),
@@ -244,9 +251,11 @@ impl PcbModel {
                 let hw = t.width / 2.0;
                 if (w[0][1] - w[1][1]).abs() < 1e-9 {
                     m.features_y.extend([w[0][1] - hw, w[0][1] + hw]);
+                    m.features_x.extend([w[0][0].min(w[1][0]) - hw, w[0][0].max(w[1][0]) + hw]);
                 }
                 if (w[0][0] - w[1][0]).abs() < 1e-9 {
                     m.features_x.extend([w[0][0] - hw, w[0][0] + hw]);
+                    m.features_y.extend([w[0][1].min(w[1][1]) - hw, w[0][1].max(w[1][1]) + hw]);
                 }
             }
         }
@@ -261,6 +270,16 @@ impl PcbModel {
         }
         for z in &layout.zones {
             if let Some(s) = sheet(&z.layer) {
+                for ring in &z.rings {
+                    for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                        if (a[1] - b[1]).abs() < 1e-9 && (a[0] - b[0]).abs() > 0.2 {
+                            m.features_y.push(a[1]);
+                        }
+                        if (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() > 0.2 {
+                            m.features_x.push(a[0]);
+                        }
+                    }
+                }
                 m.copper.push((s, Copper::Fill(z.clone())));
             }
         }
@@ -484,6 +503,7 @@ impl PcbModel {
             }
             lumped.push(Lumped { name: e.name.clone(), edges, element: e.element });
         }
+        let in_pml = |i: usize, len: usize| i < grid.pml || i + 1 + grid.pml >= len;
         let mut resistive: Vec<(usize, usize, f64, bool)> = Vec::new();
         for (s, rs) in self.sheet_ohms(opt).into_iter().enumerate() {
             if rs <= 0.0 {
@@ -500,7 +520,7 @@ impl PcbModel {
                 for a in 0..na.saturating_sub(1) {
                     for c in 0..nc.saturating_sub(1) {
                         let (i, j) = if comp == 0 { (a, c) } else { (c, a) };
-                        if !flags[i * ny + j] {
+                        if !flags[i * ny + j] || in_pml(i, nx) || in_pml(j, ny) {
                             continue;
                         }
                         let flag = |cc: usize| {
