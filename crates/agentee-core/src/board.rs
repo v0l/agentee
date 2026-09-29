@@ -1,4 +1,4 @@
-use crate::calc::{self, TraceGeometry};
+use crate::calc::{self, Line, TraceGeometry};
 use crate::diag::Diags;
 use crate::units::{Amps, Kelvin, Length, Ohms, Percent, Point};
 use serde::{Deserialize, Serialize};
@@ -117,6 +117,8 @@ pub struct NetclassFile {
     pub impedance_tolerance: Option<Percent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_gap: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coplanar_gap: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<String>,
 }
@@ -371,7 +373,17 @@ pub struct Netclass {
     pub impedance: Option<Ohms>,
     pub impedance_tolerance: Percent,
     pub diff_gap: Option<Length>,
+    pub coplanar_gap: Option<Length>,
     pub layers: Vec<String>,
+}
+
+impl Netclass {
+    pub fn line(&self) -> Line {
+        Line {
+            diff_gap_mm: self.diff_gap.map(Length::to_mm),
+            coplanar_gap_mm: self.coplanar_gap.map(Length::to_mm),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -446,7 +458,11 @@ impl BoardFile {
                     n.impedance
                         .and_then(|z| {
                             let g = stackup.geometry(layers.first()?)?;
-                            g.width_for(z.0, n.diff_gap.map(Length::to_mm)).map(Length::mm)
+                            let line = Line {
+                                diff_gap_mm: n.diff_gap.map(Length::to_mm),
+                                coplanar_gap_mm: n.coplanar_gap.map(Length::to_mm),
+                            };
+                            g.width_for(z.0, line).map(Length::mm)
                         })
                         .unwrap_or(rules.min_track_width)
                 });
@@ -461,6 +477,7 @@ impl BoardFile {
                     impedance: n.impedance,
                     impedance_tolerance: n.impedance_tolerance.unwrap_or(Percent(10.0)),
                     diff_gap: n.diff_gap,
+                    coplanar_gap: n.coplanar_gap,
                     layers,
                 }
             })
@@ -560,7 +577,7 @@ impl Board {
         for n in &self.netclasses {
             for layer in &n.layers {
                 let Some(g) = self.stackup.geometry(layer) else { continue };
-                let gap = n.diff_gap.map(Length::to_mm);
+                let gap = n.line();
                 let z = g.impedance(n.track_width.to_mm(), gap);
                 let (impedance_ok, width_for_impedance) = match n.impedance {
                     Some(target) => {
@@ -696,6 +713,25 @@ impl Board {
                         n.name, g, r.min_clearance
                     ),
                 );
+            }
+            if let Some(g) = n.coplanar_gap {
+                if g < r.min_clearance {
+                    d.error(
+                        &at,
+                        format!(
+                            "`{}` coplanar gap {} is under the fab minimum clearance {}",
+                            n.name, g, r.min_clearance
+                        ),
+                    );
+                }
+                if n.diff_gap.is_some() {
+                    d.error(&at, format!("`{}` sets both `diff_gap` and `coplanar_gap`, coplanar pairs are not modelled", n.name));
+                }
+                for l in &n.layers {
+                    if matches!(self.stackup.geometry(l), Some(TraceGeometry::Stripline { .. })) {
+                        d.error(&at, format!("`{}` coplanar gap on inner layer `{l}`, only outer layers are modelled as grounded coplanar", n.name));
+                    }
+                }
             }
             if n.diff_gap.is_some() && n.impedance.is_none() {
                 d.warn(&at, format!("`{}` has a pair gap but no `impedance` target", n.name));

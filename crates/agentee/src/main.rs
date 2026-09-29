@@ -161,6 +161,9 @@ enum Calc {
         width: Option<String>,
         #[arg(long)]
         gap: Option<String>,
+        /// Gap to the ground pour either side (grounded coplanar, outer layers)
+        #[arg(long)]
+        coplanar_gap: Option<String>,
         #[arg(long)]
         target: Option<String>,
         /// Dielectric height for a bare microstrip, instead of a board
@@ -294,7 +297,8 @@ fn run(cli: Cli) -> Result<bool, String> {
             Ok(true)
         }
         Cmd::Calc {
-            calc: Calc::Impedance { project, board, layer, width, gap, target, h, er, t },
+            calc:
+                Calc::Impedance { project, board, layer, width, gap, coplanar_gap, target, h, er, t },
         } => {
             let p = if h.is_some() { None } else { Some(ops::load(&project)?) };
             let v = ops::impedance(&ops::ImpedanceQuery {
@@ -303,6 +307,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                 layer: layer.as_deref(),
                 width: width.as_deref(),
                 gap: gap.as_deref(),
+                coplanar_gap: coplanar_gap.as_deref(),
                 target: target.as_deref(),
                 h: h.as_deref(),
                 er,

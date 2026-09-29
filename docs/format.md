@@ -69,6 +69,12 @@ impedance_tolerance = "10%"    # default 10%
 diff_gap = "0.15mm"            # makes it a differential pair
 layers = ["F.Cu"]              # default: every copper layer
 # track_width omitted: solved for the target on the first layer
+
+[[netclasses]]
+name = "RF"
+impedance = "50ohm"
+coplanar_gap = "0.2mm"         # grounded coplanar: pour this far either side, plane below
+layers = ["F.Cu"]              # outer layers only
 ```
 
 ### Stackup presets
@@ -115,7 +121,8 @@ exactly one board, otherwise against `generic`.
 
 For each net class and routing layer it finds the trace geometry from the stackup (outer layers
 are microstrip, inner layers are stripline between the nearest copper above and below), then the
-impedance (Hammerstad-Jensen microstrip, Wheeler stripline, uncoated), the width that meets the
+impedance (Hammerstad-Jensen microstrip, Wheeler stripline, conformal-mapping grounded coplanar,
+all uncoated and zero-thickness for coplanar), the width that meets the
 target, and the IPC-2221 current capacity. `agentee show <board>` prints all of it as JSON.
 
 ## Symbol (`*.sym.toml`)
@@ -241,7 +248,8 @@ size = 1.0
 ```
 
 Numbering in a row counts up the trailing digits (`A1`, `A2`, ...). `number_step = 2` counts by
-two. A custom pad takes `points`, a polygon relative to `at`.
+two. A custom pad is the anchor rectangle from `size` plus `points`, a polygon relative to `at`
+(set `size = [0, 0]` for the polygon alone).
 
 Layers: `F.Cu`, `B.Cu`, `F.SilkS`, `B.SilkS`, `F.Mask`, `B.Mask`, `F.Paste`, `B.Paste`, `F.Fab`,
 `B.Fab`, `F.CrtYd`, `B.CrtYd`, `Edge.Cuts`, `*.Cu`, `*.Mask`.

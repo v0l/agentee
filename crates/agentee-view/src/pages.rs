@@ -668,7 +668,11 @@ fn netclasses(ui: &mut Ui, b: &Board) {
             cell(p, r, at(3), cols[3].1, &mm(n.clearance), READOUT);
         }
         cell(p, r, at(1), cols[1].1, &a.layer, LEGEND);
-        let kind = if n.diff_gap.is_some() { "d" } else { "" };
+        let kind = match (n.diff_gap, n.coplanar_gap) {
+            (Some(_), _) => "d",
+            (None, Some(_)) => "c",
+            _ => "",
+        };
         if let Some(t) = n.impedance {
             cell(p, r, at(4), cols[4].1, &format!("{}{kind}", trim(t.0, 1)), READOUT);
         }
@@ -700,6 +704,6 @@ fn netclasses(ui: &mut Ui, b: &Board) {
     ui.add_space(2.0);
     hint(
         ui,
-        "z in ohm (d = differential pair), uncoated. I max is IPC-2221 at the class temperature rise.",
+        "z in ohm (d = differential pair, c = grounded coplanar), uncoated. I max is IPC-2221 at the class temperature rise.",
     );
 }

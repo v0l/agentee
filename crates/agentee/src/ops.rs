@@ -232,6 +232,7 @@ pub struct ImpedanceQuery<'a> {
     pub layer: Option<&'a str>,
     pub width: Option<&'a str>,
     pub gap: Option<&'a str>,
+    pub coplanar_gap: Option<&'a str>,
     pub target: Option<&'a str>,
     pub h: Option<&'a str>,
     pub er: Option<f64>,
@@ -268,8 +269,18 @@ pub fn impedance(q: &ImpedanceQuery) -> Result<Value, String> {
             })?
         }
     };
-    let gap = q.gap.map(|g| parse(g, Length::parse, "gap")).transpose()?.map(Length::to_mm);
-    let mut v = json!({ "geometry": geometry, "differential": gap.is_some() });
+    let gap = calc::Line {
+        diff_gap_mm: q.gap.map(|g| parse(g, Length::parse, "gap")).transpose()?.map(Length::to_mm),
+        coplanar_gap_mm: q
+            .coplanar_gap
+            .map(|g| parse(g, Length::parse, "coplanar_gap"))
+            .transpose()?
+            .map(Length::to_mm),
+    };
+    if gap.coplanar_gap_mm.is_some() && !geometry.is_external() {
+        return Err("coplanar_gap is only modelled on outer layers".into());
+    }
+    let mut v = json!({ "geometry": geometry, "line": gap });
     if let Some(w) = q.width {
         let w = parse(w, Length::parse, "width")?;
         v["width_mm"] = json!(w.to_mm());

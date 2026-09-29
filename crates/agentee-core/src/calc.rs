@@ -1,6 +1,24 @@
 use serde::Serialize;
 use std::f64::consts::PI;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
+pub struct Line {
+    pub diff_gap_mm: Option<f64>,
+    pub coplanar_gap_mm: Option<f64>,
+}
+
+impl Line {
+    pub const SINGLE: Line = Line { diff_gap_mm: None, coplanar_gap_mm: None };
+
+    pub fn differential(gap_mm: f64) -> Line {
+        Line { diff_gap_mm: Some(gap_mm), coplanar_gap_mm: None }
+    }
+
+    pub fn coplanar(gap_mm: f64) -> Line {
+        Line { diff_gap_mm: None, coplanar_gap_mm: Some(gap_mm) }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TraceGeometry {
@@ -41,15 +59,18 @@ impl TraceGeometry {
         }
     }
 
-    pub fn impedance(&self, w_mm: f64, gap_mm: Option<f64>) -> f64 {
-        match gap_mm {
-            Some(g) => self.differential(w_mm, g),
-            None => self.single_ended(w_mm),
+    pub fn impedance(&self, w_mm: f64, line: Line) -> f64 {
+        match (line.diff_gap_mm, line.coplanar_gap_mm, *self) {
+            (Some(g), _, _) => self.differential(w_mm, g),
+            (None, Some(s), TraceGeometry::Microstrip { h_mm, er, .. }) => {
+                gcpw_z0(w_mm, s, h_mm, er)
+            }
+            _ => self.single_ended(w_mm),
         }
     }
 
-    pub fn width_for(&self, target: f64, gap_mm: Option<f64>) -> Option<f64> {
-        solve_decreasing(|w| self.impedance(w, gap_mm), target, 0.01, 20.0)
+    pub fn width_for(&self, target: f64, line: Line) -> Option<f64> {
+        solve_decreasing(|w| self.impedance(w, line), target, 0.01, 20.0)
     }
 }
 
@@ -97,6 +118,32 @@ pub fn stripline_z0(w: f64, t: f64, h1: f64, h2: f64, er: f64) -> f64 {
     let z1 = symmetric_stripline_z0(w, t, 2.0 * h1 + t, er);
     let z2 = symmetric_stripline_z0(w, t, 2.0 * h2 + t, er);
     2.0 * z1 * z2 / (z1 + z2)
+}
+
+fn elliptic_k(k: f64) -> f64 {
+    let (mut a, mut b) = (1.0, (1.0 - k * k).max(0.0).sqrt());
+    for _ in 0..40 {
+        let (an, bn) = ((a + b) / 2.0, (a * b).sqrt());
+        a = an;
+        b = bn;
+        if (a - b).abs() < 1e-15 {
+            break;
+        }
+    }
+    PI / (2.0 * a)
+}
+
+fn k_ratio(k: f64) -> f64 {
+    elliptic_k(k) / elliptic_k((1.0 - k * k).sqrt())
+}
+
+pub fn gcpw_z0(w: f64, s: f64, h: f64, er: f64) -> f64 {
+    let k = w / (w + 2.0 * s);
+    let k3 = (PI * w / (4.0 * h)).tanh() / (PI * (w + 2.0 * s) / (4.0 * h)).tanh();
+    let (r, r3) = (k_ratio(k), k_ratio(k3));
+    let q = r3 / r;
+    let eeff = (1.0 + er * q) / (1.0 + q);
+    60.0 * PI / eeff.sqrt() / (r + r3)
 }
 
 const IPC2221_EXTERNAL: f64 = 0.048;
@@ -157,10 +204,23 @@ mod tests {
     #[test]
     fn width_solver_inverts_impedance() {
         let g = TraceGeometry::Microstrip { h_mm: 0.2104, er: 4.4, t_mm: 0.035 };
-        let w = g.width_for(50.0, None).unwrap();
+        let w = g.width_for(50.0, Line::SINGLE).unwrap();
         assert!((g.single_ended(w) - 50.0).abs() < 0.01);
-        let wd = g.width_for(90.0, Some(0.15)).unwrap();
+        let wd = g.width_for(90.0, Line::differential(0.15)).unwrap();
         assert!((g.differential(wd, 0.15) - 90.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn elliptic_k_matches_known_values() {
+        assert!((elliptic_k(0.0) - PI / 2.0).abs() < 1e-12);
+        assert!((elliptic_k(0.5_f64.sqrt()) - 1.854_074_677_301_372).abs() < 1e-9);
+    }
+
+    #[test]
+    fn gcpw_matches_a_published_fifty_ohm_line() {
+        let z = gcpw_z0(1.6, 0.345, 1.6, 4.7);
+        assert!((z - 50.0).abs() < 1.5, "{z}");
+        assert!(gcpw_z0(0.33, 0.1, 0.2104, 4.4) < gcpw_z0(0.33, 0.2, 0.2104, 4.4));
     }
 
     #[test]
