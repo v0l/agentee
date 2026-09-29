@@ -618,16 +618,24 @@ implicitly so the sheet stays stable at any time step. The stackup roughness fac
 the band centre. A zero-thickness sheet has one current, while real copper carries it on two faces, so
 each sheet edge tracks the magnetic field just above and below it through the run and scales its
 resistance by (Jtop^2 + Jbottom^2) / (Jtop + Jbottom)^2: one half for a centred stripline, close to
-one for a trace over a plane. The current crowding at a trace edge is narrower than a cell, so
-the cells within four of an edge get their resistance from the thin strip edge solution instead:
-a finite difference solve of a slit on the local mesh gives how much current the grid puts in
-each cell and where the grid's effective edge sits, and the loss of each band is the thin strip
+one for a trace over a plane.
+
+A grid puts a zero-thickness edge about a third of a cell past its last mesh line, so a strip
+drawn on the grid reads wider than it is, and real copper of thickness t reads wider again by
+(t / 2 pi)(1 + ln(4h / t)) per edge, h being the distance to the nearest other copper layer
+(the Hammerstad-Jensen thickness correction). The mesher sets the last line of each trace, pad
+and pour edge so the two land together: the grid's own offset comes from a finite difference
+solve of a slit on the local cell shape. A 0.3 mm microstrip on 0.15 mm of air reads 81.9 and
+82.2 ohm at 0.05 and 0.025 mm cells against 82.4 ohm from Hammerstad-Jensen with 35 um copper;
+drawing the edges on mesh lines gave 82.6 and 85.1.
+
+The current crowding at a trace edge is narrower than a cell, so the cells within four of an
+edge get their resistance from the thin strip edge solution instead: the same slit solve gives
+how much current the grid puts in each cell, and the loss of each band is the thin strip
 integral cut short of the edge (Lewin and Vainshtein's stopping distance method). For a square
 edge of thickness t that distance is t e^-pi / (4 pi), from a conformal map of the slab edge in
-the strong skin effect limit. A 0.3 mm microstrip at
-3.5 GHz reads 9%, 4%, 2% and 1.5% over the 2D field solver at 0.1, 0.05, 0.025 and 0.0125 mm
-cells, and a 0.2 mm stripline 5% at 0.05 mm, most of it the strip's own thickness, which the
-sheet model leaves out.
+the strong skin effect limit. The 0.3 mm microstrip at 3.5 GHz reads 11%, 3% and 0.5% over
+the 2D field solver at 0.1, 0.05 and 0.025 mm cells, and a 0.2 mm stripline 3% at 0.05 mm.
 
 ### Field maps and emissions
 

@@ -203,6 +203,10 @@ fn interpolated(above: f64, below: f64) -> Canonical {
     Canonical { charges, shift }
 }
 
+pub fn shift(d: f64, dz_above: f64, dz_below: f64) -> f64 {
+    interpolated(dz_above / d, dz_below / d).shift * d
+}
+
 pub fn weights(d: f64, dz_above: f64, dz_below: f64, t: f64) -> Weights {
     let c = interpolated(dz_above / d, dz_below / d);
     let shift = c.shift * d;

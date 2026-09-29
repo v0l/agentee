@@ -41,6 +41,22 @@ impl Copper {
         }
     }
 
+    fn contains_grown(&self, p: P, grow: f64) -> bool {
+        if self.contains(p) {
+            return true;
+        }
+        if grow <= 0.0 {
+            return false;
+        }
+        match self {
+            Copper::Seg(a, b, w) => geom::point_segment_distance(p, *a, *b) <= w / 2.0 + grow,
+            Copper::Circle(c, r) => geom::dist(p, *c) <= *r + grow,
+            _ => [[grow, 0.0], [-grow, 0.0], [0.0, grow], [0.0, -grow]]
+                .iter()
+                .any(|d| self.contains([p[0] + d[0], p[1] + d[1]])),
+        }
+    }
+
     fn bounds(&self) -> Bounds {
         let mut b = Bounds::EMPTY;
         match self {
@@ -347,8 +363,6 @@ impl PcbModel {
             v.extend(self.vias.iter().map(|x| f(x.0)));
             v
         };
-        let x = axis_lines(b.min[0], b.max[0], pinned(&|p| p[0]), &self.features_x);
-        let y = axis_lines(b.min[1], b.max[1], pinned(&|p| p[1]), &self.features_y);
         let top = self.sheets.iter().map(|s| s.z).fold(f64::MIN, f64::max);
         let bottom = self.sheets.iter().map(|s| s.z).fold(f64::MAX, f64::min);
         let mut fz: Vec<f64> = self.sheets.iter().map(|s| s.z).collect();
@@ -378,7 +392,110 @@ impl PcbModel {
         }
         let fz = kept;
         let z = pad_pml(lines(&fz, &feat_z, coarse, ratio), opt.pml);
+        let insets: Vec<f64> = self
+            .sheets
+            .iter()
+            .map(|sh| {
+                let k = z.partition_point(|v| *v < sh.z - 1e-9).clamp(1, z.len() - 2);
+                edge::shift(opt.cell, z[k + 1] - z[k], z[k] - z[k - 1]) - self.thickness_growth(sh)
+            })
+            .collect();
+        let edges = self.copper_edges();
+        let moved = |axis: usize, list: &[f64]| -> Vec<f64> {
+            list.iter()
+                .map(|v| {
+                    let key = (v * 1e6).round() as i64;
+                    match edges[axis].get(&key) {
+                        Some((dir, s)) if *dir != 0 => v + *dir as f64 * insets[*s],
+                        _ => *v,
+                    }
+                })
+                .collect()
+        };
+        let x = axis_lines(b.min[0], b.max[0], pinned(&|p| p[0]), &moved(0, &self.features_x));
+        let y = axis_lines(b.min[1], b.max[1], pinned(&|p| p[1]), &moved(1, &self.features_y));
         Grid { x, y, z, pml: opt.pml }
+    }
+
+    fn thickness_growth(&self, sheet: &Sheet) -> f64 {
+        let t = sheet.thickness;
+        let h = self
+            .sheets
+            .iter()
+            .map(|o| (o.z - sheet.z).abs())
+            .filter(|d| *d > 1e-9)
+            .fold(f64::MAX, f64::min);
+        if t <= 0.0 || h == f64::MAX {
+            return 0.0;
+        }
+        t / (2.0 * std::f64::consts::PI) * (1.0 + (4.0 * h.max(t) / t).ln())
+    }
+
+    pub fn grown(&self, opt: &Meshing, grid: &Grid) -> Vec<f64> {
+        let z: Vec<f64> = grid.z.iter().map(|v| *v).collect();
+        self.sheets
+            .iter()
+            .map(|sh| {
+                let k = z.partition_point(|v| *v < sh.z - 1e-9).clamp(1, z.len() - 2);
+                (self.thickness_growth(sh)
+                    - edge::shift(opt.cell, z[k + 1] - z[k], z[k] - z[k - 1]))
+                .max(0.0)
+                    + 1e-9
+            })
+            .collect()
+    }
+
+    fn copper_edges(&self) -> [std::collections::HashMap<i64, (i8, usize)>; 2] {
+        let mut out: [std::collections::HashMap<i64, (i8, usize)>; 2] = Default::default();
+        let mut note = |axis: usize, v: f64, dir: i8, s: usize| {
+            let e = out[axis].entry((v * 1e6).round() as i64).or_insert((dir, s));
+            if e.0 != dir {
+                e.0 = 0;
+            }
+        };
+        let eps = 1e-4;
+        for (s, c) in &self.copper {
+            let rings: Vec<&[P]> = match c {
+                Copper::Poly(v) => vec![&v[..]],
+                Copper::Fill(z) => z.rings.iter().map(|r| &r[..]).collect(),
+                Copper::Seg(a, b, w) => {
+                    let hw = w / 2.0;
+                    if (a[1] - b[1]).abs() < 1e-9 {
+                        note(1, a[1] - hw, 1, *s);
+                        note(1, a[1] + hw, -1, *s);
+                        note(0, a[0].min(b[0]) - hw, 1, *s);
+                        note(0, a[0].max(b[0]) + hw, -1, *s);
+                    } else if (a[0] - b[0]).abs() < 1e-9 {
+                        note(0, a[0] - hw, 1, *s);
+                        note(0, a[0] + hw, -1, *s);
+                        note(1, a[1].min(b[1]) - hw, 1, *s);
+                        note(1, a[1].max(b[1]) + hw, -1, *s);
+                    }
+                    continue;
+                }
+                Copper::Circle(..) => continue,
+            };
+            for ring in rings {
+                for (p, q) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                    for axis in 0..2 {
+                        let other = 1 - axis;
+                        if (p[axis] - q[axis]).abs() > 1e-9 || (p[other] - q[other]).abs() < 1e-6 {
+                            continue;
+                        }
+                        let mut probe = [0.0; 2];
+                        probe[other] = 0.5 * (p[other] + q[other]);
+                        probe[axis] = p[axis] + eps;
+                        let plus = c.contains(probe);
+                        probe[axis] = p[axis] - eps;
+                        let minus = c.contains(probe);
+                        if plus != minus {
+                            note(axis, p[axis], if plus { 1 } else { -1 }, *s);
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     fn sheet_ohms(&self, opt: &Meshing) -> Vec<f64> {
@@ -416,6 +533,7 @@ impl PcbModel {
         }
         let ks: Vec<usize> = self.sheets.iter().map(|s| grid.nearest(2, s.z)).collect();
         let (nx, ny) = (n[0], n[1]);
+        let grow = self.grown(opt, &grid);
         let mut sheet_x = vec![vec![false; nx * ny]; self.sheets.len()];
         let mut sheet_y = vec![vec![false; nx * ny]; self.sheets.len()];
         for (s, c) in &self.copper {
@@ -428,13 +546,19 @@ impl PcbModel {
                 for j in j0..=j1 {
                     if i + 1 < nx
                         && !sheet_x[*s][i * ny + j]
-                        && c.contains([0.5 * (grid.x[i] + grid.x[i + 1]), grid.y[j]])
+                        && c.contains_grown(
+                            [0.5 * (grid.x[i] + grid.x[i + 1]), grid.y[j]],
+                            grow[*s],
+                        )
                     {
                         sheet_x[*s][i * ny + j] = true;
                     }
                     if j + 1 < ny
                         && !sheet_y[*s][i * ny + j]
-                        && c.contains([grid.x[i], 0.5 * (grid.y[j] + grid.y[j + 1])])
+                        && c.contains_grown(
+                            [grid.x[i], 0.5 * (grid.y[j] + grid.y[j + 1])],
+                            grow[*s],
+                        )
                     {
                         sheet_y[*s][i * ny + j] = true;
                     }
