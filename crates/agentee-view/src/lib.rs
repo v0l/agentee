@@ -1,5 +1,6 @@
 pub mod app;
 pub mod canvas;
+pub mod eye;
 pub mod headless;
 pub mod heat;
 pub mod pages;

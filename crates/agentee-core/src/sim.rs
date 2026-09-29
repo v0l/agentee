@@ -91,6 +91,104 @@ pub struct SimFile {
     pub report: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<StageFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub through: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pair: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bit_rate: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rise: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prbs: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ctle: Option<CtleFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dfe_taps: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CtleFile {
+    pub dc_gain: f64,
+    pub zero: String,
+    pub poles: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ChannelSpec {
+    pub through: Vec<String>,
+    pub differential: bool,
+    pub bit_rate: f64,
+    pub rise: f64,
+    pub swing: f64,
+    pub prbs: u32,
+    pub ctle: Option<(f64, f64, Vec<f64>)>,
+    pub dfe_taps: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Eye {
+    pub phases: usize,
+    pub bins: usize,
+    pub v_min_mv: f64,
+    pub v_max_mv: f64,
+    pub counts: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelResult {
+    pub name: String,
+    pub kind: String,
+    pub spec_hash: u64,
+    pub bit_rate: f64,
+    pub ui_ps: f64,
+    pub rise_ps: f64,
+    pub pulse_time_ps: Vec<f64>,
+    pub pulse_mv: Vec<f64>,
+    pub eye: Eye,
+    pub readings: Vec<Reading>,
+    pub seconds: f64,
+}
+
+fn number_with(s: &str, units: &[(&str, f64)]) -> Option<f64> {
+    let t = s.trim();
+    let lower = t.to_lowercase();
+    for (u, k) in units {
+        if let Some(n) = lower.strip_suffix(u) {
+            return n.trim().parse::<f64>().ok().map(|v| v * k);
+        }
+    }
+    t.parse::<f64>().ok()
+}
+
+pub fn parse_time(s: &str) -> Option<f64> {
+    number_with(
+        s,
+        &[("fs", 1e-15), ("ps", 1e-12), ("ns", 1e-9), ("us", 1e-6), ("ms", 1e-3), ("s", 1.0)],
+    )
+}
+
+pub fn parse_rate(s: &str) -> Option<f64> {
+    number_with(
+        s,
+        &[
+            ("gbps", 1e9),
+            ("gb/s", 1e9),
+            ("gt/s", 1e9),
+            ("mbps", 1e6),
+            ("mb/s", 1e6),
+            ("mt/s", 1e6),
+            ("kbps", 1e3),
+            ("bps", 1.0),
+        ],
+    )
+}
+
+pub fn parse_volts(s: &str) -> Option<f64> {
+    number_with(s, &[("mv", 1e-3), ("v", 1.0)])
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -171,6 +269,7 @@ pub enum SimKind {
     Dc,
     Thermal,
     Cascade,
+    Channel,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -429,6 +528,9 @@ pub struct Sim {
     pub bandwidth: Option<f64>,
     pub report: Vec<f64>,
     pub after: Option<StageFile>,
+    pub channel_spec: Option<ChannelSpec>,
+    #[serde(skip)]
+    pub channel: Option<ChannelResult>,
     #[serde(skip)]
     pub maps: Option<MapResult>,
     pub description: String,
@@ -590,6 +692,76 @@ pub fn freq(s: &str) -> Option<f64> {
 }
 
 impl SimFile {
+    fn channel_spec(&self, d: &mut Diags) -> Option<ChannelSpec> {
+        let (through, differential) = match (self.through.len(), self.pair.len()) {
+            (2, 0) => (self.through.clone(), false),
+            (0, 4) => (self.pair.clone(), true),
+            _ => {
+                d.error(
+                    "through",
+                    "give `through = [FROM, TO]` or `pair = [IN+, IN-, OUT+, OUT-]`",
+                );
+                return None;
+            }
+        };
+        let rate = self.bit_rate.as_deref().and_then(parse_rate);
+        let Some(bit_rate) = rate.filter(|r| *r > 0.0) else {
+            d.error("bit_rate", "give `bit_rate` like \"5Gbps\"");
+            return None;
+        };
+        let rise = match self.rise.as_deref() {
+            Some(r) => match parse_time(r) {
+                Some(v) => v,
+                None => {
+                    d.error("rise", format!("cannot read `{r}` as a time"));
+                    return None;
+                }
+            },
+            None => 0.35 / bit_rate,
+        };
+        let swing = match self.swing.as_deref() {
+            Some(v) => match parse_volts(v) {
+                Some(x) => x,
+                None => {
+                    d.error("swing", format!("cannot read `{v}` as a voltage"));
+                    return None;
+                }
+            },
+            None => 0.8,
+        };
+        let ctle = match &self.ctle {
+            None => None,
+            Some(c) => {
+                let z = freq(&c.zero);
+                let poles: Option<Vec<f64>> = c.poles.iter().map(|p| freq(p)).collect();
+                match (z, poles) {
+                    (Some(z), Some(p)) if !p.is_empty() => Some((c.dc_gain, z, p)),
+                    _ => {
+                        d.error(
+                            "ctle",
+                            "ctle needs dc_gain in dB, a zero and at least one pole, like \"1GHz\"",
+                        );
+                        return None;
+                    }
+                }
+            }
+        };
+        let prbs = self.prbs.unwrap_or(7);
+        if ![7, 9, 11, 15].contains(&prbs) {
+            d.error("prbs", "prbs is 7, 9, 11 or 15");
+        }
+        Some(ChannelSpec {
+            through,
+            differential,
+            bit_rate,
+            rise,
+            swing,
+            prbs,
+            ctle,
+            dfe_taps: self.dfe_taps.unwrap_or(0),
+        })
+    }
+
     pub fn resolve(&self, layout: &Layout, copper: &[String], d: &mut Diags) -> Sim {
         let kind = self.kind.unwrap_or_default();
         let fdtd = kind == SimKind::Fdtd;
@@ -909,6 +1081,9 @@ impl SimFile {
         if self.far_field && fields.is_empty() {
             d.error("far_field", "far_field needs `fields`, the frequencies to compute it at");
         }
+        if kind == SimKind::Channel && self.board.is_none() {
+            d.error("board", "a channel needs `board`, the FDTD or cascade sim of the link");
+        }
         if kind == SimKind::Cascade {
             if self.board.is_none() {
                 d.error(
@@ -919,7 +1094,7 @@ impl SimFile {
             if self.devices.is_empty() {
                 d.error("devices", "a cascade needs at least one [[devices]] entry");
             }
-        } else if self.board.is_some() || !self.devices.is_empty() {
+        } else if (self.board.is_some() && kind != SimKind::Channel) || !self.devices.is_empty() {
             d.error("devices", "`board` and `devices` belong to kind = \"cascade\"");
         }
         let cell = self.cell.map(Length::to_mm).unwrap_or(if kind == SimKind::Thermal {
@@ -986,6 +1161,8 @@ impl SimFile {
                 })
                 .collect(),
             after: self.after.clone(),
+            channel_spec: (kind == SimKind::Channel).then(|| self.channel_spec(d)).flatten(),
+            channel: None,
             maps: None,
             description: self.description.clone(),
             layout: layout.name.clone(),

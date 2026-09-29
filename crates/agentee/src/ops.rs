@@ -354,6 +354,9 @@ pub fn run_sim(
     if spec.kind == agentee_core::sim::SimKind::Cascade {
         return run_cascade(p, entry, &src);
     }
+    if spec.kind == agentee_core::sim::SimKind::Channel {
+        return run_channel(p, entry, &src);
+    }
     if spec.kind != agentee_core::sim::SimKind::Fdtd {
         let hash = agentee_core::sim::hash(&src);
         let result = match spec.kind {
@@ -465,6 +468,59 @@ pub fn run_sim(
         "touchstone": touch,
         "summary": table,
         "readings": result.readings,
+    }))
+}
+
+fn run_channel(
+    p: &Project,
+    entry: &agentee_core::project::Entry<agentee_core::sim::Sim>,
+    src: &str,
+) -> Result<Value, String> {
+    use agentee_core::rf::Cx;
+    let spec = &entry.item;
+    let cs = spec.channel_spec.as_ref().ok_or("the channel spec has errors")?;
+    let board = p.sims.iter().find(|s| s.name == spec.board).ok_or("the board sim is missing")?;
+    let r = board.item.result.as_ref().ok_or("the board sim has not run")?;
+    let port = |n: &String| r.ports.iter().position(|x| x == n).ok_or(format!("{n} is not a port"));
+    let ids = cs.through.iter().map(port).collect::<Result<Vec<_>, _>>()?;
+    let np = r.ports.len();
+    let h: Vec<Cx> = (0..r.freqs.len())
+        .map(|k| {
+            if cs.differential {
+                let m: agentee_core::rf::Matrix = (0..np)
+                    .map(|a| (0..np).map(|b| Cx::new(r.s[a][b][k][0], r.s[a][b][k][1])).collect())
+                    .collect();
+                agentee_core::sparam::mixed_mode(&m, [ids[0], ids[2]], [ids[1], ids[3]])[1][0]
+            } else {
+                let c = r.s[ids[1]][ids[0]][k];
+                Cx::new(c[0], c[1])
+            }
+        })
+        .collect();
+    let params = agentee_sim::channel::Params {
+        bit_rate: cs.bit_rate,
+        rise: cs.rise,
+        swing: cs.swing,
+        prbs: cs.prbs,
+        ctle: cs.ctle.as_ref().map(|(dc, z, poles)| agentee_sim::channel::Ctle {
+            dc_db: *dc,
+            zero: *z,
+            poles: poles.clone(),
+        }),
+        dfe_taps: cs.dfe_taps,
+    };
+    let hash = agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), r.spec_hash, &[]);
+    let out = agentee_sim::channel::run(&spec.name, &r.freqs, &h, &params, hash);
+    let json_path = agentee_core::sim::result_path(&entry.path);
+    std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(json!({
+        "sim": spec.name,
+        "kind": spec.kind,
+        "bit_rate": cs.bit_rate,
+        "ui_ps": out.ui_ps,
+        "result": json_path,
+        "readings": out.readings,
     }))
 }
 

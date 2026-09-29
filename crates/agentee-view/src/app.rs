@@ -227,7 +227,8 @@ impl App {
                         let s = &self.project.sims[i].item;
                         (
                             self.progress.get(&name).map(|p| p.fraction()),
-                            (s.result.is_none() && s.maps.is_none()) || s.stale,
+                            (s.result.is_none() && s.maps.is_none() && s.channel.is_none())
+                                || s.stale,
                         )
                     }
                     _ => (None, false),

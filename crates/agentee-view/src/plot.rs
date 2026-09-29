@@ -344,10 +344,11 @@ pub fn tdr_series(r: &SimResult, s: &agentee_core::sim::Sim) -> Vec<Series> {
 
 pub fn xy_plot(
     ui: &mut Ui,
-    series: &[(String, Vec<f64>, Vec<f64>)],
+    series: &[Series],
     xunit: &str,
     yunit: &str,
     size: Vec2,
+    span: Option<f64>,
 ) {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
     let p = ui.painter_at(rect);
@@ -365,8 +366,10 @@ pub fn xy_plot(
         return;
     }
     let (mut lo, mut hi) = ys.iter().fold((f64::MAX, f64::MIN), |(a, b), y| (a.min(*y), b.max(*y)));
-    lo = lo.max(0.0);
-    hi = hi.min(lo + 200.0);
+    if let Some(sp) = span {
+        lo = lo.max(0.0);
+        hi = hi.min(lo + sp);
+    }
     let step = nice(((hi - lo).max(1.0)) / 6.0);
     let (lo, hi) = ((lo / step).floor() * step, (hi / step).ceil() * step);
     let x = |v: f64| area.left() + ((v - x0) / (x1 - x0)) as f32 * area.width();

@@ -36,6 +36,10 @@ pub struct Step {
 }
 
 pub fn step(freqs: &[f64], s: &[Cx], rise: f64, span: Option<f64>) -> Step {
+    step_with(freqs, s, rise, span, None)
+}
+
+pub fn step_with(freqs: &[f64], s: &[Cx], rise: f64, span: Option<f64>, dt: Option<f64>) -> Step {
     let fmax = *freqs.last().unwrap();
     let spacing = freqs.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min);
     let df = freqs[0].min(spacing).max(fmax / 20000.0);
@@ -52,12 +56,12 @@ pub fn step(freqs: &[f64], s: &[Cx], rise: f64, span: Option<f64>) -> Step {
         )
     });
     let window = span.unwrap_or(0.5 / df);
-    let dt = (rise / 8.0).min(1.0 / (8.0 * fmax));
+    let dt = dt.unwrap_or((rise / 8.0).min(1.0 / (8.0 * fmax)));
     let steps = ((window / dt).ceil() as usize).min(20000);
     let (mut acc, mut time, mut value) =
         (0.0, Vec::with_capacity(steps), Vec::with_capacity(steps));
     for m in 0..steps {
-        let t = m as f64 * dt - 4.0 * sigma;
+        let t = (m as f64 - (4.0 * sigma / dt).ceil()) * dt;
         let mut x = data[0].re * h[0];
         for k in 1..n {
             let ph = 2.0 * PI * k as f64 * df * t;

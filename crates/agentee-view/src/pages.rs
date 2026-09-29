@@ -939,6 +939,10 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             crate::heat::canvas(ui, project, s, index, &m.maps, st);
             return;
         }
+        if let Some(c) = &s.channel {
+            crate::eye::canvas(ui, c, index, st, project.generation);
+            return;
+        }
         if let Some(r) = &s.result {
             ui.horizontal(|ui| {
                 if toggle(ui, "s-parameters", !st.show_fields && !st.show_tdr).clicked() {
@@ -967,7 +971,7 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
                 let series = &st.tdr_cache.as_ref().unwrap().1;
                 let h = ui.available_height();
                 section(ui, "tdr", "impedance seen from each driven port, Gaussian edge at 1.3 / the top frequency", |ui| {
-                    crate::plot::xy_plot(ui, series, "ps", "ohm", egui::vec2(ui.available_width(), (h - 40.0).max(200.0)));
+                    crate::plot::xy_plot(ui, series, "ps", "ohm", egui::vec2(ui.available_width(), (h - 40.0).max(200.0)), Some(200.0));
                 });
                 return;
             }
@@ -1028,13 +1032,21 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
 
 fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mut PageState) {
     let layout = project.layouts.iter().find(|l| l.name == s.layout).map(|l| &l.item);
-    let rail = match (&st.sim_progress, s.result.is_some() || s.maps.is_some(), s.stale) {
+    let rail = match (
+        &st.sim_progress,
+        s.result.is_some() || s.maps.is_some() || s.channel.is_some(),
+        s.stale,
+    ) {
         (Some(_), _, _) => READOUT,
         (None, true, false) => OK,
         _ => WARN,
     };
     if let Some(m) = &s.maps {
         crate::heat::props(ui, s, m, rail);
+        return;
+    }
+    if let Some(c) = &s.channel {
+        crate::eye::props(ui, s, c, rail);
         return;
     }
     let cascade = s.kind == agentee_core::sim::SimKind::Cascade;

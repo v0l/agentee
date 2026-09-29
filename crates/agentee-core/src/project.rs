@@ -268,7 +268,9 @@ impl Project {
             let item = file.resolve(&cx, &mut d);
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
-        let cascade = |f: &SimFile| f.kind == Some(crate::sim::SimKind::Cascade);
+        let cascade = |f: &SimFile| {
+            matches!(f.kind, Some(crate::sim::SimKind::Cascade | crate::sim::SimKind::Channel))
+        };
         sim_files.sort_by_key(|(_, f, _)| cascade(f));
         let layouts_of: Vec<(String, Option<String>)> =
             sim_files.iter().map(|(_, f, _)| (f.name.clone(), f.layout.clone())).collect();
@@ -293,16 +295,25 @@ impl Project {
             };
             let copper = layout.item.copper.clone();
             let mut item = file.resolve(&layout.item, &copper, &mut d);
-            if cascade(&file) {
+            if file.kind == Some(crate::sim::SimKind::Cascade) {
                 hash = p.check_cascade(&f, &item, hash, &mut d);
+            }
+            if file.kind == Some(crate::sim::SimKind::Channel) {
+                hash = p.check_channel(&item, hash, &mut d);
             }
             let path = crate::sim::result_path(&f);
             let text = std::fs::read_to_string(&path).ok();
             let fdtd = text.as_deref().and_then(|t| serde_json::from_str::<SimResult>(t).ok());
             let maps =
                 text.as_deref().and_then(|t| serde_json::from_str::<crate::sim::MapResult>(t).ok());
-            let saved_hash =
-                fdtd.as_ref().map(|r| r.spec_hash).or(maps.as_ref().map(|r| r.spec_hash));
+            let channel = text
+                .as_deref()
+                .and_then(|t| serde_json::from_str::<crate::sim::ChannelResult>(t).ok());
+            let saved_hash = fdtd
+                .as_ref()
+                .map(|r| r.spec_hash)
+                .or(maps.as_ref().map(|r| r.spec_hash))
+                .or(channel.as_ref().map(|r| r.spec_hash));
             match saved_hash {
                 Some(h) if h == hash => {}
                 Some(_) => {
@@ -316,9 +327,57 @@ impl Project {
             }
             item.result = fdtd;
             item.maps = maps;
+            item.channel = channel;
             p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         Ok(p)
+    }
+
+    fn check_channel(&self, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
+        let Some(board) = self.sims.iter().find(|s| s.name == sim.board) else {
+            if !sim.board.is_empty() {
+                d.error("board", format!("no sim named `{}`", sim.board));
+            }
+            return hash;
+        };
+        let Some(r) = &board.item.result else {
+            d.error("board", format!("`{}` has not run yet", sim.board));
+            return hash;
+        };
+        if let Some(spec) = &sim.channel_spec {
+            for n in &spec.through {
+                if !r.ports.contains(n) {
+                    d.error(
+                        "through",
+                        format!(
+                            "`{n}` is not a port of {}, there is {}",
+                            sim.board,
+                            r.ports.join(", ")
+                        ),
+                    );
+                }
+            }
+            let drive: Vec<&String> = if spec.differential {
+                spec.through[..2].iter().collect()
+            } else {
+                vec![&spec.through[0]]
+            };
+            let all = spec.differential;
+            for n in drive {
+                if let Some(k) = r.ports.iter().position(|x| x == n)
+                    && !r.excited[k]
+                {
+                    d.error("board", format!("`{}` did not drive {n}", sim.board));
+                }
+            }
+            if all && !r.excited.iter().all(|e| *e) {
+                d.warn("board", "mixed mode is exact only when every port was driven");
+            }
+        }
+        if board.item.stale {
+            d.warn("board", format!("the result of `{}` is stale", sim.board));
+        }
+        crate::sim::cascade_hash(hash, r.spec_hash, &[])
     }
 
     fn check_cascade(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {

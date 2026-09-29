@@ -1,5 +1,6 @@
 pub mod boardsim;
 pub mod cascade;
+pub mod channel;
 pub mod checks;
 pub mod fdtd;
 pub mod gpu;
