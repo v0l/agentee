@@ -16,10 +16,12 @@ reference = "In2.Cu"
 [[ports]]
 name = "AMP_IN"
 pad = "U1.1"
+reference = "In2.Cu"
 
 [[ports]]
 name = "AMP_OUT"
 pad = "U1.3"
+reference = "In2.Cu"
 
 [[ports]]
 name = "OUT"
@@ -29,10 +31,12 @@ reference = "In2.Cu"
 [[ports]]
 name = "L1"
 pad = "L1.1"
+reference = "In2.Cu"
 
 [[ports]]
 name = "L3"
 pad = "L3.1"
+reference = "In2.Cu"
 
 [[models]]
 ref = "D3"

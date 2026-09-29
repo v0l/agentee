@@ -2,11 +2,70 @@ name = "lna-cascade"
 kind = "cascade"
 description = "The whole amplifier from J1 to J2: the lna-rf board with the measured Qorvo SPF5189Z (5 V, 87 mA, de-embedded to the leads) between AMP_IN and AMP_OUT, and the Coilcraft BCR-162 conical chokes (shunt fixture data) on their RF pads."
 board = "lna-rf"
+bandwidth = "2MHz"
+report = ["900MHz", "1090MHz", "1.9GHz"]
+
+[after]
+nf = 6.0
 
 [[devices]]
 ref = "U1"
 file = "models/qorvo_spf5189z.s2p"
 ports = ["AMP_IN", "AMP_OUT"]
+
+[[devices.datasheet]]
+freq = "0.8GHz"
+nf = 0.52
+oip3 = 38.4
+p1db = 22.3
+
+[[devices.datasheet]]
+freq = "0.9GHz"
+nf = 0.55
+oip3 = 38.5
+p1db = 22.4
+
+[[devices.datasheet]]
+freq = "1.0GHz"
+nf = 0.79
+oip3 = 39.0
+p1db = 22.5
+
+[[devices.datasheet]]
+freq = "1.7GHz"
+nf = 0.75
+oip3 = 39.2
+p1db = 22.6
+
+[[devices.datasheet]]
+freq = "1.8GHz"
+nf = 0.81
+oip3 = 39.5
+p1db = 22.6
+
+[[devices.datasheet]]
+freq = "1.9GHz"
+nf = 0.83
+oip3 = 39.5
+p1db = 22.7
+
+[[devices.datasheet]]
+freq = "2.0GHz"
+nf = 0.9
+oip3 = 39.8
+p1db = 22.7
+
+[[devices.datasheet]]
+freq = "2.1GHz"
+nf = 0.91
+oip3 = 39.8
+p1db = 22.7
+
+[[devices.datasheet]]
+freq = "2.2GHz"
+nf = 0.98
+oip3 = 39.9
+p1db = 22.7
 
 [[devices]]
 ref = "L1"

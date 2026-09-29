@@ -66,13 +66,13 @@ label = { at = [11.4, 17.6] }
 ref = "C4"
 at = [15.2, 20.78]
 rotation = 270
-label = { at = [14.6, 23.3] }
+label = { at = [15.0, 23.35] }
 
 [[footprints]]
 ref = "C6"
 at = [16.5, 20.78]
 rotation = 270
-label = { at = [17.1, 23.3] }
+label = { at = [17.2, 23.35] }
 
 [[footprints]]
 ref = "J3"
@@ -84,7 +84,7 @@ label = { hide = true }
 ref = "D2"
 at = [13.0, 21.6]
 rotation = 180
-label = { at = [13.0, 23.1] }
+label = { at = [12.6, 23.35] }
 
 [[footprints]]
 ref = "H1"
@@ -617,10 +617,6 @@ at = [23.3, 8.3]
 
 [[vias]]
 net = "GND"
-at = [25.8, 8.3]
-
-[[vias]]
-net = "GND"
 at = [5.8, 15.8]
 
 [[vias]]
@@ -719,21 +715,21 @@ height = 0.8
 [[graphics]]
 kind = "text"
 layer = "F.SilkS"
-at = [28.6, 7.6]
+at = [27.8, 7.6]
 text = "RF OUT"
 size = 1.0
 
 [[artwork]]
 layer = "F.SilkS"
 icon = "arrow"
-at = [28.6, 6.3]
+at = [27.8, 6.3]
 height = 0.8
 
 [[graphics]]
 kind = "text"
 layer = "F.SilkS"
 at = [9.6, 19.4]
-text = "+5V"
+text = "5V"
 size = 1.0
 
 [[graphics]]
