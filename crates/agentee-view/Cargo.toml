@@ -1,0 +1,15 @@
+[package]
+name = "agentee-view"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "egui viewer and headless renderer for agentee"
+
+[dependencies]
+agentee-core.workspace = true
+egui.workspace = true
+eframe.workspace = true
+egui_bench.workspace = true
+png = "0.18"
+notify = "8"

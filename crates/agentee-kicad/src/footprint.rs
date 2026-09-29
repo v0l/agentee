@@ -1,0 +1,315 @@
+use crate::sexpr::Node;
+use agentee_core::footprint::{Drill, FootprintFile, Mount, PadFile, PadKind, PadShape};
+use agentee_core::geom;
+use agentee_core::graphic::{Anchor, Fill, GraphicFile, GraphicKind};
+use agentee_core::units::{Length, Point};
+
+fn pt(v: [f64; 2]) -> Point {
+    Point::mm(v[0], v[1])
+}
+
+fn width(n: &Node) -> Option<Length> {
+    let w = n.find("stroke").and_then(|s| s.find("width")).or_else(|| n.find("width"))?.num(0)?;
+    Some(Length::mm(w))
+}
+
+fn filled(n: &Node) -> bool {
+    match n.find("fill") {
+        Some(f) => {
+            matches!(f.arg(0), Some("yes" | "solid"))
+                || f.find("type").and_then(|t| t.arg(0)) == Some("solid")
+        }
+        None => false,
+    }
+}
+
+fn layer_name(l: &str) -> String {
+    match l {
+        "F&B.Cu" => "*.Cu".into(),
+        l => l.to_string(),
+    }
+}
+
+fn layer(n: &Node) -> Option<String> {
+    n.find("layer").and_then(|l| l.arg(0)).map(layer_name)
+}
+
+fn text(n: &Node, content: &str) -> Option<GraphicFile> {
+    if n.flag("hide") || n.find("effects").is_some_and(|e| e.flag("hide")) {
+        return None;
+    }
+    let at = n.find("at")?;
+    let size = n
+        .find("effects")
+        .and_then(|e| e.find("font"))
+        .and_then(|f| f.find("size"))
+        .and_then(|s| s.num(0));
+    let anchor = match n.find("effects").and_then(|e| e.find("justify")) {
+        Some(j) if j.has_atom("left") => Anchor::Left,
+        Some(j) if j.has_atom("right") => Anchor::Right,
+        _ => Anchor::Center,
+    };
+    Some(GraphicFile {
+        layer: layer(n),
+        text: Some(content.to_string()),
+        at: Some(pt([at.num(0)?, at.num(1)?])),
+        rotation: at.num(2).filter(|r| *r != 0.0),
+        size: size.map(Length::mm),
+        anchor: Some(anchor).filter(|a| *a != Anchor::Center),
+        ..GraphicFile::new(GraphicKind::Text)
+    })
+}
+
+fn graphic(n: &Node) -> Option<GraphicFile> {
+    let mut g = match n.head()? {
+        "fp_line" => GraphicFile {
+            start: Some(pt(n.xy("start")?)),
+            end: Some(pt(n.xy("end")?)),
+            ..GraphicFile::new(GraphicKind::Line)
+        },
+        "fp_rect" => GraphicFile {
+            start: Some(pt(n.xy("start")?)),
+            end: Some(pt(n.xy("end")?)),
+            ..GraphicFile::new(GraphicKind::Rect)
+        },
+        "fp_circle" => {
+            let c = n.xy("center")?;
+            let e = n.xy("end")?;
+            GraphicFile {
+                center: Some(pt(c)),
+                radius: Some(Length::mm(((e[0] - c[0]).powi(2) + (e[1] - c[1]).powi(2)).sqrt())),
+                ..GraphicFile::new(GraphicKind::Circle)
+            }
+        }
+        "fp_arc" => {
+            let (start, mid, end) = match n.xy("mid") {
+                Some(mid) => (n.xy("start")?, mid, n.xy("end")?),
+                None => {
+                    let c = n.xy("start")?;
+                    let s = n.xy("end")?;
+                    let a = n.find("angle")?.num(0)?;
+                    let at = |deg: f64| {
+                        let [x, y] = geom::rotate([s[0] - c[0], s[1] - c[1]], -deg);
+                        [c[0] + x, c[1] + y]
+                    };
+                    (s, at(a / 2.0), at(a))
+                }
+            };
+            if agentee_core::graphic::arc_center(pt(start), pt(mid), pt(end)).is_none() {
+                GraphicFile {
+                    start: Some(pt(start)),
+                    end: Some(pt(end)),
+                    ..GraphicFile::new(GraphicKind::Line)
+                }
+            } else {
+                GraphicFile {
+                    start: Some(pt(start)),
+                    mid: Some(pt(mid)),
+                    end: Some(pt(end)),
+                    ..GraphicFile::new(GraphicKind::Arc)
+                }
+            }
+        }
+        "fp_poly" => GraphicFile {
+            points: Some(n.pts().into_iter().map(pt).collect()),
+            ..GraphicFile::new(GraphicKind::Polygon)
+        },
+        "fp_text" => {
+            let content = match n.arg(0)? {
+                "reference" => "${REFERENCE}".to_string(),
+                "value" => "${VALUE}".to_string(),
+                _ => n.arg(1)?.to_string(),
+            };
+            return text(n, &content);
+        }
+        "property" => {
+            let content = match n.arg(0)? {
+                "Reference" => "${REFERENCE}",
+                "Value" => "${VALUE}",
+                _ => return None,
+            };
+            return text(n, content);
+        }
+        _ => return None,
+    };
+    g.layer = layer(n);
+    g.width = width(n).filter(|w| w.is_positive());
+    if filled(n) {
+        g.fill = Some(Fill::Solid);
+    }
+    Some(g)
+}
+
+fn pad(n: &Node) -> Option<PadFile> {
+    let kind = match n.arg(1)? {
+        "smd" => PadKind::Smd,
+        "thru_hole" => PadKind::Tht,
+        "np_thru_hole" => PadKind::Npth,
+        "connect" => PadKind::Connect,
+        _ => return None,
+    };
+    let shape = match n.arg(2)? {
+        "rect" | "trapezoid" => PadShape::Rect,
+        "roundrect" => PadShape::Roundrect,
+        "circle" => PadShape::Circle,
+        "oval" => PadShape::Oval,
+        "custom" => PadShape::Custom,
+        _ => PadShape::Rect,
+    };
+    let at = n.find("at")?;
+    let size = n.find("size").and_then(|s| Some(Point::mm(s.num(0)?, s.num(1)?)));
+    let drill = n.find("drill").and_then(|d| {
+        if d.has_atom("oval") {
+            Some(Drill::Slot(Point::mm(d.num(1)?, d.num(2).or(d.num(1))?)))
+        } else {
+            d.num(0).filter(|v| *v > 0.0).map(|v| Drill::Round(Length::mm(v)))
+        }
+    });
+    let layers = n
+        .find("layers")
+        .map(|l| l.items().iter().skip(1).filter_map(Node::text).map(layer_name).collect());
+    let rotation = at.num(2).filter(|r| *r != 0.0);
+    let points = (shape == PadShape::Custom)
+        .then(|| n.find("primitives").and_then(|p| p.find("gr_poly")).map(|g| g.pts()))
+        .flatten()
+        .map(|pts| pts.into_iter().map(pt).collect::<Vec<_>>());
+    let shape = if shape == PadShape::Custom && points.is_none() {
+        match n.find("options").and_then(|o| o.find("anchor")).and_then(|a| a.arg(0)) {
+            Some("circle") => PadShape::Circle,
+            _ => PadShape::Rect,
+        }
+    } else {
+        shape
+    };
+    Some(PadFile {
+        number: n.arg(0).unwrap_or("").to_string(),
+        kind,
+        shape,
+        at: Point::mm(at.num(0)?, at.num(1)?),
+        size,
+        rotation,
+        roundrect_ratio: n.find("roundrect_rratio").and_then(|r| r.num(0)),
+        drill,
+        layers,
+        points,
+        count: None,
+        pitch: None,
+        number_step: None,
+    })
+}
+
+fn same_template(a: &PadFile, b: &PadFile) -> bool {
+    a.kind == b.kind
+        && a.shape == b.shape
+        && a.size == b.size
+        && a.rotation == b.rotation
+        && a.roundrect_ratio == b.roundrect_ratio
+        && a.drill == b.drill
+        && a.layers == b.layers
+        && a.points.is_none()
+        && b.points.is_none()
+}
+
+fn next_number(n: &str, step: i64) -> Option<String> {
+    let digits = n.len() - n.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    if digits == 0 {
+        return None;
+    }
+    let (p, d) = n.split_at(n.len() - digits);
+    Some(format!("{p}{}", d.parse::<i64>().ok()? + step))
+}
+
+pub fn collapse(pads: Vec<PadFile>) -> Vec<PadFile> {
+    let mut out: Vec<PadFile> = Vec::new();
+    let mut i = 0;
+    while i < pads.len() {
+        let first = pads[i].clone();
+        let mut run = 1;
+        if i + 1 < pads.len() && same_template(&first, &pads[i + 1]) {
+            let pitch = pads[i + 1].at - first.at;
+            let step_ok = |k: usize| {
+                let prev = &pads[i + k - 1];
+                let cur = &pads[i + k];
+                same_template(&first, cur)
+                    && cur.at - prev.at == pitch
+                    && next_number(&prev.number, 1).as_deref() == Some(cur.number.as_str())
+            };
+            while i + run < pads.len() && step_ok(run) {
+                run += 1;
+            }
+            if run >= 3 {
+                out.push(PadFile { count: Some(run as u32), pitch: Some(pitch), ..first });
+                i += run;
+                continue;
+            }
+        }
+        out.push(first);
+        i += 1;
+    }
+    out
+}
+
+pub fn convert(root: &Node) -> Result<FootprintFile, String> {
+    if !matches!(root.head(), Some("footprint" | "module")) {
+        return Err("not a KiCad footprint".into());
+    }
+    let name = root.arg(0).ok_or("footprint has no name")?;
+    let mount = match root.find("attr").and_then(|a| a.arg(0)) {
+        Some("smd") => Some(Mount::Smd),
+        Some("through_hole") => Some(Mount::Tht),
+        _ => None,
+    };
+    let mut graphics = Vec::new();
+    let mut pads = Vec::new();
+    for item in root.items().iter().skip(2) {
+        if item.head() == Some("pad") {
+            pads.extend(pad(item));
+        } else {
+            graphics.extend(graphic(item));
+        }
+    }
+    Ok(FootprintFile {
+        name: name.to_string(),
+        description: root.find("descr").and_then(|d| d.arg(0)).unwrap_or("").to_string(),
+        tags: root
+            .find("tags")
+            .and_then(|t| t.arg(0))
+            .map(|t| t.split_whitespace().map(str::to_string).collect())
+            .unwrap_or_default(),
+        mount,
+        model: root.find("model").and_then(|m| m.arg(0)).map(str::to_string),
+        pads: collapse(pads),
+        graphics,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sexpr::parse;
+
+    #[test]
+    fn soic_pads_collapse_into_two_rows() {
+        let mut src = String::from(
+            "(footprint \"SOIC-8\" (attr smd) (fp_line (start 0 -2.56) (end 1.95 -2.56) (stroke (width 0.12) (type solid)) (layer \"F.SilkS\"))",
+        );
+        for (i, y) in [-1.905, -0.635, 0.635, 1.905].iter().enumerate() {
+            src += &format!(
+                "(pad \"{}\" smd roundrect (at -2.475 {y}) (size 1.95 0.6) (layers \"F.Cu\" \"F.Mask\" \"F.Paste\") (roundrect_rratio 0.25))",
+                i + 1
+            );
+        }
+        for (i, y) in [1.905, 0.635, -0.635, -1.905].iter().enumerate() {
+            src += &format!(
+                "(pad \"{}\" smd roundrect (at 2.475 {y}) (size 1.95 0.6) (layers \"F.Cu\" \"F.Mask\" \"F.Paste\") (roundrect_rratio 0.25))",
+                i + 5
+            );
+        }
+        src += ")";
+        let fp = convert(&parse(&src).unwrap()).unwrap();
+        assert_eq!(fp.pads.len(), 2);
+        assert_eq!(fp.pads[1].count, Some(4));
+        assert_eq!(fp.pads[1].pitch, Some(Point::mm(0.0, -1.27)));
+        assert_eq!(fp.graphics.len(), 1);
+    }
+}

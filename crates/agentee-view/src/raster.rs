@@ -1,0 +1,167 @@
+use egui::epaint::{ClippedPrimitive, Primitive};
+use egui::{ColorImage, TextureId, TexturesDelta};
+use std::collections::HashMap;
+
+#[derive(Default)]
+pub struct Textures {
+    map: HashMap<TextureId, ColorImage>,
+}
+
+impl Textures {
+    pub fn apply(&mut self, delta: &TexturesDelta) {
+        for (id, d) in &delta.set {
+            let egui::ImageData::Color(img) = &d.image;
+            match d.pos {
+                None => {
+                    self.map.insert(*id, (**img).clone());
+                }
+                Some([x0, y0]) => {
+                    let Some(dst) = self.map.get_mut(id) else { continue };
+                    let [w, h] = img.size;
+                    for y in 0..h {
+                        for x in 0..w {
+                            let (dx, dy) = (x0 + x, y0 + y);
+                            if dx < dst.size[0] && dy < dst.size[1] {
+                                dst.pixels[dy * dst.size[0] + dx] = img.pixels[y * w + x];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for id in &delta.free {
+            self.map.remove(id);
+        }
+    }
+}
+
+pub struct Canvas {
+    pub width: usize,
+    pub height: usize,
+    pub rgba: Vec<[f32; 4]>,
+}
+
+impl Canvas {
+    pub fn new(width: usize, height: usize) -> Self {
+        Canvas { width, height, rgba: vec![[0.0; 4]; width * height] }
+    }
+
+    pub fn draw(&mut self, prims: &[ClippedPrimitive], tex: &Textures, ppp: f32) {
+        for cp in prims {
+            let Primitive::Mesh(mesh) = &cp.primitive else { continue };
+            let clip = cp.clip_rect;
+            let cx0 = (clip.min.x * ppp).floor().max(0.0) as i64;
+            let cy0 = (clip.min.y * ppp).floor().max(0.0) as i64;
+            let cx1 = ((clip.max.x * ppp).ceil() as i64).min(self.width as i64);
+            let cy1 = ((clip.max.y * ppp).ceil() as i64).min(self.height as i64);
+            if cx0 >= cx1 || cy0 >= cy1 {
+                continue;
+            }
+            let texture = tex.map.get(&mesh.texture_id);
+            for tri in mesh.indices.chunks_exact(3) {
+                let v = [
+                    &mesh.vertices[tri[0] as usize],
+                    &mesh.vertices[tri[1] as usize],
+                    &mesh.vertices[tri[2] as usize],
+                ];
+                self.triangle(v, texture, ppp, [cx0, cy0, cx1, cy1]);
+            }
+        }
+    }
+
+    fn triangle(
+        &mut self,
+        v: [&egui::epaint::Vertex; 3],
+        tex: Option<&ColorImage>,
+        ppp: f32,
+        clip: [i64; 4],
+    ) {
+        let p: [[f32; 2]; 3] = [0, 1, 2].map(|i| [v[i].pos.x * ppp, v[i].pos.y * ppp]);
+        let area =
+            (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        if area.abs() < 1e-8 {
+            return;
+        }
+        let x0 = (p.iter().map(|q| q[0]).fold(f32::MAX, f32::min).floor() as i64).max(clip[0]);
+        let y0 = (p.iter().map(|q| q[1]).fold(f32::MAX, f32::min).floor() as i64).max(clip[1]);
+        let x1 = (p.iter().map(|q| q[0]).fold(f32::MIN, f32::max).ceil() as i64).min(clip[2]);
+        let y1 = (p.iter().map(|q| q[1]).fold(f32::MIN, f32::max).ceil() as i64).min(clip[3]);
+        let col: [[f32; 4]; 3] = v.map(|x| x.color.to_array().map(|c| c as f32 / 255.0));
+        let inv = 1.0 / area;
+        let edge = |a: [f32; 2], b: [f32; 2], x: f32, y: f32| {
+            (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
+        };
+        for y in y0..y1 {
+            let py = y as f32 + 0.5;
+            for x in x0..x1 {
+                let px = x as f32 + 0.5;
+                let w0 = edge(p[1], p[2], px, py) * inv;
+                let w1 = edge(p[2], p[0], px, py) * inv;
+                let w2 = 1.0 - w0 - w1;
+                if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
+                    continue;
+                }
+                let mut c = [0.0f32; 4];
+                for k in 0..4 {
+                    c[k] = col[0][k] * w0 + col[1][k] * w1 + col[2][k] * w2;
+                }
+                if let Some(t) = tex {
+                    let u = v[0].uv.x * w0 + v[1].uv.x * w1 + v[2].uv.x * w2;
+                    let vv = v[0].uv.y * w0 + v[1].uv.y * w1 + v[2].uv.y * w2;
+                    let s = sample(t, u, vv);
+                    for k in 0..4 {
+                        c[k] *= s[k];
+                    }
+                }
+                if c[3] <= 0.0 && c[0] <= 0.0 && c[1] <= 0.0 && c[2] <= 0.0 {
+                    continue;
+                }
+                let d = &mut self.rgba[y as usize * self.width + x as usize];
+                let k = 1.0 - c[3];
+                for i in 0..4 {
+                    d[i] = c[i] + d[i] * k;
+                }
+            }
+        }
+    }
+
+    pub fn to_rgba8(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.width * self.height * 4);
+        for px in &self.rgba {
+            let a = px[3].clamp(0.0, 1.0);
+            let un = |c: f32| if a > 0.0 { (c / a).clamp(0.0, 1.0) } else { 0.0 };
+            out.extend([un(px[0]), un(px[1]), un(px[2]), a].map(|c| (c * 255.0 + 0.5) as u8));
+        }
+        out
+    }
+}
+
+fn sample(t: &ColorImage, u: f32, v: f32) -> [f32; 4] {
+    let [w, h] = t.size;
+    let x = (u * w as f32 - 0.5).clamp(0.0, w as f32 - 1.0);
+    let y = (v * h as f32 - 0.5).clamp(0.0, h as f32 - 1.0);
+    let (x0, y0) = (x.floor() as usize, y.floor() as usize);
+    let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+    let (fx, fy) = (x - x0 as f32, y - y0 as f32);
+    let px = |x: usize, y: usize| t.pixels[y * w + x].to_array().map(|c| c as f32 / 255.0);
+    let (a, b, c, d) = (px(x0, y0), px(x1, y0), px(x0, y1), px(x1, y1));
+    let mut out = [0.0; 4];
+    for k in 0..4 {
+        let top = a[k] + (b[k] - a[k]) * fx;
+        let bot = c[k] + (d[k] - c[k]) * fx;
+        out[k] = top + (bot - top) * fy;
+    }
+    out
+}
+
+pub fn encode_png(width: usize, height: usize, rgba: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, width as u32, height as u32);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().expect("png header");
+        w.write_image_data(rgba).expect("png data");
+    }
+    out
+}

@@ -1,0 +1,15 @@
+[package]
+name = "agentee-kicad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "KiCad symbol and footprint importer for agentee"
+
+[dependencies]
+agentee-core.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+toml.workspace = true

@@ -1,0 +1,48 @@
+name = "sensor-node"
+description = "4 layer sensor board with USB and a 50 ohm antenna feed"
+fab = "jlcpcb"
+
+[outline]
+size = [60, 40]
+corner_radius = 2
+
+[stackup]
+preset = "jlcpcb-4l-1.6mm-7628"
+finish = "ENIG"
+mask_color = "green"
+
+[[vias]]
+name = "std"
+drill = "0.3mm"
+diameter = "0.6mm"
+
+[[vias]]
+name = "power"
+drill = "0.4mm"
+diameter = "0.8mm"
+
+[[netclasses]]
+name = "Default"
+track_width = "0.2mm"
+clearance = "0.2mm"
+via = "std"
+
+[[netclasses]]
+name = "Power"
+track_width = "0.8mm"
+clearance = "0.25mm"
+current = "2A"
+via = "power"
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "USB"
+impedance = "90ohm"
+diff_gap = "0.15mm"
+layers = ["F.Cu"]
+via = "std"
+
+[[netclasses]]
+name = "RF"
+impedance = "50ohm"
+layers = ["F.Cu"]

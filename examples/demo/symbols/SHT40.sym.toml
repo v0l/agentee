@@ -1,0 +1,13 @@
+name = "SHT40"
+reference = "U"
+description = "Humidity and temperature sensor, I2C"
+datasheet = "https://sensirion.com/media/documents/33FD6951/662A593A/HT_DS_Datasheet_SHT4x.pdf"
+footprint = "DFN-4_1.5x1.5mm_P0.8mm"
+
+[[bodies]]
+left = [
+  { number = "1", name = "SDA", type = "bidirectional" },
+  { number = "4", name = "SCL", type = "input", shape = "clock" },
+]
+top = [ { number = "3", name = "VDD", type = "power_in" } ]
+bottom = [ { number = "2", name = "VSS", type = "power_in" } ]

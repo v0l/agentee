@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/v0l/agentee"
+
+[workspace.dependencies]
+agentee-core = { path = "crates/agentee-core" }
+agentee-kicad = { path = "crates/agentee-kicad" }
+agentee-view = { path = "crates/agentee-view" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+thiserror = "2"
+anyhow = "1"
+egui = "0.35"
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui_bench = "0.1"

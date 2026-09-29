@@ -1,0 +1,309 @@
+# imported from KiCad Package_QFP:LQFP-48_7x7mm_P0.5mm
+name = "LQFP-48_7x7mm_P0.5mm"
+description = "LQFP, 48 Pin (JEDEC MS-026 variation BBC, 1.40mm body thickness, https://www.jedec.org/document_search?search_api_views_fulltext=MS-026, https://www.analog.com/media/en/package-pcb-resources/package/pkg_pdf/ltc-legacy-lqfp/05081760_a_lx48.pdf), generated with kicad-footprint-generator ipc_gullwing_generator.py"
+tags = ["LQFP", "QFP", "CASE-932AA", "CASE-932-03", "C48-1", "C48-2", "C48-3", "C48-5", "C48-6", "C48-6C", "PT0048A"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_QFP.3dshapes/LQFP-48_7x7mm_P0.5mm.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-4.1625, -2.75]
+size = [1.475, 0.3]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 12
+pitch = [0.0, 0.5]
+
+[[pads]]
+number = "13"
+kind = "smd"
+shape = "roundrect"
+at = [-2.75, 4.1625]
+size = [0.3, 1.475]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 12
+pitch = [0.5, 0.0]
+
+[[pads]]
+number = "25"
+kind = "smd"
+shape = "roundrect"
+at = [4.1625, 2.75]
+size = [1.475, 0.3]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 12
+pitch = [0.0, -0.5]
+
+[[pads]]
+number = "37"
+kind = "smd"
+shape = "roundrect"
+at = [2.75, -4.1625]
+size = [0.3, 1.475]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 12
+pitch = [-0.5, 0.0]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -5.85]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 5.85]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.61, -3.61]
+end = [-3.61, -3.16]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.61, 3.61]
+end = [-3.61, 3.16]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.16, -3.61]
+end = [-3.61, -3.61]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.16, 3.61]
+end = [-3.61, 3.61]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.16, -3.61]
+end = [3.61, -3.61]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.16, 3.61]
+end = [3.61, 3.61]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.61, -3.61]
+end = [3.61, -3.16]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.61, 3.61]
+end = [3.61, 3.16]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-4.2, -3.16], [-4.54, -3.63], [-3.86, -3.63]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.15, -3.15]
+end = [-3.75, -3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.15, 3.15]
+end = [-5.15, -3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.75, -3.75]
+end = [-3.15, -3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.75, -3.15]
+end = [-3.75, -3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.75, 3.15]
+end = [-5.15, 3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.75, 3.75]
+end = [-3.75, 3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.15, -5.15]
+end = [3.15, -5.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.15, -3.75]
+end = [-3.15, -5.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.15, 3.75]
+end = [-3.75, 3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.15, 5.15]
+end = [-3.15, 3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.15, -5.15]
+end = [3.15, -3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.15, -3.75]
+end = [3.75, -3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.15, 3.75]
+end = [3.15, 5.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.15, 5.15]
+end = [-3.15, 5.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.75, -3.75]
+end = [3.75, -3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.75, -3.15]
+end = [5.15, -3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.75, 3.15]
+end = [3.75, 3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.75, 3.75]
+end = [3.15, 3.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.15, -3.15]
+end = [5.15, 3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.15, 3.15]
+end = [3.75, 3.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.5, -2.5]
+end = [-2.5, -3.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.5, 3.5]
+end = [-3.5, -2.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.5, -3.5]
+end = [3.5, -3.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.5, -3.5]
+end = [3.5, 3.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.5, 3.5]
+end = [-3.5, 3.5]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0

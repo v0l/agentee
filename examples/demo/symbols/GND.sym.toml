@@ -1,0 +1,20 @@
+# imported from KiCad power:GND
+name = "GND"
+reference = "#PWR"
+description = 'Power symbol creates a global label with name "GND" , ground'
+keywords = ["global", "power"]
+power = true
+pin_names = "hidden"
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, 0.0], [0.0, 1.27], [1.27, 1.27], [0.0, 2.54], [-1.27, 1.27], [0.0, 1.27]]
+
+[[pins]]
+number = "1"
+type = "power_in"
+at = [0.0, 0.0]
+side = "top"
+length = 0.0
+unit = 1

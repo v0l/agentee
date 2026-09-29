@@ -1,0 +1,18 @@
+[package]
+name = "agentee"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Electronic design for agents: board spec, symbols, footprints"
+
+[dependencies]
+agentee-core.workspace = true
+agentee-kicad.workspace = true
+agentee-view.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+base64 = "0.22"
