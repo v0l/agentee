@@ -101,16 +101,17 @@ impl Canvas {
             let py = y as f32 + 0.5;
             for x in x0..x1 {
                 let px = x as f32 + 0.5;
-                let w0 = edge(p[1], p[2], px, py) * inv;
-                let w1 = edge(p[2], p[0], px, py) * inv;
-                let w2 = 1.0 - w0 - w1;
-                let inside = |w: f64, top_left: bool| w > 0.0 || (w == 0.0 && top_left);
-                if !(inside(w0 as f64, tl[0])
-                    && inside(w1 as f64, tl[1])
-                    && inside(w2 as f64, tl[2]))
-                {
+                let e =
+                    [edge(p[1], p[2], px, py), edge(p[2], p[0], px, py), edge(p[0], p[1], px, py)];
+                let inside = |w: f32, top_left: bool| {
+                    let w = if area > 0.0 { w } else { -w };
+                    w > 0.0 || (w == 0.0 && top_left)
+                };
+                if !(inside(e[0], tl[0]) && inside(e[1], tl[1]) && inside(e[2], tl[2])) {
                     continue;
                 }
+                let (w0, w1) = (e[0] * inv, e[1] * inv);
+                let w2 = 1.0 - w0 - w1;
                 let mut c = [0.0f32; 4];
                 for k in 0..4 {
                     c[k] = col[0][k] * w0 + col[1][k] * w1 + col[2][k] * w2;

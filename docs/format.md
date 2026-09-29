@@ -383,7 +383,12 @@ vias and other parts' bodies, and stay on the board. When a reference label fail
 spot that passes every rule, as a `label = { at = [...] }` line to paste.
 
 Zone fills are exact polygons: the zone outline less every other net's copper grown by its
-clearance, with round corners, so pours render and plot without stair steps.
+clearance, with round corners, so pours render and plot without stair steps. Necks and slivers
+narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fab would etch them.
+
+A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad.
+A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
+where it meets a small pad.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and

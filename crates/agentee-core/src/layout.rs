@@ -116,6 +116,8 @@ pub struct ZoneFile {
     pub outline: Option<Vec<Point>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clearance: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_width: Option<Length>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -662,7 +664,21 @@ impl LayoutFile {
             }
             let class_w = nets[net].width;
             let width = t.width.map(Length::to_mm).unwrap_or(class_w);
-            if width + 1e-6 < class_w {
+            let length: f64 =
+                t.points.windows(2).map(|w| geom::dist(w[0].to_mm(), w[1].to_mm())).sum();
+            let neckdown = width + 1e-6 < class_w
+                && length <= NECKDOWN
+                && width + 1e-6 >= board.rules.min_track_width.to_mm();
+            if neckdown {
+                d.info(
+                    &at,
+                    format!(
+                        "{:.3} mm neck-down to {}, allowed on runs up to {NECKDOWN} mm into a pad",
+                        length,
+                        Length::mm(width)
+                    ),
+                );
+            } else if width + 1e-6 < class_w {
                 d.error(
                     &at,
                     format!(
@@ -676,6 +692,7 @@ impl LayoutFile {
             if let Some(c) = class_of(board, &nets[net].class)
                 && c.impedance.is_some()
                 && (width - class_w).abs() > 1e-3
+                && !neckdown
             {
                 d.warn(
                     &at,
@@ -987,6 +1004,7 @@ impl LayoutFile {
                     &items,
                     &clearance_of,
                     &layer_cutouts,
+                    z.min_width.map(Length::to_mm).unwrap_or(0.25),
                 );
                 if fill.islands_removed > 0 {
                     d.info(
@@ -1061,6 +1079,40 @@ impl LayoutFile {
                 .flat_map(|t| t.points.windows(2).map(|w| geom::dist(w[0], w[1])))
                 .sum();
             stats.push((unrouted, length));
+        }
+
+        for pad in items.iter().filter(|it| matches!(it.owner, Owner::Pad(..)) && it.net.is_some())
+        {
+            let Owner::Pad(pi, k) = pad.owner else { continue };
+            let in_zone = zones.iter().any(|z| {
+                Some(z.net) == pad.net
+                    && pad.layers.contains(&z.layer)
+                    && z.filled(pad.bounds.center())
+            });
+            if in_zone {
+                continue;
+            }
+            let mut touching = Vec::new();
+            for seg in items.iter().filter(|it| {
+                matches!(it.owner, Owner::Seg(_))
+                    && it.net == pad.net
+                    && it.layers.iter().any(|l| pad.layers.contains(l))
+                    && it.shape.distance(&pad.shape) <= 0.0
+            }) {
+                if let Shape::Seg(a, b, hw) = seg.shape {
+                    let centre = Shape::Seg(a, b, 0.0).distance(&pad.shape);
+                    touching.push((hw - centre.max(0.0), hw));
+                }
+            }
+            if !touching.is_empty() && touching.iter().all(|(depth, hw)| *depth < *hw) {
+                let worst = touching.iter().map(|t| t.0).fold(f64::MAX, f64::min);
+                d.warn(
+                    format!("pad {}.{}", parts[pi].reference, parts[pi].pads[k].number),
+                    format!(
+                        "the track only grazes the pad ({worst:.3} mm of overlap), run it into the pad"
+                    ),
+                );
+            }
         }
 
         for (ti, t) in tracks.iter().enumerate() {
@@ -1477,6 +1529,7 @@ fn check_silk(
 }
 
 const SILK_GAP: f64 = 0.4;
+const NECKDOWN: f64 = 0.5;
 
 #[allow(clippy::too_many_arguments)]
 fn silk_issues(
@@ -1681,6 +1734,7 @@ fn fill_zone(
     items: &[Item],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
     cutouts: &[&Vec<P>],
+    min_width: f64,
 ) -> (ZoneFill, Vec<Vec<usize>>) {
     let mut b = Bounds::EMPTY;
     poly.iter().for_each(|p| b.add(*p));
@@ -1848,8 +1902,17 @@ fn fill_zone(
         rings: Vec::new(),
         triangles: Vec::new(),
     };
-    fill.rings =
-        vector_fill(&fill, poly, board, edge_clear, clearance, items, clearance_of, cutouts);
+    fill.rings = vector_fill(
+        &fill,
+        poly,
+        board,
+        edge_clear,
+        clearance,
+        items,
+        clearance_of,
+        cutouts,
+        min_width,
+    );
     fill.triangles = crate::contour::triangles(&fill.rings);
     (fill, touched)
 }
@@ -1915,6 +1978,7 @@ fn vector_fill(
     items: &[Item],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
     cutouts: &[&Vec<P>],
+    min_width: f64,
 ) -> Vec<Vec<P>> {
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
@@ -1945,7 +2009,15 @@ fn vector_fill(
         let gap = clearance.max(clearance_of(it.net));
         clip.extend(inflated(&it.shape, gap));
     }
-    let shapes = subject.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+    let mut shapes = subject.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+    if min_width > 0.0 {
+        use i_overlay::mesh::float::outline::offset::OutlineOffset;
+        use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+        let eroded =
+            shapes.outline(&OutlineStyle::new(-min_width / 2.0).line_join(LineJoin::Round(0.05)));
+        shapes =
+            eroded.outline(&OutlineStyle::new(min_width / 2.0).line_join(LineJoin::Round(0.05)));
+    }
     let mut rings = Vec::new();
     for shape in shapes {
         let tris = crate::contour::triangles(&shape);
