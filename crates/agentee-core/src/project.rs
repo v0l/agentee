@@ -306,7 +306,7 @@ impl Project {
                 hash = p.check_cascade(&f, &item, hash, &mut d);
             }
             if file.kind == Some(crate::sim::SimKind::Channel) {
-                hash = p.check_channel(&item, hash, &mut d);
+                hash = p.check_channel(&f, &item, hash, &mut d);
             }
             if file.kind == Some(crate::sim::SimKind::Pdn) {
                 hash = p.check_pdn(&f, &item, hash, &mut d);
@@ -390,7 +390,21 @@ impl Project {
         crate::sim::cascade_hash(hash, r.spec_hash, &texts)
     }
 
-    fn check_channel(&self, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
+    fn check_channel(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
+        let mut texts = Vec::new();
+        if let Some(spec) = &sim.channel_spec {
+            for r in [&spec.tx, &spec.rx].into_iter().flatten() {
+                let f = path.parent().unwrap_or(Path::new(".")).join(&r.file);
+                match std::fs::read_to_string(&f) {
+                    Ok(t) => match crate::ibis::parse(&t) {
+                        Ok(ib) if ib.models.iter().any(|m| m.name == r.model) => texts.push(t),
+                        Ok(_) => d.error("ibis", format!("{} has no model {}", r.file, r.model)),
+                        Err(e) => d.error("ibis", format!("{}: {e}", r.file)),
+                    },
+                    Err(e) => d.error("ibis", format!("cannot read {}: {e}", r.file)),
+                }
+            }
+        }
         let Some(board) = self.sims.iter().find(|s| s.name == sim.board) else {
             if !sim.board.is_empty() {
                 d.error("board", format!("no sim named `{}`", sim.board));
@@ -434,7 +448,7 @@ impl Project {
         if board.item.stale {
             d.warn("board", format!("the result of `{}` is stale", sim.board));
         }
-        crate::sim::cascade_hash(hash, r.spec_hash, &[])
+        crate::sim::cascade_hash(hash, r.spec_hash, &texts)
     }
 
     fn check_cascade(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {

@@ -80,7 +80,16 @@ pub fn run(name: &str, freqs: &[f64], h: &[Cx], p: &Params, spec_hash: u64) -> C
         .collect();
     let per_ui = 64usize;
     let dt = ui / per_ui as f64;
-    let span_ui = 64usize;
+    let spacing = freqs.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min).min(freqs[0]);
+    let period = 1.0 / spacing;
+    let span_ui = ((0.9 * period / ui).floor() as usize).saturating_sub(2).clamp(4, 64);
+    if (span_ui as f64 + 2.0) * ui > 0.9 * period {
+        warnings.push(format!(
+            "the S-parameters step {:.1} MHz, so the pulse can only be followed for {:.0} ns before it wraps",
+            spacing / 1e6,
+            period * 1e9
+        ));
+    }
     let st = agentee_core::sparam::step_with(
         freqs,
         &eq,

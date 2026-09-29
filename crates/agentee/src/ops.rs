@@ -569,10 +569,111 @@ fn run_channel(
             }
         })
         .collect();
+    let dir = entry.path.parent().unwrap_or(std::path::Path::new("."));
+    let load_model = |r: &agentee_core::sim::IbisRef| -> Result<
+        (agentee_core::ibis::Model, agentee_core::ibis::Package),
+        String,
+    > {
+        let path = dir.join(&r.file);
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let ibis = agentee_core::ibis::parse(&text).map_err(|e| format!("{}: {e}", r.file))?;
+        let model = ibis.models.iter().find(|m| m.name == r.model).cloned().ok_or(format!(
+            "{} has no model {}, there is {}",
+            r.file,
+            r.model,
+            ibis.models.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", ")
+        ))?;
+        let comp = match &r.component {
+            Some(c) => ibis
+                .components
+                .iter()
+                .find(|x| &x.name == c)
+                .ok_or(format!("{} has no component {c}", r.file))?,
+            None => ibis.components.first().ok_or(format!("{} has no [Component]", r.file))?,
+        };
+        let pkg = r
+            .pin
+            .as_ref()
+            .and_then(|p| comp.pins.get(p))
+            .and_then(|(_, p)| *p)
+            .unwrap_or(comp.package);
+        Ok((model, pkg))
+    };
+    let mut rise = cs.rise;
+    let mut swing = cs.swing;
+    let mut h = h;
+    let mut notes: Vec<String> = Vec::new();
+    if cs.tx.is_some() || cs.rx.is_some() {
+        let z0 = board
+            .item
+            .ports
+            .iter()
+            .find(|q| q.name == r.ports[ids[0]])
+            .map(|q| q.impedance)
+            .unwrap_or(50.0);
+        let tx = cs.tx.as_ref().map(&load_model).transpose()?;
+        let rx = cs.rx.as_ref().map(&load_model).transpose()?;
+        let driver = match &tx {
+            Some((m, pkg)) => {
+                let r_out =
+                    m.output_resistance().ok_or(format!("{} has no usable V-I tables", m.name))?;
+                if !cs.rise_given
+                    && let Some(t) = m.rise_10_90()
+                {
+                    rise = t;
+                }
+                if !cs.swing_given
+                    && let Some(v) = m.voltage
+                {
+                    swing = v;
+                }
+                notes.push(format!(
+                    "{}: {:.1} ohm out, {:.0} ps edge, {:.2} pF die, {:.2} nH package",
+                    m.name,
+                    r_out,
+                    rise * 1e12,
+                    m.c_comp * 1e12,
+                    pkg.l * 1e9
+                ));
+                Some(agentee_core::ibis::Driver { r_out, c_comp: m.c_comp, pkg: *pkg })
+            }
+            None => None,
+        };
+        let receiver = rx.as_ref().map(|(m, pkg)| {
+            notes.push(format!(
+                "{}: {:.2} pF die, {:.2} nH package",
+                m.name,
+                m.c_comp * 1e12,
+                pkg.l * 1e9
+            ));
+            agentee_core::ibis::Receiver { c_comp: m.c_comp, pkg: *pkg }
+        });
+        h = r
+            .freqs
+            .iter()
+            .enumerate()
+            .map(|(k, f)| {
+                let c = |i: usize, j: usize| {
+                    Cx::new(r.s[ids[i]][ids[j]][k][0], r.s[ids[i]][ids[j]][k][1])
+                };
+                let s2 = [[c(0, 0), c(0, 1)], [c(1, 0), c(1, 1)]];
+                let (emf, zs) = match &driver {
+                    Some(d) => d.thevenin(*f),
+                    None => (Cx::new(2.0, 0.0), Cx::new(z0, 0.0)),
+                };
+                let (zl, die) = match &receiver {
+                    Some(rc) => rc.load(*f),
+                    None => (Cx::new(z0, 0.0), Cx::ONE),
+                };
+                emf * agentee_core::ibis::terminated(s2, z0, zs, zl) * die
+            })
+            .collect();
+    }
     let params = agentee_sim::channel::Params {
         bit_rate: cs.bit_rate,
-        rise: cs.rise,
-        swing: cs.swing,
+        rise,
+        swing,
         prbs: cs.prbs,
         ctle: cs.ctle.as_ref().map(|(dc, z, poles)| agentee_sim::channel::Ctle {
             dc_db: *dc,
@@ -581,7 +682,12 @@ fn run_channel(
         }),
         dfe_taps: cs.dfe_taps,
     };
-    let hash = agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), r.spec_hash, &[]);
+    let texts: Vec<String> = [&cs.tx, &cs.rx]
+        .into_iter()
+        .flatten()
+        .filter_map(|x| std::fs::read_to_string(dir.join(&x.file)).ok())
+        .collect();
+    let hash = agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), r.spec_hash, &texts);
     let out = agentee_sim::channel::run(&spec.name, &r.freqs, &h, &params, hash);
     let json_path = agentee_core::sim::result_path(&entry.path);
     std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
@@ -593,6 +699,7 @@ fn run_channel(
         "ui_ps": out.ui_ps,
         "result": json_path,
         "readings": out.readings,
+        "models": notes,
     }))
 }
 

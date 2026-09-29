@@ -121,12 +121,16 @@ pub fn run(
         let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
         let mid = &p.columns[p.columns.len() / 2];
         let first = port_edges.len() / 2;
-        for e in mid {
-            port_edges.extend_from_slice(&[
-                idx(n, e.at[0], e.at[1], e.at[2]) as f32,
-                sim.ax[axis].d[e.at[axis]] as f32,
-            ]);
+        let weight = 1.0 / p.columns.len() as f64;
+        for col in &p.columns {
+            for e in col {
+                port_edges.extend_from_slice(&[
+                    idx(n, e.at[0], e.at[1], e.at[2]) as f32,
+                    (sim.ax[axis].d[e.at[axis]] * weight) as f32,
+                ]);
+            }
         }
+        let probed = port_edges.len() / 2 - first;
         let loop_first = loops.len() / 3;
         let k = mid[mid.len() / 2].at[axis];
         let (i0, i1) = (
@@ -156,7 +160,7 @@ pub fn run(
         probe_def.extend_from_slice(&[
             axis as f32,
             first as f32,
-            mid.len() as f32,
+            probed as f32,
             loop_first as f32,
             ((loops.len() / 3) - loop_first) as f32,
             u as f32,

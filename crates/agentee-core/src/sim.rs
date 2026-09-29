@@ -107,6 +107,10 @@ pub struct SimFile {
     pub ctle: Option<CtleFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dfe_taps: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tx: Option<IbisRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rx: Option<IbisRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sinks: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -180,6 +184,17 @@ pub struct PdnSpec {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct IbisRef {
+    pub file: String,
+    pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pin: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CtleFile {
     pub dc_gain: f64,
     pub zero: String,
@@ -196,6 +211,10 @@ pub struct ChannelSpec {
     pub prbs: u32,
     pub ctle: Option<(f64, f64, Vec<f64>)>,
     pub dfe_taps: usize,
+    pub tx: Option<IbisRef>,
+    pub rx: Option<IbisRef>,
+    pub rise_given: bool,
+    pub swing_given: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -893,6 +912,12 @@ impl SimFile {
                 }
             }
         };
+        if differential && (self.tx.is_some() || self.rx.is_some()) {
+            d.error(
+                "tx",
+                "IBIS drivers and receivers work on single-ended `through` paths for now",
+            );
+        }
         let prbs = self.prbs.unwrap_or(7);
         if ![7, 9, 11, 15].contains(&prbs) {
             d.error("prbs", "prbs is 7, 9, 11 or 15");
@@ -906,6 +931,10 @@ impl SimFile {
             prbs,
             ctle,
             dfe_taps: self.dfe_taps.unwrap_or(0),
+            tx: self.tx.clone(),
+            rx: self.rx.clone(),
+            rise_given: self.rise.is_some(),
+            swing_given: self.swing.is_some(),
         })
     }
 

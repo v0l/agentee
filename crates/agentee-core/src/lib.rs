@@ -7,6 +7,7 @@ pub mod font;
 pub mod footprint;
 pub mod geom;
 pub mod graphic;
+pub mod ibis;
 pub mod layout;
 pub mod project;
 pub mod rf;
