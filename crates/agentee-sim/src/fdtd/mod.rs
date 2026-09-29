@@ -100,6 +100,7 @@ pub fn execute(
         .collect();
     let mut s = vec![vec![vec![[0.0, 0.0]; freqs.len()]; np]; np];
     let mut excited = vec![false; np];
+    let mut waves: Vec<(usize, Vec<Vec<Wave>>)> = Vec::new();
     let mut maps = Vec::new();
     let mut readings = Vec::new();
     let mut steps = Vec::new();
@@ -127,6 +128,7 @@ pub fn execute(
         extra_outputs(plan, &rec, j, &label, &patches, &mut maps, &mut readings);
         steps.push(rec.steps);
         excited[j] = true;
+        let mut run_waves = Vec::with_capacity(freqs.len());
         for (fi, f) in freqs.iter().enumerate() {
             let z0 = |k: usize| sim.ports[k].r;
             let wave = |k: usize| {
@@ -141,6 +143,28 @@ pub fn execute(
             for (i, row) in s.iter_mut().enumerate() {
                 let (_, bi) = wave(i);
                 row[j][fi] = cdiv(bi, aj);
+            }
+            run_waves.push((0..np).map(wave).collect::<Vec<_>>());
+        }
+        waves.push((j, run_waves));
+    }
+    if waves.len() == np {
+        use agentee_core::rf::Cx;
+        for fi in 0..freqs.len() {
+            let mut at = vec![vec![Cx::ZERO; np]; np];
+            let mut bt = vec![vec![Cx::ZERO; np]; np];
+            for (j, run) in &waves {
+                for (i, (a, b)) in run[fi].iter().enumerate() {
+                    at[*j][i] = Cx::new(a.0, a.1);
+                    bt[*j][i] = Cx::new(b.0, b.1);
+                }
+            }
+            if let Some(st) = agentee_core::rf::solve(at, bt) {
+                for (i, row) in s.iter_mut().enumerate() {
+                    for (j, cell) in row.iter_mut().enumerate() {
+                        cell[fi] = [st[j][i].re, st[j][i].im];
+                    }
+                }
             }
         }
     }
@@ -167,6 +191,8 @@ pub fn execute(
 fn tag(plan: &Plan, f: f64, port: &str) -> String {
     if plan.excite.len() > 1 { format!("{} {port}", freq_label(f)) } else { freq_label(f) }
 }
+
+type Wave = ((f64, f64), (f64, f64));
 
 fn freq_label(f: f64) -> String {
     if f >= 1e9 {
@@ -321,6 +347,37 @@ mod tests {
         band: (f64, f64),
         cell: f64,
     ) -> SimResult {
+        run_line_both(len, w, h, er, tan, copper, band, cell, false)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_line_both(
+        len: f64,
+        w: f64,
+        h: f64,
+        er: f64,
+        tan: f64,
+        copper: f64,
+        band: (f64, f64),
+        cell: f64,
+        both: bool,
+    ) -> SimResult {
+        run_line_with(len, w, h, er, tan, copper, band, cell, both, &|_| {})
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn run_line_with(
+        len: f64,
+        w: f64,
+        h: f64,
+        er: f64,
+        tan: f64,
+        copper: f64,
+        band: (f64, f64),
+        cell: f64,
+        both: bool,
+        tweak: &dyn Fn(&mut PcbModel),
+    ) -> SimResult {
         let port_r = if w < 1.0 { 85.0 } else { 50.0 };
         let strip = |x: f64| {
             vec![
@@ -330,7 +387,7 @@ mod tests {
                 [x - 0.05, w / 2.0],
             ]
         };
-        let m = PcbModel {
+        let mut m = PcbModel {
             outline: vec![[0.0, -5.0], [len, -5.0], [len, 5.0], [0.0, 5.0]],
             sheets: vec![
                 Sheet { name: "F.Cu".into(), z: 0.0, thickness: copper },
@@ -366,7 +423,9 @@ mod tests {
             region: None,
             roughness: Default::default(),
         };
-        let mut p = plan(&m, band.0, band.1, 36, cell, vec![0], 80_000).unwrap();
+        tweak(&mut m);
+        let excite = if both { vec![0, 1] } else { vec![0] };
+        let mut p = plan(&m, band.0, band.1, 36, cell, excite, 80_000).unwrap();
         if len < 30.0 && tan == 0.0 && copper == 0.0 {
             p.fields = vec![2e9, 3.5e9];
             p.far_field = true;
@@ -504,5 +563,62 @@ mod tests {
             got / field
         );
         assert!(got > 0.0 && (got / field) > 0.9 && (got / field) < 1.35, "{got} {field}");
+    }
+
+    #[test]
+    fn a_symmetric_line_is_reciprocal_and_passive() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let r = run_line_both(20.0, 2.9, 1.51, 4.5, 0.0, 0.0, (0.5e9, 4e9), 0.12, true);
+        let mut worst: (f64, f64, f64) = (0.0, 0.0, 0.0);
+        for k in 0..r.freqs.len() {
+            let c = |i: usize, j: usize| (r.s[i][j][k][0], r.s[i][j][k][1]);
+            let (a, b) = (c(1, 0), c(0, 1));
+            let diff = ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt();
+            let power = c(0, 0).0.powi(2) + c(0, 0).1.powi(2) + a.0.powi(2) + a.1.powi(2);
+            if diff > worst.0 {
+                worst = (diff, r.freqs[k], power);
+            }
+        }
+        eprintln!(
+            "worst |S21 - S12| {:.4} at {:.2} GHz, |S11|^2+|S21|^2 {:.4}",
+            worst.0,
+            worst.1 / 1e9,
+            worst.2
+        );
+        assert!(worst.0 < 0.01, "{worst:?}");
+    }
+
+    fn reciprocity(r: &SimResult) -> (f64, f64) {
+        let mut worst = (0.0f64, 0.0);
+        for k in 0..r.freqs.len() {
+            let c = |i: usize, j: usize| (r.s[i][j][k][0], r.s[i][j][k][1]);
+            let (a, b) = (c(1, 0), c(0, 1));
+            let diff = ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt();
+            if diff > worst.0 {
+                worst = (diff, r.freqs[k]);
+            }
+        }
+        worst
+    }
+
+    #[test]
+    fn unlike_ports_stay_reciprocal() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let point = run_line_with(20.0, 2.9, 1.51, 4.5, 0.0, 0.0, (0.5e9, 4e9), 0.12, true, &|m| {
+            m.ports[1].area.clear();
+        });
+        let impedance =
+            run_line_with(20.0, 2.9, 1.51, 4.5, 0.0, 0.0, (0.5e9, 4e9), 0.12, true, &|m| {
+                m.ports[1].r = 25.0;
+            });
+        for (name, r) in [("point port", &point), ("25 ohm port", &impedance)] {
+            let (d, f) = reciprocity(r);
+            eprintln!("{name}: worst |S21 - S12| {d:.4} at {:.2} GHz", f / 1e9);
+        }
+        assert!(reciprocity(&point).0 < 0.01 && reciprocity(&impedance).0 < 0.01);
     }
 }
