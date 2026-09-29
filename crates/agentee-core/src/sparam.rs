@@ -119,13 +119,10 @@ pub fn passivity(s: &Matrix) -> f64 {
 
 pub fn reciprocity(s: &Matrix) -> f64 {
     let n = s.len();
-    let mut worst: f64 = 0.0;
-    for i in 0..n {
-        for j in i + 1..n {
-            worst = worst.max((s[i][j] - s[j][i]).abs());
-        }
-    }
-    worst
+    (0..n)
+        .flat_map(|i| (i + 1..n).map(move |j| (i, j)))
+        .map(|(i, j)| (s[i][j] - s[j][i]).abs())
+        .fold(0.0, f64::max)
 }
 
 #[cfg(test)]
