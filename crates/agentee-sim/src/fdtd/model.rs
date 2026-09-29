@@ -1,3 +1,4 @@
+use super::edge;
 use super::engine::{self, Edge, Element, Grid, Lumped, Materials, PortDef, Sim};
 use crate::xsection::lines;
 use agentee_core::board::{Board, LayerKind};
@@ -483,29 +484,71 @@ impl PcbModel {
             }
             lumped.push(Lumped { name: e.name.clone(), edges, element: e.element });
         }
-        let mut resistive: Vec<(usize, usize, f64)> = Vec::new();
+        let mut resistive: Vec<(usize, usize, f64, bool)> = Vec::new();
         for (s, rs) in self.sheet_ohms(opt).into_iter().enumerate() {
             if rs <= 0.0 {
                 continue;
             }
             let k = ks[s];
-            for i in 0..nx {
-                for j in 0..ny {
-                    if sheet_x[s][i * ny + j] && i + 1 < nx && j + 1 < ny {
-                        let (along, across) =
-                            (grid.x[i + 1] - grid.x[i], grid.y[j + 1] - grid.y[j]);
-                        resistive.push((0, engine::idx(n, i, j, k), rs * along / across));
-                    }
-                    if sheet_y[s][i * ny + j] && j + 1 < ny && i + 1 < nx {
-                        let (along, across) =
-                            (grid.y[j + 1] - grid.y[j], grid.x[i + 1] - grid.x[i]);
-                        resistive.push((1, engine::idx(n, i, j, k), rs * along / across));
+            let thick = self.sheets[s].thickness;
+            let (dz_above, dz_below) = (grid.z[k + 1] - grid.z[k], grid.z[k] - grid.z[k - 1]);
+            for comp in 0..2 {
+                let (along_axis, across_axis) =
+                    if comp == 0 { (&grid.x, &grid.y) } else { (&grid.y, &grid.x) };
+                let flags = if comp == 0 { &sheet_x[s] } else { &sheet_y[s] };
+                let (na, nc) = (along_axis.len(), across_axis.len());
+                for a in 0..na.saturating_sub(1) {
+                    for c in 0..nc.saturating_sub(1) {
+                        let (i, j) = if comp == 0 { (a, c) } else { (c, a) };
+                        if !flags[i * ny + j] {
+                            continue;
+                        }
+                        let flag = |cc: usize| {
+                            let (ii, jj) = if comp == 0 { (a, cc) } else { (cc, a) };
+                            flags[ii * ny + jj]
+                        };
+                        let run = |dir: isize| {
+                            let mut k = 0;
+                            let mut cc = c as isize;
+                            while k < edge::BANDS {
+                                cc += dir;
+                                if cc < 0 || cc as usize + 1 >= nc || !flag(cc as usize) {
+                                    break;
+                                }
+                                k += 1;
+                            }
+                            k
+                        };
+                        let along = along_axis[a + 1] - along_axis[a];
+                        let id = engine::idx(n, i, j, k);
+                        let (before, after) = (run(-1), run(1));
+                        if before == 0 && after == 0 {
+                            let across = across_axis[c + 1] - across_axis[c];
+                            resistive.push((comp, id, rs * along / across, true));
+                            continue;
+                        }
+                        let (band, inward) =
+                            if before <= after { (before, 1isize) } else { (after, -1) };
+                        let cell = |cc: usize| across_axis[cc + 1] - across_axis[cc];
+                        let d = if inward > 0 { cell(c) } else { cell(c - 1) };
+                        let dual = if before > 0 && after > 0 {
+                            0.5 * (cell(c - 1) + cell(c))
+                        } else {
+                            0.5 * d
+                        };
+                        let r0 = rs * along / dual;
+                        if band >= edge::BANDS || before.min(after) >= edge::BANDS {
+                            resistive.push((comp, id, r0, true));
+                            continue;
+                        }
+                        let w = edge::weights(d, dz_above, dz_below, thick);
+                        resistive.push((comp, id, r0 * w.bands[band], band > 0));
                     }
                 }
             }
         }
         let resistive_set: std::collections::HashSet<(usize, usize)> =
-            resistive.iter().map(|(c, id, _)| (*c, *id)).collect();
+            resistive.iter().map(|(c, id, _, _)| (*c, *id)).collect();
         let lumped_edges: std::collections::HashSet<(usize, [usize; 3])> =
             lumped.iter().flat_map(|l| l.edges.iter().map(|e| (e.comp, e.at))).collect();
         let sheet_of_k: Vec<Option<usize>> =

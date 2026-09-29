@@ -588,10 +588,16 @@ sheets with the skin-effect surface resistance at the band centre, times the sta
 factor. A zero-thickness sheet has one current, while real copper carries it on two faces, so
 each sheet edge tracks the magnetic field just above and below it through the run and scales its
 resistance by (Jtop^2 + Jbottom^2) / (Jtop + Jbottom)^2: one half for a centred stripline, close to
-one for a trace over a plane. The crowded current at a trace's edges is only resolved as far as
-the cell allows, so copper loss reads low on coarse meshes: on a 0.3 mm microstrip at 3.5 GHz it
-is 22%, 18%, 11% and 7% under the 2D field solver at 0.1, 0.05, 0.025 and 0.0125 mm cells. For
-insertion loss budgets on narrow lines, `calc field --sweep` is the reference.
+one for a trace over a plane. The current crowding at a trace edge is narrower than a cell, so
+the cells within four of an edge get their resistance from the thin strip edge solution instead:
+a finite difference solve of a slit on the local mesh gives how much current the grid puts in
+each cell and where the grid's effective edge sits, and the loss of each band is the thin strip
+integral cut short of the edge (Lewin and Vainshtein's stopping distance method). For a square
+edge of thickness t that distance is t e^-pi / (4 pi), from a conformal map of the slab edge in
+the strong skin effect limit. A 0.3 mm microstrip at
+3.5 GHz reads 9%, 4%, 2% and 1.5% over the 2D field solver at 0.1, 0.05, 0.025 and 0.0125 mm
+cells, and a 0.2 mm stripline 5% at 0.05 mm, most of it the strip's own thickness, which the
+sheet model leaves out.
 
 ### Field maps and emissions
 

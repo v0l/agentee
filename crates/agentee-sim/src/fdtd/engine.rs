@@ -255,7 +255,7 @@ impl Sim {
         pec: &dyn Fn(usize, [usize; 3]) -> bool,
         lumped: &[Lumped],
         ports: Vec<PortDef>,
-        resistive: &[(usize, usize, f64)],
+        resistive: &[(usize, usize, f64, bool)],
     ) -> Sim {
         let dt = time_step(&grid);
         let pml = grid.pml;
@@ -356,9 +356,12 @@ impl Sim {
             resistor(&mut ca, &mut cb, &Edge { comp: *comp, at }, *r);
         }
         let mut sheets = Vec::new();
-        for (comp, id, r) in resistive {
+        for (comp, id, r, adaptive) in resistive {
             let e = Edge { comp: *comp, at: unidx(n, *id) };
             resistor(&mut ca, &mut cb, &e, *r);
+            if !adaptive {
+                continue;
+            }
             let eps = eps_edge[*comp][*id];
             sheets.push(SheetEdge {
                 comp: *comp,

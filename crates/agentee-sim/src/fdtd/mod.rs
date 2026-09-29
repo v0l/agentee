@@ -1,3 +1,4 @@
+pub mod edge;
 pub mod engine;
 pub mod model;
 pub mod ntff;
@@ -530,7 +531,7 @@ mod tests {
             return;
         }
         let (w, h, len) = (0.3, 0.15, 20.0);
-        let cell = 0.025;
+        let cell = 0.05;
         let clean = run_line(len, w, h, 1.0, 0.0, 0.0, (1e9, 6e9), cell);
         let lossy = run_line(len, w, h, 1.0, 0.0, 0.035, (1e9, 6e9), cell);
         let stack = crate::xsection::Stack {
@@ -563,7 +564,7 @@ mod tests {
             "copper loss at 3.5 GHz: FDTD sheets {got:.4} dB, field solver {field:.4} dB, ratio {:.3}",
             got / field
         );
-        assert!(got > 0.0 && (got / field) > 0.85 && (got / field) < 1.05, "{got} {field}");
+        assert!(got > 0.0 && (got / field - 1.0).abs() < 0.05, "{got} {field}");
     }
 
     #[test]
@@ -571,7 +572,7 @@ mod tests {
         if crate::gpu::gpu().is_none() {
             return;
         }
-        let (w, h, len, cell) = (0.2, 0.2, 20.0, 0.025);
+        let (w, h, len, cell) = (0.2, 0.2, 20.0, 0.05);
         let above = |m: &mut PcbModel| {
             m.sheets
                 .insert(0, Sheet { name: "T.Cu".into(), z: h, thickness: m.sheets[0].thickness });
@@ -622,7 +623,7 @@ mod tests {
             "stripline copper loss at 3.5 GHz: FDTD {got:.4} dB, field solver {field:.4} dB, ratio {:.3}",
             got / field
         );
-        assert!(got > 0.0 && (got / field) > 0.8 && (got / field) < 1.1, "{got} {field}");
+        assert!(got > 0.0 && (got / field - 1.0).abs() < 0.07, "{got} {field}");
     }
 
     #[test]
