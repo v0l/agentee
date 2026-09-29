@@ -112,7 +112,7 @@ fn tools() -> Value {
         },
         {
             "name": "fab",
-            "description": "Write the fab package for a layout into a folder: RS-274X Gerbers (X2) per copper, mask, paste, silk and edge layer, Excellon drills, BOM (generic and JLCPCB), pick-and-place, fab notes and assembly drawings. Refuses while the layout has errors.",
+            "description": "Write the fab package for a layout into a folder: RS-274X Gerbers (X2) per copper, mask, paste, silk and edge layer, Excellon drills, a zip of those for upload, BOM (generic and JLCPCB), pick-and-place, fab notes and assembly drawings. Refuses while the layout has errors.",
             "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output folder, relative to the project" } }), &["name", "out"]),
         },
         {

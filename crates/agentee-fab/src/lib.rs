@@ -372,6 +372,22 @@ fn notes(layout: &Layout, board: &Board) -> String {
     out
 }
 
+fn zip_files(dir: &Path, names: &[String], out: &Path) -> Result<(), String> {
+    use std::io::Write as _;
+    let file = std::fs::File::create(out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let mut z = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::default());
+    for n in names {
+        let body = std::fs::read(dir.join(n)).map_err(|e| format!("{n}: {e}"))?;
+        z.start_file(n.as_str(), opts).map_err(|e| e.to_string())?;
+        z.write_all(&body).map_err(|e| e.to_string())?;
+    }
+    z.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn package(
     layout: &Layout,
     board: &Board,
@@ -422,6 +438,11 @@ pub fn package(
     let (placement, placed) = cpl(layout, sch);
     write("cpl.csv".into(), placement)?;
     write("fab-notes.txt".into(), notes(layout, board))?;
+    let gerbers: Vec<String> =
+        files.iter().filter(|f| f.ends_with(".gbr") || f.ends_with(".drl")).cloned().collect();
+    let zip_name = format!("{}-gerbers.zip", layout.name);
+    zip_files(dir, &gerbers, &dir.join(&zip_name))?;
+    files.push(zip_name);
     Ok(Report {
         dir: dir.display().to_string(),
         files,
