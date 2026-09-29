@@ -127,6 +127,7 @@ fn tools() -> Value {
                 "coplanar_gap": { "type": "string" },
                 "no_mask": { "type": "boolean" },
                 "fine": { "type": "boolean" },
+                "sweep": { "type": "string", "description": "loss sweep START,STOP,POINTS, e.g. 10MHz,20GHz,21: R, L, G, C, Z0 and dB/in per frequency with skin effect, stackup roughness and a causal (Djordjevic-Sarkar) dielectric" },
             }), &[]),
         },
         {
@@ -336,6 +337,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                     coplanar_gap: arg(a, "coplanar_gap"),
                     mask: !flag(a, "no_mask"),
                     fine: flag(a, "fine"),
+                    sweep: arg(a, "sweep"),
                 },
             )?;
             Ok(ok(vec![text(pretty(&v))]))

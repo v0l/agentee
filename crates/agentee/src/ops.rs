@@ -624,6 +624,7 @@ pub struct FieldQuery<'a> {
     pub coplanar_gap: Option<&'a str>,
     pub mask: bool,
     pub fine: bool,
+    pub sweep: Option<&'a str>,
 }
 
 pub fn field_solve(p: &Project, q: &FieldQuery) -> Result<Value, String> {
@@ -656,6 +657,30 @@ pub fn field_solve(p: &Project, q: &FieldQuery) -> Result<Value, String> {
     };
     let t0 = std::time::Instant::now();
     let r = agentee_sim::xsection::line(board, q.layer, &trace, q.mask, q.fine)?;
+    let loss = match q.sweep {
+        None => None,
+        Some(spec) => {
+            let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+            let [a, b, n] = parts.as_slice() else {
+                return Err("sweep is START,STOP,POINTS like 10MHz,20GHz,21".into());
+            };
+            let f = |v: &str| agentee_core::sim::freq(v).ok_or(format!("cannot read `{v}`"));
+            let (a, b) = (f(a)?, f(b)?);
+            let n: usize = n.parse().map_err(|_| format!("cannot read `{n}` as a count"))?;
+            let freqs: Vec<f64> = (0..n.max(1))
+                .map(|k| if n <= 1 { a } else { a * (b / a).powf(k as f64 / (n - 1) as f64) })
+                .collect();
+            let model = agentee_sim::loss::Model {
+                roughness: agentee_sim::loss::Roughness {
+                    rms_um: board.stackup.roughness_um,
+                    huray_radius_um: board.stackup.huray.map(|h| h.0),
+                    huray_ratio: board.stackup.huray.map(|h| h.1),
+                },
+                ..Default::default()
+            };
+            Some(agentee_sim::loss::line(board, q.layer, &trace, q.mask, q.fine, &model, &freqs)?)
+        }
+    };
     let pair = match trace.diff_gap {
         Some(_) => Some(agentee_sim::xsection::pair(board, q.layer, &trace, q.mask, q.fine)?),
         None => None,
@@ -672,6 +697,7 @@ pub fn field_solve(p: &Project, q: &FieldQuery) -> Result<Value, String> {
         "solder_mask": q.mask,
         "field": r,
         "pair": pair,
+        "loss": loss,
         "closed_form_uncoated_ohm": formula,
         "seconds": (t0.elapsed().as_secs_f64() * 1000.0).round() / 1000.0,
     }))

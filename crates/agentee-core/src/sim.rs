@@ -577,7 +577,7 @@ pub fn hash(src: &str) -> u64 {
     h
 }
 
-fn freq(s: &str) -> Option<f64> {
+pub fn freq(s: &str) -> Option<f64> {
     let lower = s.trim().to_ascii_lowercase();
     let body = lower.strip_suffix("hz").unwrap_or(&lower).trim();
     let (num, m) = match body.chars().last()? {

@@ -136,6 +136,20 @@ Cohn's zero-thickness stripline and 0.4% of Hammerstad-Jensen microstrip. When t
 target, check suggests the track width that meets it. `agentee calc field --netclass RF` prints
 the full result (Z0, eeff, C and L per metre, delay, grid).
 
+`--sweep 10MHz,20GHz,21` (MCP `sweep`) adds a loss table per frequency: R, L, G, C, Z0 and
+dB per metre and per inch, split into conductor and dielectric loss. Conductor loss comes from
+Wheeler's incremental inductance, solved by receding every copper surface in the field solver
+(within 1% of the Wheeler stripline formula in Pozar), with skin depth from annealed copper and
+the DC resistance blended in as sqrt(Rdc^2 + Rac^2). Dielectrics follow the causal
+Djordjevic-Sarkar model fitted to each layer's `er` and `loss_tangent`, taken as 1 GHz values.
+Copper roughness is set on the stackup:
+
+```toml
+[stackup]
+roughness = "0.5um"            # rms, Hammerstad-Jensen
+# huray = { radius = "0.5um", ratio = 2.0 }   # or the Huray snowball model
+```
+
 A class with `diff_gap` is a pair: its `impedance` is the differential impedance, and the solver
 runs both the odd and even modes. `calc field` then adds a `pair` block with Zdiff, Zcommon, the
 odd and even mode impedances and delays, the coupling coefficient (Ze - Zo)/(Ze + Zo), and the

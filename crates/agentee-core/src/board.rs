@@ -46,8 +46,19 @@ pub struct StackupFile {
     pub mask_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub silk_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub huray: Option<HurayFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<LayerFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HurayFile {
+    pub radius: Length,
+    pub ratio: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,6 +291,8 @@ pub struct Stackup {
     pub finish: String,
     pub mask_color: String,
     pub silk_color: String,
+    pub roughness_um: Option<f64>,
+    pub huray: Option<(f64, f64)>,
     pub layers: Vec<Layer>,
 }
 
@@ -578,6 +591,8 @@ impl BoardFile {
             finish: s.finish.clone().unwrap_or_else(|| "HASL".into()),
             mask_color: s.mask_color.clone().unwrap_or_else(|| "green".into()),
             silk_color: s.silk_color.clone().unwrap_or_else(|| "white".into()),
+            roughness_um: s.roughness.map(|r| r.to_mm() * 1e3),
+            huray: s.huray.as_ref().map(|h| (h.radius.to_mm() * 1e3, h.ratio)),
             layers,
         }
     }

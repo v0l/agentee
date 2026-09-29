@@ -199,6 +199,9 @@ enum Calc {
         no_mask: bool,
         #[arg(long)]
         fine: bool,
+        /// Loss sweep START,STOP,POINTS (log spaced), e.g. 10MHz,20GHz,21
+        #[arg(long)]
+        sweep: Option<String>,
     },
     /// Impedance on a board layer, or the width for a target
     Impedance {
@@ -353,7 +356,18 @@ fn run(cli: Cli) -> Result<bool, String> {
         }
         Cmd::Calc {
             calc:
-                Calc::Field { project, board, layer, width, netclass, gap, coplanar_gap, no_mask, fine },
+                Calc::Field {
+                    project,
+                    board,
+                    layer,
+                    width,
+                    netclass,
+                    gap,
+                    coplanar_gap,
+                    no_mask,
+                    fine,
+                    sweep,
+                },
         } => {
             let p = ops::load(&project)?;
             let v = ops::field_solve(
@@ -367,6 +381,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                     coplanar_gap: coplanar_gap.as_deref(),
                     mask: !no_mask,
                     fine,
+                    sweep: sweep.as_deref(),
                 },
             )?;
             print_json(&v);

@@ -11,6 +11,7 @@ pub struct Grid {
     pub xs: Vec<f64>,
     pub ys: Vec<f64>,
     pub eps: Vec<f32>,
+    pub tan: Vec<f32>,
     pub conductor: Vec<i8>,
 }
 
@@ -58,7 +59,16 @@ pub fn lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) ->
 impl Grid {
     pub fn mesh(xs: Vec<f64>, ys: Vec<f64>) -> Grid {
         let (nx, ny) = (xs.len(), ys.len());
-        Grid { nx, ny, xs, ys, eps: vec![1.0; (nx - 1) * (ny - 1)], conductor: vec![FREE; nx * ny] }
+        let cells = (nx - 1) * (ny - 1);
+        Grid {
+            nx,
+            ny,
+            xs,
+            ys,
+            eps: vec![1.0; cells],
+            tan: vec![0.0; cells],
+            conductor: vec![FREE; nx * ny],
+        }
     }
 
     fn index(v: &[f64], x: f64) -> usize {
@@ -70,6 +80,10 @@ impl Grid {
     }
 
     pub fn dielectric(&mut self, r: Rect, er: f64) {
+        self.lossy(r, er, 0.0);
+    }
+
+    pub fn lossy(&mut self, r: Rect, er: f64, tan: f64) {
         for j in 0..self.ny - 1 {
             let yc = 0.5 * (self.ys[j] + self.ys[j + 1]);
             if yc < r.y0 || yc > r.y1 {
@@ -79,6 +93,7 @@ impl Grid {
                 let xc = 0.5 * (self.xs[i] + self.xs[i + 1]);
                 if xc >= r.x0 && xc <= r.x1 {
                     self.eps[j * (self.nx - 1) + i] = er as f32;
+                    self.tan[j * (self.nx - 1) + i] = tan as f32;
                 }
             }
         }
@@ -142,6 +157,42 @@ impl Grid {
                 _ => 0.0,
             })
             .collect()
+    }
+
+    pub fn materials(&self, phi: &[f32]) -> Vec<(f32, f32, f64)> {
+        let (nx, ny) = (self.nx, self.ny);
+        let mut out: Vec<(f32, f32, f64)> = Vec::new();
+        let add = |c: isize, r: isize, w: f64, out: &mut Vec<(f32, f32, f64)>| {
+            if c < 0 || r < 0 || c >= nx as isize - 1 || r >= ny as isize - 1 || w == 0.0 {
+                return;
+            }
+            let k = r as usize * (nx - 1) + c as usize;
+            let key = (self.eps[k], self.tan[k]);
+            match out.iter_mut().find(|m| m.0 == key.0 && m.1 == key.1) {
+                Some(m) => m.2 += w,
+                None => out.push((key.0, key.1, w)),
+            }
+        };
+        for j in 0..ny as isize {
+            for i in 0..nx as isize {
+                let k = j as usize * nx + i as usize;
+                if (i as usize) + 1 < nx {
+                    let d = (phi[k + 1] - phi[k]) as f64;
+                    let dx = Self::step(&self.xs, i);
+                    let (up, dn) = (Self::step(&self.ys, j - 1), Self::step(&self.ys, j));
+                    add(i, j - 1, up / 2.0 / dx * d * d, &mut out);
+                    add(i, j, dn / 2.0 / dx * d * d, &mut out);
+                }
+                if (j as usize) + 1 < ny {
+                    let d = (phi[k + nx] - phi[k]) as f64;
+                    let dy = Self::step(&self.ys, j);
+                    let (l, r) = (Self::step(&self.xs, i - 1), Self::step(&self.xs, i));
+                    add(i - 1, j, l / 2.0 / dy * d * d, &mut out);
+                    add(i, j, r / 2.0 / dy * d * d, &mut out);
+                }
+            }
+        }
+        out
     }
 
     fn energy(&self, phi: &[f32], ex: &[f32], ey: &[f32]) -> f64 {
@@ -348,13 +399,13 @@ pub fn solve(g: Grid, differential: bool, prefer_gpu: bool, tol: f64) -> Line {
 
 #[derive(Clone, Debug)]
 pub struct Stack {
-    pub above: Vec<(f64, f64)>,
-    pub below: Vec<(f64, f64)>,
+    pub above: Vec<(f64, f64, f64)>,
+    pub below: Vec<(f64, f64, f64)>,
     pub plane_above: bool,
     pub plane_below: bool,
     pub copper: f64,
     pub fill_er: f64,
-    pub mask: Option<(f64, f64)>,
+    pub mask: Option<(f64, f64, f64)>,
 }
 
 #[derive(Clone, Debug)]
@@ -388,8 +439,12 @@ impl Stack {
                         plane = true;
                         break;
                     }
-                    LayerKind::Core | LayerKind::Prepreg => v.push((l.thickness.to_mm(), l.er)),
-                    LayerKind::Mask => mask_layer = Some((l.thickness.to_mm().max(0.005), l.er)),
+                    LayerKind::Core | LayerKind::Prepreg => {
+                        v.push((l.thickness.to_mm(), l.er, l.loss_tangent))
+                    }
+                    LayerKind::Mask => {
+                        mask_layer = Some((l.thickness.to_mm().max(0.005), l.er, l.loss_tangent))
+                    }
                     _ => {}
                 }
             }
@@ -498,13 +553,13 @@ pub fn build_mode(
     let mut fy = vec![top, bottom, 0.0, t];
     let mut feat_y = vec![(0.0, fine), (t, fine)];
     let mut y = 0.0;
-    for (th, _) in &stack.above {
+    for (th, _, _) in &stack.above {
         y -= th;
         fy.push(y);
         feat_y.push((y, (th / 4.0).min(fine * 4.0)));
     }
     let mut y = t;
-    for (th, _) in &stack.below {
+    for (th, _, _) in &stack.below {
         y += th;
         fy.push(y);
         feat_y.push((y, (th / 4.0).min(fine * 4.0)));
@@ -521,25 +576,26 @@ pub fn build_mode(
 
     let full = |y0: f64, y1: f64| Rect { x0: -half, x1: half, y0, y1 };
     let mut y = 0.0;
-    for (th, er) in &stack.above {
-        g.dielectric(full(y - th, y), *er);
+    for (th, er, tan) in &stack.above {
+        g.lossy(full(y - th, y), *er, *tan);
         y -= th;
     }
     if stack.plane_above {
-        g.dielectric(full(0.0, t), stack.fill_er);
+        let tan = stack.above.first().map(|x| x.2).unwrap_or(0.0);
+        g.lossy(full(0.0, t), stack.fill_er, tan);
     }
     let mut y = t;
-    for (th, er) in &stack.below {
-        g.dielectric(full(y, y + th), *er);
+    for (th, er, tan) in &stack.below {
+        g.lossy(full(y, y + th), *er, *tan);
         y += th;
     }
-    if let Some((tm, er)) = mask {
-        g.dielectric(full(t - tm, t), er);
+    if let Some((tm, er, tan)) = mask {
+        g.lossy(full(t - tm, t), er, tan);
         for (a, b, _) in &strips {
-            g.dielectric(Rect { x0: a - tm, x1: b + tm, y0: -tm, y1: t }, er);
+            g.lossy(Rect { x0: a - tm, x1: b + tm, y0: -tm, y1: t }, er, tan);
         }
         for (a, b) in &grounds {
-            g.dielectric(Rect { x0: a - tm, x1: b + tm, y0: -tm, y1: t }, er);
+            g.lossy(Rect { x0: a - tm, x1: b + tm, y0: -tm, y1: t }, er, tan);
         }
     }
     for (a, b, what) in &strips {
@@ -560,7 +616,7 @@ pub fn build_mode(
 pub fn line_raw(w: f64, h: f64, t: f64, er: f64) -> Result<Line, String> {
     let stack = Stack {
         above: vec![],
-        below: vec![(h, er)],
+        below: vec![(h, er, 0.0)],
         plane_above: false,
         plane_below: true,
         copper: t,
@@ -658,8 +714,8 @@ mod tests {
 
     fn stripline(h: f64, er: f64) -> Stack {
         Stack {
-            above: vec![(h, er)],
-            below: vec![(h, er)],
+            above: vec![(h, er, 0.0)],
+            below: vec![(h, er, 0.0)],
             plane_above: true,
             plane_below: true,
             copper: 0.0,
@@ -671,7 +727,7 @@ mod tests {
     fn microstrip(h: f64, er: f64) -> Stack {
         Stack {
             above: vec![],
-            below: vec![(h, er)],
+            below: vec![(h, er, 0.0)],
             plane_above: false,
             plane_below: true,
             copper: 0.0,
