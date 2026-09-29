@@ -32,6 +32,7 @@ pub struct PageState {
     pub map_key: Option<(u64, usize, usize)>,
     pub map_tex: Option<egui::TextureHandle>,
     pub map_values: Vec<f32>,
+    pub show_fields: bool,
 }
 
 impl Default for PageState {
@@ -55,6 +56,7 @@ impl Default for PageState {
             map_key: None,
             map_tex: None,
             map_values: Vec::new(),
+            show_fields: false,
         }
     }
 }
@@ -929,8 +931,25 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             ui.add_space(8.0);
         }
         if let Some(m) = &s.maps {
-            crate::heat::canvas(ui, project, s, index, m, st);
+            crate::heat::canvas(ui, project, s, index, &m.maps, st);
             return;
+        }
+        if let Some(r) = &s.result
+            && !r.maps.is_empty()
+        {
+            ui.horizontal(|ui| {
+                if toggle(ui, "s-parameters", !st.show_fields).clicked() {
+                    st.show_fields = false;
+                }
+                if toggle(ui, "fields", st.show_fields).clicked() {
+                    st.show_fields = true;
+                }
+            });
+            ui.add_space(6.0);
+            if st.show_fields {
+                crate::heat::canvas(ui, project, s, index, &r.maps, st);
+                return;
+            }
         }
         let Some(r) = &s.result else {
             if st.sim_progress.is_some() {
@@ -1033,6 +1052,12 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
             }
         });
         ui.add_space(6.0);
+    }
+    if let Some(r) = &s.result
+        && !r.readings.is_empty()
+    {
+        crate::heat::readings(ui, &r.readings);
+        ui.add_space(8.0);
     }
     Line::new().legend("ports").show(ui);
     let cols = [("#", 26.0), ("name", 90.0), ("pad", 70.0), ("layers", 124.0), ("z", 50.0)];

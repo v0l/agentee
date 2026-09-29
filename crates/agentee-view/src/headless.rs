@@ -61,7 +61,27 @@ pub fn render_rgba(
         layers.hidden.extend(opts.hide.iter().cloned());
     }
     if let ItemRef::Sim(i) = item {
-        st.sim_progress = agentee_core::sim::SimProgress::load(&project.sims[i].path);
+        let s = &project.sims[i];
+        st.sim_progress = agentee_core::sim::SimProgress::load(&s.path);
+        st.show_fields = opts.show.iter().any(|x| x == "fields");
+        let maps = s.item.maps.as_ref().map(|m| &m.maps[..]).or(s
+            .item
+            .result
+            .as_ref()
+            .map(|r| &r.maps[..]));
+        if let Some(maps) = maps {
+            let hits = |m: &agentee_core::sim::LayerMap| {
+                opts.show.iter().filter(|x| **x == m.quantity || **x == m.layer).count()
+            };
+            if let Some((k, _)) = maps
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| hits(m) > 0)
+                .max_by_key(|(k, m)| (hits(m), usize::MAX - k))
+            {
+                st.map_index = k;
+            }
+        }
     }
     st.region = opts.region.map(|[x0, y0, x1, y1]| {
         let mut b = agentee_core::graphic::Bounds::EMPTY;

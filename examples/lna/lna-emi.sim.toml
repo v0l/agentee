@@ -1,0 +1,34 @@
+name = "lna-emi"
+description = "The amplifier output driving J2, with field maps between F.Cu and In1.Cu and the far field at 1090 MHz and 2.4 GHz. Emissions are per 1 mW into the line."
+layout = "lna"
+cell = 0.1
+excite = ["AMP_OUT"]
+fields = ["1090MHz", "2.4GHz"]
+far_field = true
+
+[frequency]
+start = "100MHz"
+stop = "4GHz"
+points = 391
+
+[[ports]]
+name = "IN"
+pad = "J1.1"
+reference = "In2.Cu"
+
+[[ports]]
+name = "AMP_IN"
+pad = "U1.1"
+
+[[ports]]
+name = "AMP_OUT"
+pad = "U1.3"
+
+[[ports]]
+name = "OUT"
+pad = "J2.1"
+reference = "In2.Cu"
+
+[[models]]
+ref = "D3"
+capacitor = "0.23pF"

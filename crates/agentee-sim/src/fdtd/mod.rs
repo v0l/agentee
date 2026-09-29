@@ -1,5 +1,6 @@
 pub mod engine;
 pub mod model;
+pub mod ntff;
 pub mod run;
 
 use agentee_core::sim::SimResult;
@@ -8,6 +9,10 @@ use model::{Meshing, PcbModel};
 
 pub struct Plan {
     pub sim: Sim,
+    pub fields: Vec<f64>,
+    pub far_field: bool,
+    pub plane_k: Option<usize>,
+    pub map_bounds: Option<([f64; 2], [f64; 2])>,
     pub f_start: f64,
     pub f_stop: f64,
     pub points: usize,
@@ -26,7 +31,26 @@ pub fn plan(
 ) -> Result<Plan, String> {
     let opt = Meshing { cell, f_max: f_stop, margin: 1.5, pml: 8, f0: 0.5 * (f_start + f_stop) };
     let sim = model.build(&opt)?;
-    Ok(Plan { sim, f_start, f_stop, points, excite, max_steps })
+    let plane_k = (model.sheets.len() >= 2).then(|| {
+        let a = sim.grid.nearest(2, model.sheets[0].z * 1e-3);
+        let b = sim.grid.nearest(2, model.sheets[1].z * 1e-3);
+        (a + b) / 2
+    });
+    let mut bb = agentee_core::graphic::Bounds::EMPTY;
+    model.outline.iter().for_each(|p| bb.add(*p));
+    let map_bounds = (!bb.is_empty()).then_some((bb.min, bb.max));
+    Ok(Plan {
+        sim,
+        f_start,
+        f_stop,
+        points,
+        excite,
+        max_steps,
+        fields: Vec::new(),
+        far_field: false,
+        plane_k,
+        map_bounds,
+    })
 }
 
 fn dft(
@@ -76,6 +100,8 @@ pub fn execute(
         .collect();
     let mut s = vec![vec![vec![[0.0, 0.0]; freqs.len()]; np]; np];
     let mut excited = vec![false; np];
+    let mut maps = Vec::new();
+    let mut readings = Vec::new();
     let mut steps = Vec::new();
     let pulse = run::Pulse {
         f0: 0.5 * (plan.f_start + plan.f_stop),
@@ -84,15 +110,21 @@ pub fn execute(
     let min_steps = ((1.5 / plan.f_start) / sim.dt) as usize;
     for &j in &plan.excite {
         let label = sim.ports[j].name.clone();
-        let rec = run::run(
-            sim,
-            j,
-            &pulse,
-            min_steps.min(plan.max_steps),
-            plan.max_steps,
-            40.0,
-            &mut |n, db| progress(&label, n, db),
-        )?;
+        let patches = if plan.far_field && !plan.fields.is_empty() {
+            Some(ntff::patches(sim, 3))
+        } else {
+            None
+        };
+        let extras = run::Extras {
+            min_steps: min_steps.min(plan.max_steps),
+            max_steps: plan.max_steps,
+            decay_db: 40.0,
+            freqs: plan.fields.clone(),
+            plane_k: if plan.fields.is_empty() { None } else { plan.plane_k },
+            ntff: patches.as_ref().map(|p| p.gpu.clone()),
+        };
+        let rec = run::run(sim, j, &pulse, &extras, &mut |n, db| progress(&label, n, db))?;
+        extra_outputs(plan, &rec, j, &label, &patches, &mut maps, &mut readings);
         steps.push(rec.steps);
         excited[j] = true;
         for (fi, f) in freqs.iter().enumerate() {
@@ -126,7 +158,123 @@ pub fn execute(
         seconds: t0.elapsed().as_secs_f64(),
         device: crate::gpu::gpu().map(|g| g.name.clone()).unwrap_or_default(),
         spec_hash,
+        maps,
+        readings,
     })
+}
+
+fn tag(plan: &Plan, f: f64, port: &str) -> String {
+    if plan.excite.len() > 1 { format!("{} {port}", freq_label(f)) } else { freq_label(f) }
+}
+
+fn freq_label(f: f64) -> String {
+    if f >= 1e9 {
+        format!("{} GHz", agentee_core::units::trim(f / 1e9, 3))
+    } else {
+        format!("{} MHz", agentee_core::units::trim(f / 1e6, 1))
+    }
+}
+
+fn extra_outputs(
+    plan: &Plan,
+    rec: &run::Record,
+    j: usize,
+    label: &str,
+    patches: &Option<ntff::Patches>,
+    maps: &mut Vec<agentee_core::sim::LayerMap>,
+    readings: &mut Vec<agentee_core::sim::Reading>,
+) {
+    let sim = &plan.sim;
+    let np = sim.ports.len();
+    let incident = |f: f64| -> (f64, f64) {
+        let v = dft(&rec.series, np, j, 0, f, sim.dt, false);
+        let i = dft(&rec.series, np, j, 1, f, sim.dt, true);
+        let r = sim.ports[j].r;
+        ((v.0 + r * i.0) / (2.0 * r.sqrt()), (v.1 + r * i.1) / (2.0 * r.sqrt()))
+    };
+    let nf = plan.fields.len().min(4);
+    if !rec.plane.is_empty()
+        && let Some((lo, hi)) = plan.map_bounds
+    {
+        let n0 = sim.dims();
+        let cell = 0.05f64.max((hi[0] - lo[0]).max(hi[1] - lo[1]) / 600.0);
+        let (w, h) = (
+            ((hi[0] - lo[0]) / cell).ceil() as usize + 1,
+            ((hi[1] - lo[1]) / cell).ceil() as usize + 1,
+        );
+        for (k, f) in plan.fields.iter().take(nf).enumerate() {
+            let a = incident(*f);
+            let scale = (2e-3f64).sqrt() / (a.0 * a.0 + a.1 * a.1).sqrt().max(1e-30);
+            let mut e = vec![f32::NAN; w * h];
+            let mut hm = vec![f32::NAN; w * h];
+            for yy in 0..h {
+                for xx in 0..w {
+                    let (x, y) =
+                        ((lo[0] + xx as f64 * cell) * 1e-3, (lo[1] + yy as f64 * cell) * 1e-3);
+                    let (i, jj) = (sim.grid.nearest(0, x), sim.grid.nearest(1, y));
+                    let b = ((i * n0[1] + jj) * nf + k) * 10;
+                    let mag = |c: usize| {
+                        (rec.plane[b + 2 * c] as f64).powi(2)
+                            + (rec.plane[b + 2 * c + 1] as f64).powi(2)
+                    };
+                    e[yy * w + xx] = (20.0
+                        * ((mag(0) + mag(1) + mag(2)).sqrt() * scale).max(1e-9).log10())
+                        as f32;
+                    hm[yy * w + xx] =
+                        (20.0 * ((mag(3) + mag(4)).sqrt() * scale).max(1e-9).log10()) as f32;
+                }
+            }
+            for v in [&mut e, &mut hm] {
+                let top = v.iter().cloned().fold(f32::MIN, f32::max);
+                v.iter_mut().for_each(|x| *x = x.max(top - 60.0));
+            }
+            let grid = agentee_core::sim::MapGrid { origin: lo, cell, width: w, height: h };
+            let layer = tag(plan, *f, label);
+            maps.push(agentee_core::sim::LayerMap::encode(&layer, "E at 1 mW", "dBV/m", grid, &e));
+            maps.push(agentee_core::sim::LayerMap::encode(&layer, "H at 1 mW", "dBA/m", grid, &hm));
+        }
+    }
+    let Some(p) = patches else { return };
+    if rec.ntff.is_empty() {
+        return;
+    }
+    for (k, f) in plan.fields.iter().take(nf).enumerate() {
+        let a = incident(*f);
+        let norm = std::f64::consts::SQRT_2 / (a.0 * a.0 + a.1 * a.1).max(1e-60);
+        let (ar, ai) = (a.0 * norm, -a.1 * norm);
+        let n_p = p.pos.len();
+        let mut jv = Vec::with_capacity(n_p);
+        let mut mv = Vec::with_capacity(n_p);
+        for q in 0..n_p {
+            let o = (q * nf + k) * 12;
+            let c = |x: usize| {
+                let (re, im) = (rec.ntff[o + x] as f64, rec.ntff[o + x + 1] as f64);
+                (re * ar - im * ai, re * ai + im * ar)
+            };
+            jv.push([c(0), c(2), c(4)]);
+            mv.push([c(6), c(8), c(10)]);
+        }
+        let far = ntff::Far { pos: &p.pos, area: &p.area, j: jv, m: mv, freq: *f };
+        let (prad, umax) = far.radiated(18);
+        let e3 = (engine::ETA0 * umax * 1e-3).sqrt() / 3.0;
+        let dbuv = 20.0 * (e3 * 1e6).max(1e-30).log10();
+        let limit = ntff::fcc_class_b_dbuv(*f);
+        readings.push(agentee_core::sim::Reading {
+            label: format!("radiated {}", tag(plan, *f, label)),
+            value: prad * 100.0,
+            unit: "%".into(),
+            detail: format!(
+                "directivity {:.1} dBi",
+                10.0 * (4.0 * std::f64::consts::PI * umax / prad.max(1e-30)).log10()
+            ),
+        });
+        readings.push(agentee_core::sim::Reading {
+            label: format!("E at 3 m {}", tag(plan, *f, label)),
+            value: dbuv,
+            unit: "dBuV/m".into(),
+            detail: format!("1 mW in, FCC B {limit}, margin {:.1} dB", limit - dbuv),
+        });
+    }
 }
 
 pub fn touchstone(r: &SimResult) -> String {
@@ -202,7 +350,11 @@ mod tests {
             features_y: vec![-w / 2.0, w / 2.0],
             region: None,
         };
-        let p = plan(&m, 0.5e9, 4e9, 36, 0.12, vec![0], 80_000).unwrap();
+        let mut p = plan(&m, 0.5e9, 4e9, 36, 0.12, vec![0], 80_000).unwrap();
+        if len < 30.0 {
+            p.fields = vec![2e9, 3.5e9];
+            p.far_field = true;
+        }
         execute(&p, "line", 0, &mut |_, _, _| {}).unwrap()
     }
 
@@ -235,6 +387,28 @@ mod tests {
             assert!(r.db(0, 0).iter().all(|v| *v < -25.0), "{:?}", r.db(0, 0));
         }
         let k = a.freqs.iter().position(|f| *f >= 2e9).unwrap();
+        for f in [2e9, 3.5e9] {
+            let i = a.freqs.iter().position(|x| *x >= f - 1.0).unwrap();
+            let lost = 1.0 - 10f64.powf(a.db(0, 0)[i] / 10.0) - 10f64.powf(a.db(1, 0)[i] / 10.0);
+            let rad = a
+                .readings
+                .iter()
+                .find(|r| {
+                    r.label.contains("radiated")
+                        && r.label.contains(if f < 3e9 { "2 GHz" } else { "3.5 GHz" })
+                })
+                .unwrap()
+                .value
+                / 100.0;
+            eprintln!(
+                "{} GHz: radiated {:.3}%, lost from S {:.3}%",
+                f / 1e9,
+                rad * 100.0,
+                lost * 100.0
+            );
+            assert!(rad >= 0.0 && rad <= lost.max(0.0) + 0.01, "{rad} {lost}");
+        }
+        assert_eq!(a.maps.len(), 4);
         let per_mm = (delay(&b, k) - delay(&a, k)) / 20.0;
         let reference = 3.4388f64.sqrt() / engine::C0 * 1e-3;
         eprintln!("{:.3} ps/mm, Kirschning-Jansen {:.3} ps/mm", per_mm * 1e12, reference * 1e12);

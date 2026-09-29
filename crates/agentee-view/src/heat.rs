@@ -48,7 +48,7 @@ fn image(m: &LayerMap, values: &[f32]) -> ColorImage {
 
 fn fmt(v: f32, unit: &str) -> String {
     let a = v.abs();
-    let s = if a >= 100.0 {
+    let s = if unit.starts_with("dB") || a >= 100.0 {
         format!("{v:.1}")
     } else if a >= 1.0 {
         format!("{v:.3}")
@@ -63,13 +63,16 @@ pub fn canvas(
     project: &Project,
     s: &agentee_core::sim::Sim,
     index: usize,
-    r: &MapResult,
+    maps: &[LayerMap],
     st: &mut PageState,
 ) {
+    if maps.is_empty() {
+        return;
+    }
     let layout = project.layouts.iter().find(|l| l.name == s.layout).map(|l| &l.item);
     let unique = |f: &dyn Fn(&LayerMap) -> String| {
         let mut v: Vec<String> = Vec::new();
-        for m in &r.maps {
+        for m in maps {
             let x = f(m);
             if !v.contains(&x) {
                 v.push(x);
@@ -79,12 +82,12 @@ pub fn canvas(
     };
     let quantities = unique(&|m| m.quantity.clone());
     let layers = unique(&|m| m.layer.clone());
-    let current = r.maps.get(st.map_index).cloned().unwrap_or_else(|| r.maps[0].clone());
+    let current = maps.get(st.map_index).cloned().unwrap_or_else(|| maps[0].clone());
     ui.horizontal(|ui| {
         for q in &quantities {
             if toggle(ui, q, *q == current.quantity).clicked()
                 && let Some(k) =
-                    r.maps.iter().position(|m| &m.quantity == q && m.layer == current.layer)
+                    maps.iter().position(|m| &m.quantity == q && m.layer == current.layer)
             {
                 st.map_index = k;
             }
@@ -93,7 +96,7 @@ pub fn canvas(
         for l in &layers {
             if toggle(ui, l, *l == current.layer).clicked()
                 && let Some(k) =
-                    r.maps.iter().position(|m| &m.layer == l && m.quantity == current.quantity)
+                    maps.iter().position(|m| &m.layer == l && m.quantity == current.quantity)
             {
                 st.map_index = k;
             }
@@ -239,10 +242,14 @@ pub fn props(ui: &mut Ui, s: &agentee_core::sim::Sim, r: &MapResult, rail: Color
         },
     );
     ui.add_space(8.0);
+    readings(ui, &r.readings);
+}
+
+pub fn readings(ui: &mut Ui, list: &[agentee_core::sim::Reading]) {
     Line::new().legend("readings").show(ui);
     let cols = [("what", 150.0), ("value", 90.0), ("detail", 150.0)];
-    Table::new(&cols, r.readings.len()).show(ui, |i, p, row, at| {
-        let x = &r.readings[i];
+    Table::new(&cols, list.len()).show(ui, |i, p, row, at| {
+        let x = &list[i];
         cell(p, row, at(0), cols[0].1, &x.label, VALUE);
         cell(p, row, at(1), cols[1].1, &fmt(x.value as f32, &x.unit), TRACE);
         cell(p, row, at(2), cols[2].1, &x.detail, LEGEND);

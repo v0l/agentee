@@ -375,7 +375,7 @@ pub fn run_sim(
         }));
     }
     let model = agentee_sim::fdtd::model::PcbModel::from_layout(&layout.item, &board.item, spec)?;
-    let plan = agentee_sim::fdtd::plan(
+    let mut plan = agentee_sim::fdtd::plan(
         &model,
         spec.start,
         spec.stop,
@@ -384,6 +384,8 @@ pub fn run_sim(
         spec.excite.clone(),
         spec.max_steps,
     )?;
+    plan.fields = spec.fields.clone();
+    plan.far_field = spec.far_field;
     if dry {
         let g = &plan.sim.grid;
         let min = |v: &[f64]| v.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min) * 1e3;
@@ -459,6 +461,7 @@ pub fn run_sim(
         "result": json_path,
         "touchstone": touch,
         "summary": table,
+        "readings": result.readings,
     }))
 }
 

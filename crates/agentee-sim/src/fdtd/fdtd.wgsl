@@ -17,6 +17,11 @@ struct Params {
     probes: u32,
     pad: u32,
     base: vec4<u32>,
+    omega: vec4<f32>,
+    nf: u32,
+    plane_k: u32,
+    plane_n: u32,
+    patches: u32,
 }
 
 @group(0) @binding(0) var<storage, read_write> e: array<f32>;
@@ -35,6 +40,9 @@ struct Params {
 @group(1) @binding(2) var<storage, read_write> partial: array<f32>;
 @group(1) @binding(3) var<storage, read> port_edges: array<f32>;
 @group(1) @binding(4) var<storage, read> loops: array<f32>;
+@group(1) @binding(5) var<storage, read_write> plane_acc: array<f32>;
+@group(1) @binding(6) var<storage, read> patch_idx: array<u32>;
+@group(1) @binding(7) var<storage, read_write> ntff_acc: array<f32>;
 
 const STRIDE: u32 = 10u;
 
@@ -221,4 +229,66 @@ fn energy(@builtin(global_invocation_id) g: vec3<u32>, @builtin(local_invocation
         workgroupBarrier();
     }
     if l.x == 0u { partial[w.x] = scratch[0]; }
+}
+
+@compute @workgroup_size(64, 1, 1)
+fn field_dft(@builtin(global_invocation_id) g: vec3<u32>) {
+    let q = g.x;
+    if q >= P.plane_n { return; }
+    let i = q / P.n1;
+    let j = q % P.n1;
+    let id = (i * P.n1 + j) * P.n2 + P.plane_k;
+    let n = state[0];
+    let te = (f32(n) + 1.0) * P.dt;
+    let th = (f32(n) + 0.5) * P.dt;
+    let f = array<f32, 5>(e_ro[id], e_ro[P.nn + id], e_ro[2u * P.nn + id], h_ro[id], h_ro[P.nn + id]);
+    for (var k = 0u; k < P.nf; k++) {
+        let w = P.omega[k];
+        let ce = vec2<f32>(cos(w * te), -sin(w * te)) * P.dt;
+        let ch = vec2<f32>(cos(w * th), -sin(w * th)) * P.dt;
+        let b = (q * P.nf + k) * 10u;
+        for (var c = 0u; c < 5u; c++) {
+            let ph = select(ce, ch, c >= 3u);
+            plane_acc[b + 2u * c] += f[c] * ph.x;
+            plane_acc[b + 2u * c + 1u] += f[c] * ph.y;
+        }
+    }
+}
+
+@compute @workgroup_size(64, 1, 1)
+fn ntff(@builtin(global_invocation_id) g: vec3<u32>) {
+    if g.x >= P.patches { return; }
+    let n = state[0];
+    let b = g.x * 13u;
+    let meta_ = patch_idx[b];
+    let axis = meta_ & 3u;
+    let side = select(-1.0, 1.0, (meta_ & 4u) != 0u);
+    let u = (axis + 1u) % 3u;
+    let v = (axis + 2u) % 3u;
+    var ef = array<f32, 3>(0.0, 0.0, 0.0);
+    var hf = array<f32, 3>(0.0, 0.0, 0.0);
+    ef[u] = 0.5 * (e_ro[u * P.nn + patch_idx[b + 1u]] + e_ro[u * P.nn + patch_idx[b + 2u]]);
+    ef[v] = 0.5 * (e_ro[v * P.nn + patch_idx[b + 3u]] + e_ro[v * P.nn + patch_idx[b + 4u]]);
+    hf[u] = 0.25 * (h_ro[u * P.nn + patch_idx[b + 5u]] + h_ro[u * P.nn + patch_idx[b + 6u]]
+        + h_ro[u * P.nn + patch_idx[b + 7u]] + h_ro[u * P.nn + patch_idx[b + 8u]]);
+    hf[v] = 0.25 * (h_ro[v * P.nn + patch_idx[b + 9u]] + h_ro[v * P.nn + patch_idx[b + 10u]]
+        + h_ro[v * P.nn + patch_idx[b + 11u]] + h_ro[v * P.nn + patch_idx[b + 12u]]);
+    var nrm = array<f32, 3>(0.0, 0.0, 0.0);
+    nrm[axis] = side;
+    let jv = vec3<f32>(nrm[1] * hf[2] - nrm[2] * hf[1], nrm[2] * hf[0] - nrm[0] * hf[2], nrm[0] * hf[1] - nrm[1] * hf[0]);
+    let mv = vec3<f32>(ef[1] * nrm[2] - ef[2] * nrm[1], ef[2] * nrm[0] - ef[0] * nrm[2], ef[0] * nrm[1] - ef[1] * nrm[0]);
+    let te = (f32(n) + 1.0) * P.dt;
+    let th = (f32(n) + 0.5) * P.dt;
+    for (var k = 0u; k < P.nf; k++) {
+        let wf = P.omega[k];
+        let pe = vec2<f32>(cos(-wf * te), sin(-wf * te)) * P.dt;
+        let ph = vec2<f32>(cos(-wf * th), sin(-wf * th)) * P.dt;
+        let o = (g.x * P.nf + k) * 12u;
+        for (var c = 0u; c < 3u; c++) {
+            ntff_acc[o + 2u * c] += ph.x * jv[c];
+            ntff_acc[o + 2u * c + 1u] += ph.y * jv[c];
+            ntff_acc[o + 6u + 2u * c] += pe.x * mv[c];
+            ntff_acc[o + 6u + 2u * c + 1u] += pe.y * mv[c];
+        }
+    }
 }

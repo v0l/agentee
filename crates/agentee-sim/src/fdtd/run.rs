@@ -20,6 +20,21 @@ struct Params {
     probes: u32,
     pad: u32,
     base: [u32; 4],
+    omega: [f32; 4],
+    nf: u32,
+    plane_k: u32,
+    plane_n: u32,
+    patches: u32,
+}
+
+#[derive(Clone, Default)]
+pub struct Extras {
+    pub min_steps: usize,
+    pub max_steps: usize,
+    pub decay_db: f64,
+    pub freqs: Vec<f64>,
+    pub plane_k: Option<usize>,
+    pub ntff: Option<Vec<u32>>,
 }
 
 pub struct Pulse {
@@ -32,6 +47,8 @@ pub struct Record {
     pub ports: usize,
     pub series: Vec<f32>,
     pub decay_db: f64,
+    pub plane: Vec<f32>,
+    pub ntff: Vec<f32>,
 }
 
 fn psi_len(n: [usize; 3], axis: usize, pml: usize) -> usize {
@@ -42,11 +59,10 @@ pub fn run(
     sim: &Sim,
     driven: usize,
     pulse: &Pulse,
-    min_steps: usize,
-    max_steps: usize,
-    decay_db: f64,
+    extras: &Extras,
     progress: &mut dyn FnMut(usize, f64),
 ) -> Result<Record, String> {
+    let (min_steps, max_steps, decay_db) = (extras.min_steps, extras.max_steps, extras.decay_db);
     let g: &Gpu = gpu().ok_or("no GPU adapter for the FDTD run")?;
     let n = sim.dims();
     let nn = n[0] * n[1] * n[2];
@@ -170,7 +186,21 @@ pub fn run(
         probes: ports as u32,
         pad: 0,
         base: [0, n[0] as u32, (n[0] + n[1]) as u32, 0],
+        omega: {
+            let mut w = [0f32; 4];
+            for (k, f) in extras.freqs.iter().take(4).enumerate() {
+                w[k] = (2.0 * std::f64::consts::PI * f) as f32;
+            }
+            w
+        },
+        nf: extras.freqs.len().min(4) as u32,
+        plane_k: extras.plane_k.unwrap_or(0) as u32,
+        plane_n: if extras.plane_k.is_some() { (n[0] * n[1]) as u32 } else { 0 },
+        patches: extras.ntff.as_ref().map(|v| v.len() / 13).unwrap_or(0) as u32,
     };
+    let nf = extras.freqs.len().min(4);
+    let plane_len = if extras.plane_k.is_some() { n[0] * n[1] * nf * 10 } else { 0 };
+    let patches = extras.ntff.as_ref().map(|v| v.len() / 13).unwrap_or(0);
     let nonempty = |v: Vec<f32>| if v.is_empty() { vec![0.0f32; 4] } else { v };
     let b_e = g.zeroed("e", (3 * nn * 4) as u64);
     let b_h = g.zeroed("h", (3 * nn * 4) as u64);
@@ -186,6 +216,12 @@ pub fn run(
     let b_partial = g.zeroed("partial", 1024 * 4);
     let b_edges = g.storage("edges", &nonempty(port_edges));
     let b_loops = g.storage("loops", &nonempty(loops));
+    let b_plane = g.zeroed("plane", (plane_len.max(1) * 4) as u64);
+    let b_patch = g.storage(
+        "patch_idx",
+        &extras.ntff.clone().filter(|v| !v.is_empty()).unwrap_or(vec![0u32; 13]),
+    );
+    let b_ntff = g.zeroed("ntff", ((patches * nf * 12).max(1) * 4) as u64);
     let module = unsafe {
         g.device.create_shader_module_trusted(
             wgpu::ShaderModuleDescriptor {
@@ -208,8 +244,16 @@ pub fn run(
         (9, &b_h),
         (10, &b_h),
     ];
-    let group1: [(u32, &wgpu::Buffer); 5] =
-        [(0, &b_inductor), (1, &b_probe), (2, &b_partial), (3, &b_edges), (4, &b_loops)];
+    let group1: [(u32, &wgpu::Buffer); 8] = [
+        (0, &b_inductor),
+        (1, &b_probe),
+        (2, &b_partial),
+        (3, &b_edges),
+        (4, &b_loops),
+        (5, &b_plane),
+        (6, &b_patch),
+        (7, &b_ntff),
+    ];
     let make = |entry: &str, uses0: &[u32], uses1: &[u32]| {
         let pipe = g.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some(entry),
@@ -245,13 +289,22 @@ pub fn run(
     };
     let grid = [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), n[0] as u32];
     let lumped_n = (sim.port_src[driven].len().max(sim.inductors.len()) as u32).div_ceil(64).max(1);
-    let pipes = vec![
+    let mut pipes = vec![
         (make("update_h", &[2, 3, 4, 8, 9], &[]), grid),
         (make("update_e", &[0, 1, 2, 3, 4, 10], &[]), grid),
         (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),
         (make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [(ports as u32).div_ceil(64), 1, 1]),
-        (make("tick", &[5], &[]), [1, 1, 1]),
     ];
+    if plane_len > 0 {
+        pipes.push((
+            make("field_dft", &[4, 5, 8, 10], &[5]),
+            [((n[0] * n[1]) as u32).div_ceil(64), 1, 1],
+        ));
+    }
+    if patches > 0 && nf > 0 {
+        pipes.push((make("ntff", &[4, 5, 8, 10], &[6, 7]), [(patches as u32).div_ceil(64), 1, 1]));
+    }
+    pipes.push((make("tick", &[5], &[]), [1, 1, 1]));
     let energy = make("energy", &[4, 8], &[2]);
     let chunk = 1000;
     let mut steps = 0;
@@ -293,5 +346,7 @@ pub fn run(
         }
     }
     let series: Vec<f32> = g.read(&b_series, steps * ports * 2);
-    Ok(Record { steps, ports, series, decay_db: decay })
+    let plane = if plane_len > 0 { g.read(&b_plane, plane_len) } else { Vec::new() };
+    let ntff = if patches > 0 && nf > 0 { g.read(&b_ntff, patches * nf * 12) } else { Vec::new() };
+    Ok(Record { steps, ports, series, decay_db: decay, plane, ntff })
 }

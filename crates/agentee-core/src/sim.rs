@@ -77,6 +77,10 @@ pub struct SimFile {
     pub loads: Vec<LoadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<LinkFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub far_field: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -337,6 +341,8 @@ pub struct Sim {
     pub supplies: Vec<Supply>,
     pub loads: Vec<Load>,
     pub links: Vec<Link>,
+    pub fields: Vec<f64>,
+    pub far_field: bool,
     #[serde(skip)]
     pub maps: Option<MapResult>,
     pub description: String,
@@ -369,6 +375,10 @@ pub struct SimResult {
     pub seconds: f64,
     pub device: String,
     pub spec_hash: u64,
+    #[serde(default)]
+    pub maps: Vec<LayerMap>,
+    #[serde(default)]
+    pub readings: Vec<Reading>,
 }
 
 impl SimResult {
@@ -761,6 +771,23 @@ impl SimFile {
                 })
                 .collect()
         };
+        let fields: Vec<f64> = self
+            .fields
+            .iter()
+            .filter_map(|f| {
+                let v = freq(f);
+                if v.is_none() {
+                    d.error("fields", format!("cannot read the frequency `{f}`"));
+                }
+                v
+            })
+            .collect();
+        if fields.len() > 4 {
+            d.error("fields", "at most four field frequencies per run");
+        }
+        if self.far_field && fields.is_empty() {
+            d.error("far_field", "far_field needs `fields`, the frequencies to compute it at");
+        }
         let cell = self.cell.map(Length::to_mm).unwrap_or(if kind == SimKind::Thermal {
             0.2
         } else {
@@ -779,6 +806,8 @@ impl SimFile {
             supplies,
             loads,
             links,
+            fields,
+            far_field: self.far_field,
             maps: None,
             description: self.description.clone(),
             layout: layout.name.clone(),
