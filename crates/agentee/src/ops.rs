@@ -376,8 +376,34 @@ pub fn run_sim(
             "inductor_edges": plan.sim.inductors.len(),
         }));
     }
-    let result =
-        agentee_sim::fdtd::execute(&plan, &spec.name, agentee_core::sim::hash(&src), progress)?;
+    let progress_file = agentee_core::sim::progress_path(&entry.path);
+    let started = agentee_core::sim::now();
+    let ports: Vec<String> = spec.excite.iter().map(|j| spec.ports[*j].name.clone()).collect();
+    let mut last_write = std::time::Instant::now() - std::time::Duration::from_secs(5);
+    let mut report = |port: &str, steps: usize, db: f64| {
+        progress(port, steps, db);
+        if last_write.elapsed().as_millis() >= 500 {
+            last_write = std::time::Instant::now();
+            let state = agentee_core::sim::SimProgress {
+                run: ports.iter().position(|p| p == port).unwrap_or(0),
+                runs: ports.len(),
+                port: port.to_string(),
+                steps,
+                max_steps: spec.max_steps,
+                decay_db: db,
+                started,
+                updated: agentee_core::sim::now(),
+                pid: std::process::id(),
+            };
+            if let Ok(text) = serde_json::to_string(&state) {
+                let _ = std::fs::write(&progress_file, text);
+            }
+        }
+    };
+    let outcome =
+        agentee_sim::fdtd::execute(&plan, &spec.name, agentee_core::sim::hash(&src), &mut report);
+    let _ = std::fs::remove_file(&progress_file);
+    let result = outcome?;
     let json_path = agentee_core::sim::result_path(&entry.path);
     std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;

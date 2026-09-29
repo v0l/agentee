@@ -74,7 +74,7 @@ pub fn execute(
             plan.f_start + (plan.f_stop - plan.f_start) * i as f64 / (plan.points - 1).max(1) as f64
         })
         .collect();
-    let mut s = vec![vec![vec![[f64::NAN, f64::NAN]; freqs.len()]; np]; np];
+    let mut s = vec![vec![vec![[0.0, 0.0]; freqs.len()]; np]; np];
     let mut excited = vec![false; np];
     let mut steps = Vec::new();
     let pulse = run::Pulse {

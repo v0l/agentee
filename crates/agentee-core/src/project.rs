@@ -288,6 +288,7 @@ impl Project {
                         "the spec changed since the last run, the result shown is stale",
                     );
                     item.result = Some(r);
+                    item.stale = true;
                 }
                 None => d.info("result", "not run yet, `agentee sim` runs it"),
             }

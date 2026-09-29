@@ -27,6 +27,7 @@ pub struct PageState {
     pub zone_tex: Vec<egui::TextureHandle>,
     pub region: Option<agentee_core::graphic::Bounds>,
     pub hidden_curves: Vec<(usize, usize)>,
+    pub sim_progress: Option<agentee_core::sim::SimProgress>,
 }
 
 impl Default for PageState {
@@ -45,6 +46,7 @@ impl Default for PageState {
             zone_tex: Vec::new(),
             region: None,
             hidden_curves: Vec::new(),
+            sim_progress: None,
         }
     }
 }
@@ -899,7 +901,28 @@ fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
 fn sim_canvas(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
     egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
         ui.set_min_size(ui.available_size());
+        if let Some(pr) = &st.sim_progress {
+            let secs = agentee_core::sim::now().saturating_sub(pr.started);
+            section(ui, "running", &format!("pid {}", pr.pid), |ui| {
+                progress(ui, "", pr.fraction(), Some(1.0), "");
+                ui.add_space(4.0);
+                Line::new()
+                    .legend("port")
+                    .set(format!("{} ({}/{})", pr.port, pr.run + 1, pr.runs))
+                    .legend("steps")
+                    .measured(format!("{} / {}", pr.steps, pr.max_steps))
+                    .legend("fields down")
+                    .measured(format!("{:.1} dB", pr.decay_db))
+                    .legend("elapsed")
+                    .value(format!("{}:{:02}", secs / 60, secs % 60))
+                    .show(ui);
+            });
+            ui.add_space(8.0);
+        }
         let Some(r) = &s.result else {
+            if st.sim_progress.is_some() {
+                return;
+            }
             section(ui, "not run yet", "", |ui| {
                 note(
                     ui,
@@ -931,9 +954,14 @@ fn sim_canvas(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
 
 fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mut PageState) {
     let layout = project.layouts.iter().find(|l| l.name == s.layout).map(|l| &l.item);
+    let rail = match (&st.sim_progress, &s.result, s.stale) {
+        (Some(_), _, _) => READOUT,
+        (None, Some(_), false) => OK,
+        _ => WARN,
+    };
     card(
         ui,
-        Some(if s.result.is_some() { OK } else { READOUT }),
+        Some(rail),
         |ui| {
             Line::new().legend("fdtd").value(&s.name).elided(ui);
         },
@@ -1013,6 +1041,12 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
     Table::new(&cols, s.elements.len()).show(ui, |i, p, r, at| {
         let e = &s.elements[i];
         let text = match e.model {
+            agentee_core::sim::Model::Capacitor(c) if c >= 1e-6 => {
+                format!("{} uF", trim(c * 1e6, 3))
+            }
+            agentee_core::sim::Model::Capacitor(c) if c >= 1e-9 => {
+                format!("{} nF", trim(c * 1e9, 3))
+            }
             agentee_core::sim::Model::Capacitor(c) => format!("{} pF", trim(c * 1e12, 3)),
             agentee_core::sim::Model::Inductor(l) => format!("{} nH", trim(l * 1e9, 3)),
             agentee_core::sim::Model::Resistor(v) => format!("{} ohm", trim(v, 3)),

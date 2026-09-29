@@ -60,6 +60,9 @@ pub fn render_rgba(
         layers.hidden.retain(|h| !opts.show.contains(h));
         layers.hidden.extend(opts.hide.iter().cloned());
     }
+    if let ItemRef::Sim(i) = item {
+        st.sim_progress = agentee_core::sim::SimProgress::load(&project.sims[i].path);
+    }
     st.region = opts.region.map(|[x0, y0, x1, y1]| {
         let mut b = agentee_core::graphic::Bounds::EMPTY;
         b.add([x0, y0]);

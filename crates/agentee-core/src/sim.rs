@@ -107,6 +107,7 @@ pub struct Sim {
     pub elements: Vec<Element>,
     #[serde(skip)]
     pub result: Option<SimResult>,
+    pub stale: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -133,6 +134,45 @@ impl SimResult {
     pub fn load(path: &Path) -> Option<SimResult> {
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SimProgress {
+    pub run: usize,
+    pub runs: usize,
+    pub port: String,
+    pub steps: usize,
+    pub max_steps: usize,
+    pub decay_db: f64,
+    pub started: u64,
+    pub updated: u64,
+    pub pid: u32,
+}
+
+impl SimProgress {
+    pub fn fraction(&self) -> f32 {
+        let per = (self.steps as f32 / self.max_steps.max(1) as f32).min(1.0);
+        ((self.run as f32 + per) / self.runs.max(1) as f32).min(1.0)
+    }
+
+    pub fn load(spec: &Path) -> Option<SimProgress> {
+        let p: SimProgress =
+            serde_json::from_str(&std::fs::read_to_string(progress_path(spec)).ok()?).ok()?;
+        (now() <= p.updated + 20).then_some(p)
+    }
+}
+
+pub fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+pub fn progress_path(spec: &Path) -> std::path::PathBuf {
+    let name = spec.file_name().and_then(|n| n.to_str()).unwrap_or("sim");
+    let stem = name.strip_suffix(".sim.toml").unwrap_or(name);
+    spec.with_file_name(format!("{stem}.progress.json"))
 }
 
 pub fn result_path(spec: &Path) -> std::path::PathBuf {
@@ -368,6 +408,7 @@ impl SimFile {
             ports,
             elements,
             result: None,
+            stale: false,
         }
     }
 }

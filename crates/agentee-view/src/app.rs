@@ -20,6 +20,8 @@ pub struct App {
     _watcher: Option<notify::RecommendedWatcher>,
     dirty: Option<Instant>,
     loaded: Instant,
+    progress: std::collections::HashMap<String, agentee_core::sim::SimProgress>,
+    polled: Instant,
 }
 
 impl App {
@@ -38,6 +40,8 @@ impl App {
             _watcher: None,
             dirty: None,
             loaded: Instant::now(),
+            progress: Default::default(),
+            polled: Instant::now() - Duration::from_secs(5),
         };
         app.reload();
         app.watch(cc.egui_ctx.clone());
@@ -104,6 +108,23 @@ impl App {
             .find(|r| r.kind() == *kind && self.project.name_of(*r) == name)
     }
 
+    fn poll_progress(&mut self, ctx: &egui::Context) {
+        if self.polled.elapsed() >= Duration::from_millis(500) {
+            self.polled = Instant::now();
+            self.progress = self
+                .project
+                .sims
+                .iter()
+                .filter_map(|e| {
+                    agentee_core::sim::SimProgress::load(&e.path).map(|p| (e.name.clone(), p))
+                })
+                .collect();
+        }
+        if !self.progress.is_empty() {
+            ctx.request_repaint_after(Duration::from_millis(500));
+        }
+    }
+
     fn poll(&mut self, ctx: &egui::Context) {
         if let Some(rx) = &self.events {
             while rx.try_recv().is_ok() {
@@ -152,16 +173,27 @@ impl App {
         field(ui, &mut self.filter, "filter");
         ui.add_space(6.0);
         let needle = self.filter.to_lowercase();
-        let rows: Vec<(ItemRef, String, Option<Severity>)> = self
+        let rows: Vec<(ItemRef, String, Option<Severity>, Option<f32>, bool)> = self
             .project
             .all_refs()
             .into_iter()
             .filter(|r| r.kind() == self.tab)
             .map(|r| {
                 let worst = self.project.diags_of(r).iter().map(|d| d.severity).max();
-                (r, self.project.name_of(r).to_string(), worst)
+                let name = self.project.name_of(r).to_string();
+                let (running, incomplete) = match r {
+                    ItemRef::Sim(i) => {
+                        let s = &self.project.sims[i].item;
+                        (
+                            self.progress.get(&name).map(|p| p.fraction()),
+                            s.result.is_none() || s.stale,
+                        )
+                    }
+                    _ => (None, false),
+                };
+                (r, name, worst, running, incomplete)
             })
-            .filter(|(_, n, _)| needle.is_empty() || n.to_lowercase().contains(&needle))
+            .filter(|(_, n, _, _, _)| needle.is_empty() || n.to_lowercase().contains(&needle))
             .collect();
         let current = self.current();
         let mut clicked = None;
@@ -170,7 +202,7 @@ impl App {
             20.0,
             rows.len(),
             |ui, range| {
-                for (r, name, worst) in &rows[range] {
+                for (r, name, worst, running, incomplete) in &rows[range] {
                     let (rect, resp) = ui
                         .allocate_exact_size(Vec2::new(ui.available_width(), 20.0), Sense::click());
                     let on = current == Some(*r);
@@ -185,11 +217,21 @@ impl App {
                     } else if resp.hovered() {
                         p.rect_filled(rect, 0.0, BAND);
                     }
-                    let dot = match worst {
-                        Some(Severity::Error) => FAULT,
-                        Some(Severity::Warning) => WARN,
+                    let dot = match (worst, running, incomplete) {
+                        (Some(Severity::Error), _, _) => FAULT,
+                        (_, Some(_), _) => READOUT,
+                        (Some(Severity::Warning), _, _) | (_, _, true) => WARN,
                         _ => OK,
                     };
+                    if let Some(f) = running {
+                        p.text(
+                            Pos2::new(rect.right() - 6.0, rect.center().y),
+                            egui::Align2::RIGHT_CENTER,
+                            format!("{:.0}%", f * 100.0),
+                            egui_bench::theme::figure(11.0),
+                            READOUT,
+                        );
+                    }
                     p.circle_filled(Pos2::new(rect.left() + 12.0, rect.center().y), 3.0, dot);
                     let col = if on { VALUE } else { VALUE.gamma_multiply(0.85) };
                     p.with_clip_rect(rect).text(
@@ -262,6 +304,11 @@ impl eframe::App for App {
                 self.list(ui);
             });
         let current = self.current();
+        self.poll_progress(&ctx);
+        self.st.sim_progress = match current {
+            Some(r @ ItemRef::Sim(_)) => self.progress.get(self.project.name_of(r)).cloned(),
+            _ => None,
+        };
         egui::CentralPanel::no_frame().show(ui, |ui| {
             let r = ui.max_rect();
             ui.painter().rect_filled(r, 0.0, CHASSIS);
