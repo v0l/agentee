@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
+type Row = (ItemRef, String, Option<Severity>, Option<f32>, bool);
+
 pub struct App {
     path: PathBuf,
     project: Project,
@@ -173,7 +175,7 @@ impl App {
         field(ui, &mut self.filter, "filter");
         ui.add_space(6.0);
         let needle = self.filter.to_lowercase();
-        let rows: Vec<(ItemRef, String, Option<Severity>, Option<f32>, bool)> = self
+        let rows: Vec<Row> = self
             .project
             .all_refs()
             .into_iter()
