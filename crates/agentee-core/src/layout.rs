@@ -26,6 +26,60 @@ pub struct PlacementFile {
     pub rotation: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side: Option<BoardSide>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<LabelFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LabelFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<Point>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Length>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hide: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Label {
+    pub at: P,
+    pub rotation: f64,
+    pub size: f64,
+    pub hide: bool,
+    pub moved: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SilkText {
+    pub part: usize,
+    pub text: String,
+    pub at: P,
+    pub rotation: f64,
+    pub size: f64,
+    pub anchor: crate::graphic::Anchor,
+    pub layer: String,
+}
+
+impl SilkText {
+    pub fn outline(&self) -> Vec<P> {
+        let w = self.size * 0.66 * self.text.chars().count() as f64;
+        let h = self.size * 1.1;
+        let x0 = match self.anchor {
+            crate::graphic::Anchor::Left => 0.0,
+            crate::graphic::Anchor::Center => -w / 2.0,
+            crate::graphic::Anchor::Right => -w,
+        };
+        [[x0, -h / 2.0], [x0 + w, -h / 2.0], [x0 + w, h / 2.0], [x0, h / 2.0]]
+            .into_iter()
+            .map(|q| {
+                let [x, y] = geom::rotate(q, self.rotation);
+                [x + self.at[0], y + self.at[1]]
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -110,9 +164,49 @@ pub struct Placed {
     pub rotation: f64,
     pub bottom: bool,
     pub pads: Vec<PlacedPad>,
+    pub label: Option<Label>,
 }
 
 impl Placed {
+    pub fn silk_texts(&self, index: usize) -> Vec<SilkText> {
+        let t = self.transform();
+        let mut out = Vec::new();
+        for g in &self.footprint.graphics {
+            let layer = self.flip_layer(&g.layer);
+            if !layer.ends_with(".SilkS") {
+                continue;
+            }
+            let crate::graphic::Shape::Text { at, text, size, rotation, anchor } = &g.shape else {
+                continue;
+            };
+            let is_ref = text.contains("${REFERENCE}");
+            let text =
+                text.replace("${REFERENCE}", &self.reference).replace("${VALUE}", &self.value);
+            let mut st = SilkText {
+                part: index,
+                text,
+                at: t.apply(at.to_mm()),
+                rotation: readable(rotation + self.rotation),
+                size: size.to_mm(),
+                anchor: *anchor,
+                layer,
+            };
+            if is_ref && let Some(l) = &self.label {
+                if l.hide {
+                    continue;
+                }
+                if l.moved {
+                    st.at = l.at;
+                    st.anchor = crate::graphic::Anchor::Center;
+                }
+                st.rotation = l.rotation;
+                st.size = l.size;
+            }
+            out.push(st);
+        }
+        out
+    }
+
     pub fn transform(&self) -> Transform {
         Transform { at: self.at.to_mm(), rotation: self.rotation, mirror: self.bottom }
     }
@@ -427,6 +521,13 @@ impl LayoutFile {
                 rotation,
                 bottom,
                 pads,
+                label: f.label.as_ref().map(|l| Label {
+                    at: l.at.map(|p| p.to_mm()).unwrap_or(f.at.to_mm()),
+                    rotation: l.rotation.unwrap_or(0.0),
+                    size: l.size.map(Length::to_mm).unwrap_or(1.0),
+                    hide: l.hide,
+                    moved: l.at.is_some(),
+                }),
             });
         }
         for r in sch.references() {
@@ -879,6 +980,8 @@ impl LayoutFile {
             }
         }
 
+        check_silk(&parts, &outline, board.rules.min_silk_text_height.to_mm(), d);
+
         let mut nets = nets;
         for (n, (unrouted, length)) in nets.iter_mut().zip(stats) {
             n.unrouted = unrouted;
@@ -897,6 +1000,83 @@ impl LayoutFile {
             nets,
             ratsnest,
             cutouts,
+        }
+    }
+}
+
+fn readable(deg: f64) -> f64 {
+    let a = deg.rem_euclid(360.0);
+    if a > 90.0 && a <= 270.0 { a - 180.0 } else { a }
+}
+
+fn check_silk(parts: &[Placed], outline: &[P], min_height: f64, d: &mut Diags) {
+    let texts: Vec<SilkText> =
+        parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
+    let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
+    for (i, t) in texts.iter().enumerate() {
+        let who = &parts[t.part].reference;
+        let at = format!("silk {who}");
+        if t.size + 1e-9 < min_height {
+            d.warn(
+                &at,
+                format!(
+                    "`{}` is {} tall, under the fab minimum {}",
+                    t.text,
+                    Length::mm(t.size),
+                    Length::mm(min_height)
+                ),
+            );
+        }
+        for (j, u) in texts.iter().enumerate().skip(i + 1) {
+            if u.layer == t.layer && geom::polygon_distance(&boxes[i], &boxes[j]) <= 0.0 {
+                d.warn(
+                    &at,
+                    format!("`{}` overlaps `{}` of {}", t.text, u.text, parts[u.part].reference),
+                );
+            }
+        }
+        let side = t.layer.trim_end_matches(".SilkS");
+        let cu = format!("{side}.Cu");
+        let over: Vec<String> = parts
+            .iter()
+            .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
+            .filter(|(_, q)| {
+                q.copper.contains(&cu)
+                    && q.outlines.iter().any(|o| geom::polygon_distance(o, &boxes[i]) <= 0.0)
+            })
+            .map(|(p, q)| format!("{}.{}", p.reference, q.number))
+            .collect();
+        if !over.is_empty() {
+            d.warn(
+                &at,
+                format!("`{}` sits on pads {}, it will be clipped", t.text, over.join(", ")),
+            );
+        }
+        let crossed: Vec<&str> = parts
+            .iter()
+            .filter(|p| {
+                let tf = p.transform();
+                p.footprint.graphics.iter().any(|g| {
+                    p.flip_layer(&g.layer) == t.layer
+                        && !matches!(g.shape, crate::graphic::Shape::Text { .. })
+                        && {
+                            let path: Vec<P> = crate::footprint::graphic_path(g)
+                                .into_iter()
+                                .map(|q| tf.apply(q))
+                                .collect();
+                            path.len() >= 2
+                                && geom::polyline_polygon_distance(&path, &boxes[i])
+                                    < g.width.to_mm() / 2.0
+                        }
+                })
+            })
+            .map(|p| p.reference.as_str())
+            .collect();
+        if !crossed.is_empty() {
+            d.warn(&at, format!("`{}` crosses the silk outline of {}", t.text, crossed.join(", ")));
+        }
+        if outline.len() >= 3 && boxes[i].iter().any(|c| !geom::point_in_polygon(*c, outline)) {
+            d.warn(&at, format!("`{}` runs off the board", t.text));
         }
     }
 }

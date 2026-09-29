@@ -187,7 +187,7 @@ pub fn layout(
         }
     }
 
-    for part in &l.parts {
+    for (pi, part) in l.parts.iter().enumerate() {
         let placed = xf.placed(part.transform());
         for g in &part.footprint.graphics {
             let layer = part.flip_layer(&g.layer);
@@ -195,12 +195,35 @@ pub fn layout(
                 || !layers.shows(&layer)
                 || layer.ends_with("Mask")
                 || layer.ends_with("Paste")
+                || (layer.ends_with(".SilkS") && matches!(g.shape, Shape::Text { .. }))
             {
                 continue;
             }
             let g = substitute(g, &part.reference, &part.value);
             let col = layer_color(&layer);
             paint::graphic(p, &placed, &g, col, col.gamma_multiply(0.25));
+        }
+        for t in part.silk_texts(pi) {
+            if !layers.shows(&t.layer) {
+                continue;
+            }
+            let anchor = match t.anchor {
+                agentee_core::graphic::Anchor::Left => Align2::LEFT_CENTER,
+                agentee_core::graphic::Anchor::Center => Align2::CENTER_CENTER,
+                agentee_core::graphic::Anchor::Right => Align2::RIGHT_CENTER,
+            };
+            text(
+                p,
+                xf.world(t.at),
+                &t.text,
+                Ink {
+                    px: xf.len(t.size) * 1.25,
+                    color: layer_color(&t.layer),
+                    angle: -(t.rotation.to_radians() as f32),
+                    anchor,
+                    font: FontFamily::Proportional,
+                },
+            );
         }
         let shown = part.pads.iter().filter(|q| !q.number.is_empty());
         for pad in shown {

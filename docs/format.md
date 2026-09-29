@@ -307,6 +307,7 @@ ref = "U1"
 at = [13.0, 8.05]
 rotation = 90                  # degrees, counter-clockwise
 # side = "bottom"              # mirrors the footprint and swaps F./B. layers
+label = { at = [9.9, 7.4], rotation = 90 }   # move the silk reference; size = 0.8, hide = true
 
 [[tracks]]
 net = "RF_OUT"
@@ -336,7 +337,8 @@ Pads take their nets from the schematic (pad number = pin number). Zones are fil
 clearance to every other net and to the board edge, and islands that reach nothing are removed.
 Check reports unrouted connections (with the ratsnest), shorts, clearance violations, tracks
 narrower than their class or off their impedance width, copper near the edge, courtyard
-overlaps, unplaced parts and track ends that connect to nothing. Name an item with its kind when
+overlaps, unplaced parts, track ends that connect to nothing, and silk text that overlaps other
+text, crosses a silk outline, sits on a pad or runs off the board. Name an item with its kind when
 names collide: `agentee render pcb:lna`, `sch:lna`, `board:lna`.
 
 ## Graphics

@@ -320,7 +320,7 @@ impl FootprintFile {
     }
 }
 
-fn graphic_path(g: &Graphic) -> Vec<P> {
+pub fn graphic_path(g: &Graphic) -> Vec<P> {
     match &g.shape {
         Shape::Line { start, end } => vec![start.to_mm(), end.to_mm()],
         Shape::Polyline { points, closed } => {
