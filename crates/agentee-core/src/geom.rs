@@ -1,11 +1,43 @@
 pub type P = [f64; 2];
 
 pub fn rotate(p: P, deg: f64) -> P {
-    if deg == 0.0 {
-        return p;
+    let quarter = deg / 90.0;
+    if quarter.fract() == 0.0 {
+        return match (quarter as i64).rem_euclid(4) {
+            0 => p,
+            1 => [p[1], -p[0]],
+            2 => [-p[0], -p[1]],
+            _ => [-p[1], p[0]],
+        };
     }
     let (s, c) = deg.to_radians().sin_cos();
     [p[0] * c + p[1] * s, -p[0] * s + p[1] * c]
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub struct Transform {
+    pub at: P,
+    pub rotation: f64,
+    pub mirror: bool,
+}
+
+impl Transform {
+    pub const IDENTITY: Transform = Transform { at: [0.0, 0.0], rotation: 0.0, mirror: false };
+
+    pub fn apply(&self, p: P) -> P {
+        let p = if self.mirror { [-p[0], p[1]] } else { p };
+        let [x, y] = rotate(p, self.rotation);
+        [x + self.at[0], y + self.at[1]]
+    }
+
+    pub fn direction(&self, d: P) -> P {
+        let d = if self.mirror { [-d[0], d[1]] } else { d };
+        rotate(d, self.rotation)
+    }
+}
+
+pub fn dist(a: P, b: P) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
 }
 
 pub fn point_segment_distance(p: P, a: P, b: P) -> f64 {

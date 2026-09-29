@@ -87,7 +87,7 @@ fn tools() -> Value {
             "name": "new_item",
             "description": "Write a starter file for a board, symbol or footprint that passes check, to edit from.",
             "inputSchema": s(json!({
-                "kind": { "type": "string", "enum": ["board", "symbol", "footprint"] },
+                "kind": { "type": "string", "enum": ["board", "symbol", "footprint", "schematic", "layout"] },
                 "name": { "type": "string" },
                 "dir": { "type": "string", "description": "relative to the project" },
             }), &["kind", "name"]),
@@ -236,12 +236,14 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 Some("board") => Kind::Board,
                 Some("symbol") => Kind::Symbol,
                 Some("footprint") => Kind::Footprint,
-                _ => return Err("kind is board, symbol or footprint".into()),
+                Some("schematic") => Kind::Schematic,
+                Some("layout") => Kind::Layout,
+                _ => return Err("kind is board, symbol, footprint, schematic or layout".into()),
             };
             let default = match kind {
-                Kind::Board => ".",
                 Kind::Symbol => "symbols",
                 Kind::Footprint => "footprints",
+                _ => ".",
             };
             let path = ops::new_item(
                 kind,

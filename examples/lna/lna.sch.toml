@@ -1,0 +1,196 @@
+name = "lna"
+description = "SPF5189Z wideband LNA, powered by the receiver bias tee or a 5 V header"
+board = "lna"
+
+[[parts]]
+ref = "J1"
+symbol = "Conn_Coaxial"
+value = "RF IN"
+at = [25.4, 50.8]
+mirror = true
+fields = { mpn = "Amphenol 132289" }
+
+[[parts]]
+ref = "D3"
+symbol = "ESD131-B1-W0201"
+value = "ESD131"
+at = [38.1, 54.61]
+rotation = 270
+fields = { mpn = "Infineon ESD131-B1-W0201" }
+
+[[parts]]
+ref = "C1"
+symbol = "C"
+value = "100p"
+at = [48.26, 50.8]
+rotation = 90
+fields = { mpn = "Murata GRM1555C1H101JA01D" }
+
+[[parts]]
+ref = "U1"
+symbol = "SPF5189Z"
+value = "SPF5189Z"
+at = [66.04, 50.8]
+fields = { mpn = "Qorvo SPF5189Z" }
+
+[[parts]]
+ref = "C2"
+symbol = "C"
+value = "100p"
+at = [83.82, 50.8]
+rotation = 90
+fields = { mpn = "Murata GRM1555C1H101JA01D" }
+
+[[parts]]
+ref = "J2"
+symbol = "Conn_Coaxial"
+value = "RF OUT"
+at = [104.14, 50.8]
+fields = { mpn = "Amphenol 132289" }
+
+[[parts]]
+ref = "L1"
+symbol = "L"
+value = "47n"
+at = [76.2, 40.64]
+rotation = 180
+fields = { mpn = "Coilcraft 0603HC-47NXJRW" }
+
+[[parts]]
+ref = "L2"
+symbol = "L"
+value = "150n"
+at = [76.2, 30.48]
+rotation = 180
+fields = { mpn = "Coilcraft 0603CS-R15XJLW" }
+
+[[parts]]
+ref = "L3"
+symbol = "L"
+value = "47n"
+at = [93.98, 40.64]
+rotation = 180
+fields = { mpn = "Coilcraft 0603HC-47NXJRW" }
+
+[[parts]]
+ref = "L4"
+symbol = "L"
+value = "150n"
+at = [93.98, 30.48]
+rotation = 180
+fields = { mpn = "Coilcraft 0603CS-R15XJLW" }
+
+[[parts]]
+ref = "D1"
+symbol = "BAT60A"
+value = "BAT60A"
+at = [86.36, 26.67]
+fields = { mpn = "Infineon BAT60A" }
+
+[[parts]]
+ref = "C5"
+symbol = "C"
+value = "100p"
+at = [101.6, 30.48]
+fields = { mpn = "Murata GRM1555C1H101JA01D" }
+
+[[parts]]
+ref = "C3"
+symbol = "C"
+value = "100p"
+at = [68.58, 30.48]
+fields = { mpn = "Murata GRM1555C1H101JA01D" }
+
+[[parts]]
+ref = "C4"
+symbol = "C"
+value = "100n"
+at = [60.96, 30.48]
+fields = { mpn = "Murata GRM155R71C104KA88D" }
+
+[[parts]]
+ref = "C6"
+symbol = "C"
+value = "10u"
+at = [53.34, 30.48]
+fields = { mpn = "10 uF X5R 10 V 0402" }
+
+[[parts]]
+ref = "J3"
+symbol = "Conn_01x02"
+value = "5V IN"
+at = [25.4, 26.67]
+mirror = true
+
+[[parts]]
+ref = "D2"
+symbol = "BAT60A"
+value = "BAT60A"
+at = [38.1, 26.67]
+mirror = true
+fields = { mpn = "Infineon BAT60A" }
+
+[[parts]]
+ref = "R1"
+symbol = "R"
+value = "1k"
+at = [45.72, 30.48]
+
+[[parts]]
+ref = "D4"
+symbol = "LED"
+value = "green"
+at = [45.72, 40.64]
+rotation = 90
+
+[[nets]]
+name = "RF_IN"
+class = "RF"
+pins = ["J1.1", "D3.1", "C1.1"]
+
+[[nets]]
+name = "RF_AMP_IN"
+class = "RF"
+pins = ["C1.2", "U1.1"]
+
+[[nets]]
+name = "RF_AMP_OUT"
+class = "RF"
+pins = ["U1.3", "C2.1", "L1.1"]
+
+[[nets]]
+name = "RF_OUT"
+class = "RF"
+pins = ["C2.2", "J2.1", "L3.1"]
+
+[[nets]]
+name = "CHOKE_A"
+pins = ["L1.2", "L2.1"]
+
+[[nets]]
+name = "CHOKE_B"
+pins = ["L3.2", "L4.1"]
+
+[[nets]]
+name = "VBIAS"
+class = "Power"
+pins = ["L4.2", "C5.1", "D1.2"]
+
+[[nets]]
+name = "VEXT"
+class = "Power"
+pins = ["J3.1", "D2.2"]
+
+[[nets]]
+name = "VCC"
+class = "Power"
+pins = ["D1.1", "D2.1", "L2.2", "C3.1", "C4.1", "C6.1", "R1.1"]
+
+[[nets]]
+name = "LED_A"
+pins = ["R1.2", "D4.2"]
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = ["U1.2", "J1.2", "J2.2", "J3.2", "D3.2", "C3.2", "C4.2", "C5.2", "C6.2", "D4.1"]

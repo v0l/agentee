@@ -33,7 +33,13 @@ impl View {
     }
 
     pub fn xf(&self, rect: Rect) -> Xf {
-        Xf { rect, center: self.center, scale: self.scale, max_stroke: f32::MAX }
+        Xf {
+            rect,
+            center: self.center,
+            scale: self.scale,
+            max_stroke: f32::MAX,
+            local: agentee_core::geom::Transform::IDENTITY,
+        }
     }
 
     pub fn show(&mut self, ui: &mut Ui, bounds: &Bounds, margin: f32) -> (Response, Xf) {

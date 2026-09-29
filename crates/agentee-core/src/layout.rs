@@ -1,0 +1,1093 @@
+use crate::board::{Board, Netclass};
+use crate::diag::Diags;
+use crate::footprint::{Footprint, PadKind};
+use crate::geom::{self, P, Transform};
+use crate::graphic::Bounds;
+use crate::schematic::{Schematic, UnionFind};
+use crate::units::{Length, Point};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoardSide {
+    #[default]
+    Top,
+    Bottom,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlacementFile {
+    #[serde(rename = "ref")]
+    pub reference: String,
+    pub at: Point,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<BoardSide>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TrackFile {
+    pub net: String,
+    pub layer: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<Length>,
+    pub points: Vec<Point>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViaFile {
+    pub net: String,
+    pub at: Point,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch: Option<Point>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZoneFile {
+    pub net: String,
+    pub layers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<Vec<Point>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearance: Option<Length>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CutoutFile {
+    pub layers: Vec<String>,
+    pub points: Vec<Point>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LayoutFile {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schematic: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub footprints: Vec<PlacementFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tracks: Vec<TrackFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vias: Vec<ViaFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub zones: Vec<ZoneFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cutouts: Vec<CutoutFile>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PlacedPad {
+    pub number: String,
+    pub net: Option<usize>,
+    pub kind: PadKind,
+    pub outlines: Vec<Vec<P>>,
+    pub copper: Vec<String>,
+    pub drill: Option<(P, [f64; 2], f64)>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Placed {
+    pub reference: String,
+    pub value: String,
+    pub footprint_name: String,
+    #[serde(skip)]
+    pub footprint: Footprint,
+    pub at: Point,
+    pub rotation: f64,
+    pub bottom: bool,
+    pub pads: Vec<PlacedPad>,
+}
+
+impl Placed {
+    pub fn transform(&self) -> Transform {
+        Transform { at: self.at.to_mm(), rotation: self.rotation, mirror: self.bottom }
+    }
+
+    pub fn flip_layer(&self, l: &str) -> String {
+        flip(l, self.bottom)
+    }
+}
+
+fn flip(l: &str, bottom: bool) -> String {
+    if !bottom {
+        return l.to_string();
+    }
+    if let Some(r) = l.strip_prefix("F.") {
+        format!("B.{r}")
+    } else if let Some(r) = l.strip_prefix("B.") {
+        format!("F.{r}")
+    } else {
+        l.to_string()
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Track {
+    pub net: usize,
+    pub layer: String,
+    pub width: f64,
+    pub points: Vec<P>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Via {
+    pub net: usize,
+    pub at: P,
+    pub drill: f64,
+    pub diameter: f64,
+    pub layers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ZoneFill {
+    pub net: usize,
+    pub layer: String,
+    pub origin: P,
+    pub cell: f64,
+    pub width: usize,
+    pub height: usize,
+    #[serde(skip)]
+    pub mask: Vec<u8>,
+    pub islands_removed: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct LayoutNet {
+    pub name: String,
+    pub class: String,
+    pub width: f64,
+    pub clearance: f64,
+    pub unrouted: usize,
+    pub length_mm: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Layout {
+    pub name: String,
+    pub board: String,
+    pub schematic: String,
+    pub outline: Vec<P>,
+    pub copper: Vec<String>,
+    pub parts: Vec<Placed>,
+    pub tracks: Vec<Track>,
+    pub vias: Vec<Via>,
+    pub zones: Vec<ZoneFill>,
+    pub nets: Vec<LayoutNet>,
+    pub ratsnest: Vec<(P, P, usize)>,
+    pub cutouts: Vec<(Vec<String>, Vec<P>)>,
+}
+
+impl Layout {
+    pub fn bounds(&self) -> Bounds {
+        let mut b = Bounds::EMPTY;
+        self.outline.iter().for_each(|p| b.add(*p));
+        for p in &self.parts {
+            p.pads.iter().flat_map(|q| q.outlines.iter().flatten()).for_each(|q| b.add(*q));
+        }
+        b
+    }
+
+    pub fn unrouted(&self) -> usize {
+        self.nets.iter().map(|n| n.unrouted).sum()
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Shape {
+    Poly(Vec<Vec<P>>),
+    Seg(P, P, f64),
+    Circle(P, f64),
+}
+
+impl Shape {
+    fn bounds(&self) -> Bounds {
+        let mut b = Bounds::EMPTY;
+        match self {
+            Shape::Poly(v) => v.iter().flatten().for_each(|p| b.add(*p)),
+            Shape::Seg(a, c, hw) => {
+                b.add_circle(*a, *hw);
+                b.add_circle(*c, *hw);
+            }
+            Shape::Circle(c, r) => b.add_circle(*c, *r),
+        }
+        b
+    }
+
+    fn point_distance(&self, p: P) -> f64 {
+        match self {
+            Shape::Poly(v) => v
+                .iter()
+                .map(|poly| {
+                    if geom::point_in_polygon(p, poly) {
+                        0.0
+                    } else {
+                        geom::polyline_polygon_distance(&[p, p], poly)
+                    }
+                })
+                .fold(f64::MAX, f64::min),
+            Shape::Seg(a, b, hw) => geom::point_segment_distance(p, *a, *b) - hw,
+            Shape::Circle(c, r) => geom::dist(p, *c) - r,
+        }
+    }
+
+    fn distance(&self, o: &Shape) -> f64 {
+        match (self, o) {
+            (Shape::Seg(a, b, h1), Shape::Seg(c, d, h2)) => {
+                geom::segment_segment_distance(*a, *b, *c, *d) - h1 - h2
+            }
+            (Shape::Seg(a, b, h), Shape::Circle(c, r))
+            | (Shape::Circle(c, r), Shape::Seg(a, b, h)) => {
+                geom::point_segment_distance(*c, *a, *b) - h - r
+            }
+            (Shape::Circle(a, r1), Shape::Circle(b, r2)) => geom::dist(*a, *b) - r1 - r2,
+            (Shape::Poly(v), Shape::Seg(a, b, h)) | (Shape::Seg(a, b, h), Shape::Poly(v)) => v
+                .iter()
+                .map(|poly| {
+                    if geom::point_in_polygon(*a, poly) || geom::point_in_polygon(*b, poly) {
+                        -h
+                    } else {
+                        geom::polyline_polygon_distance(&[*a, *b], poly) - h
+                    }
+                })
+                .fold(f64::MAX, f64::min),
+            (Shape::Poly(v), Shape::Circle(c, r)) | (Shape::Circle(c, r), Shape::Poly(v)) => {
+                Shape::Poly(v.clone()).point_distance(*c) - r
+            }
+            (Shape::Poly(a), Shape::Poly(b)) => a
+                .iter()
+                .flat_map(|p| b.iter().map(move |q| geom::polygon_distance(p, q)))
+                .fold(f64::MAX, f64::min),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Owner {
+    Pad(usize, usize),
+    Seg(usize),
+    Via(usize),
+    Hole,
+}
+
+struct Item {
+    owner: Owner,
+    net: Option<usize>,
+    layers: Vec<String>,
+    shape: Shape,
+    bounds: Bounds,
+}
+
+pub struct Context<'a> {
+    pub board: &'a Board,
+    pub schematic: &'a Schematic,
+    pub footprints: HashMap<&'a str, &'a Footprint>,
+}
+
+fn class_of<'a>(board: &'a Board, name: &str) -> Option<&'a Netclass> {
+    board
+        .netclasses
+        .iter()
+        .find(|n| n.name == name)
+        .or_else(|| board.netclasses.iter().find(|n| n.name == "Default"))
+}
+
+fn outline_of(board: &Board) -> Vec<P> {
+    use crate::board::Outline;
+    match &board.outline {
+        Some(Outline::Rect { origin, size, corner_radius }) => {
+            let [w, h] = size.to_mm();
+            let [x0, y0] = origin.to_mm();
+            geom::rounded_rect(w, h, corner_radius.to_mm(), 8)
+                .into_iter()
+                .map(|q| [q[0] + x0 + w / 2.0, q[1] + y0 + h / 2.0])
+                .collect()
+        }
+        Some(Outline::Polygon { points }) => points.iter().map(|p| p.to_mm()).collect(),
+        None => Vec::new(),
+    }
+}
+
+fn edges(poly: &[P]) -> impl Iterator<Item = (P, P)> + '_ {
+    (0..poly.len()).map(move |i| (poly[i], poly[(i + 1) % poly.len()]))
+}
+
+impl LayoutFile {
+    pub fn resolve(&self, cx: &Context, d: &mut Diags) -> Layout {
+        let board = cx.board;
+        let sch = cx.schematic;
+        let copper = board.stackup.copper_names();
+        let outline = outline_of(board);
+        if outline.is_empty() {
+            d.error("board", format!("board `{}` has no outline to place parts in", board.name));
+        }
+        let nets: Vec<LayoutNet> = sch
+            .nets
+            .iter()
+            .map(|n| {
+                let c = class_of(board, &n.class);
+                LayoutNet {
+                    name: n.name.clone(),
+                    class: n.class.clone(),
+                    width: c
+                        .map(|c| c.track_width.to_mm())
+                        .unwrap_or(board.rules.min_track_width.to_mm()),
+                    clearance: c
+                        .map(|c| c.clearance.to_mm())
+                        .unwrap_or(board.rules.min_clearance.to_mm()),
+                    unrouted: 0,
+                    length_mm: 0.0,
+                }
+            })
+            .collect();
+        let net_index = |name: &str| sch.nets.iter().position(|n| n.name == name);
+        let default_clearance = class_of(board, "Default")
+            .map(|c| c.clearance.to_mm())
+            .unwrap_or(board.rules.min_clearance.to_mm());
+
+        let mut parts = Vec::new();
+        let mut placed_refs: HashMap<&str, usize> = HashMap::new();
+        for (i, f) in self.footprints.iter().enumerate() {
+            let at = format!("footprints[{i}] {}", f.reference);
+            if let Some(j) = placed_refs.insert(&f.reference, i) {
+                d.error(&at, format!("{} is already placed by footprints[{j}]", f.reference));
+                continue;
+            }
+            let units: Vec<(usize, &crate::schematic::Part)> =
+                sch.parts.iter().enumerate().filter(|(_, p)| p.reference == f.reference).collect();
+            let Some((_, part)) = units.first() else {
+                d.error(&at, format!("{} is not in schematic `{}`", f.reference, sch.name));
+                continue;
+            };
+            let Some(fp_name) = &part.footprint else {
+                d.error(&at, format!("{} has no footprint in the schematic", f.reference));
+                continue;
+            };
+            let Some(fp) = cx.footprints.get(fp_name.as_str()) else {
+                d.error(&at, format!("footprint `{fp_name}` is not in this project"));
+                continue;
+            };
+            let bottom = f.side == Some(BoardSide::Bottom);
+            let rotation = f.rotation.unwrap_or(0.0);
+            let t = Transform { at: f.at.to_mm(), rotation, mirror: bottom };
+            let pads = fp
+                .pads
+                .iter()
+                .map(|pad| {
+                    let mut layers: Vec<String> = Vec::new();
+                    for l in &pad.layers {
+                        if l == "*.Cu" {
+                            layers.extend(copper.iter().cloned());
+                        } else if l.ends_with(".Cu") {
+                            layers.push(flip(l, bottom));
+                        }
+                    }
+                    layers.dedup();
+                    let net = units.iter().find_map(|(pi, p)| {
+                        p.symbol.pins.iter().position(|n| n.number == pad.number).and_then(|ni| {
+                            sch.net_of(crate::schematic::PinRef { part: *pi, pin: ni })
+                        })
+                    });
+                    PlacedPad {
+                        number: pad.number.clone(),
+                        net,
+                        kind: pad.kind,
+                        outlines: pad
+                            .outlines()
+                            .into_iter()
+                            .map(|o| o.into_iter().map(|p| t.apply(p)).collect())
+                            .collect(),
+                        copper: layers,
+                        drill: pad.drill.map(|dr| {
+                            let s = dr.size().to_mm();
+                            (t.apply(pad.at.to_mm()), s, pad.rotation + rotation)
+                        }),
+                    }
+                })
+                .collect();
+            parts.push(Placed {
+                reference: f.reference.clone(),
+                value: part.value.clone(),
+                footprint_name: fp_name.clone(),
+                footprint: (*fp).clone(),
+                at: f.at,
+                rotation,
+                bottom,
+                pads,
+            });
+        }
+        for r in sch.references() {
+            let has_fp = sch.parts.iter().any(|p| p.reference == r && p.footprint.is_some());
+            if has_fp && !placed_refs.contains_key(r) {
+                d.error("footprints", format!("{r} is not placed"));
+            }
+        }
+
+        let mut tracks = Vec::new();
+        for (i, t) in self.tracks.iter().enumerate() {
+            let at = format!("tracks[{i}] {}", t.net);
+            let Some(net) = net_index(&t.net) else {
+                d.error(&at, format!("net `{}` is not in the schematic", t.net));
+                continue;
+            };
+            if !copper.contains(&t.layer) {
+                d.error(
+                    &at,
+                    format!("`{}` is not a copper layer ({})", t.layer, copper.join(", ")),
+                );
+                continue;
+            }
+            if t.points.len() < 2 {
+                d.error(&at, "a track needs at least two points");
+                continue;
+            }
+            let class_w = nets[net].width;
+            let width = t.width.map(Length::to_mm).unwrap_or(class_w);
+            if width + 1e-6 < class_w {
+                d.error(
+                    &at,
+                    format!(
+                        "{} is narrower than the {} class width {}",
+                        Length::mm(width),
+                        nets[net].class,
+                        Length::mm(class_w)
+                    ),
+                );
+            }
+            if let Some(c) = class_of(board, &nets[net].class)
+                && c.impedance.is_some()
+                && (width - class_w).abs() > 1e-3
+            {
+                d.warn(
+                    &at,
+                    format!(
+                        "{} differs from the {} class width {}, its impedance moves",
+                        Length::mm(width),
+                        c.name,
+                        Length::mm(class_w)
+                    ),
+                );
+            }
+            tracks.push(Track {
+                net,
+                layer: t.layer.clone(),
+                width,
+                points: t.points.iter().map(|p| p.to_mm()).collect(),
+            });
+        }
+
+        let mut vias = Vec::new();
+        for (i, v) in self.vias.iter().enumerate() {
+            let at = format!("vias[{i}] {}", v.net);
+            let Some(net) = net_index(&v.net) else {
+                d.error(&at, format!("net `{}` is not in the schematic", v.net));
+                continue;
+            };
+            let kind = v
+                .via
+                .clone()
+                .or_else(|| class_of(board, &nets[net].class).and_then(|c| c.via.clone()));
+            let Some(spec) = kind
+                .as_ref()
+                .and_then(|k| board.vias.iter().find(|x| &x.name == k))
+                .or(board.vias.first())
+            else {
+                d.error(&at, "the board defines no [[vias]]");
+                continue;
+            };
+            let (a, b) = (
+                copper.iter().position(|c| *c == spec.from).unwrap_or(0),
+                copper.iter().position(|c| *c == spec.to).unwrap_or(copper.len().saturating_sub(1)),
+            );
+            let count = v.count.unwrap_or(1).max(1);
+            if count > 1 && v.pitch.is_none() {
+                d.error(&at, "`count` needs a `pitch`");
+            }
+            let pitch = v.pitch.unwrap_or(Point::ZERO).to_mm();
+            for k in 0..count {
+                let [x, y] = v.at.to_mm();
+                vias.push(Via {
+                    net,
+                    at: [x + pitch[0] * k as f64, y + pitch[1] * k as f64],
+                    drill: spec.drill.to_mm(),
+                    diameter: spec.diameter.to_mm(),
+                    layers: copper[a..=b].to_vec(),
+                });
+            }
+        }
+
+        let mut items: Vec<Item> = Vec::new();
+        for (pi, p) in parts.iter().enumerate() {
+            for (k, pad) in p.pads.iter().enumerate() {
+                if !pad.copper.is_empty() {
+                    let shape = Shape::Poly(pad.outlines.clone());
+                    items.push(Item {
+                        owner: Owner::Pad(pi, k),
+                        net: pad.net,
+                        layers: pad.copper.clone(),
+                        bounds: shape.bounds(),
+                        shape,
+                    });
+                }
+                if pad.kind == PadKind::Npth
+                    && let Some((c, s, _)) = pad.drill
+                {
+                    let shape = Shape::Circle(c, s[0].max(s[1]) / 2.0);
+                    items.push(Item {
+                        owner: Owner::Hole,
+                        net: None,
+                        layers: copper.clone(),
+                        bounds: shape.bounds(),
+                        shape,
+                    });
+                }
+            }
+        }
+        let mut seg_track = Vec::new();
+        for (ti, t) in tracks.iter().enumerate() {
+            for w in t.points.windows(2) {
+                let shape = Shape::Seg(w[0], w[1], t.width / 2.0);
+                seg_track.push(ti);
+                items.push(Item {
+                    owner: Owner::Seg(seg_track.len() - 1),
+                    net: Some(t.net),
+                    layers: vec![t.layer.clone()],
+                    bounds: shape.bounds(),
+                    shape,
+                });
+            }
+        }
+        for (vi, v) in vias.iter().enumerate() {
+            let shape = Shape::Circle(v.at, v.diameter / 2.0);
+            items.push(Item {
+                owner: Owner::Via(vi),
+                net: Some(v.net),
+                layers: v.layers.clone(),
+                bounds: shape.bounds(),
+                shape,
+            });
+        }
+
+        let clearance_of =
+            |n: Option<usize>| n.map(|n| nets[n].clearance).unwrap_or(default_clearance);
+        let name_of = |it: &Item| -> String {
+            match it.owner {
+                Owner::Pad(pi, k) => {
+                    format!("{}.{}", parts[pi].reference, parts[pi].pads[k].number)
+                }
+                Owner::Seg(s) => {
+                    format!("track {} ({})", seg_track[s], nets[tracks[seg_track[s]].net].name)
+                }
+                Owner::Via(v) => format!(
+                    "via at [{:.3}, {:.3}] ({})",
+                    vias[v].at[0], vias[v].at[1], nets[vias[v].net].name
+                ),
+                Owner::Hole => "hole".into(),
+            }
+        };
+
+        let mut uf = UnionFind::new(items.len());
+        let mut shorts = Vec::new();
+        let mut tight = Vec::new();
+        let max_clear = nets.iter().map(|n| n.clearance).fold(default_clearance, f64::max);
+        for i in 0..items.len() {
+            for j in i + 1..items.len() {
+                let (a, b) = (&items[i], &items[j]);
+                if let (Owner::Pad(p1, _), Owner::Pad(p2, _)) = (a.owner, b.owner)
+                    && p1 == p2
+                {
+                    if a.net.is_some() && a.net == b.net {
+                        uf.union(i, j);
+                    }
+                    continue;
+                }
+                if !a.layers.iter().any(|l| b.layers.contains(l)) {
+                    continue;
+                }
+                let mut grown = a.bounds;
+                grown.add([grown.min[0] - max_clear, grown.min[1] - max_clear]);
+                grown.add([grown.max[0] + max_clear, grown.max[1] + max_clear]);
+                if !grown.overlaps(&b.bounds) && !grown.contains(&b.bounds) {
+                    continue;
+                }
+                let dist = a.shape.distance(&b.shape);
+                let same = a.net.is_some() && a.net == b.net;
+                if same {
+                    if dist <= 1e-6 {
+                        uf.union(i, j);
+                    }
+                    continue;
+                }
+                if a.owner == Owner::Hole || b.owner == Owner::Hole {
+                    if dist <= 0.0 {
+                        tight.push(format!(
+                            "{} runs into a hole",
+                            if a.owner == Owner::Hole { name_of(b) } else { name_of(a) }
+                        ));
+                    }
+                    continue;
+                }
+                let need = clearance_of(a.net).max(clearance_of(b.net));
+                if dist <= 1e-6 {
+                    shorts.push(format!("{} touches {}", name_of(a), name_of(b)));
+                } else if dist + 1e-6 < need {
+                    tight.push(format!(
+                        "{} is {} from {}, needs {}",
+                        name_of(a),
+                        Length::mm(dist),
+                        name_of(b),
+                        Length::mm(need)
+                    ));
+                }
+            }
+        }
+        for s in &shorts {
+            d.error("short", s.clone());
+        }
+        for s in &tight {
+            d.error("clearance", s.clone());
+        }
+
+        let edge_clear = board.rules.min_copper_to_edge.to_mm();
+        if outline.len() >= 3 {
+            for it in &items {
+                if !matches!(it.owner, Owner::Seg(_) | Owner::Via(_)) {
+                    continue;
+                }
+                let inside = match &it.shape {
+                    Shape::Seg(a, b, _) => {
+                        geom::point_in_polygon(*a, &outline) && geom::point_in_polygon(*b, &outline)
+                    }
+                    Shape::Circle(c, _) => geom::point_in_polygon(*c, &outline),
+                    Shape::Poly(_) => true,
+                };
+                let to_edge = edges(&outline)
+                    .map(|(a, b)| it.shape.distance(&Shape::Seg(a, b, 0.0)))
+                    .fold(f64::MAX, f64::min);
+                if !inside {
+                    d.error("edge", format!("{} leaves the board", name_of(it)));
+                } else if to_edge + 1e-6 < edge_clear {
+                    d.error(
+                        "edge",
+                        format!(
+                            "{} is {} from the board edge, needs {}",
+                            name_of(it),
+                            Length::mm(to_edge),
+                            Length::mm(edge_clear)
+                        ),
+                    );
+                }
+            }
+            for p in &parts {
+                let off: Vec<&str> = p
+                    .pads
+                    .iter()
+                    .filter(|q| {
+                        q.outlines.iter().flatten().any(|c| {
+                            !geom::point_in_polygon(*c, &outline)
+                                && edges(&outline)
+                                    .all(|(a, b)| geom::point_segment_distance(*c, a, b) > 1e-3)
+                        })
+                    })
+                    .map(|q| q.number.as_str())
+                    .collect();
+                if !off.is_empty() {
+                    d.error(
+                        format!("part {}", p.reference),
+                        format!("pads {} hang off the board", off.join(", ")),
+                    );
+                }
+            }
+        }
+
+        let courtyards: Vec<(Bounds, bool)> = parts
+            .iter()
+            .map(|p| {
+                let mut cy = p.footprint.courtyard("F");
+                if cy.is_empty() {
+                    cy = p.footprint.courtyard("B");
+                }
+                let t = p.transform();
+                let mut b = Bounds::EMPTY;
+                if !cy.is_empty() {
+                    for c in [cy.min, cy.max, [cy.min[0], cy.max[1]], [cy.max[0], cy.min[1]]] {
+                        b.add(t.apply(c));
+                    }
+                }
+                (b, p.bottom)
+            })
+            .collect();
+        for i in 0..parts.len() {
+            for j in i + 1..parts.len() {
+                let ((a, sa), (b, sb)) = (&courtyards[i], &courtyards[j]);
+                if sa == sb && !a.is_empty() && !b.is_empty() && a.overlaps(b) {
+                    d.error(
+                        format!("part {}", parts[i].reference),
+                        format!("courtyard overlaps {}", parts[j].reference),
+                    );
+                }
+            }
+        }
+
+        let cutouts: Vec<(Vec<String>, Vec<P>)> = self
+            .cutouts
+            .iter()
+            .map(|c| (c.layers.clone(), c.points.iter().map(|p| p.to_mm()).collect()))
+            .collect();
+        let mut zones = Vec::new();
+        let mut island_nodes: Vec<Vec<usize>> = Vec::new();
+        for (zi, z) in self.zones.iter().enumerate() {
+            let at = format!("zones[{zi}] {}", z.net);
+            let Some(net) = net_index(&z.net) else {
+                d.error(&at, format!("net `{}` is not in the schematic", z.net));
+                continue;
+            };
+            let poly: Vec<P> = match &z.outline {
+                Some(p) => p.iter().map(|q| q.to_mm()).collect(),
+                None => outline.clone(),
+            };
+            if poly.len() < 3 {
+                d.error(&at, "zone outline needs three points, or leave it out to fill the board");
+                continue;
+            }
+            let clearance = z.clearance.map(Length::to_mm).unwrap_or(nets[net].clearance);
+            for layer in &z.layers {
+                if !copper.contains(layer) {
+                    d.error(&at, format!("`{layer}` is not a copper layer"));
+                    continue;
+                }
+                let layer_cutouts: Vec<&Vec<P>> =
+                    cutouts.iter().filter(|(ls, _)| ls.contains(layer)).map(|(_, p)| p).collect();
+                let (fill, touched) = fill_zone(
+                    net,
+                    layer,
+                    &poly,
+                    &outline,
+                    edge_clear,
+                    clearance,
+                    &items,
+                    &clearance_of,
+                    &layer_cutouts,
+                );
+                if fill.islands_removed > 0 {
+                    d.info(
+                        &at,
+                        format!(
+                            "{} copper islands on {layer} reach nothing of {} and were removed",
+                            fill.islands_removed, z.net
+                        ),
+                    );
+                }
+                zones.push(fill);
+                island_nodes.extend(touched);
+            }
+        }
+        for touched in &island_nodes {
+            for group in touched.windows(2) {
+                uf.union(group[0], group[1]);
+            }
+        }
+
+        let mut ratsnest = Vec::new();
+        let mut stats: Vec<(usize, f64)> = Vec::new();
+        for (ni, n) in nets.iter().enumerate() {
+            let pads: Vec<(usize, P)> = items
+                .iter()
+                .enumerate()
+                .filter(|(_, it)| it.net == Some(ni) && matches!(it.owner, Owner::Pad(..)))
+                .map(|(i, it)| (i, it.bounds.center()))
+                .collect();
+            let mut groups: BTreeMap<usize, Vec<(usize, P)>> = BTreeMap::new();
+            for (i, c) in &pads {
+                groups.entry(uf.find(*i)).or_default().push((*i, *c));
+            }
+            let groups: Vec<Vec<(usize, P)>> = groups.into_values().collect();
+            let unrouted = groups.len().saturating_sub(1);
+            if groups.len() > 1 {
+                let mut joined = vec![false; groups.len()];
+                joined[0] = true;
+                for _ in 1..groups.len() {
+                    let mut best: Option<(f64, usize, P, P)> = None;
+                    for g in groups.iter().enumerate().filter(|(gi, _)| joined[*gi]).map(|(_, g)| g)
+                    {
+                        for (hi, h) in groups.iter().enumerate().filter(|(hi, _)| !joined[*hi]) {
+                            for (_, a) in g {
+                                for (_, b) in h {
+                                    let dd = geom::dist(*a, *b);
+                                    if best.is_none_or(|x| dd < x.0) {
+                                        best = Some((dd, hi, *a, *b));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let (_, hi, a, b) = best.unwrap();
+                    joined[hi] = true;
+                    ratsnest.push((a, b, ni));
+                }
+                let names: Vec<String> = groups
+                    .iter()
+                    .map(|g| {
+                        g.iter().map(|(i, _)| name_of(&items[*i])).collect::<Vec<_>>().join("+")
+                    })
+                    .collect();
+                d.error(
+                    format!("net {}", n.name),
+                    format!("{unrouted} unrouted: {} are not joined", names.join(" | ")),
+                );
+            }
+            let length = tracks
+                .iter()
+                .filter(|t| t.net == ni)
+                .flat_map(|t| t.points.windows(2).map(|w| geom::dist(w[0], w[1])))
+                .sum();
+            stats.push((unrouted, length));
+        }
+
+        for (ti, t) in tracks.iter().enumerate() {
+            for end in [t.points[0], *t.points.last().unwrap()] {
+                let probe = Shape::Circle(end, t.width / 2.0);
+                let touches = items.iter().any(|it| {
+                    it.net == Some(t.net)
+                        && it.layers.contains(&t.layer)
+                        && match it.owner {
+                            Owner::Seg(s) => seg_track[s] != ti,
+                            _ => true,
+                        }
+                        && it.shape.distance(&probe) <= 1e-6
+                }) || t.points.len() > 2 && is_interior_join(t, end)
+                    || zones.iter().any(|z| z.net == t.net && z.layer == t.layer && z.filled(end));
+                if !touches {
+                    d.warn(
+                        format!("tracks[{ti}] {}", nets[t.net].name),
+                        format!("end at [{:.3}, {:.3}] connects to nothing", end[0], end[1]),
+                    );
+                }
+            }
+        }
+
+        let mut nets = nets;
+        for (n, (unrouted, length)) in nets.iter_mut().zip(stats) {
+            n.unrouted = unrouted;
+            n.length_mm = length;
+        }
+        Layout {
+            name: self.name.clone(),
+            board: board.name.clone(),
+            schematic: sch.name.clone(),
+            outline,
+            copper,
+            parts,
+            tracks,
+            vias,
+            zones,
+            nets,
+            ratsnest,
+            cutouts,
+        }
+    }
+}
+
+fn is_interior_join(t: &Track, end: P) -> bool {
+    t.points[1..t.points.len() - 1].iter().any(|p| geom::dist(*p, end) < 1e-9)
+}
+
+impl ZoneFill {
+    pub fn filled(&self, p: P) -> bool {
+        let x = ((p[0] - self.origin[0]) / self.cell).floor();
+        let y = ((p[1] - self.origin[1]) / self.cell).floor();
+        if x < 0.0 || y < 0.0 || x as usize >= self.width || y as usize >= self.height {
+            return false;
+        }
+        self.mask[y as usize * self.width + x as usize] != 0
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fill_zone(
+    net: usize,
+    layer: &str,
+    poly: &[P],
+    board: &[P],
+    edge_clear: f64,
+    clearance: f64,
+    items: &[Item],
+    clearance_of: &dyn Fn(Option<usize>) -> f64,
+    cutouts: &[&Vec<P>],
+) -> (ZoneFill, Vec<Vec<usize>>) {
+    let mut b = Bounds::EMPTY;
+    poly.iter().for_each(|p| b.add(*p));
+    let [sw, sh] = b.size();
+    let cell = (sw.max(sh) / 1600.0).max(0.02);
+    let (w, h) = ((sw / cell).ceil() as usize + 1, (sh / cell).ceil() as usize + 1);
+    let origin = b.min;
+    let center = |x: usize, y: usize| {
+        [origin[0] + (x as f64 + 0.5) * cell, origin[1] + (y as f64 + 0.5) * cell]
+    };
+    let mut mask = vec![0u8; w * h];
+    for y in 0..h {
+        let py = origin[1] + (y as f64 + 0.5) * cell;
+        let mut xs = Vec::new();
+        for (a, c) in edges(poly) {
+            if (a[1] > py) != (c[1] > py) {
+                xs.push(a[0] + (py - a[1]) / (c[1] - a[1]) * (c[0] - a[0]));
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        for pair in xs.chunks(2) {
+            if pair.len() < 2 {
+                continue;
+            }
+            let x0 = (((pair[0] - origin[0]) / cell) - 0.5).ceil().max(0.0) as usize;
+            let x1 = (((pair[1] - origin[0]) / cell) - 0.5).floor().min(w as f64 - 1.0);
+            if x1 < 0.0 {
+                continue;
+            }
+            for x in x0..=(x1 as usize) {
+                mask[y * w + x] = 1;
+            }
+        }
+    }
+    let clear_near = |mask: &mut Vec<u8>, bb: Bounds, grow: f64, test: &dyn Fn(P) -> bool| {
+        let x0 = (((bb.min[0] - grow - origin[0]) / cell).floor().max(0.0)) as usize;
+        let y0 = (((bb.min[1] - grow - origin[1]) / cell).floor().max(0.0)) as usize;
+        let x1 =
+            ((((bb.max[0] + grow - origin[0]) / cell).ceil()) as usize).min(w.saturating_sub(1));
+        let y1 =
+            ((((bb.max[1] + grow - origin[1]) / cell).ceil()) as usize).min(h.saturating_sub(1));
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if mask[y * w + x] != 0 && test(center(x, y)) {
+                    mask[y * w + x] = 0;
+                }
+            }
+        }
+    };
+    if board.len() >= 3 {
+        for (a, c) in edges(board) {
+            let mut bb = Bounds::EMPTY;
+            bb.add(a);
+            bb.add(c);
+            clear_near(&mut mask, bb, edge_clear, &|p| {
+                geom::point_segment_distance(p, a, c) < edge_clear
+            });
+        }
+        for y in 0..h {
+            for x in 0..w {
+                if mask[y * w + x] != 0 && !geom::point_in_polygon(center(x, y), board) {
+                    mask[y * w + x] = 0;
+                }
+            }
+        }
+    }
+    for c in cutouts {
+        let mut bb = Bounds::EMPTY;
+        c.iter().for_each(|p| bb.add(*p));
+        clear_near(&mut mask, bb, 0.0, &|p| geom::point_in_polygon(p, c));
+    }
+    for it in items.iter().filter(|it| it.layers.iter().any(|l| l == layer)) {
+        if it.net == Some(net) && it.owner != Owner::Hole {
+            continue;
+        }
+        let gap = clearance.max(clearance_of(it.net));
+        let shape = &it.shape;
+        clear_near(&mut mask, it.bounds, gap, &|p| shape.point_distance(p) < gap);
+    }
+
+    let mut label = vec![0u32; w * h];
+    let mut next = 0u32;
+    let mut stack = Vec::new();
+    for start in 0..w * h {
+        if mask[start] == 0 || label[start] != 0 {
+            continue;
+        }
+        next += 1;
+        label[start] = next;
+        stack.push(start);
+        while let Some(i) = stack.pop() {
+            let (x, y) = (i % w, i / w);
+            let mut visit = |j: usize| {
+                if mask[j] != 0 && label[j] == 0 {
+                    label[j] = next;
+                    stack.push(j);
+                }
+            };
+            if x > 0 {
+                visit(i - 1);
+            }
+            if x + 1 < w {
+                visit(i + 1);
+            }
+            if y > 0 {
+                visit(i - w);
+            }
+            if y + 1 < h {
+                visit(i + w);
+            }
+        }
+    }
+    let mut island_items: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (ii, it) in items.iter().enumerate() {
+        if it.net != Some(net) || !it.layers.iter().any(|l| l == layer) {
+            continue;
+        }
+        let bb = it.bounds;
+        let x0 = (((bb.min[0] - origin[0]) / cell).floor().max(0.0)) as usize;
+        let y0 = (((bb.min[1] - origin[1]) / cell).floor().max(0.0)) as usize;
+        let x1 = ((((bb.max[0] - origin[0]) / cell).ceil()) as usize).min(w.saturating_sub(1));
+        let y1 = ((((bb.max[1] - origin[1]) / cell).ceil()) as usize).min(h.saturating_sub(1));
+        if bb.max[0] < origin[0] || bb.max[1] < origin[1] {
+            continue;
+        }
+        let mut seen = Vec::new();
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let l = label[y * w + x];
+                if l != 0 && !seen.contains(&l) && it.shape.point_distance(center(x, y)) <= 0.0 {
+                    seen.push(l);
+                }
+            }
+        }
+        for l in seen {
+            island_items.entry(l).or_default().push(ii);
+        }
+    }
+    let mut removed = 0;
+    for l in 1..=next {
+        if !island_items.contains_key(&l) {
+            removed += 1;
+        }
+    }
+    for i in 0..w * h {
+        if label[i] != 0 && !island_items.contains_key(&label[i]) {
+            mask[i] = 0;
+        }
+    }
+    let touched: Vec<Vec<usize>> = island_items.into_values().collect();
+    (
+        ZoneFill {
+            net,
+            layer: layer.to_string(),
+            origin,
+            cell,
+            width: w,
+            height: h,
+            mask,
+            islands_removed: removed,
+        },
+        touched,
+    )
+}

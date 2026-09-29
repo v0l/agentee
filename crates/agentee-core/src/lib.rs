@@ -4,7 +4,9 @@ pub mod diag;
 pub mod footprint;
 pub mod geom;
 pub mod graphic;
+pub mod layout;
 pub mod project;
+pub mod schematic;
 pub mod symbol;
 pub mod units;
 

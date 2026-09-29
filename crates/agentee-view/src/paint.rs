@@ -1,7 +1,7 @@
 use agentee_core::footprint::{Drill, Footprint, Pad, PadKind};
-use agentee_core::geom;
+use agentee_core::geom::{self, Transform};
 use agentee_core::graphic::{Anchor, Bounds, Fill, Graphic, Shape, arc_points};
-use agentee_core::symbol::{PinNames, PinShape, Side, Symbol};
+use agentee_core::symbol::{PinNames, PinShape, Symbol};
 use egui::epaint::{PathShape, TextShape};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use egui_bench::theme::{self, ETCH, LEGEND, PANEL, READOUT, TRACE, VALUE, WELL};
@@ -39,10 +39,25 @@ pub struct Xf {
     pub center: [f64; 2],
     pub scale: f32,
     pub max_stroke: f32,
+    pub local: Transform,
 }
 
 impl Xf {
+    pub fn placed(&self, local: Transform) -> Xf {
+        Xf { local, ..*self }
+    }
+
+    pub fn text_angle(&self, deg: f64) -> f32 {
+        let a = (deg + self.local.rotation).rem_euclid(360.0);
+        let a = if a > 90.0 && a <= 270.0 { a - 180.0 } else { a };
+        -(a.to_radians() as f32)
+    }
+
     pub fn pos(&self, p: [f64; 2]) -> Pos2 {
+        self.world(self.local.apply(p))
+    }
+
+    pub fn world(&self, p: [f64; 2]) -> Pos2 {
         self.rect.center()
             + Vec2::new(
                 ((p[0] - self.center[0]) as f32) * self.scale,
@@ -134,7 +149,7 @@ pub fn grid(p: &Painter, xf: &Xf, pitch_mm: f64) {
     p.line_segment([o - Vec2::Y * 6.0, o + Vec2::Y * 6.0], Stroke::new(1.0, c));
 }
 
-fn fill_polygon(p: &Painter, pts: Vec<Pos2>, fill: Color32, stroke: Stroke) {
+pub fn fill_polygon(p: &Painter, pts: Vec<Pos2>, fill: Color32, stroke: Stroke) {
     if pts.len() < 3 {
         return;
     }
@@ -167,9 +182,13 @@ pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Col
             p.line_segment([xf.pos(start.to_mm()), xf.pos(end.to_mm())], stroke);
         }
         Shape::Rect { start, end } => {
-            let r = Rect::from_two_pos(xf.pos(start.to_mm()), xf.pos(end.to_mm()));
-            p.rect_filled(r, 0.0, fill);
-            p.rect_stroke(r, 0.0, stroke, egui::StrokeKind::Middle);
+            let ([x0, y0], [x1, y1]) = (start.to_mm(), end.to_mm());
+            let pts: Vec<Pos2> =
+                [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].into_iter().map(|q| xf.pos(q)).collect();
+            if fill != Color32::TRANSPARENT {
+                p.add(PathShape::convex_polygon(pts.clone(), fill, Stroke::NONE));
+            }
+            p.add(PathShape::closed_line(pts, stroke));
         }
         Shape::Polyline { points, closed } => {
             let pts: Vec<Pos2> = points.iter().map(|q| xf.pos(q.to_mm())).collect();
@@ -199,7 +218,7 @@ pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Col
                 Ink {
                     px: xf.len(size.to_mm()) * 1.25,
                     color,
-                    angle: -(rotation.to_radians() as f32),
+                    angle: xf.text_angle(*rotation),
                     anchor: anchor_of(*anchor),
                     font: FontFamily::Proportional,
                 },
@@ -211,6 +230,9 @@ pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Col
 pub struct SymbolStyle {
     pub show_hidden: bool,
     pub reference: String,
+    pub value: String,
+    pub dim: bool,
+    pub tips: bool,
 }
 
 pub fn symbol(
@@ -250,7 +272,7 @@ pub fn symbol(
         }
         let dim = if pin.hidden { 0.4 } else { 1.0 };
         let stroke = Stroke::new(pin_stroke.width, pin_stroke.color.gamma_multiply(dim));
-        let dir = Vec2::new(pin.side.outward()[0] as f32, pin.side.outward()[1] as f32);
+        let dir = if (a - b).length() > 0.01 { (a - b).normalized() } else { Vec2::X };
         let bubble = xf.len(0.4);
         let line_end = if matches!(pin.shape, PinShape::Inverted | PinShape::InvertedClock) {
             b + dir * bubble * 2.0
@@ -280,13 +302,15 @@ pub fn symbol(
                 stroke,
             ));
         }
-        p.circle_stroke(
-            a,
-            xf.len(0.25).max(1.5),
-            Stroke::new(1.0, READOUT.gamma_multiply(0.8 * dim)),
-        );
+        if style.tips {
+            p.circle_stroke(
+                a,
+                xf.len(0.25).max(1.5),
+                Stroke::new(1.0, READOUT.gamma_multiply(0.8 * dim)),
+            );
+        }
 
-        let vertical = matches!(pin.side, Side::Top | Side::Bottom);
+        let vertical = dir.y.abs() > dir.x.abs();
         let angle = if vertical { -std::f32::consts::FRAC_PI_2 } else { 0.0 };
         let mid = a + (b - a) * 0.5;
         let across = if vertical { Vec2::new(-1.0, 0.0) } else { Vec2::new(0.0, -1.0) };
@@ -297,11 +321,11 @@ pub fn symbol(
             let off = xf.len(s.pin_name_offset.to_mm());
             let inward = -dir;
             let at = b + inward * off;
-            let anchor = match pin.side {
-                Side::Left => Align2::LEFT_CENTER,
-                Side::Right => Align2::RIGHT_CENTER,
-                Side::Top => Align2::RIGHT_CENTER,
-                Side::Bottom => Align2::LEFT_CENTER,
+            let anchor = match (vertical, dir.x < 0.0, dir.y < 0.0) {
+                (false, true, _) => Align2::LEFT_CENTER,
+                (false, false, _) => Align2::RIGHT_CENTER,
+                (true, _, true) => Align2::RIGHT_CENTER,
+                (true, _, false) => Align2::LEFT_CENTER,
             };
             text(
                 p,
@@ -343,38 +367,83 @@ pub fn symbol(
             );
         }
     }
-    let b = s.bounds(unit);
-    if !b.is_empty() {
-        let label = if s.units > 1 {
-            format!("{}?{}", style.reference, s.unit_label(unit))
-        } else {
-            format!("{}?", style.reference)
-        };
-        text(
-            p,
-            xf.pos([b.min[0], b.min[1]]) - Vec2::new(0.0, xf.len(0.6)),
-            &label,
-            Ink {
-                px: xf.len(1.27) * 1.25,
-                color: READOUT,
-                angle: 0.0,
-                anchor: Align2::LEFT_BOTTOM,
-                font: FontFamily::Proportional,
-            },
-        );
-        text(
-            p,
-            xf.pos([b.min[0], b.max[1]]) + Vec2::new(0.0, xf.len(0.6)),
-            &s.value,
-            Ink {
-                px: xf.len(1.27) * 1.25,
-                color: VALUE.gamma_multiply(0.8),
-                angle: 0.0,
-                anchor: Align2::LEFT_TOP,
-                font: FontFamily::Proportional,
-            },
-        );
+    let mut body = Bounds::EMPTY;
+    for g in s
+        .graphics
+        .iter()
+        .filter(|g| (g.unit == 0 || g.unit == unit) && !matches!(g.shape, Shape::Text { .. }))
+    {
+        let gb = g.bounds();
+        for c in [gb.min, gb.max, [gb.min[0], gb.max[1]], [gb.max[0], gb.min[1]]] {
+            body.add(xf.local.apply(c));
+        }
     }
+    if body.is_empty() {
+        let local = s.bounds(unit);
+        if local.is_empty() {
+            return hovered;
+        }
+        for c in [local.min, local.max] {
+            body.add(xf.local.apply(c));
+        }
+    }
+    let dirs: Vec<[f64; 2]> = s
+        .pins
+        .iter()
+        .filter(|p| p.in_unit(unit) && !p.hidden)
+        .map(|p| xf.local.direction(p.side.outward()))
+        .collect();
+    let vertical_only = !dirs.is_empty() && dirs.iter().all(|d| d[1].abs() > 0.5);
+    let horizontal_only = !dirs.is_empty() && dirs.iter().all(|d| d[0].abs() > 0.5);
+    let gap = 0.5;
+    let c = body.center();
+    let (ref_at, ref_anchor, val_at, val_anchor) = if vertical_only {
+        (
+            [body.max[0] + gap, c[1] - 0.2],
+            Align2::LEFT_BOTTOM,
+            [body.max[0] + gap, c[1] + 0.2],
+            Align2::LEFT_TOP,
+        )
+    } else if horizontal_only {
+        (
+            [c[0], body.min[1] - gap],
+            Align2::CENTER_BOTTOM,
+            [c[0], body.max[1] + gap],
+            Align2::CENTER_TOP,
+        )
+    } else {
+        (
+            [body.min[0], body.min[1] - gap - 1.8],
+            Align2::LEFT_BOTTOM,
+            [body.min[0], body.min[1] - gap],
+            Align2::LEFT_BOTTOM,
+        )
+    };
+    let size = xf.len(1.27) * 1.25;
+    text(
+        p,
+        xf.world(ref_at),
+        &style.reference,
+        Ink {
+            px: size,
+            color: READOUT,
+            angle: 0.0,
+            anchor: ref_anchor,
+            font: FontFamily::Proportional,
+        },
+    );
+    text(
+        p,
+        xf.world(val_at),
+        &style.value,
+        Ink {
+            px: size,
+            color: VALUE.gamma_multiply(if style.dim { 0.4 } else { 0.8 }),
+            angle: 0.0,
+            anchor: val_anchor,
+            font: FontFamily::Proportional,
+        },
+    );
     hovered
 }
 

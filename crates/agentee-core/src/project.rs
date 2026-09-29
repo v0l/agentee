@@ -1,6 +1,8 @@
 use crate::board::{Board, BoardFile, Rules, fab_rules};
 use crate::diag::{Diagnostic, Diags, Severity};
 use crate::footprint::{Footprint, FootprintFile, natural_cmp};
+use crate::layout::{Context, Layout, LayoutFile};
+use crate::schematic::{Library, Schematic, SchematicFile};
 use crate::symbol::{Symbol, SymbolFile};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -8,6 +10,8 @@ use std::path::{Path, PathBuf};
 pub const BOARD_EXT: &str = ".board.toml";
 pub const SYMBOL_EXT: &str = ".sym.toml";
 pub const FOOTPRINT_EXT: &str = ".fp.toml";
+pub const SCHEMATIC_EXT: &str = ".sch.toml";
+pub const LAYOUT_EXT: &str = ".pcb.toml";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -15,6 +19,8 @@ pub enum Kind {
     Board,
     Symbol,
     Footprint,
+    Schematic,
+    Layout,
 }
 
 impl Kind {
@@ -26,6 +32,10 @@ impl Kind {
             Some(Kind::Symbol)
         } else if name.ends_with(FOOTPRINT_EXT) {
             Some(Kind::Footprint)
+        } else if name.ends_with(SCHEMATIC_EXT) {
+            Some(Kind::Schematic)
+        } else if name.ends_with(LAYOUT_EXT) {
+            Some(Kind::Layout)
         } else {
             None
         }
@@ -36,6 +46,8 @@ impl Kind {
             Kind::Board => BOARD_EXT,
             Kind::Symbol => SYMBOL_EXT,
             Kind::Footprint => FOOTPRINT_EXT,
+            Kind::Schematic => SCHEMATIC_EXT,
+            Kind::Layout => LAYOUT_EXT,
         }
     }
 }
@@ -63,16 +75,35 @@ pub enum ItemRef {
     Board(usize),
     Symbol(usize),
     Footprint(usize),
+    Schematic(usize),
+    Layout(usize),
+}
+
+impl ItemRef {
+    pub fn kind(self) -> Kind {
+        match self {
+            ItemRef::Board(_) => Kind::Board,
+            ItemRef::Symbol(_) => Kind::Symbol,
+            ItemRef::Footprint(_) => Kind::Footprint,
+            ItemRef::Schematic(_) => Kind::Schematic,
+            ItemRef::Layout(_) => Kind::Layout,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Project {
     pub root: PathBuf,
+    pub generation: u64,
     pub boards: Vec<Entry<Board>>,
     pub symbols: Vec<Entry<Symbol>>,
     pub footprints: Vec<Entry<Footprint>>,
+    pub schematics: Vec<Entry<Schematic>>,
+    pub layouts: Vec<Entry<Layout>>,
     pub failures: Vec<Diagnostic>,
 }
+
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(Result::ok).collect();
@@ -132,9 +163,12 @@ impl Project {
             }
             (path.parent().unwrap_or(Path::new(".")).to_path_buf(), vec![path.to_path_buf()])
         };
-        let mut p = Project { root, ..Default::default() };
+        let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut p = Project { root, generation, ..Default::default() };
         let mut sym_files = Vec::new();
         let mut fp_files = Vec::new();
+        let mut sch_files = Vec::new();
+        let mut pcb_files = Vec::new();
         for f in files {
             let src = match std::fs::read_to_string(&f) {
                 Ok(s) => s,
@@ -166,6 +200,14 @@ impl Project {
                     Ok(s) => fp_files.push((f, s)),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
+                Some(Kind::Schematic) => match parse::<SchematicFile>(&src) {
+                    Ok(s) => sch_files.push((f, s)),
+                    Err((at, msg)) => p.fail(&f, &at, msg),
+                },
+                Some(Kind::Layout) => match parse::<LayoutFile>(&src) {
+                    Ok(s) => pcb_files.push((f, s)),
+                    Err((at, msg)) => p.fail(&f, &at, msg),
+                },
                 None => {}
             }
         }
@@ -183,7 +225,69 @@ impl Project {
             p.symbols.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         p.cross_check();
+        for (f, file) in sch_files {
+            let mut d = Diags::new(&file.name);
+            let board = p.pick_board(file.board.as_deref(), &mut d);
+            let lib = Library {
+                symbols: p.symbols.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+                footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+                netclasses: board.map(|b| b.netclasses.iter().map(|n| n.name.clone()).collect()),
+            };
+            let item = file.resolve(&lib, &mut d);
+            item.check(&lib, &mut d);
+            p.schematics.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
+        }
+        for (f, file) in pcb_files {
+            let mut d = Diags::new(&file.name);
+            let board = p.pick_board(file.board.as_deref(), &mut d).cloned();
+            let sch = p.pick_schematic(file.schematic.as_deref(), &mut d).cloned();
+            let (Some(board), Some(schematic)) = (board, sch) else {
+                p.failures.extend(tag(d, &f));
+                continue;
+            };
+            let cx = Context {
+                board: &board,
+                schematic: &schematic,
+                footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+            };
+            let item = file.resolve(&cx, &mut d);
+            p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
+        }
         Ok(p)
+    }
+
+    fn pick_board(&self, name: Option<&str>, d: &mut Diags) -> Option<&Board> {
+        match name {
+            Some(n) => {
+                let b = self.boards.iter().find(|b| b.name == n).map(|b| &b.item);
+                if b.is_none() {
+                    d.error("board", format!("no board named `{n}`"));
+                }
+                b
+            }
+            None => match self.boards.as_slice() {
+                [one] => Some(&one.item),
+                [] => None,
+                _ => {
+                    d.error("board", "several boards in the project, name one with `board`");
+                    None
+                }
+            },
+        }
+    }
+
+    fn pick_schematic(&self, name: Option<&str>, d: &mut Diags) -> Option<&Schematic> {
+        let found = match name {
+            Some(n) => self.schematics.iter().find(|b| b.name == n).map(|b| &b.item),
+            None => match self.schematics.as_slice() {
+                [one] => Some(&one.item),
+                _ => None,
+            },
+        };
+        if found.is_none() {
+            d.error("schematic", "name the schematic this layout places with `schematic`");
+        }
+        found
     }
 
     fn fail(&mut self, path: &Path, at: &str, message: String) {
@@ -262,25 +366,31 @@ impl Project {
     }
 
     pub fn find(&self, name: &str) -> Option<ItemRef> {
-        let exact = |f: &dyn Fn(&str) -> bool| {
-            self.boards
-                .iter()
-                .position(|b| f(&b.item.name))
-                .map(ItemRef::Board)
-                .or_else(|| self.symbols.iter().position(|s| f(&s.item.name)).map(ItemRef::Symbol))
-                .or_else(|| {
-                    self.footprints.iter().position(|s| f(&s.item.name)).map(ItemRef::Footprint)
-                })
+        let (kind, name) = match name.split_once(':') {
+            Some((k, n)) => match k {
+                "board" => (Some(Kind::Board), n),
+                "symbol" | "sym" => (Some(Kind::Symbol), n),
+                "footprint" | "fp" => (Some(Kind::Footprint), n),
+                "schematic" | "sch" => (Some(Kind::Schematic), n),
+                "layout" | "pcb" => (Some(Kind::Layout), n),
+                _ => (None, n),
+            },
+            None => (None, name),
         };
-        let short = name.rsplit(':').next().unwrap_or(name);
-        exact(&|n| n == name || n == short).or_else(|| exact(&|n| n.eq_ignore_ascii_case(short)))
+        let refs = self.all_refs();
+        let pick = |f: &dyn Fn(&str) -> bool| {
+            refs.iter().copied().find(|r| kind.is_none_or(|k| r.kind() == k) && f(self.name_of(*r)))
+        };
+        pick(&|n| n == name).or_else(|| pick(&|n| n.eq_ignore_ascii_case(name)))
     }
 
     pub fn name_of(&self, r: ItemRef) -> &str {
         match r {
-            ItemRef::Board(i) => &self.boards[i].item.name,
-            ItemRef::Symbol(i) => &self.symbols[i].item.name,
-            ItemRef::Footprint(i) => &self.footprints[i].item.name,
+            ItemRef::Board(i) => &self.boards[i].name,
+            ItemRef::Symbol(i) => &self.symbols[i].name,
+            ItemRef::Footprint(i) => &self.footprints[i].name,
+            ItemRef::Schematic(i) => &self.schematics[i].name,
+            ItemRef::Layout(i) => &self.layouts[i].name,
         }
     }
 
@@ -289,6 +399,8 @@ impl Project {
             ItemRef::Board(i) => &self.boards[i].diags,
             ItemRef::Symbol(i) => &self.symbols[i].diags,
             ItemRef::Footprint(i) => &self.footprints[i].diags,
+            ItemRef::Schematic(i) => &self.schematics[i].diags,
+            ItemRef::Layout(i) => &self.layouts[i].diags,
         }
     }
 
@@ -297,12 +409,16 @@ impl Project {
             ItemRef::Board(i) => &self.boards[i].path,
             ItemRef::Symbol(i) => &self.symbols[i].path,
             ItemRef::Footprint(i) => &self.footprints[i].path,
+            ItemRef::Schematic(i) => &self.schematics[i].path,
+            ItemRef::Layout(i) => &self.layouts[i].path,
         }
     }
 
     pub fn all_refs(&self) -> Vec<ItemRef> {
-        (0..self.boards.len())
-            .map(ItemRef::Board)
+        (0..self.layouts.len())
+            .map(ItemRef::Layout)
+            .chain((0..self.schematics.len()).map(ItemRef::Schematic))
+            .chain((0..self.boards.len()).map(ItemRef::Board))
             .chain((0..self.symbols.len()).map(ItemRef::Symbol))
             .chain((0..self.footprints.len()).map(ItemRef::Footprint))
             .collect()
@@ -310,9 +426,9 @@ impl Project {
 
     pub fn diagnostics(&self) -> Vec<&Diagnostic> {
         let mut v: Vec<&Diagnostic> = self.failures.iter().collect();
-        v.extend(self.boards.iter().flat_map(|e| &e.diags));
-        v.extend(self.footprints.iter().flat_map(|e| &e.diags));
-        v.extend(self.symbols.iter().flat_map(|e| &e.diags));
+        for r in self.all_refs() {
+            v.extend(self.diags_of(r));
+        }
         v
     }
 

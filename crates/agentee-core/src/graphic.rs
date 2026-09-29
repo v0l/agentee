@@ -251,6 +251,10 @@ impl Bounds {
         }
     }
 
+    pub fn center(&self) -> [f64; 2] {
+        [(self.min[0] + self.max[0]) / 2.0, (self.min[1] + self.max[1]) / 2.0]
+    }
+
     pub fn size(&self) -> [f64; 2] {
         [self.max[0] - self.min[0], self.max[1] - self.min[1]]
     }

@@ -89,28 +89,17 @@ impl App {
     }
 
     fn select(&mut self, r: ItemRef) {
-        let kind = match r {
-            ItemRef::Board(_) => Kind::Board,
-            ItemRef::Symbol(_) => Kind::Symbol,
-            ItemRef::Footprint(_) => Kind::Footprint,
-        };
+        let kind = r.kind();
         self.tab = kind;
         self.selected = Some((kind, self.project.name_of(r).to_string()));
     }
 
     fn current(&self) -> Option<ItemRef> {
         let (kind, name) = self.selected.as_ref()?;
-        match kind {
-            Kind::Board => {
-                self.project.boards.iter().position(|e| &e.name == name).map(ItemRef::Board)
-            }
-            Kind::Symbol => {
-                self.project.symbols.iter().position(|e| &e.name == name).map(ItemRef::Symbol)
-            }
-            Kind::Footprint => {
-                self.project.footprints.iter().position(|e| &e.name == name).map(ItemRef::Footprint)
-            }
-        }
+        self.project
+            .all_refs()
+            .into_iter()
+            .find(|r| r.kind() == *kind && self.project.name_of(*r) == name)
     }
 
     fn poll(&mut self, ctx: &egui::Context) {
@@ -146,6 +135,8 @@ impl App {
         });
         ui.add_space(4.0);
         let opts = [
+            (Kind::Layout, format!("layouts {}", self.project.layouts.len())),
+            (Kind::Schematic, format!("schematics {}", self.project.schematics.len())),
             (Kind::Board, format!("boards {}", self.project.boards.len())),
             (Kind::Symbol, format!("symbols {}", self.project.symbols.len())),
             (Kind::Footprint, format!("footprints {}", self.project.footprints.len())),
@@ -162,14 +153,7 @@ impl App {
             .project
             .all_refs()
             .into_iter()
-            .filter(|r| {
-                matches!(
-                    (r, self.tab),
-                    (ItemRef::Board(_), Kind::Board)
-                        | (ItemRef::Symbol(_), Kind::Symbol)
-                        | (ItemRef::Footprint(_), Kind::Footprint)
-                )
-            })
+            .filter(|r| r.kind() == self.tab)
             .map(|r| {
                 let worst = self.project.diags_of(r).iter().map(|d| d.severity).max();
                 (r, self.project.name_of(r).to_string(), worst)

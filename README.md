@@ -17,6 +17,8 @@ the KiCad libraries so an agent rarely draws a part by hand.
 | `*.board.toml` | fab preset and rules, stackup, outline, vias, net classes |
 | `*.sym.toml` | a schematic symbol, hand placed or generated from per-side pin lists |
 | `*.fp.toml` | a footprint, with pad rows (`count` / `pitch`) instead of one entry per pad |
+| `*.sch.toml` | a schematic: parts, nets, and wires routed for you or drawn by hand |
+| `*.pcb.toml` | a layout: placement, tracks, vias, zones, checked for connectivity and clearance |
 
 The full reference is [docs/format.md](docs/format.md), also printed by `agentee docs` and served
 over MCP as `format_reference`. `examples/demo` is a small project that passes `check`, and

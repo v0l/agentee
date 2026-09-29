@@ -5,8 +5,8 @@ SPF5189Z in the middle, powered either over the output coax by the receiver's bi
 5 V header. 50 MHz to 4 GHz, about 19 dB of gain at 900 MHz with a 0.55 dB noise figure
 (SPF5189Z datasheet, 5 V, 90 mA).
 
-agentee has no schematic format yet, so the circuit is written down here as a netlist. The board
-spec and every part it needs are in this directory and pass `agentee check`.
+The schematic is `lna.sch.toml`, the layout `lna.pcb.toml`, the board spec `lna.board.toml`, and
+every part is under `symbols/` and `footprints/`. All of it passes `agentee check`.
 
 ## Circuit
 
@@ -86,8 +86,6 @@ the footprints was widened from KiCad's 0.12 mm to JLCPCB's 0.15 mm minimum.
 
 - Model the RF line with solder mask in agentee (`crates/agentee-core/src/calc.rs`), or order
   the RF section mask-free; with mask it lands a few ohm under 51.2.
-- Add a schematic format to agentee so the netlist above becomes a checked file instead of a table.
-- Add placement and routing to agentee, then lay this board out.
 - Measure S21 and S22 from 50 MHz to 4 GHz on the first boards. The L1/L2 choke pair is a
   starting point built from two single-band evaluation boards, not a verified wideband network.
 - Check that JLCPCB assembly can place the SG-WLL-2-3 package for D3, or swap D3 for a larger

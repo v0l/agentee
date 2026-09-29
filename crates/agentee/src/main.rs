@@ -26,6 +26,8 @@ enum NewKind {
     Board,
     Symbol,
     Footprint,
+    Schematic,
+    Layout,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -243,6 +245,8 @@ fn run(cli: Cli) -> Result<bool, String> {
                 NewKind::Board => (Kind::Board, "."),
                 NewKind::Symbol => (Kind::Symbol, "symbols"),
                 NewKind::Footprint => (Kind::Footprint, "footprints"),
+                NewKind::Schematic => (Kind::Schematic, "."),
+                NewKind::Layout => (Kind::Layout, "."),
             };
             let path = ops::new_item(kind, &name, &dir.unwrap_or_else(|| default.into()))?;
             println!("{}", path.display());

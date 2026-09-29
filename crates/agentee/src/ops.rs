@@ -49,7 +49,9 @@ pub fn check_report(p: &Project, item: Option<ItemRef>, min: Severity) -> (Strin
     let scope = match item {
         Some(r) => p.name_of(r).to_string(),
         None => format!(
-            "{} boards, {} symbols, {} footprints",
+            "{} layouts, {} schematics, {} boards, {} symbols, {} footprints",
+            p.layouts.len(),
+            p.schematics.len(),
             p.boards.len(),
             p.symbols.len(),
             p.footprints.len()
@@ -74,18 +76,94 @@ pub fn list(p: &Project) -> Value {
     };
     let mut items = Vec::new();
     for r in p.all_refs() {
-        let kind = match r {
-            ItemRef::Board(_) => Kind::Board,
-            ItemRef::Symbol(_) => Kind::Symbol,
-            ItemRef::Footprint(_) => Kind::Footprint,
-        };
-        items.push(row(r, kind));
+        items.push(row(r, r.kind()));
     }
     json!({ "root": p.root, "items": items, "unloadable": p.failures })
 }
 
 pub fn show(p: &Project, r: ItemRef) -> Value {
     match r {
+        ItemRef::Schematic(i) => {
+            let s = &p.schematics[i].item;
+            let nets: Vec<Value> = s
+                .nets
+                .iter()
+                .map(|n| {
+                    json!({
+                        "name": n.name,
+                        "class": n.class,
+                        "style": n.style,
+                        "pins": n.pins.iter().map(|r| s.pin_label(*r)).collect::<Vec<_>>(),
+                        "wires": n.wires,
+                        "drawn_by_hand": n.drawn_by_hand,
+                    })
+                })
+                .collect();
+            let parts: Vec<Value> = s
+                .parts
+                .iter()
+                .map(|part| {
+                    let pins: Vec<Value> = part
+                        .pins()
+                        .map(|(k, pin)| json!({ "number": pin.number, "name": pin.name, "at": part.pin_at(k), "outward": part.pin_outward(k) }))
+                        .collect();
+                    let b = part.bounds();
+                    json!({
+                        "ref": part.reference,
+                        "value": part.value,
+                        "symbol": part.symbol_name,
+                        "footprint": part.footprint,
+                        "at": part.at,
+                        "rotation": part.rotation,
+                        "mirror": part.mirror,
+                        "unit": part.unit,
+                        "bounds_mm": { "min": b.min, "max": b.max },
+                        "pins": pins,
+                    })
+                })
+                .collect();
+            json!({ "kind": "schematic", "file": p.schematics[i].path, "name": s.name, "parts": parts, "nets": nets, "diagnostics": p.schematics[i].diags })
+        }
+        ItemRef::Layout(i) => {
+            let l = &p.layouts[i].item;
+            let parts: Vec<Value> = l
+                .parts
+                .iter()
+                .map(|part| {
+                    let pads: Vec<Value> = part
+                        .pads
+                        .iter()
+                        .map(|q| {
+                            let mut b = agentee_core::graphic::Bounds::EMPTY;
+                            q.outlines.iter().flatten().for_each(|c| b.add(*c));
+                            json!({ "number": q.number, "net": q.net.map(|n| l.nets[n].name.clone()), "center": b.center(), "size": b.size(), "layers": q.copper })
+                        })
+                        .collect();
+                    json!({ "ref": part.reference, "footprint": part.footprint_name, "at": part.at, "rotation": part.rotation, "bottom": part.bottom, "pads": pads })
+                })
+                .collect();
+            let ratsnest: Vec<Value> = l
+                .ratsnest
+                .iter()
+                .map(|(a, b, n)| json!({ "net": l.nets[*n].name, "from": a, "to": b }))
+                .collect();
+            json!({
+                "kind": "layout",
+                "file": p.layouts[i].path,
+                "name": l.name,
+                "board": l.board,
+                "schematic": l.schematic,
+                "outline": l.outline,
+                "copper_layers": l.copper,
+                "parts": parts,
+                "nets": l.nets,
+                "tracks": l.tracks,
+                "vias": l.vias,
+                "zones": l.zones.iter().map(|z| json!({ "net": l.nets[z.net].name, "layer": z.layer, "islands_removed": z.islands_removed })).collect::<Vec<_>>(),
+                "unrouted": ratsnest,
+                "diagnostics": p.layouts[i].diags,
+            })
+        }
         ItemRef::Board(i) => {
             let b = &p.boards[i].item;
             json!({
@@ -197,6 +275,8 @@ pub fn new_item(kind: Kind, name: &str, dir: &Path) -> Result<PathBuf, String> {
         Kind::Board => crate::templates::board(name),
         Kind::Symbol => crate::templates::symbol(name),
         Kind::Footprint => crate::templates::footprint(name),
+        Kind::Schematic => format!("name = \"{name}\"\n"),
+        Kind::Layout => format!("name = \"{name}\"\n"),
     };
     write_new(dir, name, kind, &text, false)
 }

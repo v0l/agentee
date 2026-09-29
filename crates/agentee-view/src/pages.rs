@@ -1,9 +1,12 @@
 use crate::canvas::{View, cursor_readout};
 use crate::paint::{self, Layers, SymbolStyle, Xf};
+use crate::{pcb, sheet};
 use agentee_core::board::{Board, LayerKind, Outline};
 use agentee_core::calc::TraceGeometry;
 use agentee_core::footprint::{Drill, Footprint, natural_cmp};
+use agentee_core::layout::Layout;
 use agentee_core::project::{ItemRef, Project};
+use agentee_core::schematic::Schematic;
 use agentee_core::symbol::{PinType, Side, Symbol};
 use agentee_core::units::{Length, trim};
 use agentee_core::{Diagnostic, Severity};
@@ -18,6 +21,10 @@ pub struct PageState {
     pub show_hidden: bool,
     pub interactive: bool,
     pub panels: bool,
+    pub pcb_layers: Layers,
+    pub ratsnest: bool,
+    pub zone_key: Option<(u64, usize)>,
+    pub zone_tex: Vec<egui::TextureHandle>,
 }
 
 impl Default for PageState {
@@ -30,6 +37,10 @@ impl Default for PageState {
             show_hidden: false,
             interactive: true,
             panels: true,
+            pcb_layers: crate::pcb::default_layers(),
+            ratsnest: true,
+            zone_key: None,
+            zone_tex: Vec::new(),
         }
     }
 }
@@ -53,6 +64,8 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         egui::CentralPanel::no_frame().show(ui, |ui| match item {
             ItemRef::Symbol(i) => symbol_canvas(ui, &project.symbols[i].item, st),
             ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
+            ItemRef::Schematic(i) => schematic_canvas(ui, &project.schematics[i].item, st),
+            ItemRef::Layout(i) => layout_canvas(ui, project, i, st),
             ItemRef::Board(i) => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                     board_sheet(ui, &project.boards[i].item, st);
@@ -75,11 +88,15 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
                 ItemRef::Symbol(i) => symbol_props(ui, project, &project.symbols[i].item, st),
                 ItemRef::Footprint(i) => footprint_props(ui, &project.footprints[i].item, st),
                 ItemRef::Board(i) => board_props(ui, &project.boards[i].item),
+                ItemRef::Schematic(i) => schematic_props(ui, &project.schematics[i].item),
+                ItemRef::Layout(i) => layout_props(ui, &project.layouts[i].item, st),
             });
         });
     egui::CentralPanel::no_frame().show(ui, |ui| match item {
         ItemRef::Symbol(i) => symbol_canvas(ui, &project.symbols[i].item, st),
         ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
+        ItemRef::Schematic(i) => schematic_canvas(ui, &project.schematics[i].item, st),
+        ItemRef::Layout(i) => layout_canvas(ui, project, i, st),
         ItemRef::Board(i) => {
             egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                 scroll(ui, st.interactive, "board", |ui| {
@@ -155,7 +172,14 @@ fn symbol_canvas(ui: &mut Ui, s: &Symbol, st: &mut PageState) {
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 1.27);
     let hover = if st.interactive { resp.hover_pos() } else { None };
-    let style = SymbolStyle { show_hidden: st.show_hidden, reference: s.reference.clone() };
+    let reference = format!("{}?{}", s.reference, s.unit_label(st.unit));
+    let style = SymbolStyle {
+        show_hidden: st.show_hidden,
+        reference,
+        value: s.value.clone(),
+        dim: false,
+        tips: true,
+    };
     let hit = paint::symbol(&p, &xf, s, st.unit, &style, hover);
     cursor_readout(ui, &xf, hover);
     if let Some(i) = hit {
@@ -706,4 +730,160 @@ fn netclasses(ui: &mut Ui, b: &Board) {
         ui,
         "z in ohm (d = differential pair, c = grounded coplanar), uncoated. I max is IPC-2221 at the class temperature rise.",
     );
+}
+
+fn schematic_canvas(ui: &mut Ui, s: &Schematic, st: &mut PageState) {
+    st.view.max_fit = 45.0;
+    let (resp, xf) = st.view.show(ui, &s.bounds(), 50.0);
+    let p = ui.painter_at(xf.rect);
+    paint::grid(&p, &xf, 2.54);
+    let hover = if st.interactive { resp.hover_pos() } else { None };
+    let hit = sheet::schematic(&p, &xf, s, hover, st.show_hidden);
+    cursor_readout(ui, &xf, hover);
+    if let Some((what, detail)) = sheet::legend_for(s, &hit) {
+        resp.on_hover_ui_at_pointer(|ui| {
+            Line::new().legend("net").set(&what).value(&detail).show(ui);
+        });
+    }
+}
+
+fn schematic_props(ui: &mut Ui, s: &Schematic) {
+    let pins: usize = s.nets.iter().map(|n| n.pins.len()).sum();
+    card(
+        ui,
+        Some(READOUT),
+        |ui| {
+            Line::new().legend("schematic").value(&s.name).elided(ui);
+        },
+        |ui| {
+            readouts(
+                ui,
+                &[
+                    ("parts", s.references().len().to_string(), VALUE),
+                    ("nets", s.nets.len().to_string(), VALUE),
+                    ("pins wired", pins.to_string(), TRACE),
+                ],
+            );
+            if !s.description.is_empty() {
+                note(ui, &s.description, VALUE);
+            }
+            if let Some(b) = &s.board {
+                reading(ui, "board", b.clone());
+            }
+        },
+    );
+    ui.add_space(8.0);
+    Line::new().legend("parts").show(ui);
+    let mut parts: Vec<_> = s.parts.iter().collect();
+    parts.sort_by(|a, b| natural_cmp(&a.reference, &b.reference));
+    let cols = [("ref", 44.0), ("value", 110.0), ("footprint", 226.0)];
+    Table::new(&cols, parts.len()).show(ui, |i, p, r, at| {
+        let part = parts[i];
+        cell(p, r, at(0), cols[0].1, &part.reference, READOUT);
+        cell(p, r, at(1), cols[1].1, &part.value, VALUE);
+        cell(p, r, at(2), cols[2].1, part.footprint.as_deref().unwrap_or("-"), LEGEND);
+    });
+    ui.add_space(8.0);
+    Line::new().legend("nets").show(ui);
+    let cols = [("net", 96.0), ("class", 60.0), ("pins", 224.0)];
+    Table::new(&cols, s.nets.len()).show(ui, |i, p, r, at| {
+        let n = &s.nets[i];
+        let pins: Vec<String> = n.pins.iter().map(|x| s.pin_label(*x)).collect();
+        cell(p, r, at(0), cols[0].1, &n.name, VALUE);
+        cell(p, r, at(1), cols[1].1, &n.class, LEGEND);
+        cell(p, r, at(2), cols[2].1, &pins.join(" "), TRACE);
+    });
+}
+
+fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
+    let l = &project.layouts[i].item;
+    let key = (project.generation, i);
+    if st.zone_key != Some(key) {
+        st.zone_tex = pcb::zone_textures(ui.ctx(), l);
+        st.zone_key = Some(key);
+    }
+    st.view.max_fit = 2000.0;
+    let (resp, xf) = st.view.show(ui, &l.bounds(), 30.0);
+    let p = ui.painter_at(xf.rect);
+    paint::grid(&p, &xf, 1.0);
+    let hover = if st.interactive { resp.hover_pos() } else { None };
+    let hit = pcb::layout(&p, &xf, l, &st.pcb_layers, &st.zone_tex, hover, st.ratsnest);
+    scale_bar(&p, &xf);
+    cursor_readout(ui, &xf, hover);
+    if hit.net.is_some() || hit.pad.is_some() {
+        resp.on_hover_ui_at_pointer(|ui| {
+            if let Some((pi, k)) = hit.pad {
+                let part = &l.parts[pi];
+                Line::new()
+                    .legend("pad")
+                    .set(format!("{}.{}", part.reference, part.pads[k].number))
+                    .value(&part.value)
+                    .show(ui);
+            }
+            if let Some(n) = hit.net {
+                let net = &l.nets[n];
+                Line::new().legend("net").set(&net.name).value(&net.class).show(ui);
+            }
+        });
+    }
+}
+
+fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
+    let unrouted = l.unrouted();
+    card(
+        ui,
+        Some(if unrouted == 0 { OK } else { FAULT }),
+        |ui| {
+            Line::new().legend("layout").value(&l.name).elided(ui);
+        },
+        |ui| {
+            let routed = l.nets.iter().filter(|n| n.unrouted == 0).count();
+            readouts(
+                ui,
+                &[
+                    ("parts", l.parts.len().to_string(), VALUE),
+                    (
+                        "nets routed",
+                        format!("{routed}/{}", l.nets.len()),
+                        if unrouted == 0 { OK } else { FAULT },
+                    ),
+                    ("vias", l.vias.len().to_string(), VALUE),
+                ],
+            );
+            reading(ui, "board", l.board.clone());
+            reading(ui, "schematic", l.schematic.clone());
+        },
+    );
+    ui.add_space(8.0);
+    Line::new().legend("layers").show(ui);
+    let mut names: Vec<String> = l.copper.clone();
+    names.extend(
+        ["F.SilkS", "B.SilkS", "F.Fab", "F.CrtYd", "Edge.Cuts", "Cutouts"].map(String::from),
+    );
+    ui.horizontal_wrapped(|ui| {
+        for n in &names {
+            if toggle(ui, n, st.pcb_layers.shows(n)).clicked() {
+                st.pcb_layers.toggle(n);
+            }
+        }
+        if toggle(ui, "ratsnest", st.ratsnest).clicked() {
+            st.ratsnest = !st.ratsnest;
+        }
+    });
+    ui.add_space(6.0);
+    let cols =
+        [("net", 110.0), ("class", 64.0), ("width", 60.0), ("length", 66.0), ("state", 70.0)];
+    Table::new(&cols, l.nets.len()).show(ui, |i, p, r, at| {
+        let n = &l.nets[i];
+        cell(p, r, at(0), cols[0].1, &n.name, VALUE);
+        cell(p, r, at(1), cols[1].1, &n.class, LEGEND);
+        cell(p, r, at(2), cols[2].1, &trim(n.width, 3), READOUT);
+        cell(p, r, at(3), cols[3].1, &format!("{} mm", trim(n.length_mm, 1)), TRACE);
+        let (s, c) = if n.unrouted == 0 {
+            ("routed".to_string(), OK)
+        } else {
+            (format!("{} open", n.unrouted), FAULT)
+        };
+        cell(p, r, at(4), cols[4].1, &s, c);
+    });
 }

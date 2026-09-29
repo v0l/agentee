@@ -7,6 +7,8 @@ A project is a directory. Every file below it is loaded by its suffix:
 | `*.board.toml` | one board spec: fab rules, stackup, outline, vias, net classes |
 | `*.sym.toml` | one schematic symbol |
 | `*.fp.toml` | one footprint |
+| `*.sch.toml` | a schematic: placed parts, nets, wires |
+| `*.pcb.toml` | a layout: footprint placement, tracks, vias, zones |
 
 Names are unique per kind. A symbol links a footprint by its `name`, and a `Library:Name` reference
 matches on the part after the colon.
@@ -256,6 +258,86 @@ Layers: `F.Cu`, `B.Cu`, `F.SilkS`, `B.SilkS`, `F.Mask`, `B.Mask`, `F.Paste`, `B.
 
 Check looks for overlapping pads, pads closer than the fab clearance, drills and annular rings
 under the rules, a courtyard that encloses the pads, and silk that runs over exposed copper.
+
+## Schematic (`*.sch.toml`)
+
+Parts are placed symbols; nets list the pins they join. Wires are drawn for you on a 1.27 mm
+grid unless you give them.
+
+```toml
+name = "lna"
+board = "lna"                  # net classes come from this board
+no_connect = ["U2.7"]          # pins left open on purpose
+
+[[parts]]
+ref = "U1"
+symbol = "SPF5189Z"
+value = "SPF5189Z"
+at = [66.04, 50.8]             # keep on the 1.27 mm grid
+rotation = 90                  # 0, 90, 180, 270, counter-clockwise
+mirror = true                  # flip left to right before rotating
+# unit = 2                     # one [[parts]] per unit of a multi-unit symbol, same ref
+# footprint = "SOT-89-3"       # default: the symbol's footprint
+# dnp = true
+fields = { mpn = "Qorvo SPF5189Z" }
+
+[[nets]]
+name = "RF_OUT"
+class = "RF"                   # a netclass of the board, default "Default"
+pins = ["C2.2", "J2.1", "L3.1"]   # REF.PIN, by number or by a unique pin name
+# style = "power"              # wire (default) | label | power (ground and supply symbols)
+# wires = [[[x, y], [x, y]], ...] # draw it yourself; check verifies it reaches every pin
+```
+
+Check reports pins in two nets, pins in no net, single-pin nets, several outputs on one net,
+hand wires that miss a pin or touch another net's pin, overlapping parts, and footprints whose
+pads do not cover the symbol's pins. `agentee show sch:lna` prints every pin's position.
+
+## Layout (`*.pcb.toml`)
+
+Places the schematic's footprints on the board and routes them.
+
+```toml
+name = "lna"
+board = "lna"
+schematic = "lna"
+
+[[footprints]]
+ref = "U1"
+at = [13.0, 8.05]
+rotation = 90                  # degrees, counter-clockwise
+# side = "bottom"              # mirrors the footprint and swaps F./B. layers
+
+[[tracks]]
+net = "RF_OUT"
+layer = "F.Cu"
+points = [[18.68, 10], [25.5, 10]]
+# width = 0.36                 # default: the net class width
+
+[[vias]]
+net = "GND"
+at = [7.2, 8.9]
+# via = "std"                  # a [[vias]] name from the board, default the class via
+# count = 6                    # a row, like pads
+# pitch = [1.2, 0]
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+# outline = [[x, y], ...]      # default: the board outline
+# clearance = 0.25             # default: the net class clearance
+
+[[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin
+layers = ["In1.Cu"]
+points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
+```
+
+Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
+clearance to every other net and to the board edge, and islands that reach nothing are removed.
+Check reports unrouted connections (with the ratsnest), shorts, clearance violations, tracks
+narrower than their class or off their impedance width, copper near the edge, courtyard
+overlaps, unplaced parts and track ends that connect to nothing. Name an item with its kind when
+names collide: `agentee render pcb:lna`, `sch:lna`, `board:lna`.
 
 ## Graphics
 
