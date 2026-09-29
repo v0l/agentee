@@ -8,8 +8,11 @@ description = "egui viewer and headless renderer for agentee"
 
 [dependencies]
 agentee-core.workspace = true
+agentee-3d.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_bench.workspace = true
 png = "0.18"
 notify = "8"
+earcutr = "0.5.0"
+three-d = { version = "0.19.0", default-features = false }

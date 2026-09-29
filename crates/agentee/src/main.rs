@@ -99,6 +99,9 @@ enum Cmd {
         path: PathBuf,
         #[arg(long)]
         select: Option<String>,
+        /// Open layouts in the 3D view
+        #[arg(long = "3d")]
+        view_3d: bool,
     },
     /// Serve the project over MCP on stdio
     Mcp {
@@ -164,6 +167,11 @@ enum Cmd {
         /// Crosstalk from one port to another: FROM,TO
         #[arg(long)]
         xtalk: Option<String>,
+    },
+    /// Download the KiCad 3D models (VRML) the project's footprints name, for the 3D view
+    Models {
+        #[arg(default_value = ".")]
+        path: PathBuf,
     },
     /// Write the fab package for a layout: Gerbers, drill, BOM, placement, notes
     Fab {
@@ -326,8 +334,8 @@ fn run(cli: Cli) -> Result<bool, String> {
             println!("{}", out.display());
             Ok(true)
         }
-        Cmd::View { path, select } => {
-            agentee_view::run(path, select).map_err(|e| e.to_string())?;
+        Cmd::View { path, select, view_3d } => {
+            agentee_view::run(path, select, view_3d).map_err(|e| e.to_string())?;
             Ok(true)
         }
         Cmd::Mcp { path } => {
@@ -472,6 +480,11 @@ fn run(cli: Cli) -> Result<bool, String> {
                 xtalk: xtalk.as_deref(),
             };
             print_json(&ops::sparam(&p, &name, &q)?);
+            Ok(true)
+        }
+        Cmd::Models { path } => {
+            let p = ops::load(&path)?;
+            print_json(&ops::fetch_models(&p)?);
             Ok(true)
         }
         Cmd::Fab { name, project, out } => {

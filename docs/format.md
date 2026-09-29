@@ -234,8 +234,11 @@ name = "SOIC-8_3.9x4.9mm_P1.27mm"
 description = "SOIC, 8 pin"
 tags = ["SOIC", "SO"]
 mount = "smd"                  # smd | tht | other, default from the pads
-height = "1.5mm"               # body height for the 3D view, optional
+height = "1.5mm"               # box height for the 3D view when there is no model
 model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step"
+model_offset = ["0mm", "0mm", "0mm"]   # optional, as in KiCad: model frame, Y up
+model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
+model_scale = [1, 1, 1]                # optional
 
 [[pads]]
 number = "1"
@@ -416,11 +419,23 @@ Match groups say which net is short or over and by how much. `agentee calc serpe
 --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of a trombone meander that adds exactly
 that length to a straight segment. Net lengths and delays are in `agentee show pcb:NAME`.
 
-The viewer's layout page has a `3d` tab: the board in its stackup thickness, mask and silk colours
-and finish, copper under the mask, bare pads, drills, and each part as a box over its fab outline.
-Drag to orbit, shift-drag to pan, scroll to zoom, double-click to reset. `agentee render pcb:NAME
---show 3d` (or `3d-top`, `3d-bottom`) renders the same. A footprint's body height is its `height`
-field, else a guess from the footprint name.
+The viewer's layout page has a `3d` tab (`agentee view --3d` opens on it): the board in its
+stackup thickness, mask and silk colours and finish, copper under the mask, bare pads, plated and
+bare drill walls, and each part's 3D model. The `parts` toggle hides the models. Drag to orbit,
+shift-drag to pan, scroll to zoom, double-click to reset. The viewer draws with OpenGL
+([three-d](https://github.com/asny/three-d)); `agentee render pcb:NAME --show 3d` (or `3d-top`,
+`3d-bottom`) draws the same scene in software, `--hide parts` leaves the models out and `--region`
+aims the camera at that area.
+
+Models are STEP or VRML, placed the way KiCad places them (`model_offset`, `model_rotate`,
+`model_scale`). A model path is looked up as given, then under `KICAD9_3DMODEL_DIR` and friends,
+`3dmodels/` in the project, `~/.cache/agentee/3dmodels` and `/usr/share/kicad/3dmodels`, trying
+`.step`, `.stp` and `.wrl`. KiCad library models that are not on disk are downloaded from the
+kicad-packages3D repository into the cache: `agentee models` (MCP `models`) fetches them all and
+reports what it found, and the viewer fetches in the background. A part without a model is a box
+over its fab outline, `height` tall, else a height guessed from the footprint name. STEP files are
+meshed with [truck](https://github.com/ricosjp/truck), with colours from their styled items and
+assembly placements applied.
 
 Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
 clearance to every other net and to the board edge, and islands that reach nothing are removed.

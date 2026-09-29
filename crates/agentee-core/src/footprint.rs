@@ -121,6 +121,12 @@ pub struct FootprintFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_offset: Option<[Length; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_rotate: Option<[f64; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_scale: Option<[f64; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
@@ -205,6 +211,9 @@ pub struct Footprint {
     pub tags: Vec<String>,
     pub mount: Mount,
     pub model: Option<String>,
+    pub model_offset: [f64; 3],
+    pub model_rotate: [f64; 3],
+    pub model_scale: [f64; 3],
     pub height: Option<f64>,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
@@ -317,6 +326,9 @@ impl FootprintFile {
             tags: self.tags.clone(),
             mount,
             model: self.model.clone(),
+            model_offset: self.model_offset.map(|o| o.map(Length::to_mm)).unwrap_or([0.0; 3]),
+            model_rotate: self.model_rotate.unwrap_or([0.0; 3]),
+            model_scale: self.model_scale.unwrap_or([1.0; 3]),
             height: self.height.map(Length::to_mm),
             pads,
             graphics,

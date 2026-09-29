@@ -789,6 +789,30 @@ fn run_cascade(
     }))
 }
 
+pub fn fetch_models(p: &Project) -> Result<Value, String> {
+    let mut wanted: Vec<String> =
+        p.footprints.iter().filter_map(|f| f.item.model.clone()).collect();
+    wanted.sort();
+    wanted.dedup();
+    let mut models = Vec::new();
+    for m in wanted {
+        let local = agentee_3d::locate(&m, &p.root);
+        let fetched = local.is_none();
+        let row = match agentee_3d::get(&m, &p.root, agentee_3d::Fetch::Blocking) {
+            agentee_3d::Status::Ready(mesh) => json!({
+                "model": m,
+                "path": agentee_3d::locate(&m, &p.root),
+                "fetched": fetched,
+                "triangles": mesh.triangles(),
+            }),
+            agentee_3d::Status::Missing(e) => json!({ "model": m, "error": e }),
+            agentee_3d::Status::Pending => json!({ "model": m, "error": "pending" }),
+        };
+        models.push(row);
+    }
+    Ok(json!({ "cache": agentee_3d::cache_dir(), "models": models }))
+}
+
 pub fn serpentine(
     from: &str,
     to: &str,

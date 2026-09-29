@@ -278,10 +278,19 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
             .unwrap_or_default(),
         mount,
         model: root.find("model").and_then(|m| m.arg(0)).map(str::to_string),
+        model_offset: model_xyz(root, "offset", 0.0).map(|v| v.map(Length::mm)),
+        model_rotate: model_xyz(root, "rotate", 0.0),
+        model_scale: model_xyz(root, "scale", 1.0),
         height: None,
         pads: collapse(pads),
         graphics,
     })
+}
+
+fn model_xyz(root: &Node, key: &str, default: f64) -> Option<[f64; 3]> {
+    let xyz = root.find("model")?.find(key)?.find("xyz")?;
+    let v = [xyz.num(0)?, xyz.num(1)?, xyz.num(2)?];
+    v.iter().any(|c| (c - default).abs() > 1e-9).then_some(v)
 }
 
 #[cfg(test)]

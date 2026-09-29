@@ -12,6 +12,7 @@ agentee-kicad.workspace = true
 agentee-view.workspace = true
 agentee-sim.workspace = true
 agentee-fab.workspace = true
+agentee-3d.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

@@ -36,7 +36,9 @@ pub struct PageState {
     pub show_tdr: bool,
     pub view_3d: bool,
     pub camera: crate::board3d::Camera,
-    pub scene: Option<((u64, usize), crate::board3d::Scene)>,
+    pub scene: Option<((u64, usize, u64), std::sync::Arc<crate::board3d::Scene>)>,
+    pub show_parts: bool,
+    pub soft_3d: crate::board3d::SoftCache,
     pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
 }
 
@@ -66,6 +68,8 @@ impl Default for PageState {
             view_3d: false,
             camera: Default::default(),
             scene: None,
+            show_parts: true,
+            soft_3d: None,
             tdr_cache: None,
         }
     }
@@ -836,17 +840,36 @@ fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
             if toggle(ui, "3d", st.view_3d).clicked() {
                 st.view_3d = true;
             }
+            if st.view_3d {
+                ui.add_space(12.0);
+                if toggle(ui, "parts", st.show_parts).clicked() {
+                    st.show_parts = !st.show_parts;
+                }
+            }
         });
     }
     if st.view_3d {
-        let key = (project.generation, i);
+        let key = (project.generation, i, agentee_3d::generation());
         if st.scene.as_ref().map(|s| s.0) != Some(key)
             && let Some(board) = project.boards.iter().find(|b| b.name == l.board)
         {
-            st.scene = Some((key, crate::board3d::build(l, &board.item)));
+            let fetch = if st.interactive {
+                agentee_3d::Fetch::Background
+            } else {
+                agentee_3d::Fetch::Blocking
+            };
+            let scene = crate::board3d::build(l, &board.item, &project.root, fetch);
+            st.scene = Some((key, std::sync::Arc::new(scene)));
         }
         if let Some((_, scene)) = &st.scene {
-            crate::board3d::show(ui, scene, &mut st.camera, st.interactive);
+            crate::board3d::show(
+                ui,
+                scene,
+                &mut st.camera,
+                st.interactive,
+                st.show_parts,
+                &mut st.soft_3d,
+            );
         }
         return;
     }

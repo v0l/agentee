@@ -133,6 +133,11 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "models",
+            "description": "Find the 3D models (STEP or VRML) the project's footprints name, downloading missing KiCad library models into the cache. Reports each model's path and triangle count, or why it is missing.",
+            "inputSchema": s(json!({}), &[]),
+        },
+        {
             "name": "fab",
             "description": "Write the fab package for a layout into a folder: RS-274X Gerbers (X2) per copper, mask, paste, silk and edge layer, Excellon drills, a zip of those for upload, BOM (generic and JLCPCB), pick-and-place, fab notes and assembly drawings. Refuses while the layout has errors.",
             "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output folder, relative to the project" } }), &["name", "out"]),
@@ -357,6 +362,10 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 arg(a, "name").ok_or("name is required")?,
                 &q,
             )?))]))
+        }
+        "models" => {
+            let p = ops::load(root)?;
+            Ok(ok(vec![text(pretty(&ops::fetch_models(&p)?))]))
         }
         "fab" => {
             let p = ops::load(root)?;

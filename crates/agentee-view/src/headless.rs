@@ -61,6 +61,11 @@ pub fn render_rgba(
         layers.hidden.extend(opts.hide.iter().cloned());
     }
     st.view_3d = opts.show.iter().any(|x| x == "3d" || x == "3d-top" || x == "3d-bottom");
+    st.show_parts = !opts.hide.iter().any(|x| x == "parts");
+    if let Some([x0, y0, x1, y1]) = opts.region {
+        let c = [((x0 + x1) / 2.0) as f32, -((y0 + y1) / 2.0) as f32, 0.0];
+        st.camera.focus = Some((c, ((x1 - x0).abs().max((y1 - y0).abs())) as f32));
+    }
     if opts.show.iter().any(|x| x == "3d-top") {
         st.camera.pitch = 1.5;
         st.camera.yaw = 0.0;

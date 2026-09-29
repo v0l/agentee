@@ -40,8 +40,15 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(cc: &eframe::CreationContext, path: PathBuf, select: Option<String>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext,
+        path: PathBuf,
+        select: Option<String>,
+        view_3d: bool,
+    ) -> Self {
         egui_bench::install(&cc.egui_ctx);
+        let repaint = cc.egui_ctx.clone();
+        agentee_3d::set_waker(move || repaint.request_repaint());
         let path = std::fs::canonicalize(&path).unwrap_or(path);
         let mut app = App {
             path,
@@ -59,6 +66,7 @@ impl App {
             progress: Default::default(),
             polled: Instant::now() - Duration::from_secs(5),
         };
+        app.st.view_3d = view_3d;
         app.reload();
         app.watch(cc.egui_ctx.clone());
         if let Some(r) = select.and_then(|n| app.project.find(&n)) {
@@ -374,13 +382,19 @@ impl eframe::App for App {
     }
 }
 
-pub fn run(path: PathBuf, select: Option<String>) -> eframe::Result<()> {
+pub fn run(path: PathBuf, select: Option<String>, view_3d: bool) -> eframe::Result<()> {
     let title = format!("agentee - {}", path.display());
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1500.0, 950.0])
             .with_title(title.clone()),
+        depth_buffer: 24,
+        multisampling: 4,
         ..Default::default()
     };
-    eframe::run_native(&title, opts, Box::new(move |cc| Ok(Box::new(App::new(cc, path, select)))))
+    eframe::run_native(
+        &title,
+        opts,
+        Box::new(move |cc| Ok(Box::new(App::new(cc, path, select, view_3d)))),
+    )
 }

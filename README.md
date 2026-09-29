@@ -40,6 +40,8 @@ agentee render LM358 -o lm358.png              # PNG exactly as the viewer draws
 agentee calc impedance --layer F.Cu --target 50ohm
 agentee calc trace-width --current 2A
 agentee view                                   # live window, reloads on save
+agentee view --3d                              # layouts open in the 3D view
+agentee models                                 # fetch the KiCad 3D models the footprints name
 ```
 
 `check` exits 1 when there are errors, so it fits in a loop or CI.
@@ -89,6 +91,7 @@ Fab presets are `generic` and `jlcpcb`; stackup presets are the JLCPCB 2 layer a
 | `agentee-core` | units, model, resolve and check, calculators |
 | `agentee-kicad` | s-expression reader, `.kicad_sym` / `.kicad_mod` import |
 | `agentee-view` | egui viewer on [egui_bench](https://github.com/v0l/egui_bench), headless PNG renderer |
+| `agentee-3d` | STEP and VRML part models, lookup and download |
 | `agentee` | CLI and MCP server |
 
 KiCad libraries are found under `/usr/share/kicad` or `KICAD9_SYMBOL_DIR` /
