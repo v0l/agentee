@@ -238,27 +238,30 @@ pub enum Mount {
 pub fn impedance(s: &Matrix, z0: f64, mount: Mount) -> Cx {
     let s11 = (s[0][0] + s[1][1]) * 0.5;
     let s21 = (s[1][0] + s[0][1]) * 0.5;
-    let reflect = s11.norm2() < s21.norm2();
     let z0c = Cx::new(z0, 0.0);
-    match (mount, reflect) {
-        (Mount::Series, true) => z0c * 2.0 * s11 / (Cx::ONE - s11),
-        (Mount::Series, false) => z0c * 2.0 * (Cx::ONE - s21) / s21,
-        (Mount::Shunt, true) => -(z0c * (Cx::ONE + s11)) / (s11 * 2.0),
-        (Mount::Shunt, false) => z0c * s21 / ((Cx::ONE - s21) * 2.0),
+    match mount {
+        Mount::Series => z0c * 2.0 * s11 / s21,
+        Mount::Shunt => -(z0c * s21) / (s11 * 2.0),
     }
 }
 
-pub fn as_one_port(net: &Network, mount: Mount, z_port: f64) -> Network {
+pub fn as_one_port(net: &Network, mount: Mount, z_port: f64) -> (Network, Vec<f64>) {
+    let mut clamped = Vec::new();
     let s = net
         .s
         .iter()
-        .map(|m| {
-            let z = impedance(m, net.z0, mount);
+        .zip(&net.freqs)
+        .map(|(m, f)| {
+            let mut z = impedance(m, net.z0, mount);
+            if z.re < 0.0 {
+                clamped.push(*f);
+                z.re = 0.0;
+            }
             let r = Cx::new(z_port, 0.0);
             vec![vec![(z - r) / (z + r)]]
         })
         .collect();
-    Network { ports: 1, z0: z_port, freqs: net.freqs.clone(), s, noise: Vec::new() }
+    (Network { ports: 1, z0: z_port, freqs: net.freqs.clone(), s, noise: Vec::new() }, clamped)
 }
 
 pub fn ports_from_path(path: &std::path::Path) -> Option<usize> {
@@ -522,6 +525,22 @@ mod tests {
                 assert!((back - z).abs() / z.abs() < 1e-9, "{mount:?} {z:?} {back:?}");
             }
         }
+    }
+
+    #[test]
+    fn fixture_line_length_on_both_sides_cancels() {
+        let z = Cx::new(40.0, 700.0);
+        let r = Cx::new(50.0, 0.0);
+        let line = Cx::polar(1.0, -2.0 * 37.0);
+        let s11 = -r / (z * 2.0 + r) * line;
+        let s21 = z * 2.0 / (z * 2.0 + r) * line;
+        let m = vec![vec![s11, s21], vec![s21, s11]];
+        assert!((impedance(&m, 50.0, Mount::Shunt) - z).abs() < 1e-9);
+        let zs = Cx::new(0.3, 5.0);
+        let s11 = zs / (zs + r * 2.0) * line;
+        let s21 = r * 2.0 / (zs + r * 2.0) * line;
+        let m = vec![vec![s11, s21], vec![s21, s11]];
+        assert!((impedance(&m, 50.0, Mount::Series) - zs).abs() < 1e-9);
     }
 
     #[test]

@@ -170,7 +170,7 @@ pub fn curve_plot(
     p.rect_filled(rect, 0.0, WELL);
     p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
     let area =
-        Rect::from_min_max(rect.min + Vec2::new(52.0, 18.0), rect.max - Vec2::new(14.0, 26.0));
+        Rect::from_min_max(rect.min + Vec2::new(52.0, 26.0), rect.max - Vec2::new(14.0, 26.0));
     let known: Vec<(f64, f64)> = r
         .freqs
         .iter()

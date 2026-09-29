@@ -479,6 +479,7 @@ fn run_cascade(
     let dir = entry.path.parent().unwrap_or(std::path::Path::new("."));
     let mut placed = Vec::new();
     let mut texts = Vec::new();
+    let mut notes: Vec<Value> = Vec::new();
     for d in &spec.devices {
         let file = dir.join(&d.file);
         let text =
@@ -500,7 +501,17 @@ fn run_cascade(
                 .find(|q| q.name == result.ports[p0])
                 .map(|q| q.impedance)
                 .unwrap_or(50.0);
-            net = agentee_core::rf::as_one_port(&net, mount, z);
+            let (one, clamped) = agentee_core::rf::as_one_port(&net, mount, z);
+            net = one;
+            if let (Some(a), Some(b)) = (clamped.first(), clamped.last()) {
+                notes.push(json!(format!(
+                    "{}: the fixture data reads as negative resistance at {} points from {:.0} to {:.0} MHz, taken as lossless there",
+                    d.file,
+                    clamped.len(),
+                    a / 1e6,
+                    b / 1e6
+                )));
+            }
         }
         placed.push(agentee_sim::cascade::Placed {
             name: d.file.clone(),
@@ -539,6 +550,7 @@ fn run_cascade(
         "result": json_path,
         "touchstone": touch,
         "readings": out.readings,
+        "notes": notes,
     }))
 }
 
