@@ -386,6 +386,77 @@ fn zip_files(dir: &Path, names: &[String], out: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn ipc356(layout: &Layout) -> String {
+    let inch = |mm: f64| (mm / 25.4 * 10000.0).round() as i64;
+    let coord = |v: f64| {
+        let n = inch(v);
+        format!("{}{:06}", if n < 0 { '-' } else { '+' }, n.abs())
+    };
+    let size = |mm: f64| format!("{:04}", inch(mm).clamp(0, 9999));
+    let net = |n: Option<usize>| {
+        let name = n.map(|k| layout.nets[k].name.clone()).unwrap_or_else(|| "N/C".into());
+        let name: String = name.chars().filter(|c| !c.is_whitespace()).collect();
+        let tail: String =
+            name.chars().rev().take(14).collect::<Vec<_>>().into_iter().rev().collect();
+        format!("{tail:<14}")
+    };
+    let mut out = String::from("C  IPC-D-356 bare board netlist\n");
+    let _ = writeln!(out, "C  {}", layout.name);
+    out += "P  JOB   agentee\nP  CODE 00\nP  UNITS CUST 0\nP  arrayDim   N\n";
+    for part in &layout.parts {
+        for pad in part.pads.iter().filter(|q| !q.copper.is_empty()) {
+            let mut b = agentee_core::graphic::Bounds::EMPTY;
+            pad.outlines.iter().flatten().for_each(|p| b.add(*p));
+            let c = pad.drill.map(|d| d.0).unwrap_or_else(|| b.center());
+            let rot = (part.rotation.rem_euclid(360.0)).round() as i64 % 360;
+            let [w, h] = match rot {
+                90 | 270 => [b.size()[1], b.size()[0]],
+                _ => b.size(),
+            };
+            let reference: String = part.reference.chars().take(6).collect();
+            let pin: String = pad.number.chars().take(4).collect();
+            let (record, hole, access, mask) = match pad.drill {
+                Some((_, d, _)) => (
+                    317,
+                    format!(
+                        "D{}{}",
+                        size(d[0].min(d[1])),
+                        if pad.kind == PadKind::Npth { 'U' } else { 'P' }
+                    ),
+                    "A00",
+                    "S0",
+                ),
+                None if pad.copper.iter().any(|l| l == "F.Cu") => {
+                    (327, "      ".to_string(), "A01", "S2")
+                }
+                None => (327, "      ".to_string(), "A02", "S1"),
+            };
+            let _ = writeln!(
+                out,
+                "{record}{}   {reference:<6}-{pin:<4} {hole}{access}X{}Y{}X{}Y{}R{rot:03}{mask}",
+                net(pad.net),
+                coord(c[0]),
+                coord(-c[1]),
+                size(w),
+                size(h),
+            );
+        }
+    }
+    for v in &layout.vias {
+        let _ = writeln!(
+            out,
+            "317{}   VIA        MD{}PA00X{}Y{}X{}Y0000R000S3",
+            net(Some(v.net)),
+            size(v.drill),
+            coord(v.at[0]),
+            coord(-v.at[1]),
+            size(v.diameter),
+        );
+    }
+    out += "999\n";
+    out
+}
+
 pub fn package(
     layout: &Layout,
     board: &Board,
@@ -436,6 +507,7 @@ pub fn package(
     let (placement, placed) = cpl(layout, sch);
     write("cpl.csv".into(), placement)?;
     write("fab-notes.txt".into(), notes(layout, board))?;
+    write(format!("{}.d356", layout.name), ipc356(layout))?;
     let gerbers: Vec<String> =
         files.iter().filter(|f| f.ends_with(".gbr") || f.ends_with(".drl")).cloned().collect();
     let zip_name = format!("{}-gerbers.zip", layout.name);

@@ -731,6 +731,7 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
 | `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill |
+| `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |
 | `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |
 
