@@ -340,6 +340,8 @@ fn silk_text(p: &Painter, xf: &Xf, t: &agentee_core::layout::SilkText) {
     let stroke = xf.stroke(pen, layer_color(&t.layer));
     let bottom = t.layer.starts_with("B.");
     for st in agentee_core::font::strokes(&t.text, t.at, t.size, t.rotation, t.anchor, bottom) {
-        p.add(PathShape::line(st.iter().map(|q| xf.world(*q)).collect(), stroke));
+        let pts: Vec<Pos2> = st.iter().map(|q| xf.world(*q)).collect();
+        paint::round_joints(p, &pts, stroke);
+        p.add(PathShape::line(pts, stroke));
     }
 }

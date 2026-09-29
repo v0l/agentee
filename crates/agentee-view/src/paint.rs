@@ -170,6 +170,15 @@ pub fn fill_polygon(p: &Painter, pts: Vec<Pos2>, fill: Color32, stroke: Stroke) 
     p.add(PathShape::closed_line(pts, edge));
 }
 
+pub fn round_joints(p: &Painter, pts: &[Pos2], stroke: Stroke) {
+    if stroke.width < 2.0 {
+        return;
+    }
+    for q in pts {
+        p.circle_filled(*q, stroke.width / 2.0, stroke.color);
+    }
+}
+
 pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Color32) {
     let stroke = xf.stroke(g.width.to_mm(), color);
     let fill = match g.fill {
@@ -179,7 +188,9 @@ pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Col
     };
     match &g.shape {
         Shape::Line { start, end } => {
-            p.line_segment([xf.pos(start.to_mm()), xf.pos(end.to_mm())], stroke);
+            let pts = [xf.pos(start.to_mm()), xf.pos(end.to_mm())];
+            p.line_segment(pts, stroke);
+            round_joints(p, &pts, stroke);
         }
         Shape::Rect { start, end } => {
             let ([x0, y0], [x1, y1]) = (start.to_mm(), end.to_mm());
@@ -188,10 +199,12 @@ pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Col
             if fill != Color32::TRANSPARENT {
                 p.add(PathShape::convex_polygon(pts.clone(), fill, Stroke::NONE));
             }
+            round_joints(p, &pts, stroke);
             p.add(PathShape::closed_line(pts, stroke));
         }
         Shape::Polyline { points, closed } => {
             let pts: Vec<Pos2> = points.iter().map(|q| xf.pos(q.to_mm())).collect();
+            round_joints(p, &pts, stroke);
             if *closed {
                 if fill != Color32::TRANSPARENT {
                     fill_polygon(p, pts.clone(), fill, Stroke::NONE);
@@ -207,7 +220,11 @@ pub fn graphic(p: &Painter, xf: &Xf, g: &Graphic, color: Color32, body_fill: Col
             p.circle(c, r, fill, stroke);
         }
         Shape::Arc { start, mid, end } => {
-            let pts = arc_points(*start, *mid, *end, 32).into_iter().map(|q| xf.pos(q)).collect();
+            let pts: Vec<Pos2> =
+                arc_points(*start, *mid, *end, 32).into_iter().map(|q| xf.pos(q)).collect();
+            if let (Some(a), Some(b)) = (pts.first(), pts.last()) {
+                round_joints(p, &[*a, *b], stroke);
+            }
             p.add(PathShape::line(pts, stroke));
         }
         Shape::Text { at, text: t, size, rotation, anchor } => {
