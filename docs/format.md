@@ -323,6 +323,25 @@ pins = ["C2.2", "J2.1", "L3.1"]   # REF.PIN, by number or by a unique pin name
 # wires = [[[x, y], [x, y]], ...] # draw it yourself; check verifies it reaches every pin
 ```
 
+### Sheets
+
+Split a large design into one schematic per section and join them in a top schematic that lists
+them. The layout places the top one.
+
+```toml
+name = "sdr"                   # sdr.sch.toml
+board = "sdr"
+sheets = ["power", "fpga", "rf", "usb"]
+```
+
+Each sheet is an ordinary schematic file with its own parts and nets. Nets join across sheets by
+name, so `3V3` on every sheet is one net and a signal leaves one sheet and arrives on another
+under the same name. A net's pins must be parts on the same sheet; a net that spans sheets needs
+the same `class` wherever it names one, and is drawn with labels. References are unique across
+the design. A sheet on its own skips the single-pin warning (the rest of the net is elsewhere);
+the top schematic runs every check on the joined design and draws the sheets stacked top to
+bottom. The top file may hold parts and nets of its own too.
+
 Check reports pins in two nets, pins in no net, single-pin nets, several outputs on one net,
 hand wires that miss a pin or touch another net's pin, overlapping parts, and footprints whose
 pads do not cover the symbol's pins. `agentee show sch:lna` prints every pin's position.

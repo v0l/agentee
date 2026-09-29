@@ -1,6 +1,7 @@
 use crate::board::{Board, BoardFile, Rules, fab_rules};
 use crate::diag::{Diagnostic, Diags, Severity};
 use crate::footprint::{Footprint, FootprintFile, natural_cmp};
+use crate::graphic::Bounds;
 use crate::layout::{Context, Layout, LayoutFile};
 use crate::schematic::{Library, Schematic, SchematicFile};
 use crate::sim::{Sim, SimFile, SimResult};
@@ -147,6 +148,36 @@ pub fn parse<T: serde::de::DeserializeOwned>(src: &str) -> Result<T, (String, St
     })
 }
 
+fn flatten(
+    file: &SchematicFile,
+    all: &[(PathBuf, SchematicFile)],
+    lib: &Library,
+    stack: &mut Vec<String>,
+    d: &mut Diags,
+) -> SchematicFile {
+    if file.sheets.is_empty() {
+        return file.clone();
+    }
+    stack.push(file.name.clone());
+    let mut sheets = Vec::new();
+    for name in &file.sheets {
+        if stack.contains(name) {
+            d.error("sheets", format!("sheet `{name}` includes itself"));
+            continue;
+        }
+        let Some((_, child)) = all.iter().find(|(_, s)| &s.name == name) else {
+            d.error("sheets", format!("no schematic named `{name}`"));
+            continue;
+        };
+        let child = flatten(child, all, lib, stack, &mut Diags::new(name));
+        let bounds = child.resolve(lib, &mut Diags::new(name)).bounds();
+        sheets.push((child, bounds));
+    }
+    stack.pop();
+    let refs: Vec<(&SchematicFile, Bounds)> = sheets.iter().map(|(s, b)| (s, *b)).collect();
+    file.merge(&refs, d)
+}
+
 fn tag(mut d: Diags, path: &Path) -> Vec<Diagnostic> {
     for x in &mut d.list {
         x.file = Some(path.to_path_buf());
@@ -239,7 +270,9 @@ impl Project {
             p.symbols.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         p.cross_check();
-        for (f, file) in sch_files {
+        let sheet_names: std::collections::HashSet<String> =
+            sch_files.iter().flat_map(|(_, s)| s.sheets.iter().cloned()).collect();
+        for (f, file) in &sch_files {
             let mut d = Diags::new(&file.name);
             let board = p.pick_board(file.board.as_deref(), &mut d);
             let lib = Library {
@@ -247,9 +280,15 @@ impl Project {
                 footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
                 netclasses: board.map(|b| b.netclasses.iter().map(|n| n.name.clone()).collect()),
             };
-            let item = file.resolve(&lib, &mut d);
-            item.check(&lib, &mut d);
-            p.schematics.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
+            let whole = flatten(file, &sch_files, &lib, &mut Vec::new(), &mut d);
+            let item = whole.resolve(&lib, &mut d);
+            item.check_as(&lib, &mut d, sheet_names.contains(&file.name));
+            p.schematics.push(Entry {
+                name: item.name.clone(),
+                diags: tag(d, f),
+                path: f.clone(),
+                item,
+            });
         }
         for (f, file) in pcb_files {
             let mut d = Diags::new(&file.name);

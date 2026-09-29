@@ -67,6 +67,8 @@ pub struct SchematicFile {
     pub nets: Vec<NetFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub no_connect: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sheets: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -166,7 +168,80 @@ fn short(name: &str) -> &str {
     name.rsplit(':').next().unwrap_or(name)
 }
 
+pub const SHEET_GAP_MM: f64 = 25.4;
+
 impl SchematicFile {
+    pub fn merge(&self, sheets: &[(&SchematicFile, Bounds)], d: &mut Diags) -> SchematicFile {
+        let snap = |v: f64| (v / (2.0 * GRID_MM)).round() * 2.0 * GRID_MM;
+        let own = self.parts.iter().fold(Bounds::EMPTY, |mut b, p| {
+            b.add(p.at.to_mm());
+            b
+        });
+        let mut cursor = if own.is_empty() { 0.0 } else { own.max[1] + SHEET_GAP_MM };
+        let mut sources: Vec<(&SchematicFile, Point)> = vec![(self, Point::ZERO)];
+        for (f, b) in sheets {
+            if b.is_empty() {
+                sources.push((f, Point::ZERO));
+                continue;
+            }
+            let offset = Point::mm(snap(-b.min[0]), snap(cursor - b.min[1]));
+            cursor += b.max[1] - b.min[1] + SHEET_GAP_MM;
+            sources.push((f, offset));
+        }
+
+        let mut out = SchematicFile {
+            name: self.name.clone(),
+            description: self.description.clone(),
+            board: self.board.clone(),
+            parts: Vec::new(),
+            nets: Vec::new(),
+            no_connect: Vec::new(),
+            sheets: Vec::new(),
+        };
+        let mut seen: HashMap<String, (usize, &str, usize)> = HashMap::new();
+        for (f, offset) in &sources {
+            for p in &f.parts {
+                let mut p = p.clone();
+                p.at = p.at + *offset;
+                out.parts.push(p);
+            }
+            out.no_connect.extend(f.no_connect.iter().cloned());
+            for n in &f.nets {
+                let wires: Vec<Vec<Point>> =
+                    n.wires.iter().map(|w| w.iter().map(|q| *q + *offset).collect()).collect();
+                match seen.get_mut(&n.name) {
+                    None => {
+                        seen.insert(n.name.clone(), (out.nets.len(), f.name.as_str(), 1));
+                        out.nets.push(NetFile { wires, ..n.clone() });
+                    }
+                    Some((i, first, count)) => {
+                        let m = &mut out.nets[*i];
+                        if let (Some(a), Some(b)) = (&m.class, &n.class)
+                            && a != b
+                        {
+                            d.error(
+                                format!("net {}", n.name),
+                                format!("class {a} on sheet {first} but {b} on sheet {}", f.name),
+                            );
+                        }
+                        if m.class.is_none() {
+                            m.class = n.class.clone();
+                        }
+                        if n.style == Some(NetStyle::Power) {
+                            m.style = Some(NetStyle::Power);
+                        } else if m.style != Some(NetStyle::Power) {
+                            m.style = Some(NetStyle::Label);
+                        }
+                        m.pins.extend(n.pins.iter().cloned());
+                        m.wires.clear();
+                        *count += 1;
+                    }
+                }
+            }
+        }
+        out
+    }
+
     pub fn resolve(&self, lib: &Library, d: &mut Diags) -> Schematic {
         let mut parts = Vec::new();
         for (i, p) in self.parts.iter().enumerate() {
@@ -313,6 +388,10 @@ impl Schematic {
     }
 
     pub fn check(&self, lib: &Library, d: &mut Diags) {
+        self.check_as(lib, d, false);
+    }
+
+    pub fn check_as(&self, lib: &Library, d: &mut Diags, sheet: bool) {
         let mut seen: HashMap<(&str, u32), usize> = HashMap::new();
         for (i, p) in self.parts.iter().enumerate() {
             let at = format!("part {}", p.reference);
@@ -367,7 +446,7 @@ impl Schematic {
             if self.nets.iter().filter(|m| m.name == n.name).count() > 1 {
                 d.error(&at, "net name is used twice, merge the pin lists");
             }
-            if n.pins.len() == 1 {
+            if n.pins.len() == 1 && !sheet {
                 d.warn(
                     &at,
                     format!("only one pin ({}), nothing to connect", self.pin_label(n.pins[0])),
@@ -901,6 +980,58 @@ pins = ["R2.2"]
         assert!(errors.is_empty(), "{errors:?}");
         assert!(!s.nets[0].wires.is_empty() && !s.nets[1].wires.is_empty());
         assert_eq!(s.nets[0].junctions.len(), 1, "{:?}", s.nets[0].wires);
+    }
+
+    #[test]
+    fn sheets_join_nets_by_name_and_stack_below_each_other() {
+        let r = resistor();
+        let lib = Library {
+            symbols: HashMap::from([("R", &r)]),
+            footprints: HashMap::new(),
+            netclasses: None,
+        };
+        let sheet = |name: &str, part: &str, class: &str| -> SchematicFile {
+            toml::from_str(&format!(
+                r#"
+name = "{name}"
+[[parts]]
+ref = "{part}"
+symbol = "R"
+at = [10.16, 10.16]
+[[nets]]
+name = "MID"
+class = "{class}"
+pins = ["{part}.1"]
+[[nets]]
+name = "GND"
+style = "power"
+pins = ["{part}.2"]
+"#
+            ))
+            .unwrap()
+        };
+        let a = sheet("a", "R1", "Default");
+        let b = sheet("b", "R2", "Default");
+        let top: SchematicFile = toml::from_str("name = \"top\"\nsheets = [\"a\", \"b\"]").unwrap();
+        let mut d = Diags::new("a");
+        let sa = a.resolve(&lib, &mut d);
+        sa.check_as(&lib, &mut d, true);
+        let noise = |d: &Diags| d.list.iter().filter(|x| !x.message.contains("footprint")).count();
+        assert_eq!(noise(&d), 0, "{:?}", d.list);
+        let bounds = |f: &SchematicFile| f.resolve(&lib, &mut Diags::new("x")).bounds();
+        let mut d = Diags::new("top");
+        let whole = top.merge(&[(&a, bounds(&a)), (&b, bounds(&b))], &mut d).resolve(&lib, &mut d);
+        whole.check(&lib, &mut d);
+        assert_eq!(noise(&d), 0, "{:?}", d.list);
+        assert_eq!(whole.nets.len(), 2);
+        assert_eq!(whole.nets[0].pins.len(), 2);
+        assert_eq!(whole.nets[0].style, NetStyle::Label);
+        assert!(whole.parts[1].at.to_mm()[1] > whole.parts[0].at.to_mm()[1] + SHEET_GAP_MM);
+
+        let c = sheet("c", "R3", "Power");
+        let mut d = Diags::new("top");
+        top.merge(&[(&a, bounds(&a)), (&c, bounds(&c))], &mut d);
+        assert!(d.list.iter().any(|x| x.message.contains("class Default on sheet a but Power")));
     }
 
     #[test]
