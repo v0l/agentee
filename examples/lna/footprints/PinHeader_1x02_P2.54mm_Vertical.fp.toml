@@ -1,0 +1,151 @@
+# imported from KiCad Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical
+name = "PinHeader_1x02_P2.54mm_Vertical"
+description = "Through hole straight pin header, 1x02, 2.54mm pitch, single row"
+tags = ["Through", "hole", "pin", "header", "THT", "1x02", "2.54mm", "single", "row"]
+mount = "tht"
+model = "${KICAD9_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x02_P2.54mm_Vertical.step"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [0.0, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.38]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 4.92]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.38, -1.38]
+end = [0.0, -1.38]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.38, 0.0]
+end = [-1.38, -1.38]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.38, 1.27]
+end = [-1.38, 3.92]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.38, 1.27]
+end = [1.38, 1.27]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.38, 3.92]
+end = [1.38, 3.92]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.38, 1.27]
+end = [1.38, 3.92]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.77, -1.77]
+end = [-1.77, 4.32]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.77, 4.32]
+end = [1.77, 4.32]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.77, -1.77]
+end = [-1.77, -1.77]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.77, 4.32]
+end = [1.77, -1.77]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.27, -0.635]
+end = [-0.635, -1.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.27, 3.81]
+end = [-1.27, -0.635]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.635, -1.27]
+end = [1.27, -1.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.27, -1.27]
+end = [1.27, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.27, 3.81]
+end = [-1.27, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.27]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 90.0

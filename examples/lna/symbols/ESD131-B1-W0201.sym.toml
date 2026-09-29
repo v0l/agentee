@@ -1,0 +1,48 @@
+# imported from KiCad Diode:ESD131-B1-W0201
+name = "ESD131-B1-W0201"
+reference = "D"
+description = "Bidirectional ESD protection diode, ±5.5Vrwm, 0.23pF, SG-WLL-2-3"
+datasheet = "https://www.infineon.com/dgdl/Infineon-ESD131-B1-W0201-DataSheet-v02_00-EN.pdf?fileId=5546d4625cc9456a015ce94850964889"
+keywords = ["diode", "TVS", "ESD"]
+footprint = "Infineon_SG-WLL-2-3_0.58x0.28_P0.36mm"
+footprint_filters = ["*SG?WLL?2?3*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polygon"
+points = [[-2.54, 1.27], [0.0, 0.0], [-2.54, -1.27]]
+width = 0.2032
+
+[[graphics]]
+kind = "polyline"
+points = [[0.508, -1.27], [0.0, -1.27], [0.0, 1.27], [-0.508, 1.27]]
+width = 0.2032
+
+[[graphics]]
+kind = "polyline"
+points = [[1.27, 0.0], [-1.27, 0.0]]
+
+[[graphics]]
+kind = "polygon"
+points = [[2.54, -1.27], [2.54, 1.27], [0.0, 0.0]]
+width = 0.2032
+
+[[pins]]
+number = "1"
+name = "A1"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A2"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1

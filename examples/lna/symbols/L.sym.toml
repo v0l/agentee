@@ -1,0 +1,52 @@
+# imported from KiCad Device:L
+name = "L"
+reference = "L"
+description = "Inductor"
+keywords = ["inductor", "choke", "coil", "reactor", "magnetic"]
+footprint = "L_0603_1608Metric"
+footprint_filters = ["Choke_*", "*Coil*", "Inductor_*", "L_*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "arc"
+start = [0.0, -2.54]
+mid = [0.6323, -1.905]
+end = [0.0, -1.27]
+
+[[graphics]]
+kind = "arc"
+start = [0.0, -1.27]
+mid = [0.6323, -0.635]
+end = [0.0, 0.0]
+
+[[graphics]]
+kind = "arc"
+start = [0.0, 0.0]
+mid = [0.6323, 0.635]
+end = [0.0, 1.27]
+
+[[graphics]]
+kind = "arc"
+start = [0.0, 1.27]
+mid = [0.6323, 1.905]
+end = [0.0, 2.54]
+
+[[pins]]
+number = "1"
+name = "1"
+type = "passive"
+at = [0.0, -3.81]
+side = "top"
+length = 1.27
+unit = 1
+
+[[pins]]
+number = "2"
+name = "2"
+type = "passive"
+at = [0.0, 3.81]
+side = "bottom"
+length = 1.27
+unit = 1

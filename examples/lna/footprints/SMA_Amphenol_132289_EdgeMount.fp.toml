@@ -1,0 +1,249 @@
+# imported from KiCad Connector_Coaxial:SMA_Amphenol_132289_EdgeMount
+name = "SMA_Amphenol_132289_EdgeMount"
+description = "https://www.amphenolrf.com/library/download/link/link_id/595984/parent/132289/"
+tags = ["SMA"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Connector_Coaxial.3dshapes/SMA_Amphenol_132289_EdgeMount.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.5, 5.08]
+rotation = 90.0
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.0, -4.25]
+size = [1.5, 5.08]
+rotation = 90.0
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.0, -4.25]
+size = [1.5, 5.08]
+rotation = 90.0
+layers = ["B.Cu", "B.Mask", "B.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.0, 4.25]
+size = [1.5, 5.08]
+rotation = 90.0
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.0, 4.25]
+size = [1.5, 5.08]
+rotation = 90.0
+layers = ["B.Cu", "B.Mask", "B.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [-3.96, -3.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [5.0, 6.0]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.71, -0.25]
+end = [-3.71, 0.25]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.71, 0.25]
+end = [-3.21, 0.0]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.21, 0.0]
+end = [-3.71, -0.25]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "B.CrtYd"
+start = [-3.04, 5.58]
+end = [-3.04, -5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "B.CrtYd"
+start = [14.47, -5.58]
+end = [-3.04, -5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "B.CrtYd"
+start = [14.47, -5.58]
+end = [14.47, 5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "B.CrtYd"
+start = [14.47, 5.58]
+end = [-3.04, 5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.04, 5.58]
+end = [-3.04, -5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [14.47, -5.58]
+end = [-3.04, -5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [14.47, -5.58]
+end = [14.47, 5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [14.47, 5.58]
+end = [-3.04, 5.58]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.91, -5.08]
+end = [-1.91, -3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.91, -5.08]
+end = [4.445, -5.08]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.91, -3.81]
+end = [2.54, -3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.91, 3.81]
+end = [-1.91, 5.08]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.91, 5.08]
+end = [4.445, 5.08]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.54, -3.81]
+end = [2.54, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.54, -0.75]
+end = [3.54, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.54, 3.81]
+end = [-1.91, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.54, 0.0]
+end = [2.54, 0.75]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.445, -3.81]
+end = [4.445, -5.08]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.445, -3.81]
+end = [13.97, -3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.445, 5.08]
+end = [4.445, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [13.97, -3.81]
+end = [13.97, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [13.97, 3.81]
+end = [4.445, 3.81]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [4.79, 0.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 270.0

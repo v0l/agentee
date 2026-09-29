@@ -1,0 +1,39 @@
+# imported from KiCad RF_Amplifier:SPF5189Z
+name = "SPF5189Z"
+reference = "U"
+description = "50MHz to 4000MHz, GaAs pHEMT low noise MMIC amplifier, SOT-89"
+datasheet = "www.qorvo.com/products/d/da001910"
+keywords = ["RF", "GAIN", "BLOCK"]
+footprint = "SOT-89-3"
+footprint_filters = ["SOT?89*"]
+
+[[graphics]]
+kind = "polygon"
+points = [[5.08, 0.0], [-5.08, -5.08], [-5.08, 5.08]]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "1"
+type = "input"
+at = [-7.62, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "GND"
+type = "power_in"
+at = [-2.54, 7.62]
+side = "bottom"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "3"
+type = "output"
+at = [7.62, 0.0]
+side = "right"
+length = 2.54
+unit = 1

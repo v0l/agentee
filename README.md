@@ -19,7 +19,9 @@ the KiCad libraries so an agent rarely draws a part by hand.
 | `*.fp.toml` | a footprint, with pad rows (`count` / `pitch`) instead of one entry per pad |
 
 The full reference is [docs/format.md](docs/format.md), also printed by `agentee docs` and served
-over MCP as `format_reference`. `examples/demo` is a small project that passes `check`.
+over MCP as `format_reference`. `examples/demo` is a small project that passes `check`, and
+`examples/lna` is a worked design: a bias-tee powered SPF5189Z LNA with its circuit and layout
+notes in `DESIGN.md`.
 
 ## Use
 
@@ -53,7 +55,8 @@ agentee view                                   # live window, reloads on save
 
 - Stackup order, layer thicknesses, dielectric constants, finished thickness.
 - Per net class and layer: microstrip or stripline geometry from the stackup, impedance
-  (Hammerstad-Jensen, Wheeler, uncoated), the width that meets a target, IPC-2221 current.
+  (Hammerstad-Jensen, Wheeler, grounded coplanar, uncoated), the width that meets a target,
+  IPC-2221 current.
 - Vias and pads against the fab minimums: drill, annular ring, track, clearance, silk.
 - Symbols: duplicate or overlapping pins, off-grid connection points, unit consistency.
 - Footprints: overlapping pads, pads under the fab clearance, courtyard, silk over copper.

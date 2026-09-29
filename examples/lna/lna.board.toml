@@ -1,0 +1,44 @@
+name = "lna"
+description = "Wideband 50 MHz to 4 GHz LNA for RTL-SDR style receivers, SPF5189Z, powered over the output coax (bias tee) or a 5 V header"
+fab = "jlcpcb"
+
+[outline]
+size = [30, 20]
+corner_radius = 1
+
+[stackup]
+preset = "jlcpcb-4l-1.6mm-7628"
+finish = "ENIG"
+mask_color = "black"
+
+[[vias]]
+name = "std"
+drill = "0.3mm"
+diameter = "0.6mm"
+
+[[netclasses]]
+name = "Default"
+track_width = "0.2mm"
+clearance = "0.2mm"
+via = "std"
+
+[[netclasses]]
+name = "RF"
+description = "RF_IN, RF_AMP_IN, RF_AMP_OUT, RF_OUT: grounded coplanar over the In1.Cu plane, stitch the pour every 2 mm"
+impedance = "50ohm"
+impedance_tolerance = "10%"
+track_width = "0.36mm"
+clearance = "0.2mm"
+coplanar_gap = "0.2mm"
+layers = ["F.Cu"]
+via = "std"
+
+[[netclasses]]
+name = "Power"
+description = "VBIAS, VEXT, VCC: 90 mA typical, 105 mA max for the SPF5189Z plus 2 mA for the LED"
+track_width = "0.4mm"
+clearance = "0.2mm"
+current = "150mA"
+max_temp_rise = "10C"
+layers = ["F.Cu", "B.Cu"]
+via = "std"

@@ -1,0 +1,49 @@
+# imported from KiCad Connector_Generic:Conn_01x02
+name = "Conn_01x02"
+reference = "J"
+description = "Generic connector, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)"
+keywords = ["connector"]
+footprint = "PinHeader_1x02_P2.54mm_Vertical"
+footprint_filters = ["Connector*:*_1x??_*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, -1.27]
+end = [1.27, 3.81]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, -0.127]
+end = [0.0, 0.127]
+width = 0.1524
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, 2.413]
+end = [0.0, 2.667]
+width = 0.1524
+
+[[pins]]
+number = "1"
+name = "Pin_1"
+type = "passive"
+at = [-5.08, 0.0]
+side = "left"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "2"
+name = "Pin_2"
+type = "passive"
+at = [-5.08, 2.54]
+side = "left"
+length = 3.81
+unit = 1

@@ -1,0 +1,145 @@
+# imported from KiCad Diode_SMD:Infineon_SG-WLL-2-3_0.58x0.28_P0.36mm
+name = "Infineon_SG-WLL-2-3_0.58x0.28_P0.36mm"
+description = "Infineon  SG-WLL-2-3, 0.58x0.28x0.15mm, https://www.infineon.com/dgdl/Infineon-SG-WLL-2-3_SPO_PDF-Package-v02_00-EN.pdf?fileId=5546d46271bf4f9201723159ce71239d"
+tags = ["Infineon", "WLL"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Diode_SMD.3dshapes/Infineon_SG-WLL-2-3_0.58x0.28_P0.36mm.step"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.185, 0.0]
+size = [0.21, 0.29]
+roundrect_ratio = 0.4761904762
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.185, 0.0]
+size = [0.21, 0.29]
+roundrect_ratio = 0.4761904762
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.185, 0.0]
+size = [0.22, 0.3]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.185, 0.0]
+size = [0.22, 0.3]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -1.05]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.09]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.55, 0.41]
+end = [-0.55, -0.41]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.49, -0.41]
+end = [-0.55, -0.41]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.49, 0.41]
+end = [-0.55, 0.41]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.57, -0.39]
+end = [-0.57, 0.39]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.57, 0.39]
+end = [0.57, 0.39]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.57, -0.39]
+end = [-0.57, -0.39]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.57, 0.39]
+end = [0.57, -0.39]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.29, -0.07]
+end = [-0.22, -0.14]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.29, 0.14]
+end = [-0.29, -0.07]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.22, -0.14]
+end = [0.29, -0.14]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.29, -0.14]
+end = [0.29, 0.14]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.29, 0.14]
+end = [-0.29, 0.14]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -0.68]
+text = "${REFERENCE}"
+size = 0.25

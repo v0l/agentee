@@ -1,0 +1,55 @@
+# imported from KiCad Connector:Conn_Coaxial
+name = "Conn_Coaxial"
+reference = "J"
+description = "coaxial connector (BNC, SMA, SMB, SMC, Cinch/RCA, LEMO, ...)"
+keywords = ["BNC", "SMA", "SMB", "SMC", "LEMO", "coaxial", "connector", "CINCH", "RCA", "MCX", "MMCX", "U.FL", "UMRF"]
+footprint = "SMA_Amphenol_132289_EdgeMount"
+footprint_filters = ["*BNC*", "*SMA*", "*SMB*", "*SMC*", "*Cinch*", "*LEMO*", "*UMRF*", "*MCX*", "*U.FL*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 0.0], [-0.508, 0.0]]
+
+[[graphics]]
+kind = "arc"
+start = [1.778, 0.0]
+mid = [0.222, 1.8079]
+end = [-1.778, 0.508]
+width = 0.254
+
+[[graphics]]
+kind = "arc"
+start = [-1.778, -0.508]
+mid = [0.2221, -1.8084]
+end = [1.778, 0.0]
+width = 0.254
+
+[[graphics]]
+kind = "circle"
+center = [0.0, 0.0]
+radius = 0.508
+width = 0.2032
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, 2.54], [0.0, 1.778]]
+
+[[pins]]
+number = "1"
+name = "In"
+type = "passive"
+at = [-5.08, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "Ext"
+type = "passive"
+at = [0.0, 5.08]
+side = "bottom"
+length = 2.54
+unit = 1

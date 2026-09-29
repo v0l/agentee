@@ -1,0 +1,43 @@
+# imported from KiCad Diode:BAT60A
+name = "BAT60A"
+reference = "D"
+description = "10V 3A High Current Recitifier Schottky Diode, SOD-323"
+datasheet = "https://www.infineon.com/dgdl/Infineon-BAT60ASERIES-DS-v01_01-en.pdf?fileId=db3a304313d846880113def70c9304a9"
+keywords = ["diode", "Schottky"]
+footprint = "D_SOD-323"
+footprint_filters = ["D*SOD?323*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.905, -0.635], [-1.905, -1.27], [-1.27, -1.27], [-1.27, 1.27], [-0.635, 1.27], [-0.635, 0.635]]
+width = 0.254
+
+[[graphics]]
+kind = "polygon"
+points = [[1.27, -1.27], [1.27, 1.27], [-1.27, 0.0]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[1.27, 0.0], [-1.27, 0.0]]
+
+[[pins]]
+number = "1"
+name = "K"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1
