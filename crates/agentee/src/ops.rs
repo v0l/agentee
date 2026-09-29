@@ -351,6 +351,29 @@ pub fn run_sim(
     let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
     let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
     let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
+    if spec.kind != agentee_core::sim::SimKind::Fdtd {
+        let hash = agentee_core::sim::hash(&src);
+        let result = match spec.kind {
+            agentee_core::sim::SimKind::Dc => {
+                agentee_sim::boardsim::dc(&layout.item, &board.item, spec, hash)?
+            }
+            _ => agentee_sim::boardsim::thermal(&layout.item, &board.item, spec, hash)?,
+        };
+        let json_path = agentee_core::sim::result_path(&entry.path);
+        std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        return Ok(json!({
+            "sim": spec.name,
+            "kind": spec.kind,
+            "cells": result.cells,
+            "iterations": result.iterations,
+            "residual": result.residual,
+            "seconds": (result.seconds * 100.0).round() / 100.0,
+            "device": result.device,
+            "result": json_path,
+            "readings": result.readings,
+        }));
+    }
     let model = agentee_sim::fdtd::model::PcbModel::from_layout(&layout.item, &board.item, spec)?;
     let plan = agentee_sim::fdtd::plan(
         &model,

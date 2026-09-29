@@ -280,18 +280,26 @@ impl Project {
             };
             let copper = layout.item.copper.clone();
             let mut item = file.resolve(&layout.item, &copper, &mut d);
-            match SimResult::load(&crate::sim::result_path(&f)) {
-                Some(r) if r.spec_hash == hash => item.result = Some(r),
-                Some(r) => {
+            let path = crate::sim::result_path(&f);
+            let text = std::fs::read_to_string(&path).ok();
+            let fdtd = text.as_deref().and_then(|t| serde_json::from_str::<SimResult>(t).ok());
+            let maps =
+                text.as_deref().and_then(|t| serde_json::from_str::<crate::sim::MapResult>(t).ok());
+            let saved_hash =
+                fdtd.as_ref().map(|r| r.spec_hash).or(maps.as_ref().map(|r| r.spec_hash));
+            match saved_hash {
+                Some(h) if h == hash => {}
+                Some(_) => {
                     d.info(
                         "result",
                         "the spec changed since the last run, the result shown is stale",
                     );
-                    item.result = Some(r);
                     item.stale = true;
                 }
                 None => d.info("result", "not run yet, `agentee sim` runs it"),
             }
+            item.result = fdtd;
+            item.maps = maps;
             p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         Ok(p)

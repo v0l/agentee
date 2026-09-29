@@ -9,7 +9,7 @@ A project is a directory. Every file below it is loaded by its suffix:
 | `*.fp.toml` | one footprint |
 | `*.sch.toml` | a schematic: placed parts, nets, wires |
 | `*.pcb.toml` | a layout: footprint placement, tracks, vias, zones |
-| `*.sim.toml` | an FDTD simulation of a layout: ports, lumped models, band |
+| `*.sim.toml` | a simulation of a layout: FDTD S-parameters, DC drop or thermal (`kind`) |
 
 Names are unique per kind. A symbol links a footprint by its `name`, and a `Library:Name` reference
 matches on the part after the colon.
@@ -385,6 +385,64 @@ columns, zone fills with their clearances), dielectrics from the board stackup w
 tangent, and CPML boundaries. Parts other than ports and lumped models are open. Validated on a
 50 ohm microstrip: return loss under -25 dB, insertion loss under 0.2 dB, and phase velocity within
 1.2% of Kirschning-Jansen.
+
+### DC drop (`kind = "dc"`)
+
+Solves the copper of every layer as a resistive sheet (vias as plated barrels), with supply pads
+held at their voltage and loads drawing current, by sparse Cholesky in f64. Parts carry DC
+through `[[links]]`: resistors take their value, inductors default to 0.1 ohm, anything else is
+open unless linked.
+
+```toml
+name = "lna-dc"
+kind = "dc"
+layout = "lna"
+cell = 0.05                    # raster cell in mm
+
+[[supplies]]
+pad = "D2.1"
+voltage = "4.7V"
+
+[[supplies]]
+pad = "J3.2"
+voltage = "0V"
+
+[[loads]]
+pad = "U1.3"
+current = "90mA"
+return = "U1.2"                # where the load current comes back
+
+[[links]]
+ref = "L2"
+resistance = "1.4ohm"          # inductor DCR from its datasheet
+```
+
+Maps: drop from each copper island's supply (mV), current density (A/mm2), voltage. Readings:
+supply currents, load voltages, peak density and its place, the busiest vias.
+
+### Thermal (`kind = "thermal"`)
+
+Steady-state conduction through FR4 (0.8 W/mK in plane, 0.3 through), copper sheets and via
+barrels, with convection from both faces, solved on the GPU by preconditioned conjugate gradient.
+
+```toml
+name = "lna-thermal"
+kind = "thermal"
+layout = "lna"
+cell = 0.2                     # default 0.2 mm
+ambient = 25.0
+# h_top = 10.0                 # W/m2K, still air; 25+ with a fan
+# h_bottom = 10.0
+
+[[sources]]
+ref = "U1"
+power = "0.45W"
+theta_jc = 65.0                # adds a junction estimate: pads + P x theta
+pads = ["2"]                   # the pads the heat leaves through, default all
+```
+
+Maps: temperature per copper layer. Readings: board peak, each source's pad and junction
+temperature.
 
 ## Graphics
 

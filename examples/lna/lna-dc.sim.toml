@@ -1,0 +1,26 @@
+name = "lna-dc"
+kind = "dc"
+description = "Supply drop from the VCC node to the SPF5189Z drain, through the chokes and the RF line, with the return through the tab and the ground pours."
+layout = "lna"
+cell = 0.05
+
+[[supplies]]
+pad = "D2.1"
+voltage = "4.7V"
+
+[[supplies]]
+pad = "J3.2"
+voltage = "0V"
+
+[[loads]]
+pad = "U1.3"
+current = "90mA"
+return = "U1.2"
+
+[[links]]
+ref = "L1"
+resistance = "0.2ohm"
+
+[[links]]
+ref = "L2"
+resistance = "1.4ohm"

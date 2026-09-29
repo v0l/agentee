@@ -28,6 +28,10 @@ pub struct PageState {
     pub region: Option<agentee_core::graphic::Bounds>,
     pub hidden_curves: Vec<(usize, usize)>,
     pub sim_progress: Option<agentee_core::sim::SimProgress>,
+    pub map_index: usize,
+    pub map_key: Option<(u64, usize, usize)>,
+    pub map_tex: Option<egui::TextureHandle>,
+    pub map_values: Vec<f32>,
 }
 
 impl Default for PageState {
@@ -47,6 +51,10 @@ impl Default for PageState {
             region: None,
             hidden_curves: Vec::new(),
             sim_progress: None,
+            map_index: 0,
+            map_key: None,
+            map_tex: None,
+            map_values: Vec::new(),
         }
     }
 }
@@ -72,7 +80,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
             ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
             ItemRef::Schematic(i) => schematic_canvas(ui, &project.schematics[i].item, st),
             ItemRef::Layout(i) => layout_canvas(ui, project, i, st),
-            ItemRef::Sim(i) => sim_canvas(ui, &project.sims[i].item, st),
+            ItemRef::Sim(i) => sim_canvas(ui, project, i, st),
             ItemRef::Board(i) => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                     board_sheet(ui, &project.boards[i].item, st);
@@ -105,7 +113,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
         ItemRef::Schematic(i) => schematic_canvas(ui, &project.schematics[i].item, st),
         ItemRef::Layout(i) => layout_canvas(ui, project, i, st),
-        ItemRef::Sim(i) => sim_canvas(ui, &project.sims[i].item, st),
+        ItemRef::Sim(i) => sim_canvas(ui, project, i, st),
         ItemRef::Board(i) => {
             egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                 scroll(ui, st.interactive, "board", |ui| {
@@ -898,7 +906,8 @@ fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
     });
 }
 
-fn sim_canvas(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
+fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) {
+    let s = &project.sims[index].item;
     egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
         ui.set_min_size(ui.available_size());
         if let Some(pr) = &st.sim_progress {
@@ -918,6 +927,10 @@ fn sim_canvas(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
                     .show(ui);
             });
             ui.add_space(8.0);
+        }
+        if let Some(m) = &s.maps {
+            crate::heat::canvas(ui, project, s, index, m, st);
+            return;
         }
         let Some(r) = &s.result else {
             if st.sim_progress.is_some() {
@@ -954,11 +967,15 @@ fn sim_canvas(ui: &mut Ui, s: &agentee_core::sim::Sim, st: &mut PageState) {
 
 fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mut PageState) {
     let layout = project.layouts.iter().find(|l| l.name == s.layout).map(|l| &l.item);
-    let rail = match (&st.sim_progress, &s.result, s.stale) {
+    let rail = match (&st.sim_progress, s.result.is_some() || s.maps.is_some(), s.stale) {
         (Some(_), _, _) => READOUT,
-        (None, Some(_), false) => OK,
+        (None, true, false) => OK,
         _ => WARN,
     };
+    if let Some(m) = &s.maps {
+        crate::heat::props(ui, s, m, rail);
+        return;
+    }
     card(
         ui,
         Some(rail),

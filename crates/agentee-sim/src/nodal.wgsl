@@ -4,7 +4,7 @@ struct Params {
     nz: u32,
     n: u32,
     groups: u32,
-    pad0: u32,
+    links: u32,
     pad1: u32,
     pad2: u32,
 }
@@ -21,6 +21,7 @@ struct Params {
 @group(0) @binding(9) var<storage, read_write> partial: array<f32>;
 @group(0) @binding(10) var<storage, read_write> scalars: array<f32>;
 @group(0) @binding(11) var<storage, read> free: array<u32>;
+@group(0) @binding(12) var<storage, read> links: array<f32>;
 
 var<workgroup> sa: array<f32, 256>;
 var<workgroup> sb: array<f32, 256>;
@@ -151,4 +152,15 @@ fn update_p(@builtin(global_invocation_id) g: vec3<u32>) {
     let d = diag[id];
     let z = select(0.0, r[id] / d, d > 0.0);
     p[id] = z + scalars[3] * p[id];
+}
+
+@compute @workgroup_size(1, 1, 1)
+fn apply_links() {
+    for (var l = 0u; l < P.links; l++) {
+        let a = u32(links[l * 3u]);
+        let b = u32(links[l * 3u + 1u]);
+        let g = links[l * 3u + 2u];
+        ap[a] -= g * p[b];
+        ap[b] -= g * p[a];
+    }
 }

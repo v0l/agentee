@@ -1,3 +1,4 @@
+pub mod boardsim;
 pub mod checks;
 pub mod fdtd;
 pub mod gpu;

@@ -10,10 +10,13 @@ pub struct Problem {
     pub reference: f32,
     pub source: Vec<f32>,
     pub fixed: Vec<Option<f32>>,
+    pub links: Vec<(usize, usize, f32)>,
+    pub offset: Vec<f32>,
 }
 
 pub struct Solution {
     pub phi: Vec<f32>,
+    pub delta: Vec<f64>,
     pub iterations: usize,
     pub residual: f64,
     pub device: String,
@@ -31,6 +34,8 @@ impl Problem {
             reference: 0.0,
             source: vec![0.0; len],
             fixed: vec![None; len],
+            links: Vec::new(),
+            offset: Vec::new(),
         }
     }
 
@@ -62,8 +67,22 @@ impl Problem {
         .flatten()
     }
 
+    fn off(&self, id: usize) -> f64 {
+        self.offset.get(id).map(|v| *v as f64).unwrap_or(self.reference as f64)
+    }
+
+    fn extra(&self) -> Vec<Vec<(usize, f32)>> {
+        let mut v = vec![Vec::new(); self.len()];
+        for (a, b, g) in &self.links {
+            v[*a].push((*b, *g));
+            v[*b].push((*a, *g));
+        }
+        v
+    }
+
     fn system(&self) -> (Vec<f32>, Vec<u32>, Vec<f32>) {
         let len = self.len();
+        let extra = self.extra();
         let mut diag = vec![0f32; len];
         let mut free = vec![0u32; len];
         let mut b = vec![0f32; len];
@@ -71,12 +90,22 @@ impl Problem {
             if self.fixed[id].is_some() {
                 continue;
             }
+            let o = self.off(id);
             let mut d = self.g0[id] as f64;
-            let mut rhs = self.source[id] as f64;
+            let mut rhs = self.source[id] as f64 + self.g0[id] as f64 * (self.reference as f64 - o);
+            for (nb, g) in &extra[id] {
+                d += *g as f64;
+                if let Some(v) = self.fixed[*nb] {
+                    rhs += *g as f64 * (v as f64 - o);
+                }
+            }
             for (nb, g) in self.neighbours(id) {
+                if g <= 0.0 {
+                    continue;
+                }
                 d += g as f64;
                 if let Some(v) = self.fixed[nb] {
-                    rhs += g as f64 * (v - self.reference) as f64;
+                    rhs += g as f64 * (v as f64 - o);
                 }
             }
             if d > 0.0 {
@@ -89,7 +118,9 @@ impl Problem {
     }
 
     fn finish(&self, x: &[f32]) -> Vec<f32> {
-        (0..self.len()).map(|id| self.fixed[id].unwrap_or(x[id] + self.reference)).collect()
+        (0..self.len())
+            .map(|id| self.fixed[id].unwrap_or((x[id] as f64 + self.off(id)) as f32))
+            .collect()
     }
 
     pub fn solve(&self, tol: f64, max_iter: usize) -> Solution {
@@ -99,9 +130,81 @@ impl Problem {
         }
     }
 
+    pub fn solve_direct(&self) -> Result<Solution, String> {
+        use faer::linalg::solvers::Solve;
+        let len = self.len();
+        let extra = self.extra();
+        let mut index = vec![usize::MAX; len];
+        let mut order = Vec::new();
+        let mut diag = Vec::new();
+        let mut rhs = Vec::new();
+        for id in 0..len {
+            if self.fixed[id].is_some() {
+                continue;
+            }
+            let o = self.off(id);
+            let mut d = self.g0[id] as f64;
+            let mut b = self.source[id] as f64 + self.g0[id] as f64 * (self.reference as f64 - o);
+            for (nb, g) in self.neighbours(id).chain(extra[id].iter().copied()) {
+                if g <= 0.0 {
+                    continue;
+                }
+                d += g as f64;
+                if let Some(v) = self.fixed[nb] {
+                    b += g as f64 * (v as f64 - o);
+                }
+            }
+            if d > 0.0 {
+                index[id] = order.len();
+                order.push(id);
+                diag.push(d);
+                rhs.push(b);
+            }
+        }
+        let m = order.len();
+        let mut entries: std::collections::HashMap<(usize, usize), f64> =
+            std::collections::HashMap::new();
+        for (k, id) in order.iter().enumerate() {
+            entries.insert((k, k), diag[k]);
+            for (nb, g) in self.neighbours(*id).chain(extra[*id].iter().copied()) {
+                let j = index[nb];
+                if j != usize::MAX && j < k && g > 0.0 {
+                    *entries.entry((k, j)).or_default() -= g as f64;
+                }
+            }
+        }
+        let triplets: Vec<faer::sparse::Triplet<usize, usize, f64>> =
+            entries.into_iter().map(|((r, c), v)| faer::sparse::Triplet::new(r, c, v)).collect();
+        faer::set_global_parallelism(faer::Par::Seq);
+        let a = faer::sparse::SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &triplets)
+            .map_err(|e| format!("{e:?}"))?;
+        let llt = a.sp_cholesky(faer::Side::Lower).map_err(|e| format!("{e:?}"))?;
+        let b = faer::Mat::<f64>::from_fn(m, 1, |i, _| rhs[i]);
+        let x = llt.solve(&b);
+        let mut full = vec![0f32; len];
+        let mut delta = vec![0f64; len];
+        for (k, id) in order.iter().enumerate() {
+            full[*id] = x[(k, 0)] as f32;
+            delta[*id] = x[(k, 0)];
+        }
+        for id in 0..len {
+            if let Some(v) = self.fixed[id] {
+                delta[id] = v as f64 - self.off(id);
+            }
+        }
+        Ok(Solution {
+            phi: self.finish(&full),
+            delta,
+            iterations: 1,
+            residual: 0.0,
+            device: "cpu sparse Cholesky".into(),
+        })
+    }
+
     pub fn solve_cpu(&self, tol: f64, max_iter: usize) -> Solution {
         let (diag, free, b) = self.system();
         let len = self.len();
+        let extra = self.extra();
         let apply = |v: &[f64]| -> Vec<f64> {
             (0..len)
                 .map(|id| {
@@ -109,7 +212,7 @@ impl Problem {
                         return v[id];
                     }
                     let mut s = diag[id] as f64 * v[id];
-                    for (nb, g) in self.neighbours(id) {
+                    for (nb, g) in self.neighbours(id).chain(extra[id].iter().copied()) {
                         if free[nb] == 1 {
                             s -= g as f64 * v[nb];
                         }
@@ -150,6 +253,7 @@ impl Problem {
         let xs: Vec<f32> = x.iter().map(|v| *v as f32).collect();
         Solution {
             phi: self.finish(&xs),
+            delta: x,
             iterations: it,
             residual: (rr / rr0).sqrt(),
             device: "cpu".into(),
@@ -169,8 +273,31 @@ impl Problem {
         struct Params {
             n: [u32; 8],
         }
+        if n >= 1 << 24 {
+            return self.solve_cpu(tol, max_iter);
+        }
+        let mut link_data: Vec<f32> = Vec::new();
+        for (a, b, gg) in &self.links {
+            if free[*a] == 1 && free[*b] == 1 {
+                link_data.extend_from_slice(&[*a as f32, *b as f32, *gg]);
+            }
+        }
+        let link_count = (link_data.len() / 3) as u32;
+        if link_data.is_empty() {
+            link_data.extend_from_slice(&[0.0, 0.0, 0.0]);
+        }
+        let b_links = g.storage("links", &link_data);
         let params = Params {
-            n: [self.n[0] as u32, self.n[1] as u32, self.n[2] as u32, n as u32, groups, 0, 0, 0],
+            n: [
+                self.n[0] as u32,
+                self.n[1] as u32,
+                self.n[2] as u32,
+                n as u32,
+                groups,
+                link_count,
+                0,
+                0,
+            ],
         };
         let b_params = g.uniform("nodal", &params);
         let b_gx = g.storage("gx", &self.gx);
@@ -189,7 +316,7 @@ impl Problem {
             label: Some("nodal"),
             source: wgpu::ShaderSource::Wgsl(include_str!("nodal.wgsl").into()),
         });
-        let all: [(u32, &wgpu::Buffer); 12] = [
+        let all: [(u32, &wgpu::Buffer); 13] = [
             (0, &b_params),
             (1, &b_gx),
             (2, &b_gy),
@@ -202,6 +329,7 @@ impl Problem {
             (9, &b_partial),
             (10, &b_scalars),
             (11, &b_free),
+            (12, &b_links),
         ];
         let make = |entry: &str, uses: &[u32]| {
             let pipe = g.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -231,6 +359,7 @@ impl Problem {
         let flat = [wg.min(65535), wg.div_ceil(65535), 1];
         let steps = [
             (make("apply", &[0, 1, 2, 3, 4, 7, 8, 11]), flat),
+            (make("apply_links", &[0, 7, 8, 12]), [1, 1, 1]),
             (make("dot_pap", &[0, 7, 8, 9]), [groups, 1, 1]),
             (make("reduce_alpha", &[0, 9, 10]), [1, 1, 1]),
             (make("update_xr", &[0, 4, 5, 6, 7, 8, 9, 10]), [groups, 1, 1]),
@@ -261,7 +390,13 @@ impl Problem {
             }
         }
         let x: Vec<f32> = g.read(&b_x, n);
-        Solution { phi: self.finish(&x), iterations: it, residual, device: g.name.clone() }
+        Solution {
+            phi: self.finish(&x),
+            delta: x.iter().map(|v| *v as f64).collect(),
+            iterations: it,
+            residual,
+            device: g.name.clone(),
+        }
     }
 }
 
@@ -297,6 +432,33 @@ mod tests {
                 let v = s.phi[p.idx(i, 1, 1)];
                 assert!((v - (1.0 - i as f32 / 20.0)).abs() < 1e-4, "{} {i} {v}", s.device);
             }
+        }
+    }
+
+    #[test]
+    fn a_link_joins_two_islands() {
+        let mut p = Problem::new([2, 1, 1]);
+        p.fixed[0] = Some(2.0);
+        p.g0[1] = 1.0;
+        p.links.push((0, 1, 1.0));
+        let mut q = Problem::new([3, 1, 1]);
+        q.fixed[0] = Some(2.0);
+        q.g0[2] = 1.0;
+        q.links.push((0, 2, 1.0));
+        for s in [p.solve_cpu(1e-9, 100), p.solve(1e-6, 1000)] {
+            assert!((s.phi[1] - 1.0).abs() < 1e-4, "{} {:?}", s.device, s.phi);
+        }
+        for s in [q.solve_cpu(1e-9, 100), q.solve(1e-6, 1000)] {
+            assert!((s.phi[2] - 1.0).abs() < 1e-4, "{} {:?}", s.device, s.phi);
+        }
+    }
+
+    #[test]
+    fn the_direct_solver_agrees() {
+        let p = bar(21);
+        let s = p.solve_direct().unwrap();
+        for i in 0..21 {
+            assert!((s.phi[p.idx(i, 1, 1)] - (1.0 - i as f32 / 20.0)).abs() < 1e-5);
         }
     }
 

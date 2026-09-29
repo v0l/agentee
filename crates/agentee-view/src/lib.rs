@@ -1,6 +1,7 @@
 pub mod app;
 pub mod canvas;
 pub mod headless;
+pub mod heat;
 pub mod pages;
 pub mod paint;
 pub mod pcb;

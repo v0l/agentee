@@ -156,13 +156,51 @@ pub fn stack(board: &Board) -> (Vec<Sheet>, Vec<Dielectric>) {
 
 impl PcbModel {
     pub fn from_layout(layout: &Layout, board: &Board, spec: &Spec) -> Result<PcbModel, String> {
+        let mut m = PcbModel::geometry(layout, board);
+        m.region = spec.region;
+        let sheets = m.sheets.clone();
+        let sheet = |name: &str| sheets.iter().position(|s| s.name == name);
+        for p in &spec.ports {
+            let (Some(s), Some(r)) = (sheet(&p.layer), sheet(&p.reference)) else {
+                return Err(format!("port {} is on a layer outside the stackup", p.name));
+            };
+            let area =
+                layout.parts[p.part].pads[p.pad].outlines.first().cloned().unwrap_or_default();
+            m.ports.push(ModelPort {
+                name: p.name.clone(),
+                at: p.at,
+                area,
+                sheet: s,
+                reference: r,
+                r: p.impedance,
+            });
+        }
+        for e in &spec.elements {
+            let Some(s) = sheet(&e.layer) else { continue };
+            let element = match e.model {
+                Model::Capacitor(c) => Element::Capacitor(c),
+                Model::Inductor(l) => Element::Inductor(l),
+                Model::Resistor(r) => Element::Resistor(r),
+                Model::Open => continue,
+            };
+            m.elements.push(ModelElement {
+                name: e.reference.clone(),
+                a: e.a,
+                b: e.b,
+                sheet: s,
+                element,
+            });
+        }
+        Ok(m)
+    }
+
+    pub fn geometry(layout: &Layout, board: &Board) -> PcbModel {
         let (sheets, dielectrics) = stack(board);
         let sheet = |name: &str| sheets.iter().position(|s| s.name == name);
         let mut m = PcbModel {
             outline: layout.outline.clone(),
             sheets: sheets.clone(),
             dielectrics,
-            region: spec.region,
             ..Default::default()
         };
         for part in &layout.parts {
@@ -218,38 +256,7 @@ impl PcbModel {
                 m.copper.push((s, Copper::Fill(z.clone())));
             }
         }
-        for p in &spec.ports {
-            let (Some(s), Some(r)) = (sheet(&p.layer), sheet(&p.reference)) else {
-                return Err(format!("port {} is on a layer outside the stackup", p.name));
-            };
-            let area =
-                layout.parts[p.part].pads[p.pad].outlines.first().cloned().unwrap_or_default();
-            m.ports.push(ModelPort {
-                name: p.name.clone(),
-                at: p.at,
-                area,
-                sheet: s,
-                reference: r,
-                r: p.impedance,
-            });
-        }
-        for e in &spec.elements {
-            let Some(s) = sheet(&e.layer) else { continue };
-            let element = match e.model {
-                Model::Capacitor(c) => Element::Capacitor(c),
-                Model::Inductor(l) => Element::Inductor(l),
-                Model::Resistor(r) => Element::Resistor(r),
-                Model::Open => continue,
-            };
-            m.elements.push(ModelElement {
-                name: e.reference.clone(),
-                a: e.a,
-                b: e.b,
-                sheet: s,
-                element,
-            });
-        }
-        Ok(m)
+        m
     }
 
     fn bounds(&self) -> Bounds {
