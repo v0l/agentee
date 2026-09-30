@@ -384,16 +384,34 @@ pub fn import_symbol(
     Ok((written, notes))
 }
 
-pub fn new_item(kind: Kind, name: &str, dir: &Path) -> Result<PathBuf, String> {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum SimTemplate {
+    #[default]
+    Fdtd,
+    Logic,
+}
+
+impl SimTemplate {
+    pub fn parse(s: &str) -> Result<SimTemplate, String> {
+        match s {
+            "fdtd" => Ok(SimTemplate::Fdtd),
+            "logic" => Ok(SimTemplate::Logic),
+            _ => Err(format!("no sim template `{s}`; there is fdtd and logic")),
+        }
+    }
+}
+
+pub fn new_item(kind: Kind, sim: SimTemplate, name: &str, dir: &Path) -> Result<PathBuf, String> {
     let text = match kind {
         Kind::Board => crate::templates::board(name),
         Kind::Symbol => crate::templates::symbol(name),
         Kind::Footprint => crate::templates::footprint(name),
         Kind::Schematic => format!("name = \"{name}\"\n"),
         Kind::Layout => format!("name = \"{name}\"\n"),
-        Kind::Sim => format!(
-            "name = \"{name}\"\n\n[frequency]\nstart = \"100MHz\"\nstop = \"4GHz\"\n\n[[ports]]\nname = \"IN\"\npad = \"J1.1\"\n"
-        ),
+        Kind::Sim => match sim {
+            SimTemplate::Fdtd => crate::templates::fdtd_sim(name),
+            SimTemplate::Logic => crate::templates::logic_sim(name),
+        },
     };
     write_new(dir, name, kind, &text, false)
 }

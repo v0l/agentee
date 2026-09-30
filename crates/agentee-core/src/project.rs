@@ -438,6 +438,7 @@ impl Project {
                 untracked: s.item.copper_then.is_none(),
                 fdtd: s.item.result.as_ref(),
                 channel: s.item.channel.as_ref(),
+                logic: s.item.logic_result.as_ref(),
             })
             .collect();
         let mut found = Vec::new();

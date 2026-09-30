@@ -1100,7 +1100,15 @@ max_mode_conversion = -30.0    # dB, worst Scd21
 sim = "sdr-usb-eye"            # a channel sim
 min_eye_height = "70mV"
 min_eye_width = "0.47UI"       # or ps
+
+[[interfaces.measure]]
+sim = "i2c-bus"                # a logic sim: no limits, it passes when the sim passes
 ```
+
+A measure on a logic sim fails while the sim has any failure (an assertion, contention, a
+timing violation or a stopped run), naming the count and the first; it is stale when the sim's
+spec or schematic netlist changed, as the sim itself reports, not when the copper did, since a
+logic sim never sees the layout.
 
 | preset | impedance | skew | vias | stub | other |
 |---|---|---|---|---|---|
@@ -1517,8 +1525,24 @@ temperature.
 ### Logic (`kind = "logic"`)
 
 An event-driven simulation of the digital parts of a schematic, straight from its netlist; no
-layout is needed. `agentee sim NAME` (MCP `run_sim`) writes `NAME.result.json` and a VCD
+layout is needed. `agentee new sim NAME --kind logic` (MCP `new_item` with `kind = "sim"` and
+`sim_kind = "logic"`) writes a starter with a clock, a reset and a clocked assertion to rename
+to your nets; `--kind fdtd`, the default, starts an FDTD run instead. `agentee sim NAME` (MCP `run_sim`) writes `NAME.result.json` and a VCD
 waveform `NAME.vcd` next to the spec; the viewer draws a trace per recorded net against time.
+
+In the waveform view the mouse wheel (or pinch, or ctrl and the wheel) zooms about the pointer,
+a drag or a sideways scroll pans, a double click fits the whole run, and a click sets the time
+cursor, snapped to an edge of the row under it within a few pixels. `+` and `-` zoom about the
+cursor, the arrow keys pan, `F` or `Home` fits, `Escape` drops the cursor, and `N` and `P` jump
+the cursor to the next and previous marker. The column beside the names reads every row at the
+cursor (at the pointer with no cursor, else at the right edge of the view), and the hover tip gives the
+time from the cursor. Nets named `X[0]` to `X[n]`, or `X0` to `Xn` (also `X0_N` to `Xn_N`),
+fold into one bus row drawn in hex, MSB first, with a nibble of x for any unknown bit and z for
+a floating one; so does a `record` entry `{ name, nets }`. Click a bus name to open its bits.
+Markers along the top show each failed assertion (red, at the time it was checked), timing
+violation (amber) and contention (violet), with a dot on the rows of the nets involved; hover
+one for its message, click it to put the cursor there. `agentee render NAME --show
+from=300ns,to=900ns,cursor=550ns,open=Q[3:0]` draws the same view headless.
 
 ```toml
 name = "counter"
@@ -1527,6 +1551,8 @@ schematic = "counter"          # default: the only top-level schematic
 duration = "2us"
 ignore = ["J1", "J2"]           # parts with no logic model to leave out
 record = ["CLK", "Q3", "Q2", "Q1", "Q0"]   # default every net but the rails
+# record = ["CLK", { name = "COUNT", nets = ["Q3", "Q2", "Q1", "Q0"] }]   # a bus, MSB first
+# on_violation = "keep"         # default "x": a timing violation makes the flip-flop x
 
 [[stimulus]]
 net = "CLK"
@@ -1578,11 +1604,20 @@ The netlist becomes cells as follows:
   crystals (`C`, `L`, `FB`, `FL`, `D`, `LED`, `TP`, `H`, `MH`, `FID`, `Y`, `X`) are left out.
 - Parts whose value (or else symbol name) holds a 74 series number take the built-in model by
   pin number: `74HC00`, `SN74LVC1G08DBVR` and `CD74HCT04E` all match. The library covers 00,
-  02, 04, 08, 10, 11, 14, 20, 21, 27, 32, 74, 86, 125, 126, 132, 138, 157, 161, 163, 164, 244
-  and 595, the single gates 1G00, 1G02, 1G04, 1G08, 1G14, 1G17, 1G32, 1G34, 1G74, 1G79, 1G80,
-  1G86, 1G125, 1G126 and 1G157, and the dual gates 2G00, 2G02, 2G04, 2G08, 2G14, 2G17, 2G32,
-  2G34, 2G74, 2G86, 2G125 and 2G126. A unit of a multi-unit symbol that is not placed is left
-  out; a placed pin with no net reads as floating (z).
+  01, 02, 03, 04, 05, 06, 07, 08, 10, 11, 14, 20, 21, 27, 32, 74, 86, 125, 126, 132, 138, 157,
+  161, 163, 164, 244, 245, 573, 574 and 595, the single gates 1G00, 1G02, 1G04, 1G06, 1G07,
+  1G08, 1G14, 1G17, 1G32, 1G34, 1G74, 1G79, 1G80, 1G86, 1G125, 1G126 and 1G157, and the dual
+  gates 2G00, 2G02, 2G04, 2G08, 2G14, 2G17, 2G32, 2G34, 2G74, 2G86, 2G125 and 2G126. A unit of a
+  multi-unit symbol that is not placed is left out; a placed pin with no net reads as floating
+  (z).
+- The 14 (and 1G14, 2G14) Schmitt triggers are inverters; the sim has no slow analog edge for
+  the hysteresis to act on. The 573 is eight `dlatch` and the 574 eight `dff`, each with the shared `OE`
+  (pin 1, active low) floating the outputs. The 245 is eight `xcvr`: with `OE` (pin 19) low it
+  drives B from A while `DIR` (pin 1) is high and A from B while it is low. The 01, 03 (quad
+  NAND), 05, 06, 1G06 (inverters) and 07, 1G07 (buffers) are open drain: they pull low or let
+  go (z), and a pull-up resistor makes the 1. A 7401 or 74LS01 has the 7402 pinout (outputs on
+  1, 4, 10, 13); a CMOS 74HC01 has the 7400 one.
+- A gate whose output pins are all `open_collector` in its symbol is open drain as well.
 - Parts whose value or symbol is a primitive name (`AND`, `NAND3`, `OR`, `NOR`, `XOR`, `XNOR`,
   `NOT`, `INV`, `BUF`, `TRIBUF`, `DFF`, `JKFF`, `SRLATCH`, `DLATCH`, `MUX2`) map their pins by
   name: `D`, `CLK` (also `C`, `CP`, `CK`), `S` / `SET` / `PRE`, `R` / `RST` / `CLR`, `EN`, `OE`,
@@ -1614,7 +1649,7 @@ with only timing keeps the built-in model and changes its timing.
 ref = "U7"
 primitive = "nand"              # a primitive; pins map its pin keys to the part's pins
 pins = { A = "1", B = "2", Y = "3" }
-delay = "3ns"                   # every output; setup = "...", hold = "..." as well
+delay = "3ns"                   # every output; setup, hold, recovery and removal as well
 delays = { Y = "5ns" }          # or per output key
 
 [[parts]]
@@ -1635,11 +1670,13 @@ inverted output, and leave out an optional input to hold it inactive:
 |---|---|---|
 | `and`, `or`, `xor`, `nand`, `nor`, `xnor` | any keys but `Y` | `Y` |
 | `not`, `buf` | one key | `Y` |
+| any gate with `_od` (`nand_od`, `not_od`, `buf_od`) | as the gate | `Y`, open drain: 0 or z |
 | `tri` | `A`, `OE` | `Y` (z when `OE` is low) |
-| `dff` | `D`, `CLK`, optional `S`, `R` | `Q`, `QN` |
+| `dff` | `D`, `CLK`, optional `S`, `R`, `OE` | `Q`, `QN` (z when `OE` is low) |
 | `jk` | `J`, `K`, `CLK`, optional `S`, `R` | `Q`, `QN` |
 | `sr` | `S`, `R` | `Q`, `QN` |
-| `dlatch` | `D`, `EN`, optional `R` | `Q`, `QN` |
+| `dlatch` | `D`, `EN`, optional `R`, `OE` | `Q`, `QN` (z when `OE` is low) |
+| `xcvr` | `A`, `B`, `DIR`, optional `OE` | `A`, `B`: the same pins, driven from the other side by `DIR` |
 | `mux2` | `I0`, `I1`, `S`, optional `EN` | `Y` |
 | `dec138` | `A0`, `A1`, `A2`, `E1`, `E2`, `E3` | `Y0` to `Y7` |
 | `counter161`, `counter163` | optional `R`, `CLK`, optional `D0` to `D3`, `CEP`, `LOAD`, `CET` | `Q0` to `Q3`, `TC` |
@@ -1664,12 +1701,24 @@ reports the nets, and so does a run past 50 million events.
 Flip-flops, counters and shift registers check setup and hold on their clocked inputs against
 the model's timing: a data input that changed less than `setup` before a rising clock edge, or
 less than `hold` after it, is a violation (not checked while an asynchronous reset or set is
-active). The sampled value is kept.
+active). A D latch checks its `D` against the closing (falling) edge of `EN` the same way. An
+asynchronous reset or set released less than `recovery` before a clock edge, or less than
+`removal` after one, is a violation too; the family table's setup and hold are the defaults for
+recovery and removal. A 595 also wants its `LATCH` (RCLK) rising edge at least `setup` after
+the last `CLK` (SRCLK) rising edge; the two clocks tied together (the same instant) is fine and
+latches the value from before the shift.
+
+On a violation the flip-flop, latch or register the check covers goes to x, as the Verilog
+models do with their notifiers, until it is clocked, set or reset cleanly again. Set
+`on_violation = "keep"` on the sim to report the violation and keep the sampled value instead.
 
 Readings: assertions passed and failed, contentions, timing violations, cells and events. Check
 lists every failed assertion, contention, timing violation or stopped run as an error on the
 sim, while the result is current. The result goes stale when the spec or the schematic's
-netlist changes. `examples/logic` is a 74HC161 counting into a 74HC138.
+netlist changes. `examples/logic` holds two: `counter`, a 74HC161 counting into a 74HC138,
+and `i2c`, an open-drain bus where a controller (two 74LVC1G07) and a target (a 74LVC1G06
+pulling SDA low for its ACK) share 4.7k pull-ups, and a 74HC595 clocked by SCL captures the
+byte, checked for START, the bits, the ACK, the byte (a `record` bus) and STOP.
 
 ## Graphics
 

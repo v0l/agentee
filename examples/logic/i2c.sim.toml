@@ -1,0 +1,69 @@
+name = "i2c"
+kind = "logic"
+description = "Write 0x5A on an open-drain bus: START, eight bits MSB first, the target's ACK, STOP"
+schematic = "i2c"
+duration = "12us"
+ignore = ["J3", "J4"]
+record = ["M_SCL", "M_SDA", "ACK", "SCL", "SDA", "RCK", { name = "RX", nets = ["RX7", "RX6", "RX5", "RX4", "RX3", "RX2", "RX1", "RX0"] }]
+
+# The controller: SCL idles high, START is SDA falling with SCL high, data changes 250 ns
+# into each low half, and a 1 is the controller letting go so the pull-up raises the line.
+[[stimulus]]
+net = "M_SCL"
+steps = [["0ns", 1], ["1000ns", 0], ["1500ns", 1], ["2000ns", 0], ["2500ns", 1], ["3000ns", 0], ["3500ns", 1], ["4000ns", 0], ["4500ns", 1], ["5000ns", 0], ["5500ns", 1], ["6000ns", 0], ["6500ns", 1], ["7000ns", 0], ["7500ns", 1], ["8000ns", 0], ["8500ns", 1], ["9000ns", 0], ["9500ns", 1], ["10000ns", 0], ["10500ns", 1]]
+
+[[stimulus]]
+net = "M_SDA"
+steps = [["0ns", 1], ["500ns", 0], ["2250ns", 1], ["3250ns", 0], ["4250ns", 1], ["6250ns", 0], ["7250ns", 1], ["8250ns", 0], ["9250ns", 1], ["10250ns", 0], ["11000ns", 1]]
+
+# The target pulls SDA low from the eighth falling edge, while the controller still holds
+# it low (two open-drain drivers at 0, no contention), through the ninth clock.
+[[stimulus]]
+net = "ACK"
+steps = [["0ns", 0], ["9000ns", 1], ["10250ns", 0]]
+
+[[stimulus]]
+net = "RCK"
+steps = [["0ns", 0], ["8750ns", 1], ["8900ns", 0]]
+
+[[expect]]
+nets = ["SCL", "SDA"]
+at = "700ns"
+value = "10"
+
+[[expect]]
+net = "SDA"
+clock = "SCL"
+edge = "rising"
+from = "1us"
+sequence = [0, 1, 0, 1, 1, 0, 1, 0, 0]
+
+[[expect]]
+net = "SDA"
+at = "2400ns"
+value = 1
+
+[[expect]]
+nets = ["RX7", "RX6", "RX5", "RX4", "RX3", "RX2", "RX1", "RX0"]
+at = "9000ns"
+value = 0x5A
+
+[[expect]]
+nets = ["RX7", "RX6", "RX5", "RX4", "RX3", "RX2", "RX1", "RX0"]
+at = "11500ns"
+value = 0x5A
+
+[[expect]]
+net = "SDA"
+at = "9600ns"
+value = 0
+
+[[expect]]
+nets = ["SCL", "SDA"]
+at = "10800ns"
+value = "10"
+
+[[expect]]
+nets = ["SCL", "SDA"]
+at = "11500ns"
+value = "11"

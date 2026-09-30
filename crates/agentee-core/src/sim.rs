@@ -126,7 +126,7 @@ pub struct SimFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub record: Vec<String>,
+    pub record: Vec<crate::logic::RecordFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignore: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -135,6 +135,8 @@ pub struct SimFile {
     pub expect: Vec<crate::logic::ExpectFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<crate::logic::PartModelFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_violation: Option<crate::logic::OnViolation>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1083,6 +1085,9 @@ impl SimFile {
         }
         if !self.parts.is_empty() {
             v.push("parts");
+        }
+        if self.on_violation.is_some() {
+            v.push("on_violation");
         }
         v
     }
