@@ -1,6 +1,7 @@
-use agentee_sim::fdtd::engine::{Debye, Edge, Grid, Materials, Media, PortDef, Sim, SkinBand};
+use agentee_sim::fdtd::engine::{Debye, Edge, Grid, Materials, Media, PortDef, Sim};
 use agentee_sim::fdtd::model::{Copper, Dielectric, ModelPort, PcbModel, Sheet};
 use agentee_sim::fdtd::run::{Extras, Pulse, run};
+use agentee_sim::fdtd::surface::Surface;
 use agentee_sim::fdtd::{execute, plan, touchstone};
 use serde_json::Value;
 
@@ -23,10 +24,8 @@ fn throughput(n: usize, pml: usize, steps: &[usize], reps: usize) {
         r: 50.0,
     };
     let w0 = 2.0 * std::f64::consts::PI * 5e9;
-    let media = Media {
-        skin: SkinBand { omega0: w0, x_min: w0 / 1000.0, x_max: w0 * 100.0 },
-        debye: Debye::default(),
-    };
+    let media =
+        Media { surface: Surface { scale: w0, ..Default::default() }, debye: Debye::default() };
     let sim = Sim::new(grid, &mats, &|_, _| false, &[], vec![port], &[], media);
     let nodes = sim.dims().iter().product::<usize>();
     eprintln!("setup (Sim::new) {:?} nodes {nodes}: {:.2}s", sim.dims(), t.elapsed().as_secs_f64());
