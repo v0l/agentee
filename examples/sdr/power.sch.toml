@@ -372,6 +372,7 @@ at = [101.6, 266.7]
 
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
 pins = [
   "C95.2", "U5.5", "U5.7", "C2.2", "C3.2", "D6.2", "R61.2",
@@ -430,14 +431,17 @@ pins = ["U9.1", "U9.2", "R11.1", "C18.1"]
 
 [[nets]]
 name = "USB_ON"
+class = "Signal"
 pins = ["R1.2", "U5.4"]
 
 [[nets]]
 name = "VBUS_ILIM"
+class = "Analog"
 pins = ["U5.2", "R61.1"]
 
 [[nets]]
 name = "VBUS_FAULT_N"
+class = "Signal"
 style = "label"
 pins = ["U5.3", "R62.2"]
 
@@ -448,14 +452,17 @@ pins = ["U6.1", "U6.2", "U6.3", "L1.1"]
 
 [[nets]]
 name = "FB_1V0"
+class = "Analog"
 pins = ["U6.5", "R2.2", "R3.1"]
 
 [[nets]]
 name = "SS_1V0"
+class = "Analog"
 pins = ["U6.9", "C4.1"]
 
 [[nets]]
 name = "PG_1V0"
+class = "Signal"
 pins = ["U6.4", "R4.2", "U7.13"]
 
 [[nets]]
@@ -465,14 +472,17 @@ pins = ["U7.1", "U7.2", "U7.3", "L2.1"]
 
 [[nets]]
 name = "FB_1V8"
+class = "Analog"
 pins = ["U7.5", "R5.2", "R6.1"]
 
 [[nets]]
 name = "SS_1V8"
+class = "Analog"
 pins = ["U7.9", "C8.1"]
 
 [[nets]]
 name = "PG_1V8"
+class = "Signal"
 pins = ["U7.4", "R7.2", "U8.13", "U9.7", "U24.7"]
 
 [[nets]]
@@ -482,27 +492,33 @@ pins = ["U8.1", "U8.2", "U8.3", "L3.1"]
 
 [[nets]]
 name = "FB_3V3"
+class = "Analog"
 pins = ["U8.5", "R8.2", "R9.1"]
 
 [[nets]]
 name = "SS_3V3"
+class = "Analog"
 pins = ["U8.9", "C12.1"]
 
 [[nets]]
 name = "FX_XRES"
+class = "Signal"
 style = "label"
 pins = ["U8.4", "R10.2"]
 
 [[nets]]
 name = "NR_1V3"
+class = "Analog"
 pins = ["U9.8", "C16.1"]
 
 [[nets]]
 name = "FB_1V3"
+class = "Analog"
 pins = ["U9.3", "R11.2", "R12.1"]
 
 [[nets]]
 name = "LED_PWR"
+class = "Signal"
 pins = ["R13.2", "D2.2"]
 
 [[nets]]
@@ -513,8 +529,10 @@ pins = ["U24.1", "U24.2", "R63.1", "C126.1"]
 
 [[nets]]
 name = "NR_1V3S"
+class = "Analog"
 pins = ["U24.8", "C125.1"]
 
 [[nets]]
 name = "FB_1V3S"
+class = "Analog"
 pins = ["U24.3", "R63.2", "R64.1"]

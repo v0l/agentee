@@ -274,6 +274,7 @@ fields = { mpn = "Tag-Connect TC2030-IDC-NL, ARM SWD order", assembly = "no" }
 
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
 pins = [
   "U3.L12", "U3.F8", "U3.H8", "U3.L1", "U3.L2", "U3.L9", "U3.L8", "U3.G8", "U3.D3", "U3.F3", "U3.H3", "U3.K3",
@@ -314,11 +315,13 @@ pins = [
 
 [[nets]]
 name = "FX_VCCD"
+class = "Power"
 style = "power"
 pins = ["U3.G7", "U3.G9", "C87.1"]
 
 [[nets]]
 name = "VBUS_DET"
+class = "Signal"
 style = "label"
 pins = ["R14.2", "R15.1", "U3.G5"]
 
@@ -408,86 +411,103 @@ pins = ["U3.M11", "J1.A7", "J1.B7", "U13.2", "U13.9"]
 
 [[nets]]
 name = "CC1"
+class = "Signal"
 style = "label"
 pins = ["U3.K13", "J1.A5", "R31.1", "U13.4", "U13.7"]
 
 [[nets]]
 name = "CC2"
+class = "Signal"
 style = "label"
 pins = ["U3.J13", "J1.B5", "R32.1", "U13.5", "U13.6"]
 
 [[nets]]
 name = "RESREF"
+class = "Analog"
 style = "label"
 pins = ["U3.K5", "R33.1"]
 
 [[nets]]
 name = "FX_XTALIN"
+class = "Clock"
 style = "label"
 pins = ["U3.N13", "Y2.1", "C92.1"]
 
 [[nets]]
 name = "FX_XTALOUT"
+class = "Clock"
 style = "label"
 pins = ["U3.M13", "Y2.3", "C93.1"]
 
 [[nets]]
 name = "FX_XRES"
+class = "Signal"
 style = "label"
 pins = ["U3.K6", "R34.2", "C94.1", "J5.3"]
 
 [[nets]]
 name = "FX_PMODE"
+class = "Signal"
 style = "label"
 pins = ["U3.F11", "R35.1"]
 
 [[nets]]
 name = "FX_SWDIO"
+class = "Signal"
 style = "label"
 pins = ["U3.K9", "J5.2"]
 
 [[nets]]
 name = "FX_SWDCLK"
+class = "Signal"
 style = "label"
 pins = ["U3.K10", "J5.4"]
 
 [[nets]]
 name = "FX_SWO"
+class = "Signal"
 style = "label"
 pins = ["U3.K7", "J5.6"]
 
 [[nets]]
 name = "FPGA_PROG_B"
+class = "Signal"
 style = "label"
 pins = ["U3.J11"]
 
 [[nets]]
 name = "FPGA_INIT_B"
+class = "Signal"
 style = "label"
 pins = ["U3.J12"]
 
 [[nets]]
 name = "FPGA_DONE"
+class = "Signal"
 style = "label"
 pins = ["U3.J7"]
 
 [[nets]]
 name = "FX_SPI_SCK"
+class = "Signal"
 style = "label"
 pins = ["U3.H6"]
 
 [[nets]]
 name = "FX_SPI_MOSI"
+class = "Signal"
 style = "label"
 pins = ["U3.H7"]
 
 [[nets]]
 name = "FX_SPI_MISO"
+class = "Signal"
 style = "label"
 pins = ["U3.H5"]
 
 [[nets]]
 name = "FX_SPI_CS"
+class = "Signal"
 style = "label"
 pins = ["U3.H9"]
 
@@ -565,125 +585,150 @@ pins = ["U3.K2"]
 
 [[nets]]
 name = "FX_P0CTL0"
+class = "Data"
 style = "label"
 pins = ["U3.K4"]
 
 [[nets]]
 name = "FX_P0CTL1"
+class = "Data"
 style = "label"
 pins = ["U3.J4"]
 
 [[nets]]
 name = "FX_D0"
+class = "Data"
 style = "label"
 pins = ["U3.B4"]
 
 [[nets]]
 name = "FX_D1"
+class = "Data"
 style = "label"
 pins = ["U3.B5"]
 
 [[nets]]
 name = "FX_D2"
+class = "Data"
 style = "label"
 pins = ["U3.B6"]
 
 [[nets]]
 name = "FX_D3"
+class = "Data"
 style = "label"
 pins = ["U3.B7"]
 
 [[nets]]
 name = "FX_D4"
+class = "Data"
 style = "label"
 pins = ["U3.B9"]
 
 [[nets]]
 name = "FX_D5"
+class = "Data"
 style = "label"
 pins = ["U3.B10"]
 
 [[nets]]
 name = "FX_D6"
+class = "Data"
 style = "label"
 pins = ["U3.B11"]
 
 [[nets]]
 name = "FX_D7"
+class = "Data"
 style = "label"
 pins = ["U3.B12"]
 
 [[nets]]
 name = "FX_D8"
+class = "Data"
 style = "label"
 pins = ["U3.A4"]
 
 [[nets]]
 name = "FX_D9"
+class = "Data"
 style = "label"
 pins = ["U3.A8"]
 
 [[nets]]
 name = "FX_D10"
+class = "Data"
 style = "label"
 pins = ["U3.A6"]
 
 [[nets]]
 name = "FX_D11"
+class = "Data"
 style = "label"
 pins = ["U3.A7"]
 
 [[nets]]
 name = "FX_D12"
+class = "Data"
 style = "label"
 pins = ["U3.A9"]
 
 [[nets]]
 name = "FX_D13"
+class = "Data"
 style = "label"
 pins = ["U3.A10"]
 
 [[nets]]
 name = "FX_D14"
+class = "Data"
 style = "label"
 pins = ["U3.A11"]
 
 [[nets]]
 name = "FX_D15"
+class = "Data"
 style = "label"
 pins = ["U3.A12"]
 
 [[nets]]
 name = "FX_PCLK"
+class = "Clock"
 style = "label"
 pins = ["U3.A5"]
 
 [[nets]]
 name = "FX_CTL0"
+class = "Data"
 style = "label"
 pins = ["U3.D5"]
 
 [[nets]]
 name = "FX_CTL1"
+class = "Data"
 style = "label"
 pins = ["U3.D6"]
 
 [[nets]]
 name = "FX_CTL2"
+class = "Data"
 style = "label"
 pins = ["U3.D7"]
 
 [[nets]]
 name = "FX_CTL3"
+class = "Data"
 style = "label"
 pins = ["U3.D8"]
 
 [[nets]]
 name = "FX_CTL4"
+class = "Data"
 style = "label"
 pins = ["U3.D9"]
 
 [[nets]]
 name = "VBUS_FAULT_N"
+class = "Signal"
 style = "label"
 pins = ["U3.G6"]

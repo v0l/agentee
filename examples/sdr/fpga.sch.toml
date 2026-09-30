@@ -5,7 +5,7 @@ no_connect = [
   "U1.K12", "U1.M15", "U1.L14", "U1.K13", "U1.L13", "U1.M12", "U1.N13", "U1.P14", "U1.N9", "U1.M6", "U1.N6",
   "U1.R5", "U1.T5", "U1.R6", "U1.P6",
   "U1.D10", "U1.C9",
-  "U1.D8", "U1.D9", "U1.C14", "U1.B14", "U1.B15", "U1.A15", "U1.C16", "U1.B16", "U1.C12", "U1.D13",
+  "U1.D8", "U1.D9", "U1.C14", "U1.B15", "U1.C16", "U1.B16", "U1.C12", "U1.D13",
   "U1.C13", "U1.E13", "U1.E11", "U1.D11", "U1.D14", "U1.D15", "U1.F12", "U1.F13", "U1.E16", "U1.D16",
   "U1.F15", "U1.E15", "U1.G12", "U1.F14", "U1.J15",
   "U1.J16", "U1.G11",
@@ -306,6 +306,7 @@ at = [642.62, 254.0]
 
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
 pins = [
   "U1.A1", "U1.A11", "U1.B8", "U1.C5", "U1.C15", "U1.D2", "U1.D12", "U1.E9", "U1.F6", "U1.F10", "U1.F16", "U1.G3",
@@ -335,6 +336,7 @@ pins = ["U1.G10", "U1.J10", "U1.K11", "U1.L10", "C31.1", "C32.1", "C33.1", "FB5.
 
 [[nets]]
 name = "VCCADC"
+class = "Power"
 style = "power"
 pins = ["U1.G8", "C34.1", "FB5.2"]
 
@@ -359,239 +361,287 @@ pins = [
 
 [[nets]]
 name = "FPGA_PROG_B"
+class = "Signal"
 style = "label"
 pins = ["U1.L9", "R19.2", "J4.10"]
 
 [[nets]]
 name = "FPGA_INIT_B"
+class = "Signal"
 style = "label"
 pins = ["U1.K10", "R20.2"]
 
 [[nets]]
 name = "FPGA_DONE"
+class = "Signal"
 style = "label"
 pins = ["U1.H10", "R21.2", "D3.2"]
 
 [[nets]]
 name = "DONE_LED"
+class = "Signal"
 style = "label"
 pins = ["D3.1", "R22.1"]
 
 [[nets]]
 name = "PUDC_B"
+class = "Signal"
 style = "label"
 pins = ["U1.L15", "R23.1"]
 
 [[nets]]
 name = "FLASH_CS"
+class = "Signal"
 style = "label"
 pins = ["U1.L12", "U4.1", "R24.2"]
 
 [[nets]]
 name = "FLASH_CLK"
+class = "Clock"
 style = "label"
 pins = ["U1.E8", "U4.6"]
 
 [[nets]]
 name = "FLASH_D0"
+class = "Data"
 style = "label"
 pins = ["U1.J13", "U4.5"]
 
 [[nets]]
 name = "FLASH_D1"
+class = "Data"
 style = "label"
 pins = ["U1.J14", "U4.2"]
 
 [[nets]]
 name = "FLASH_D2"
+class = "Data"
 style = "label"
 pins = ["U1.K15", "U4.3"]
 
 [[nets]]
 name = "FLASH_D3"
+class = "Data"
 style = "label"
 pins = ["U1.K16", "U4.7"]
 
 [[nets]]
 name = "JTAG_TMS"
+class = "Signal"
 style = "label"
 pins = ["U1.M7", "J4.2"]
 
 [[nets]]
 name = "JTAG_TCK"
+class = "Signal"
 style = "label"
 pins = ["U1.L7", "J4.4"]
 
 [[nets]]
 name = "JTAG_TDO"
+class = "Signal"
 style = "label"
 pins = ["U1.N8", "J4.6"]
 
 [[nets]]
 name = "JTAG_TDI"
+class = "Signal"
 style = "label"
 pins = ["U1.N7", "J4.8"]
 
 [[nets]]
 name = "SYSCLK"
+class = "Clock"
 style = "label"
 pins = ["U1.N11", "X1.3"]
 
 [[nets]]
 name = "LED0"
+class = "Signal"
 style = "label"
 pins = ["U1.A13", "R25.1"]
 
 [[nets]]
 name = "LED0_A"
+class = "Signal"
 pins = ["R25.2", "D4.2"]
 
 [[nets]]
 name = "LED1"
+class = "Signal"
 style = "label"
 pins = ["U1.A14", "R26.1"]
 
 [[nets]]
 name = "LED1_A"
+class = "Signal"
 pins = ["R26.2", "D5.2"]
 
 [[nets]]
 name = "AD_P0_D0"
+class = "Data"
 style = "label"
 pins = ["U1.G1"]
 
 [[nets]]
 name = "AD_P0_D1"
+class = "Data"
 style = "label"
 pins = ["U1.C3"]
 
 [[nets]]
 name = "AD_P0_D2"
+class = "Data"
 style = "label"
 pins = ["U1.E2"]
 
 [[nets]]
 name = "AD_P0_D3"
+class = "Data"
 style = "label"
 pins = ["U1.C2"]
 
 [[nets]]
 name = "AD_P0_D4"
+class = "Data"
 style = "label"
 pins = ["U1.D3"]
 
 [[nets]]
 name = "AD_P0_D5"
+class = "Data"
 style = "label"
 pins = ["U1.B2"]
 
 [[nets]]
 name = "AD_P0_D6"
+class = "Data"
 style = "label"
 pins = ["U1.D1"]
 
 [[nets]]
 name = "AD_P0_D7"
+class = "Data"
 style = "label"
 pins = ["U1.B1"]
 
 [[nets]]
 name = "AD_P0_D8"
+class = "Data"
 style = "label"
 pins = ["U1.C1"]
 
 [[nets]]
 name = "AD_P0_D9"
+class = "Data"
 style = "label"
 pins = ["U1.A2"]
 
 [[nets]]
 name = "AD_P0_D10"
+class = "Data"
 style = "label"
 pins = ["U1.E1"]
 
 [[nets]]
 name = "AD_P0_D11"
+class = "Data"
 style = "label"
 pins = ["U1.A3"]
 
 [[nets]]
 name = "AD_P1_D0"
+class = "Data"
 style = "label"
 pins = ["U1.L3"]
 
 [[nets]]
 name = "AD_P1_D1"
+class = "Data"
 style = "label"
 pins = ["U1.L2"]
 
 [[nets]]
 name = "AD_P1_D2"
+class = "Data"
 style = "label"
 pins = ["U1.K3"]
 
 [[nets]]
 name = "AD_P1_D3"
+class = "Data"
 style = "label"
 pins = ["U1.K2"]
 
 [[nets]]
 name = "AD_P1_D4"
+class = "Data"
 style = "label"
 pins = ["U1.J3"]
 
 [[nets]]
 name = "AD_P1_D5"
+class = "Data"
 style = "label"
 pins = ["U1.K1"]
 
 [[nets]]
 name = "AD_P1_D6"
+class = "Data"
 style = "label"
 pins = ["U1.H3"]
 
 [[nets]]
 name = "AD_P1_D7"
+class = "Data"
 style = "label"
 pins = ["U1.J1"]
 
 [[nets]]
 name = "AD_P1_D8"
+class = "Data"
 style = "label"
 pins = ["U1.G4"]
 
 [[nets]]
 name = "AD_P1_D9"
+class = "Data"
 style = "label"
 pins = ["U1.H2"]
 
 [[nets]]
 name = "AD_P1_D10"
+class = "Data"
 style = "label"
 pins = ["U1.H1"]
 
 [[nets]]
 name = "AD_P1_D11"
+class = "Data"
 style = "label"
 pins = ["U1.G2"]
 
 [[nets]]
 name = "AD_DATA_CLK"
+class = "Clock"
 style = "label"
 pins = ["U1.F4"]
 
 [[nets]]
 name = "AD_FB_CLK"
+class = "Clock"
 style = "label"
 pins = ["U1.F2"]
 
 [[nets]]
 name = "AD_RX_FRAME"
+class = "Data"
 style = "label"
 pins = ["U1.E3"]
 
 [[nets]]
 name = "AD_TX_FRAME"
+class = "Data"
 style = "label"
 pins = ["U1.F3"]
 
@@ -669,275 +719,342 @@ pins = ["U1.M1"]
 
 [[nets]]
 name = "AD_SPI_DI"
+class = "Signal"
 style = "label"
 pins = ["U1.H4"]
 
 [[nets]]
 name = "AD_SPI_CLK"
+class = "Signal"
 style = "label"
 pins = ["U1.H5"]
 
 [[nets]]
 name = "AD_SPI_ENB"
+class = "Signal"
 style = "label"
 pins = ["U1.J4"]
 
 [[nets]]
 name = "AD_SPI_DO"
+class = "Signal"
 style = "label"
 pins = ["U1.J5"]
 
 [[nets]]
 name = "AD_RESETB"
+class = "Signal"
 style = "label"
 pins = ["U1.K5"]
 
 [[nets]]
 name = "AD_ENABLE"
+class = "Signal"
 style = "label"
 pins = ["U1.F5"]
 
 [[nets]]
 name = "AD_TXNRX"
+class = "Signal"
 style = "label"
 pins = ["U1.E5"]
 
 [[nets]]
 name = "AD_EN_AGC"
+class = "Signal"
 style = "label"
 pins = ["U1.E6"]
 
 [[nets]]
 name = "FX_D0"
+class = "Data"
 style = "label"
 pins = ["U1.T7"]
 
 [[nets]]
 name = "FX_D1"
+class = "Data"
 style = "label"
 pins = ["U1.T8"]
 
 [[nets]]
 name = "FX_D2"
+class = "Data"
 style = "label"
 pins = ["U1.T9"]
 
 [[nets]]
 name = "FX_D3"
+class = "Data"
 style = "label"
 pins = ["U1.R10"]
 
 [[nets]]
 name = "FX_D4"
+class = "Data"
 style = "label"
 pins = ["U1.T12"]
 
 [[nets]]
 name = "FX_D5"
+class = "Data"
 style = "label"
 pins = ["U1.T13"]
 
 [[nets]]
 name = "FX_D6"
+class = "Data"
 style = "label"
 pins = ["U1.T14"]
 
 [[nets]]
 name = "FX_D7"
+class = "Data"
 style = "label"
 pins = ["U1.R15"]
 
 [[nets]]
 name = "FX_D8"
+class = "Data"
 style = "label"
 pins = ["U1.R7"]
 
 [[nets]]
 name = "FX_D9"
+class = "Data"
 style = "label"
 pins = ["U1.R8"]
 
 [[nets]]
 name = "FX_D10"
+class = "Data"
 style = "label"
 pins = ["U1.T10"]
 
 [[nets]]
 name = "FX_D11"
+class = "Data"
 style = "label"
 pins = ["U1.R11"]
 
 [[nets]]
 name = "FX_D12"
+class = "Data"
 style = "label"
 pins = ["U1.R12"]
 
 [[nets]]
 name = "FX_D13"
+class = "Data"
 style = "label"
 pins = ["U1.R13"]
 
 [[nets]]
 name = "FX_D14"
+class = "Data"
 style = "label"
 pins = ["U1.T15"]
 
 [[nets]]
 name = "FX_D15"
+class = "Data"
 style = "label"
 pins = ["U1.R16"]
 
 [[nets]]
 name = "FX_PCLK"
+class = "Clock"
 style = "label"
 pins = ["U1.N14"]
 
 [[nets]]
 name = "FX_CTL0"
+class = "Data"
 style = "label"
 pins = ["U1.P8"]
 
 [[nets]]
 name = "FX_CTL1"
+class = "Data"
 style = "label"
 pins = ["U1.P9"]
 
 [[nets]]
 name = "FX_CTL2"
+class = "Data"
 style = "label"
 pins = ["U1.P10"]
 
 [[nets]]
 name = "FX_CTL3"
+class = "Data"
 style = "label"
 pins = ["U1.P11"]
 
 [[nets]]
 name = "FX_CTL4"
+class = "Data"
 style = "label"
 pins = ["U1.P13"]
 
 [[nets]]
 name = "FX_P0CTL0"
+class = "Data"
 style = "label"
 pins = ["U1.P15"]
 
 [[nets]]
 name = "FX_P0CTL1"
+class = "Data"
 style = "label"
 pins = ["U1.P16"]
 
 [[nets]]
 name = "FX_SPI_SCK"
+class = "Signal"
 style = "label"
 pins = ["U1.N16"]
 
 [[nets]]
 name = "FX_SPI_MOSI"
+class = "Signal"
 style = "label"
 pins = ["U1.M16"]
 
 [[nets]]
 name = "FX_SPI_MISO"
+class = "Signal"
 style = "label"
 pins = ["U1.N12"]
 
 [[nets]]
 name = "FX_SPI_CS"
+class = "Signal"
 style = "label"
 pins = ["U1.M14"]
 
 [[nets]]
 name = "RX_BYPASS"
+class = "Signal"
 style = "label"
 pins = ["U1.A8"]
 
 [[nets]]
 name = "RX_LNA_SD"
+class = "Signal"
 style = "label"
 pins = ["U1.A9"]
 
 [[nets]]
 name = "TX_BYPASS"
+class = "Signal"
 style = "label"
 pins = ["U1.B9"]
 
 [[nets]]
 name = "TX_AMP_PD"
+class = "Signal"
 style = "label"
 pins = ["U1.A10"]
 
 [[nets]]
 name = "PLL_CLK"
+class = "Signal"
 style = "label"
 pins = ["U1.B10"]
 
 [[nets]]
 name = "PLL_DATA"
+class = "Signal"
 style = "label"
 pins = ["U1.B11"]
 
 [[nets]]
 name = "PLL_LE"
+class = "Signal"
 style = "label"
 pins = ["U1.B12"]
 
 [[nets]]
 name = "PLL_MUXOUT"
+class = "Signal"
 style = "label"
 pins = ["U1.A12"]
 
 [[nets]]
 name = "VC_DAC"
+class = "Signal"
 style = "label"
 pins = ["U1.C8"]
 
 [[nets]]
 name = "REF_10M"
+class = "Clock"
 style = "label"
 pins = ["U1.E12"]
 
 [[nets]]
 name = "PPS_IN"
+class = "Signal"
 style = "label"
 pins = ["U1.C11"]
 
 [[nets]]
 name = "GPIO0"
+class = "Signal"
 style = "label"
 pins = ["U1.H11"]
 
 [[nets]]
 name = "GPIO1"
+class = "Signal"
 style = "label"
 pins = ["U1.H12"]
 
 [[nets]]
 name = "GPIO2"
+class = "Signal"
 style = "label"
 pins = ["U1.H13"]
 
 [[nets]]
 name = "GPIO3"
+class = "Signal"
 style = "label"
 pins = ["U1.H14"]
 
 [[nets]]
 name = "GPIO4"
+class = "Signal"
 style = "label"
 pins = ["U1.H16"]
 
 [[nets]]
 name = "GPIO5"
+class = "Signal"
 style = "label"
 pins = ["U1.G14"]
 
 [[nets]]
 name = "GPIO6"
+class = "Signal"
 style = "label"
 pins = ["U1.G15"]
 
 [[nets]]
 name = "GPIO7"
+class = "Signal"
 style = "label"
 pins = ["U1.G16"]
+
+[[nets]]
+name = "RX_BYPASS_N"
+class = "Signal"
+style = "label"
+pins = ["U1.A15"]
+
+[[nets]]
+name = "TX_BYPASS_N"
+class = "Signal"
+style = "label"
+pins = ["U1.B14"]

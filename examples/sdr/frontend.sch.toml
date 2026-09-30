@@ -1,5 +1,5 @@
 name = "frontend"
-description = "RF front end between the baluns and the SMAs. RX: an SPDT pair (BGS12WN6) picks a QPL9547 LNA (0.1 to 6 GHz, 5 V) or a bypass. TX: the same pair around a TRF37A73 driver (1 to 6000 MHz, 12 dB). CTRL high is the bypass (RF2), and the pull-ups keep the bypass selected and both amplifiers off until the gateware drives the pins"
+description = "RF front end between the baluns and the SMAs. RX: an SPDT pair (BGS12WN6) picks a QPL9547 LNA (0.1 to 6 GHz, 5 V) or a bypass. TX: the same pair around a TRF37A73 driver (1 to 6000 MHz, 12 dB). The input switches (U14, U17) take the bypass on RF2 with CTRL high; the output switches (U15, U19) are mirrored, bypass on RF1 with CTRL low, so both paths lay out without a crossing. Pull-ups on RX_BYPASS and TX_BYPASS, pull-downs on the _N controls, and pull-ups on the amplifier shutdowns keep the board in bypass with both amplifiers off until the gateware drives the pins"
 board = "sdr"
 
 [[parts]]
@@ -90,7 +90,7 @@ symbol = "FerriteBead_Small"
 value = "220R@100MHz"
 at = [292.10, 50.80]
 rotation = 90
-fields = { mpn = "Murata BLM15PX221SN1D" }
+fields = { mpn = "Murata BLM18PG221SN1D" }
 
 [[parts]]
 ref = "C98"
@@ -194,7 +194,7 @@ symbol = "FerriteBead_Small"
 value = "220R@100MHz"
 at = [292.10, 165.10]
 rotation = 90
-fields = { mpn = "Murata BLM15PX221SN1D" }
+fields = { mpn = "Murata BLM18PG221SN1D" }
 
 [[parts]]
 ref = "C104"
@@ -209,10 +209,23 @@ value = "100p"
 at = [355.60, 177.80]
 fields = { mpn = "Murata GRM1555C1H101JA01" }
 
+[[parts]]
+ref = "R65"
+symbol = "R"
+value = "10k"
+at = [381.00, 139.70]
+
+[[parts]]
+ref = "R66"
+symbol = "R"
+value = "10k"
+at = [381.00, 266.70]
+
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
-pins = ["J3.2", "J2.2", "U14.2", "U15.2", "U17.2", "U19.2", "U16.3", "U16.4", "U16.5", "U16.8", "U16.9", "U18.3", "U18.4", "U18.6", "U18.8", "U18.9", "C98.2", "C99.2", "C100.2", "C101.2", "C104.2", "C105.2", "C106.2", "C107.2", "C108.2"]
+pins = ["J3.2", "J2.2", "U14.2", "U15.2", "U17.2", "U19.2", "U16.3", "U16.4", "U16.5", "U16.8", "U16.9", "U18.3", "U18.4", "U18.6", "U18.8", "U18.9", "C98.2", "C99.2", "R65.1", "R66.1", "C100.2", "C101.2", "C104.2", "C105.2", "C106.2", "C107.2", "C108.2"]
 
 [[nets]]
 name = "3V3"
@@ -261,12 +274,12 @@ pins = ["U16.7", "L6.1", "C97.1"]
 [[nets]]
 name = "RXL_OUT_AC"
 class = "RF"
-pins = ["C97.2", "U15.3"]
+pins = ["C97.2", "U15.1"]
 
 [[nets]]
 name = "RX_BYP"
 class = "RF"
-pins = ["U14.1", "U15.1"]
+pins = ["U14.1", "U15.3"]
 
 [[nets]]
 name = "RX_RF"
@@ -276,17 +289,26 @@ pins = ["U15.5"]
 
 [[nets]]
 name = "LNA_VB"
+class = "Analog"
 pins = ["R37.2", "U16.1"]
 
 [[nets]]
 name = "RX_LNA_SD"
+class = "Signal"
 style = "label"
 pins = ["U16.6", "R38.2"]
 
 [[nets]]
 name = "RX_BYPASS"
+class = "Signal"
 style = "label"
-pins = ["U14.6", "U15.6", "R39.2"]
+pins = ["U14.6", "R39.2"]
+
+[[nets]]
+name = "RX_BYPASS_N"
+class = "Signal"
+style = "label"
+pins = ["U15.6", "R65.2"]
 
 [[nets]]
 name = "TX_RF"
@@ -312,12 +334,12 @@ pins = ["U18.7", "L7.1", "C103.1"]
 [[nets]]
 name = "TXA_OUT_AC"
 class = "RF"
-pins = ["C103.2", "U19.3"]
+pins = ["C103.2", "U19.1"]
 
 [[nets]]
 name = "TX_BYP"
 class = "RF"
-pins = ["U17.1", "U19.1"]
+pins = ["U17.1", "U19.3"]
 
 [[nets]]
 name = "TX_ANT"
@@ -326,10 +348,18 @@ pins = ["U19.5", "J2.1"]
 
 [[nets]]
 name = "TX_AMP_PD"
+class = "Signal"
 style = "label"
 pins = ["U18.5", "R40.2"]
 
 [[nets]]
 name = "TX_BYPASS"
+class = "Signal"
 style = "label"
-pins = ["U17.6", "U19.6", "R41.2"]
+pins = ["U17.6", "R41.2"]
+
+[[nets]]
+name = "TX_BYPASS_N"
+class = "Signal"
+style = "label"
+pins = ["U19.6", "R66.2"]

@@ -7,8 +7,9 @@ no_connect = ["U23.1", "U25.6", "U25.7", "U25.9", "U25.10", "U26.6", "U26.7", "U
 ref = "J6"
 symbol = "Conn_Coaxial"
 value = "REF"
+footprint = "U.FL_Hirose_U.FL-R-SMT-1_Vertical"
 at = [38.10, 88.90]
-fields = { mpn = "Amphenol 132289" }
+fields = { mpn = "Hirose U.FL-R-SMT-1(10)" }
 
 [[parts]]
 ref = "C109"
@@ -75,10 +76,24 @@ symbol = "FerriteBead_Small"
 value = "220R@100MHz"
 at = [304.80, 25.40]
 rotation = 90
-fields = { mpn = "Murata BLM15PX221SN1D" }
+fields = { mpn = "Murata BLM18PG221SN1D" }
 
 [[parts]]
 ref = "C114"
+symbol = "C"
+value = "1u"
+at = [469.90, 38.10]
+
+[[parts]]
+ref = "FB9"
+symbol = "FerriteBead_Small"
+value = "220R@100MHz"
+at = [482.60, 25.40]
+rotation = 90
+fields = { mpn = "Murata BLM18PG221SN1D" }
+
+[[parts]]
+ref = "C127"
 symbol = "C"
 value = "1u"
 at = [342.90, 38.10]
@@ -205,8 +220,9 @@ at = [571.50, 177.80]
 ref = "J7"
 symbol = "Conn_Coaxial"
 value = "PPS"
+footprint = "U.FL_Hirose_U.FL-R-SMT-1_Vertical"
 at = [38.10, 254.00]
-fields = { mpn = "Amphenol 132289" }
+fields = { mpn = "Hirose U.FL-R-SMT-1(10)" }
 
 [[parts]]
 ref = "D8"
@@ -319,20 +335,27 @@ rotation = 90
 
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
-pins = ["J6.2", "J7.2", "R42.2", "D7.1", "D7.2", "C111.2", "U20.5", "U20.13", "U20.8", "U20.12", "U20.7", "C112.2", "C113.2", "C114.2", "U21.1", "U21.2", "U21.3", "U21.9", "U21.10", "U21.21", "C115.2", "C116.2", "C117.2", "R46.2", "C119.2", "C120.2", "C121.2", "U22.2", "C122.2", "D8.2", "R52.2", "U23.3", "C123.2", "J8.2", "U25.3", "U25.8", "U26.3", "U26.8"]
+pins = ["J6.2", "J7.2", "R42.2", "D7.1", "D7.2", "C111.2", "U20.5", "U20.13", "U20.8", "U20.12", "U20.7", "C112.2", "C113.2", "C114.2", "C127.2", "U21.1", "U21.2", "U21.3", "U21.9", "U21.10", "U21.21", "C115.2", "C116.2", "C117.2", "R46.2", "C119.2", "C120.2", "C121.2", "U22.2", "C122.2", "D8.2", "R52.2", "U23.3", "C123.2", "J8.2", "U25.3", "U25.8", "U26.3", "U26.8"]
 
 [[nets]]
 name = "3V3"
 class = "Power"
 style = "power"
-pins = ["FB8.1", "R50.1", "U23.5", "C123.1", "J8.1"]
+pins = ["FB8.1", "FB9.1", "R50.1", "U23.5", "C123.1", "J8.1"]
 
 [[nets]]
 name = "3V3_REF"
 class = "Power"
 style = "power"
-pins = ["FB8.2", "C114.1", "U20.2", "U20.11", "U20.1", "U20.6", "C112.1", "C113.1", "U21.6", "U21.7", "U21.16", "U21.17", "U21.18", "U21.11", "C115.1", "C116.1", "C117.1"]
+pins = ["FB8.2", "C127.1", "U20.2", "U20.11", "U20.1", "U20.6", "C112.1", "C113.1"]
+
+[[nets]]
+name = "3V3_PLL"
+class = "Power"
+style = "power"
+pins = ["FB9.2", "C114.1", "U21.6", "U21.7", "U21.16", "U21.17", "U21.18", "U21.11", "C115.1", "C116.1", "C117.1"]
 
 [[nets]]
 name = "3V3_TCXO"
@@ -347,194 +370,236 @@ pins = ["J6.1", "C109.1"]
 
 [[nets]]
 name = "REF_AC"
+class = "RF"
 pins = ["C109.2", "R42.1", "R43.1"]
 
 [[nets]]
 name = "REF_CLAMP"
+class = "Analog"
 pins = ["R43.2", "D7.3", "C110.1"]
 
 [[nets]]
 name = "REF_P"
+class = "Analog"
 pins = ["C110.2", "U20.3"]
 
 [[nets]]
 name = "REF_N"
+class = "Analog"
 pins = ["U20.4", "C111.1"]
 
 [[nets]]
 name = "REF_OUT1"
+class = "Clock"
 pins = ["U20.10", "R44.1"]
 
 [[nets]]
 name = "REF_OUT2"
+class = "Clock"
 pins = ["U20.9", "R45.1"]
 
 [[nets]]
 name = "REF_CMOS"
+class = "Clock"
 pins = ["R44.2", "U21.8"]
 
 [[nets]]
 name = "REF_10M"
+class = "Clock"
 style = "label"
 pins = ["R45.2"]
 
 [[nets]]
 name = "TCXO_OUT"
+class = "Clock"
 style = "label"
 pins = ["R47.1"]
 
 [[nets]]
 name = "PLL_RFA"
+class = "Clock"
 pins = ["R47.2", "C118.1"]
 
 [[nets]]
 name = "PLL_RFIN"
+class = "Clock"
 pins = ["C118.2", "U21.5"]
 
 [[nets]]
 name = "PLL_RFINB"
+class = "Analog"
 pins = ["U21.4", "C119.1"]
 
 [[nets]]
 name = "PLL_RSET"
+class = "Analog"
 pins = ["U21.19", "R46.1"]
 
 [[nets]]
 name = "PLL_CP"
+class = "Analog"
 pins = ["U21.20", "C120.1", "R48.1", "R49.1"]
 
 [[nets]]
 name = "PLL_Z"
+class = "Analog"
 pins = ["R48.2", "C121.1"]
 
 [[nets]]
 name = "PLL_VC"
+class = "Analog"
 pins = ["R49.2", "U22.3"]
 
 [[nets]]
 name = "TCXO_DAC"
+class = "Analog"
 style = "label"
 pins = ["U22.1"]
 
 [[nets]]
 name = "TCXO_VC"
+class = "Analog"
 style = "label"
 pins = ["U22.4"]
 
 [[nets]]
 name = "VC_DAC"
+class = "Signal"
 style = "label"
 pins = ["U22.6", "R50.2"]
 
 [[nets]]
 name = "PLL_CLK"
+class = "Signal"
 style = "label"
 pins = ["U21.12"]
 
 [[nets]]
 name = "PLL_DATA"
+class = "Signal"
 style = "label"
 pins = ["U21.13"]
 
 [[nets]]
 name = "PLL_LE"
+class = "Signal"
 style = "label"
 pins = ["U21.14"]
 
 [[nets]]
 name = "PLL_MUXOUT"
+class = "Signal"
 style = "label"
 pins = ["U21.15"]
 
 [[nets]]
 name = "PPS_RAW"
+class = "Signal"
 pins = ["J7.1", "D8.1", "R51.1"]
 
 [[nets]]
 name = "PPS_A"
+class = "Signal"
 pins = ["R51.2", "R52.1", "U23.2"]
 
 [[nets]]
 name = "PPS_IN"
+class = "Signal"
 style = "label"
 pins = ["U23.4"]
 
 [[nets]]
 name = "GPIO0"
+class = "Signal"
 style = "label"
 pins = ["R53.1"]
 
 [[nets]]
 name = "GPIO0_H"
+class = "Signal"
 style = "label"
 pins = ["R53.2", "J8.3", "U25.1"]
 
 [[nets]]
 name = "GPIO1"
+class = "Signal"
 style = "label"
 pins = ["R54.1"]
 
 [[nets]]
 name = "GPIO1_H"
+class = "Signal"
 style = "label"
 pins = ["R54.2", "J8.4", "U25.2"]
 
 [[nets]]
 name = "GPIO2"
+class = "Signal"
 style = "label"
 pins = ["R55.1"]
 
 [[nets]]
 name = "GPIO2_H"
+class = "Signal"
 style = "label"
 pins = ["R55.2", "J8.5", "U25.4"]
 
 [[nets]]
 name = "GPIO3"
+class = "Signal"
 style = "label"
 pins = ["R56.1"]
 
 [[nets]]
 name = "GPIO3_H"
+class = "Signal"
 style = "label"
 pins = ["R56.2", "J8.6", "U25.5"]
 
 [[nets]]
 name = "GPIO4"
+class = "Signal"
 style = "label"
 pins = ["R57.1"]
 
 [[nets]]
 name = "GPIO4_H"
+class = "Signal"
 style = "label"
 pins = ["R57.2", "J8.7", "U26.1"]
 
 [[nets]]
 name = "GPIO5"
+class = "Signal"
 style = "label"
 pins = ["R58.1"]
 
 [[nets]]
 name = "GPIO5_H"
+class = "Signal"
 style = "label"
 pins = ["R58.2", "J8.8", "U26.2"]
 
 [[nets]]
 name = "GPIO6"
+class = "Signal"
 style = "label"
 pins = ["R59.1"]
 
 [[nets]]
 name = "GPIO6_H"
+class = "Signal"
 style = "label"
 pins = ["R59.2", "J8.9", "U26.4"]
 
 [[nets]]
 name = "GPIO7"
+class = "Signal"
 style = "label"
 pins = ["R60.1"]
 
 [[nets]]
 name = "GPIO7_H"
+class = "Signal"
 style = "label"
 pins = ["R60.2", "J8.10", "U26.5"]
