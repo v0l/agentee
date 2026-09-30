@@ -382,6 +382,7 @@ mod tests {
             seconds: 0.0,
             device: String::new(),
             spec_hash: 0,
+            layout_hash: None,
             maps: vec![],
             readings: vec![],
             curves: vec![],
