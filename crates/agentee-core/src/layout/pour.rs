@@ -236,7 +236,7 @@ impl ZonesCase {
         let mut found = crate::drc::Findings::default();
         let clearance_of =
             |n: Option<usize>| n.map(|n| self.nets[n].clearance).unwrap_or(self.default_clearance);
-        check_zones(&self.zones, &self.items, &self.nets, &clearance_of, &mut found);
+        check_zones(&self.zones, &self.items, &self.nets, &clearance_of, &|_| true, &mut found);
         std::hint::black_box(&found);
         self.zones.len()
     }

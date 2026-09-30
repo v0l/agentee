@@ -180,7 +180,8 @@ drc NAME` prints the layout's rule messages alone.
 
 ```toml
 [drc]                          # in the board file
-disable = ["silk-width"]       # rule ids to skip
+disable = ["silk-width"]       # rule ids to skip; their checks are not computed, so with silk-text
+                               # and silk-hidden off `agentee silk` has nothing to move
 severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
 tombstone_ratio = 3            # copper or feed width one chip pad may have over the other
 ```

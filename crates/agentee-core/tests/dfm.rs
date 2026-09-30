@@ -807,3 +807,29 @@ fn small_chips_keep_a_tall_part_height_away() {
     let w = hits(&p, "tall-part-shadow");
     assert!(w.len() == 1 && w[0].1.contains("from L1, which is 5mm tall"), "{w:?}");
 }
+
+#[test]
+fn disabled_silk_rules_skip_the_silk_text_search() {
+    let fp = format!(
+        "{}\n[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [0, -1.5]\ntext = \"${{REFERENCE}}\"\nsize = 1.0\n",
+        chip([0.96, 0.0], [0.56, 0.62])
+    );
+    let load_with = |board: &str| {
+        load(&Fixture {
+            board,
+            footprints: &[("R_0402_1005Metric", fp.as_str())],
+            parts: &[
+                ("R1", "R_0402_1005Metric", [10.0, 10.0]),
+                ("R2", "R_0402_1005Metric", [10.0, 10.3]),
+            ],
+            nets: &[],
+            ..Default::default()
+        })
+    };
+    let p = load_with("");
+    assert!(!hits(&p, "silk-text").is_empty());
+    assert!(!p.layouts[0].item.label_fixes.is_empty());
+    let p = load_with("[drc]\ndisable = [\"silk-text\", \"silk-hidden\"]\n");
+    assert!(hits(&p, "silk-text").is_empty());
+    assert!(p.layouts[0].item.label_fixes.is_empty());
+}

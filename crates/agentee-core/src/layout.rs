@@ -1202,6 +1202,8 @@ impl LayoutFile {
             }
         };
 
+        let rule_on = |id: &str| crate::drc::id_enabled(board, id);
+        let copper_rules = rule_on("short") || rule_on("clearance");
         let min_clearance = board.rules.min_clearance.to_mm();
         let footprint_clearance = |it: &Item| match it.owner {
             Owner::Pad(pi, _) => parts[pi].footprint.clearance,
@@ -1231,8 +1233,11 @@ impl LayoutFile {
                 if !grown.overlaps(&b.bounds) && !grown.contains(&b.bounds) {
                     continue;
                 }
-                let dist = a.shape.distance(&b.shape);
                 let same = a.net.is_some() && a.net == b.net;
+                if !same && !copper_rules {
+                    continue;
+                }
+                let dist = a.shape.distance(&b.shape);
                 if same {
                     if dist <= 1e-6 {
                         uf.union(i, j);
@@ -1292,7 +1297,11 @@ impl LayoutFile {
                 let tie: Vec<usize> = own.iter().filter_map(|&i| items[i].net).collect();
                 let name = format!("{} copper on {layer}", p.reference);
                 for (j, it) in items.iter().enumerate() {
-                    if matches!(it.owner, Owner::Pad(q, _) if q == pi) || !near(it) {
+                    let tied = it.net.is_some_and(|n| tie.contains(&n));
+                    if matches!(it.owner, Owner::Pad(q, _) if q == pi)
+                        || !(tied || copper_rules)
+                        || !near(it)
+                    {
                         continue;
                     }
                     let dist = gap(it);
@@ -1302,7 +1311,7 @@ impl LayoutFile {
                         }
                         continue;
                     }
-                    if it.net.is_some_and(|n| tie.contains(&n)) {
+                    if tied {
                         if dist <= 1e-6 {
                             uf.union(own[0], j);
                         }
@@ -1480,7 +1489,7 @@ impl LayoutFile {
             nets: nets.clone(),
             default_clearance,
         });
-        check_zones(&zones, &items, &nets, &clearance_of, &mut found);
+        check_zones(&zones, &items, &nets, &clearance_of, &rule_on, &mut found);
 
         let mut ratsnest = Vec::new();
         let mut stats: Vec<(usize, f64)> = Vec::new();
@@ -1555,6 +1564,7 @@ impl LayoutFile {
             &artwork,
             &outline,
             board.rules.min_silk_text_height.to_mm(),
+            &rule_on,
             &mut found,
         );
 
@@ -1981,14 +1991,21 @@ fn check_silk(
     artwork: &[Artwork],
     outline: &[P],
     min_height: f64,
+    rule_on: &dyn Fn(&str) -> bool,
     d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
     let mut fixes = Vec::new();
+    let artwork_on = rule_on("silk-artwork");
+    let height_on = rule_on("silk-text-height");
+    let texts_on = rule_on("silk-text") || rule_on("silk-hidden");
+    if !(artwork_on || height_on || texts_on) {
+        return fixes;
+    }
     let mut texts: Vec<SilkText> =
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
     texts.extend(board_texts(graphics));
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
-    for a in artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
+    for a in artwork.iter().filter(|a| artwork_on && a.layer.ends_with(".SilkS")) {
         let at = format!("silk {}", a.name);
         let cu = format!("{}.Cu", a.layer.trim_end_matches(".SilkS"));
         let over: Vec<String> = parts
@@ -2029,7 +2046,7 @@ fn check_silk(
     for (i, t) in texts.iter().enumerate() {
         let who = &t.owner;
         let at = format!("silk {who}");
-        if t.size + 1e-9 < min_height {
+        if height_on && t.size + 1e-9 < min_height {
             d.add(
                 "silk-text-height",
                 &at,
@@ -2040,6 +2057,9 @@ fn check_silk(
                     Length::mm(min_height)
                 ),
             );
+        }
+        if !texts_on {
+            continue;
         }
         let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, outline);
         if found.is_empty() {
@@ -3565,9 +3585,19 @@ fn check_zones(
     items: &[Item],
     nets: &[LayoutNet],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
+    rule_on: &dyn Fn(&str) -> bool,
     d: &mut crate::drc::Findings,
 ) {
     const TOL: f64 = 3e-3;
+    let (tips_on, overlap_on, gap_on, clear_on) = (
+        rule_on("zone-tips"),
+        rule_on("zone-overlap"),
+        rule_on("zone-to-zone"),
+        rule_on("zone-clearance"),
+    );
+    if !(tips_on || overlap_on || gap_on || clear_on) {
+        return;
+    }
     let bins: Vec<EdgeBins> = zones.iter().map(|z| EdgeBins::new(&z.rings, 1.0)).collect();
     let bounds: Vec<Bounds> = zones.iter().map(|z| ring_bounds(&z.rings)).collect();
     let inside: Vec<index::Winding> = zones.iter().map(|z| index::Winding::new(&z.rings)).collect();
@@ -3577,7 +3607,7 @@ fn check_zones(
             continue;
         }
         let mut tips = Vec::new();
-        for r in &a.rings {
+        for r in a.rings.iter().filter(|_| tips_on) {
             let n = r.len();
             for k in 0..n {
                 let (p, q, s) = (r[(k + n - 1) % n], r[k], r[(k + 1) % n]);
@@ -3602,7 +3632,8 @@ fn check_zones(
             );
         }
         for (j, b) in zones.iter().enumerate().skip(i + 1) {
-            if a.layer != b.layer || a.net == b.net || b.rings.is_empty() {
+            if !(overlap_on || gap_on) || a.layer != b.layer || a.net == b.net || b.rings.is_empty()
+            {
                 continue;
             }
             let need = clearance_of(Some(a.net)).max(clearance_of(Some(b.net)));
@@ -3632,7 +3663,7 @@ fn check_zones(
                 continue;
             }
             let mut worst: Option<(f64, P)> = None;
-            for r in &a.rings {
+            for r in a.rings.iter().filter(|_| gap_on) {
                 for (p, q) in edges(r) {
                     let mut eb = Bounds::EMPTY;
                     eb.add(p);
@@ -3659,7 +3690,10 @@ fn check_zones(
         let mut hits = 0;
         let mut first: Option<(String, f64, P)> = None;
         for it in items.iter().filter(|it| {
-            it.net != Some(a.net) && it.owner != Owner::Hole && it.layers.contains(&a.layer)
+            clear_on
+                && it.net != Some(a.net)
+                && it.owner != Owner::Hole
+                && it.layers.contains(&a.layer)
         }) {
             let need = clearance_of(Some(a.net)).max(clearance_of(it.net)).max(it.pour_gap);
             let mut hit: Option<(f64, P)> = None;
