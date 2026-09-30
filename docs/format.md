@@ -121,8 +121,8 @@ dielectric; mask, paste and silk sit outside the outer copper.
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
 `min_annular_ring`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
-`min_silk_text_height`. Footprints are checked against the rules of the board when the project has
-exactly one board, otherwise against `generic`.
+`min_silk_text_height`, `min_mask_web` (0.1 mm in both presets). Footprints are checked against the
+rules of the board when the project has exactly one board, otherwise against `generic`.
 
 ### What check computes
 
@@ -426,7 +426,8 @@ height = 0.8                   # mm, the width follows the aspect ratio
 ```
 
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
-vias and other parts' bodies, and stay on the board. When a reference label fails, check names a
+vias and other parts' bodies, and stay on the board. Each of these is an error, except text under
+another part's body, which is a warning. When a reference label fails, check names a
 spot that passes every rule, as a `label = { at = [...] }` line to paste. `agentee silk NAME`
 (MCP `silk`) pastes them all for you and repeats until the labels settle; `--hide` hides the
 references that have no clear spot, typically small passives under a BGA.
@@ -447,6 +448,9 @@ zone of its net; check reports how many it placed. They are drilled and plotted 
 Zone fills are exact polygons: the zone outline less every other net's copper grown by its
 clearance, with round corners, so pours render and plot without stair steps. Necks and slivers
 narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fab would etch them.
+Where two clearance areas (antipads, track and pad clearances) come closer than `min_width`, the
+pour is cut back to the straight lines joining them, within about 1.5 `min_width` of the gap, so no
+stub or hairline waist is left pointing into it.
 
 A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad. Two
 segments of one net that lie on top of each other on a layer (parallel, overlapping by more
@@ -455,6 +459,11 @@ flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
 (the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
+Two vias of one net at the same spot are an error too: the fab would drill the hole twice.
+Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
+different nets (or no net) that overlap or leave a mask web under `min_mask_web` are an error,
+counted per part pair with the first place named. Pads of one fine pitch part are checked too: fix
+it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
@@ -593,7 +602,11 @@ clearance to every other net and to the board edge, and islands that reach nothi
 Check reports unrouted connections (with the ratsnest), shorts, clearance violations, tracks
 narrower than their class or off their impedance width, copper near the edge, courtyard
 overlaps, unplaced parts, track ends that connect to nothing, and silk text that overlaps other
-text, crosses a silk outline, sits on a pad or runs off the board. Name an item with its kind when
+text, crosses a silk outline, sits on a pad or runs off the board. Courtyards are the closed
+outlines drawn on `F.CrtYd` / `B.CrtYd`, placed with the part (a bottom part's land on the other
+side); two parts whose courtyards overlap on the same side are an error, and so is a courtyard on
+either side over another part's NPTH hole or over a `MountingHole*` footprint's courtyard (its pad
+outline when it has none). Name an item with its kind when
 names collide: `agentee render pcb:lna`, `sch:lna`, `board:lna`.
 
 ## Simulation (`*.sim.toml`)

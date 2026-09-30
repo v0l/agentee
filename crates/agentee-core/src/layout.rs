@@ -1234,6 +1234,26 @@ impl LayoutFile {
             );
         }
 
+        let mut stacked = 0;
+        let mut first = None;
+        for (i, a) in vias.iter().enumerate() {
+            if vias[..i].iter().any(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6) {
+                stacked += 1;
+                first.get_or_insert(format!(
+                    "[{:.3}, {:.3}] ({})",
+                    a.at[0], a.at[1], nets[a.net].name
+                ));
+            }
+        }
+        if let Some(f) = first {
+            d.error(
+                "vias",
+                format!(
+                    "{stacked} vias sit on another of their net at the same spot, first at {f}"
+                ),
+            );
+        }
+
         let edge_clear = board.rules.min_copper_to_edge.to_mm();
         if outline.len() >= 3 {
             for it in &items {
@@ -1286,34 +1306,8 @@ impl LayoutFile {
             }
         }
 
-        let courtyards: Vec<(Bounds, bool)> = parts
-            .iter()
-            .map(|p| {
-                let mut cy = p.footprint.courtyard("F");
-                if cy.is_empty() {
-                    cy = p.footprint.courtyard("B");
-                }
-                let t = p.transform();
-                let mut b = Bounds::EMPTY;
-                if !cy.is_empty() {
-                    for c in [cy.min, cy.max, [cy.min[0], cy.max[1]], [cy.max[0], cy.min[1]]] {
-                        b.add(t.apply(c));
-                    }
-                }
-                (b, p.bottom)
-            })
-            .collect();
-        for i in 0..parts.len() {
-            for j in i + 1..parts.len() {
-                let ((a, sa), (b, sb)) = (&courtyards[i], &courtyards[j]);
-                if sa == sb && !a.is_empty() && !b.is_empty() && a.overlaps(b) {
-                    d.error(
-                        format!("part {}", parts[i].reference),
-                        format!("courtyard overlaps {}", parts[j].reference),
-                    );
-                }
-            }
-        }
+        check_courtyards(&parts, d);
+        check_mask_webs(&parts, board.rules.min_mask_web.to_mm(), d);
 
         let cutouts: Vec<(Vec<String>, Vec<P>)> = self
             .cutouts
@@ -1932,7 +1926,7 @@ fn check_silk(
             .map(|(p, q)| format!("{}.{}", p.reference, q.number))
             .collect();
         if !over.is_empty() {
-            d.warn(
+            d.error(
                 &at,
                 format!("`{}` sits on pads {}, it will be clipped", a.name, over.join(", ")),
             );
@@ -1946,12 +1940,12 @@ fn check_silk(
             .map(|(t, _)| t.text.as_str())
             .collect();
         if !hit.is_empty() {
-            d.warn(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
+            d.error(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
         }
         if outline.len() >= 3
             && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
         {
-            d.warn(&at, format!("`{}` runs off the board", a.name));
+            d.error(&at, format!("`{}` runs off the board", a.name));
         }
     }
     for (i, t) in texts.iter().enumerate() {
@@ -1988,7 +1982,13 @@ fn check_silk(
             }
             _ => String::new(),
         };
-        d.warn(&at, format!("`{}` {}{hint}", t.text, found.join(", ")));
+        let text: Vec<&str> = found.iter().map(|(_, s)| s.as_str()).collect();
+        let message = format!("`{}` {}{hint}", t.text, text.join(", "));
+        if found.iter().any(|(error, _)| *error) {
+            d.error(&at, message);
+        } else {
+            d.warn(&at, message);
+        }
     }
     fixes
 }
@@ -2006,11 +2006,11 @@ fn silk_issues(
     parts: &[Placed],
     vias: &[Via],
     outline: &[P],
-) -> Vec<String> {
+) -> Vec<(bool, String)> {
     let mut out = Vec::new();
     for (j, u) in texts.iter().enumerate() {
         if j != me && u.layer == t.layer && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP {
-            out.push(format!("crowds `{}` of {}", u.text, u.owner));
+            out.push((true, format!("crowds `{}` of {}", u.text, u.owner)));
         }
     }
     let side = t.layer.trim_end_matches(".SilkS");
@@ -2025,7 +2025,7 @@ fn silk_issues(
         .map(|(p, q)| format!("{}.{}", p.reference, q.number))
         .collect();
     if !pads.is_empty() {
-        out.push(format!("sits on pads {}, it will be clipped", pads.join(", ")));
+        out.push((true, format!("sits on pads {}, it will be clipped", pads.join(", "))));
     }
     let on_vias = vias
         .iter()
@@ -2035,7 +2035,10 @@ fn silk_issues(
         })
         .count();
     if on_vias > 0 {
-        out.push(format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }));
+        out.push((
+            true,
+            format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }),
+        ));
     }
     let crossed: Vec<&str> = parts
         .iter()
@@ -2058,10 +2061,10 @@ fn silk_issues(
         .map(|p| p.reference.as_str())
         .collect();
     if !crossed.is_empty() {
-        out.push(format!("crosses the silk outline of {}", crossed.join(", ")));
+        out.push((true, format!("crosses the silk outline of {}", crossed.join(", "))));
     }
     if outline.len() >= 3 && bx.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
-        out.push("runs off the board".into());
+        out.push((true, "runs off the board".into()));
     }
     let side = if t.layer.starts_with("B.") { "B" } else { "F" };
     let hidden: Vec<&str> = parts
@@ -2073,7 +2076,7 @@ fn silk_issues(
         .map(|(_, p)| p.reference.as_str())
         .collect();
     if !hidden.is_empty() {
-        out.push(format!("hides under the body of {}", hidden.join(", ")));
+        out.push((false, format!("hides under the body of {}", hidden.join(", "))));
     }
     out
 }
@@ -2176,6 +2179,249 @@ fn free_spot(
                     && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
             })
     })
+}
+
+struct Courtyard {
+    part: usize,
+    side: String,
+    poly: Vec<P>,
+    bounds: Bounds,
+}
+
+fn chain_loops(mut open: Vec<Vec<P>>) -> Vec<Vec<P>> {
+    let near = |a: P, b: P| geom::dist(a, b) < 1e-3;
+    let mut out = Vec::new();
+    while let Some(mut cur) = open.pop() {
+        loop {
+            let end = *cur.last().unwrap();
+            if cur.len() > 2 && near(cur[0], end) {
+                cur.pop();
+                break;
+            }
+            if let Some(j) = open.iter().position(|p| near(p[0], end)) {
+                let next = open.swap_remove(j);
+                cur.extend_from_slice(&next[1..]);
+            } else if let Some(j) = open.iter().position(|p| near(*p.last().unwrap(), end)) {
+                let next = open.swap_remove(j);
+                cur.extend(next.into_iter().rev().skip(1));
+            } else {
+                break;
+            }
+        }
+        if cur.len() >= 3 {
+            out.push(cur);
+        }
+    }
+    out
+}
+
+fn courtyards_of(pi: usize, p: &Placed) -> Vec<Courtyard> {
+    let tf = p.transform();
+    let mut out = Vec::new();
+    for side in ["F", "B"] {
+        let layer = format!("{side}.CrtYd");
+        let mut closed = Vec::new();
+        let mut open = Vec::new();
+        for g in p.footprint.graphics.iter().filter(|g| g.layer == layer) {
+            let mut path: Vec<P> =
+                crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
+            if path.len() < 2 {
+                continue;
+            }
+            let shut = match &g.shape {
+                crate::graphic::Shape::Rect { .. } | crate::graphic::Shape::Circle { .. } => true,
+                crate::graphic::Shape::Polyline { closed, .. } => *closed,
+                _ => false,
+            };
+            if shut {
+                if geom::dist(path[0], *path.last().unwrap()) < 1e-9 {
+                    path.pop();
+                }
+                closed.push(path);
+            } else {
+                open.push(path);
+            }
+        }
+        closed.extend(chain_loops(open));
+        let placed_side = p.flip_layer(&layer).trim_end_matches(".CrtYd").to_string();
+        for poly in closed.into_iter().filter(|c| c.len() >= 3) {
+            let mut bounds = Bounds::EMPTY;
+            poly.iter().for_each(|q| bounds.add(*q));
+            out.push(Courtyard { part: pi, side: placed_side.clone(), poly, bounds });
+        }
+    }
+    out
+}
+
+fn overlap_area(a: &[P], b: &[P]) -> f64 {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    a.to_vec()
+        .overlay(&b.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
+        .iter()
+        .map(|shape| {
+            shape
+                .iter()
+                .enumerate()
+                .map(|(k, r)| {
+                    let area = crate::contour::area(r).abs();
+                    if k == 0 { area } else { -area }
+                })
+                .sum::<f64>()
+        })
+        .sum()
+}
+
+fn check_courtyards(parts: &[Placed], d: &mut Diags) {
+    const MIN_AREA: f64 = 1e-4;
+    let courts: Vec<Courtyard> =
+        parts.iter().enumerate().flat_map(|(i, p)| courtyards_of(i, p)).collect();
+    let mut overlapping: Vec<(usize, usize)> = Vec::new();
+    for (i, a) in courts.iter().enumerate() {
+        for b in &courts[i + 1..] {
+            if a.part == b.part
+                || a.side != b.side
+                || !a.bounds.overlaps(&b.bounds)
+                || overlapping.contains(&(a.part.min(b.part), a.part.max(b.part)))
+            {
+                continue;
+            }
+            let area = overlap_area(&a.poly, &b.poly);
+            if area > MIN_AREA {
+                overlapping.push((a.part.min(b.part), a.part.max(b.part)));
+                d.error(
+                    format!("part {}", parts[a.part].reference),
+                    format!(
+                        "courtyard overlaps {} on {}.CrtYd by {area:.3} mm2",
+                        parts[b.part].reference, a.side
+                    ),
+                );
+            }
+        }
+    }
+    let mut holes: Vec<(usize, String, Option<String>, Vec<P>)> = Vec::new();
+    for (pi, p) in parts.iter().enumerate() {
+        if p.footprint_name.starts_with("MountingHole") {
+            let own: Vec<&Courtyard> = courts.iter().filter(|c| c.part == pi).collect();
+            if own.is_empty() {
+                for pad in p.pads.iter().filter(|q| q.drill.is_some()) {
+                    for o in &pad.outlines {
+                        holes.push((pi, format!("mounting hole {}", p.reference), None, o.clone()));
+                    }
+                }
+            }
+            for c in own {
+                let name = format!("mounting hole {}", p.reference);
+                holes.push((pi, name, Some(c.side.clone()), c.poly.clone()));
+            }
+            continue;
+        }
+        for pad in p.pads.iter().filter(|q| q.kind == PadKind::Npth) {
+            for o in &pad.outlines {
+                holes.push((pi, format!("hole {}.{}", p.reference, pad.number), None, o.clone()));
+            }
+        }
+    }
+    let mut reported: Vec<(usize, usize)> = Vec::new();
+    for (hp, name, side, poly) in &holes {
+        let mut hb = Bounds::EMPTY;
+        poly.iter().for_each(|q| hb.add(*q));
+        for c in &courts {
+            let pair = (c.part.min(*hp), c.part.max(*hp));
+            if c.part == *hp
+                || side.as_ref() == Some(&c.side)
+                || !c.bounds.overlaps(&hb)
+                || overlapping.contains(&pair)
+                || reported.contains(&(c.part, *hp))
+            {
+                continue;
+            }
+            if overlap_area(&c.poly, poly) > MIN_AREA {
+                reported.push((c.part, *hp));
+                d.error(
+                    format!("part {}", parts[c.part].reference),
+                    format!("courtyard on {}.CrtYd covers the {name}", c.side),
+                );
+            }
+        }
+    }
+}
+
+fn check_mask_webs(parts: &[Placed], web: f64, d: &mut Diags) {
+    for layer in ["F.Mask", "B.Mask"] {
+        let mut openings: Vec<(usize, usize, Bounds)> = Vec::new();
+        for (pi, p) in parts.iter().enumerate() {
+            for (k, pad) in p.pads.iter().enumerate() {
+                if pad.mask.iter().any(|m| m == layer) {
+                    let mut b = Bounds::EMPTY;
+                    pad.outlines.iter().flatten().for_each(|q| b.add(*q));
+                    if !b.is_empty() {
+                        openings.push((pi, k, b));
+                    }
+                }
+            }
+        }
+        let mut found: BTreeMap<(usize, usize), (usize, String)> = BTreeMap::new();
+        for (i, (pa, ka, ba)) in openings.iter().enumerate() {
+            let a = &parts[*pa].pads[*ka];
+            let mut grown = *ba;
+            grown.add([ba.min[0] - web, ba.min[1] - web]);
+            grown.add([ba.max[0] + web, ba.max[1] + web]);
+            for (pb, kb, bb) in &openings[i + 1..] {
+                let b = &parts[*pb].pads[*kb];
+                if (a.net.is_some() && a.net == b.net)
+                    || !(grown.overlaps(bb) || grown.contains(bb) || bb.contains(&grown))
+                {
+                    continue;
+                }
+                let gap = a
+                    .outlines
+                    .iter()
+                    .flat_map(|o| b.outlines.iter().map(move |q| geom::polygon_distance(o, q)))
+                    .fold(f64::MAX, f64::min);
+                if gap + 1e-6 >= web {
+                    continue;
+                }
+                let (ca, cb) = (ba.center(), bb.center());
+                let what = if gap <= 0.0 {
+                    "overlaps".to_string()
+                } else {
+                    format!("leaves {} to", Length::mm(gap))
+                };
+                let entry = found.entry((*pa, *pb)).or_insert_with(|| {
+                    (
+                        0,
+                        format!(
+                            "{}.{} {what} {}.{} at [{:.3}, {:.3}]",
+                            parts[*pa].reference,
+                            a.number,
+                            parts[*pb].reference,
+                            b.number,
+                            (ca[0] + cb[0]) / 2.0,
+                            (ca[1] + cb[1]) / 2.0
+                        ),
+                    )
+                });
+                entry.0 += 1;
+            }
+        }
+        for ((pa, pb), (count, first)) in found {
+            let whom = if pa == pb {
+                format!("part {}", parts[pa].reference)
+            } else {
+                format!("parts {} and {}", parts[pa].reference, parts[pb].reference)
+            };
+            d.error(
+                format!("{whom} {layer}"),
+                format!(
+                    "{count} pad pairs of different nets leave less than the {} mask web, first: \
+                     {first}; openings follow the pad outlines, narrow the pads or move them apart",
+                    Length::mm(web)
+                ),
+            );
+        }
+    }
 }
 
 fn is_interior_join(t: &Track, end: P) -> bool {
@@ -2589,12 +2835,17 @@ fn vector_fill(
     for c in cutouts {
         clip.push(c.to_vec());
     }
-    for it in items.iter().filter(|it| it.layers.iter().any(|l| l == &raster.layer)) {
-        if it.net == Some(raster.net) && it.owner != Owner::Hole {
-            continue;
-        }
-        let gap = clearance.max(clearance_of(it.net));
-        clip.extend(inflated(&it.shape, gap));
+    let keepouts: Vec<(&Shape, f64)> = items
+        .iter()
+        .filter(|it| it.layers.iter().any(|l| l == &raster.layer))
+        .filter(|it| it.net != Some(raster.net) || it.owner == Owner::Hole)
+        .map(|it| (&it.shape, clearance.max(clearance_of(it.net))))
+        .collect();
+    for (shape, gap) in &keepouts {
+        clip.extend(inflated(shape, *gap));
+    }
+    if min_width > 0.0 {
+        clip.extend(gap_bridges(&keepouts, min_width));
     }
     for z in blockers {
         let gap = clearance.max(clearance_of(Some(z.net)));
@@ -2633,6 +2884,147 @@ fn vector_fill(
         }
     }
     rings
+}
+
+fn closest_on_segment(p: P, a: P, b: P) -> P {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    if len2 == 0.0 {
+        return a;
+    }
+    let t = (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0);
+    [a[0] + t * dx, a[1] + t * dy]
+}
+
+fn core_of(shape: &Shape) -> (Vec<(P, P)>, f64) {
+    match shape {
+        Shape::Circle(c, r) => (vec![(*c, *c)], *r),
+        Shape::Seg(a, b, hw) => (vec![(*a, *b)], *hw),
+        Shape::Poly(rings) => (rings.iter().flat_map(|r| edges(r)).collect(), 0.0),
+    }
+}
+
+fn nearest_points(a: &[(P, P)], b: &[(P, P)]) -> Option<(P, P)> {
+    let mut best: Option<(f64, P, P)> = None;
+    for (p, q) in a {
+        for (r, s) in b {
+            if geom::segments_intersect(*p, *q, *r, *s) {
+                return None;
+            }
+            for (x, y) in [
+                (*p, closest_on_segment(*p, *r, *s)),
+                (*q, closest_on_segment(*q, *r, *s)),
+                (closest_on_segment(*r, *p, *q), *r),
+                (closest_on_segment(*s, *p, *q), *s),
+            ] {
+                let d = geom::dist(x, y);
+                if best.is_none_or(|b| d < b.0) {
+                    best = Some((d, x, y));
+                }
+            }
+        }
+    }
+    best.map(|(_, x, y)| (x, y))
+}
+
+fn cap_points(rings: &[Vec<P>], m: P, rho: f64, out: &mut Vec<P>) {
+    for r in rings {
+        for (a, b) in edges(r) {
+            if geom::dist(a, m) <= rho {
+                out.push(a);
+            }
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let f = [a[0] - m[0], a[1] - m[1]];
+            let qa = d[0] * d[0] + d[1] * d[1];
+            let qb = 2.0 * (f[0] * d[0] + f[1] * d[1]);
+            let qc = f[0] * f[0] + f[1] * f[1] - rho * rho;
+            let disc = qb * qb - 4.0 * qa * qc;
+            if qa == 0.0 || disc < 0.0 {
+                continue;
+            }
+            for t in [(-qb - disc.sqrt()) / (2.0 * qa), (-qb + disc.sqrt()) / (2.0 * qa)] {
+                if (0.0..=1.0).contains(&t) {
+                    out.push([a[0] + t * d[0], a[1] + t * d[1]]);
+                }
+            }
+        }
+    }
+}
+
+fn convex_hull(mut pts: Vec<P>) -> Vec<P> {
+    pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    pts.dedup_by(|a, b| geom::dist(*a, *b) < 1e-9);
+    if pts.len() < 3 {
+        return pts;
+    }
+    let cross = |o: P, a: P, b: P| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    let mut hull: Vec<P> = Vec::new();
+    for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &P>> =
+            if pass == 0 { Box::new(pts.iter()) } else { Box::new(pts.iter().rev()) };
+        for p in iter {
+            while hull.len() >= start + 2
+                && cross(hull[hull.len() - 2], hull[hull.len() - 1], *p) <= 0.0
+            {
+                hull.pop();
+            }
+            hull.push(*p);
+        }
+        hull.pop();
+    }
+    hull
+}
+
+fn gap_bridges(keepouts: &[(&Shape, f64)], min_width: f64) -> Vec<Vec<P>> {
+    let mut order: Vec<(Bounds, usize)> = keepouts
+        .iter()
+        .enumerate()
+        .map(|(i, (s, gap))| {
+            let mut b = s.bounds();
+            b.add([b.min[0] - gap, b.min[1] - gap]);
+            b.add([b.max[0] + gap, b.max[1] + gap]);
+            (b, i)
+        })
+        .collect();
+    order.sort_by(|a, b| a.0.min[0].total_cmp(&b.0.min[0]));
+    let mut out = Vec::new();
+    for (k, (ba, i)) in order.iter().enumerate() {
+        for (bb, j) in &order[k + 1..] {
+            if bb.min[0] > ba.max[0] + min_width {
+                break;
+            }
+            if bb.min[1] > ba.max[1] + min_width || bb.max[1] < ba.min[1] - min_width {
+                continue;
+            }
+            let ((sa, ga), (sb, gb)) = (keepouts[*i], keepouts[*j]);
+            let apart = sa.distance(sb) - ga - gb;
+            if apart <= 1e-6 || apart >= min_width {
+                continue;
+            }
+            let ((ca, ra), (cb, rb)) = (core_of(sa), core_of(sb));
+            let Some((qa, qb)) = nearest_points(&ca, &cb) else { continue };
+            let core = geom::dist(qa, qb);
+            if core < 1e-9 {
+                continue;
+            }
+            let dir = [(qb[0] - qa[0]) / core, (qb[1] - qa[1]) / core];
+            let (ea, eb) = (ra + ga, rb + gb);
+            let m = [
+                (qa[0] + dir[0] * ea + qb[0] - dir[0] * eb) / 2.0,
+                (qa[1] + dir[1] * ea + qb[1] - dir[1] * eb) / 2.0,
+            ];
+            let rho = apart / 2.0 + 1.5 * min_width;
+            let mut pts = Vec::new();
+            cap_points(&inflated(sa, ga), m, rho, &mut pts);
+            cap_points(&inflated(sb, gb), m, rho, &mut pts);
+            let hull = convex_hull(pts);
+            if hull.len() >= 3 {
+                out.push(hull);
+            }
+        }
+    }
+    out
 }
 
 fn pair_base(name: &str, positive: bool) -> Option<String> {
@@ -2987,6 +3379,37 @@ mod pair_tests {
             assert_eq!(pair_base(p, true), pair_base(n, false), "{p} {n}");
         }
         assert_ne!(pair_base("USB_DP", true), pair_base("CLK_N", false));
+    }
+
+    fn via(net: usize, c: P) -> Item {
+        let shape = Shape::Circle(c, 0.175);
+        Item {
+            owner: Owner::Via(0),
+            net: Some(net),
+            layers: vec!["In6.Cu".into()],
+            bounds: shape.bounds(),
+            shape,
+        }
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_antipads_closer_than_min_width() {
+        let items = [via(1, [-0.375, -0.075]), via(1, [0.375, 0.075]), via(0, [1.5, 1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let (fill, _) =
+            fill_zone(0, "In6.Cu", &square, &[], 0.0, 0.1, &items, &|_| 0.1, &[], &[], 0.25, 0.0);
+        let copper =
+            |p: P| fill.rings.iter().filter(|r| geom::point_in_polygon(p, r)).count() % 2 == 1;
+        let across = [-0.196, 0.981];
+        for k in 0..=26 {
+            let s = k as f64 * 0.01;
+            for side in [1.0, -1.0] {
+                let p = [across[0] * s * side, across[1] * s * side];
+                assert!(!copper(p), "copper at {p:?}");
+            }
+        }
+        assert!(copper([across[0] * 0.6, across[1] * 0.6]));
+        assert!(copper([0.0, 1.0]) && copper([-1.0, 0.0]));
     }
 
     #[test]
