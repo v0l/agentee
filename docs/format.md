@@ -171,7 +171,7 @@ guides, which keep every component 1 mm from the board edge for depaneling and h
 ### Design rule checks
 
 Layout checks run from a registry of rules, each with a stable id, a category (`copper`,
-`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`, `test`), a default severity, and a condition on the
+`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`, `test`, `placement`), a default severity, and a condition on the
 board: a rule for inner layers runs only with 4 or more copper layers, a via fill rule only when
 vias sit in pads, a BGA rule only when there is a BGA. Every message of a rule starts with its id
 in brackets, e.g. `[via-cuts-pad]`. `agentee drc NAME --list` (MCP `drc` with `list = true`) prints
@@ -217,6 +217,12 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `tall-part-shadow` | info | footprint heights over 3 mm | a two-pad chip of 0603 or smaller closer to a part taller than 3 mm than that part's height, measured from the chip's pads to the tall part's body (EMS rule of thumb 1:1: shadowing in reflow and inspection); heights come from the footprint `height`, parts without one are skipped |
 | `test-access` | info | parts | nets the `[test]` section asks for with no probe access from the probe side: no pad of a test point (reference `TP1`..., or a footprint named `TestPoint*`), no exposed plated through-hole pad (`through_holes`), no untented via (`vias`). Nets in classes with an impedance target or a pair gap, and nets of pairs, are exempt and named, since a stub hurts them |
 | `test-pad-geometry` | info | test points | a test point pad under `min_test_pad`, closer than `min_test_pad_pitch` to another centre to centre, closer than `min_test_pad_to_body` to another part's body on the probe side, closer than `min_test_pad_to_edge` to the board edge or a tooling hole (non-plated holes and mounting holes), or not on the probe side |
+| `placement-decoupling-distance` | info | parts | a capacitor between a supply and ground whose supply pad is farther than `decoupling_distance` (3 mm) from the nearest pin of an IC on that supply, 2.5 times that for bulk capacitors over 1 uF |
+| `placement-crystal-distance` | info | parts | a crystal or oscillator (reference `Y`, or a footprint named like a crystal or oscillator) whose signal pad is farther than `crystal_distance` (5 mm) from the IC pin on its net |
+| `placement-large-part-off-centre` | info | parts | a large chip (a BGA, a package of 16 or more pins over 25 mm2, else the parts with the most pins) whose courtyard centre is more than `off_centre` (0.6) of the way from the board centre to the edge |
+| `placement-hot-parts-close` | info | parts | two large packages (courtyard of 49 mm2 or more) whose courtyards are closer than `hot_distance` (5 mm) |
+| `placement-cluster-spread` | info | parts | a two-pin passive whose signal nets reach one IC and nothing else, farther than `cluster_spread` (10 mm) from that IC's pin |
+| `placement-connector-not-at-edge` | info | parts | a connector (edge pads, `overhang = true`, or a `J`/`P` reference that is not a Tag-Connect, U.FL or test pad) whose courtyard is farther than `connector_edge` (3 mm) from the outline |
 | `short` | error | always | copper of two different nets touches |
 | `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
@@ -264,6 +270,19 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `interface-return-via` | error | interfaces | a signal via with no reference via within `return_via` |
 | `interface-length` | error | interfaces | a lane longer than `max_length` |
 | `interface-reference` | error | interfaces | a lane running more than `max_unreferenced` with no reference plane next to it |
+
+The placement rules are guidance for where parts sit, notices by default; raise them with
+`[drc] severity`. Their thresholds live in the board:
+
+```toml
+[drc.placement]
+decoupling_distance = "3mm"    # supply pad of a decoupling cap to the IC pin
+crystal_distance = "5mm"
+cluster_spread = "10mm"        # a passive to the only IC it serves
+hot_distance = "5mm"           # courtyard gap between large packages
+connector_edge = "3mm"         # connector courtyard to the outline
+off_centre = 0.6               # fraction of the half width or height from the centre
+```
 
 The mechanical rules (`part-body-to-edge`, the `mlcc-flex-zone` rules, `tombstone-risk`,
 `tall-part-shadow`) are guidance and default to info; raise them with `[drc] severity`. A ceramic
@@ -539,6 +558,7 @@ rotation = 90                  # degrees, counter-clockwise
 # side = "bottom"              # mirrors the footprint and swaps F./B. layers
 label = { at = [9.9, 7.4], rotation = 90 }   # move the silk reference; size = 0.8, hide = true
 # mlcc = false                 # this part is not a ceramic capacitor, over the footprint's `mlcc`
+# locked = true                # `agentee place` never moves it
 
 [[tracks]]
 net = "RF_OUT"
@@ -609,6 +629,11 @@ height = 0.8                   # mm, the width follows the aspect ratio
 # min_test_pad_pitch = "1.27mm"   # centre to centre between test pads
 # min_test_pad_to_body = "1.0mm"  # to another part's body on the probe side
 # min_test_pad_to_edge = "3.0mm"  # to the board edge and tooling holes
+
+[place]                        # optional, for `agentee place`
+# edges = { J1 = "left", J2 = "right" }   # pin a connector to an edge: left, right, top
+                               # (smallest y) or bottom
+# keepouts = [[[0, 0], [8, 0], [8, 6], [0, 6]]]   # polygons no courtyard may enter
 
 [watermark]                    # optional: where the agentee version watermark goes
 # at = [30, 21]                # centre of the text, default a clear spot found by check
@@ -706,6 +731,77 @@ opening), so pairs of its own pads are skipped; its pads are still checked again
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
 artwork get the same checks as reference labels: overlap, pads, silk outlines, board edge.
+
+### Placement
+
+`agentee place NAME [--parts 'U*,C1?'] [--keep-placed] [--side F|B|both] [--seed N] [--dry-run]`
+(MCP `place`) places the parts of the layout's schematic inside the board outline and writes each
+one's `at`, `rotation` and `side` into its `[[footprints]]` entry (adding entries for new parts,
+dropping a moved label's `at`), then refreshes the stored fills. It is a quick start for a whole
+board: place, look at it, then move what matters by hand and lock it. `--parts` places only the
+matching parts and leaves the rest where they are; `--keep-placed` leaves every part that already
+has a placement; `locked = true` on a `[[footprints]]` entry is never moved. `--side both` lets
+decoupling caps of a BGA go under it on the back and passives spill to the back when the top is
+full; the default puts everything on the top. The result depends only on the files and `--seed`,
+so a different seed is a different start. It reports the half-perimeter wirelength (HPWL) of the
+signal nets and of every net, ratsnest crossings, courtyard overlaps and the mean and worst
+decoupling distance, for the placement it started from (when every part had one) and for its own,
+plus the clusters it built and the edge each connector went to. Tracks and vias already in the
+file stay where they are; place an unrouted board, or `route --reroute` after. Run `agentee silk
+NAME` afterwards to move the reference labels.
+
+What goes where, strongest first, and why:
+
+- Connectors (parts with `edge = true` pads, `overhang = true`, or a `J`/`P` reference) go on the
+  board edges, each edge spread evenly, with the mating side out: the edge line is the
+  footprint's `Dwgs.User` line next to a text saying `edge` (KiCad's `PCB Edge` mark), else the
+  outer side of its `edge` pads, else its pads plus `min_part_to_edge` for an overhanging part,
+  else its courtyard plus `min_body_to_edge`. An RF connector (SMA, SMB, BNC, U.FL, MMCX, coax)
+  and a USB connector never share an edge unless no other split fits, since USB 3 noise lands in
+  the 2.4 GHz band (Intel, "USB 3.0 Radio Frequency Interference Impact on 2.4 GHz Wireless
+  Devices", 2012). `[place] edges` pins a connector to an edge. Mounting holes go in the corners
+  (diagonal first), fiducials in the free corners with their pads 3 mm or more from the edge,
+  clear of the conveyor rails and clamps (SMEMA Fiducial Mark Standard 3.1).
+- Large chips (BGA, 16+ pin packages over 25 mm2, else the highest pin count part) are pulled to
+  the board centre, where they have room to escape their pins on every side (Xilinx UG1099,
+  Recommended Design Rules and Strategies for BGA Devices) and away from the edges and
+  mounting holes, where handling and depaneling bend the board and crack BGA joints
+  (IPC/JEDEC-9704A strain guidelines).
+- Clusters come from the netlist: each IC takes the passives whose signal nets reach it alone,
+  the capacitors between a supply it uses and ground (the nearest IC in the schematic when
+  several share the supply, spread over its supply pins), and its crystal. A cluster's decoupling
+  caps sit next to the supply pin they serve (Analog Devices MT-101, Decoupling Techniques; TI
+  SCAA082, High-Speed Layout Guidelines), or under it on the back with `--side both` (Xilinx UG483,
+  7 Series PCB Design Guide, puts the small caps under the BGA); the crystal next to its clock
+  pins (ST AN2867, Oscillator design guide). Clusters are placed to minimise weighted HPWL:
+  nets of an impedance or pair class, `[[pairs]]` and `[[interfaces]]` count three times, supply
+  and ground nets not at all (they are planes).
+- A switcher (an IC with an inductor on one of its pins whose other end is a supply) keeps its
+  inductor and input caps tight against it, and switchers keep 8 mm (centre to centre) from
+  sensitive parts:
+  crystals and parts on single-ended impedance (RF) nets (TI SNVA021, AN-1149 Layout Guidelines
+  for Switching Power Supplies; Linear Technology AN139, Power Supply Layout and EMI).
+- Hot parts (sources of 0.25 W or more in a thermal sim of this layout, and large packages over
+  49 mm2) are pushed 10 mm apart so their heat does not stack (TI SNVA419, AN-2020 Thermal Design
+  by Insight, not Hindsight; IPC-2221B, thermal management).
+- Ceramic capacitors of 0805 or larger stay out of `flex_zone`, and smaller ones inside it lie
+  along the edge (Murata and TDK MLCC mounting guidance on board flexure; Knowles). Every body
+  keeps `min_body_to_edge` from the outline, courtyards never overlap on a side (through-hole
+  parts block both sides), and nothing enters a `[place] keepouts` polygon (IPC-7351B courtyards:
+  the courtyard is the least area a part and its land pattern need).
+- Rotation follows the main nets: each part takes the quarter turn that brings its pads nearest
+  the other ends of its nets, and the passives of a cluster share one axis.
+
+The method: a force-directed pass over the clusters (a clique model of the weighted nets, a pull
+to the centre for large chips, and a spreading force that grows over 300 steps) gives each
+cluster a spot; connectors are then assigned to edges (every assignment tried up to seven
+connectors, greedy past that) and slid along them; each large chip, anchor and member is then
+legalised at the nearest spot on a 0.05 mm grid where its courtyards clear everything and it
+keeps the edge rules, searching outward in rings. A simulated annealing refinement follows
+(shifts, quarter turns, swaps of same-size parts, whole cluster moves, side flips with `--side
+both`), scored by weighted HPWL, crossings of two-pin nets, and the rules above as penalties.
+Four such starts run and the cheapest is kept. The 168 parts of `examples/sdr` place in about 2 s
+(plus loading the project); results vary between seeds, so try a few and keep the best.
 
 ### Autorouting
 
@@ -1246,9 +1342,13 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
    when KiCad has the part. Imports land in `symbols/` and `footprints/`.
 2. Otherwise `agentee new symbol NAME` / `agentee new footprint NAME` and edit the starter file.
 3. `agentee new board NAME`, pick a stackup preset and fab, add net classes.
-4. `agentee check` until there are no errors, `agentee render NAME -o out.png` to look.
-5. `agentee view` keeps a live window open for a human.
-6. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
+4. Quick-start placement: once the schematic checks, `agentee place NAME` puts every part on the
+   board (connectors on edges, big chips central, decoupling caps at their pins). Look at it with
+   `agentee render pcb:NAME`, move and `locked = true` the parts that matter, run `agentee place
+   NAME --keep-placed` or with another `--seed` for the rest, then `agentee silk NAME`.
+5. `agentee check` until there are no errors, `agentee render NAME -o out.png` to look.
+6. `agentee view` keeps a live window open for a human.
+7. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
 
 ## Importing a KiCad board
 

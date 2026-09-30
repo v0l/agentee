@@ -14,10 +14,10 @@ const HOT_GAP: f64 = 10.0;
 const QUIET_GAP: f64 = 8.0;
 const HOT_WATTS: f64 = 0.25;
 const EPS: f64 = 1e-6;
-const STARTS: u64 = 3;
+const STARTS: u64 = 4;
 const CENTRE_PULL: f64 = 2.0;
 const CENTRE_BLEND: f64 = 0.5;
-const MOVES_PER_PART: f64 = 400.0;
+const MOVES_PER_PART: f64 = 600.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -396,7 +396,7 @@ fn dot(a: P, b: P) -> f64 {
     a[0] * b[0] + a[1] * b[1]
 }
 
-type Start<'a> = (f64, Placer<'a>, Vec<String>, BTreeMap<String, Edge>, Rng);
+type Start<'a> = (f64, Placer<'a>, Vec<String>, BTreeMap<String, Edge>, usize);
 
 struct Rng(u64);
 
@@ -458,6 +458,7 @@ struct Part<'a> {
     ends: Option<(usize, usize)>,
     loops: Vec<(bool, Vec<P>)>,
     through: bool,
+    pads_in_court: bool,
     local: Bounds,
     area: f64,
     pins: usize,
@@ -636,7 +637,11 @@ impl<'a> Placer<'a> {
                 .all(|q| geom::point_in_polygon(t.apply(q.c), o)),
             Role::Hole => body_in(0.0) && pads_in(self.b.copper_edge, false),
             Role::Fiducial => body_in(0.0) && pads_in(FIDUCIAL_TO_EDGE, false),
-            _ => body_in(self.b.body_edge) && pads_in(self.b.part_edge, true),
+            _ => {
+                body_in(self.b.body_edge)
+                    && ((part.pads_in_court && self.b.body_edge >= self.b.part_edge)
+                        || pads_in(self.b.part_edge, true))
+            }
         };
         ok && !sh.iter().any(|s| {
             self.b
@@ -1164,6 +1169,9 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         let mut local = Bounds::EMPTY;
         loops.iter().flat_map(|l| l.1.iter()).for_each(|q| local.add(*q));
         let through = fp.pads.iter().any(|q| q.kind == PadKind::Tht || q.kind == PadKind::Npth);
+        let mut pad_box = Bounds::EMPTY;
+        pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| pad_box.add(*q));
+        let pads_in_court = pad_box.is_empty() || local.contains(&pad_box);
         let role = role_of(r, &fp_name, fp);
         let pins = copper_pad_numbers(fp);
         let s = local.size();
@@ -1196,6 +1204,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
             pads,
             loops,
             through,
+            pads_in_court,
             local,
             area,
             pins,
@@ -1372,17 +1381,17 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         let pos = cand.global(&mut rng);
         let edges = cand.place_connectors(&pos, &mut failed);
         cand.legalise(&pos, &mut failed);
+        let moves = cand.refine(&mut rng);
+        cand.share_rotation();
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
         if best.as_ref().is_none_or(|b| score < b.0) {
-            best = Some((score, cand, failed, edges, rng));
+            best = Some((score, cand, failed, edges, moves));
         }
     }
-    let Some((_, mut pl, failed, edges, mut rng)) = best else {
+    let Some((_, mut pl, failed, edges, moves)) = best else {
         return Err("no placement".into());
     };
-    let moves = pl.refine(&mut rng);
-    pl.share_rotation();
 
     let mut x = ob.max[0] + 5.0;
     for i in 0..n_parts {
