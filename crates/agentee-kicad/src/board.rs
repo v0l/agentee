@@ -282,6 +282,24 @@ fn glob(p: &str, s: &str) -> bool {
     go(p.as_bytes(), s.as_bytes())
 }
 
+fn default_kind(net: &str, poured: bool) -> &'static str {
+    let base = net.rsplit('/').next().unwrap_or(net).to_ascii_uppercase();
+    let alnum = |s: &str| s.chars().all(|c| c.is_ascii_alphanumeric());
+    let ground = ["GND", "VSS"].iter().any(|g| base.strip_prefix(g).is_some_and(alnum))
+        || base.strip_suffix("GND").is_some_and(|h| h.chars().all(|c| c.is_ascii_alphabetic()));
+    if ground {
+        return "Ground";
+    }
+    let volts = {
+        let s = base.trim_start_matches(['+', '-']);
+        let num = s.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(s.len());
+        num > 0 && s[num..].strip_prefix('V').is_some_and(alnum)
+    };
+    let rail = ["VCC", "VDD", "VAA", "VEE"].iter().any(|r| base.strip_prefix(r).is_some_and(alnum))
+        || ["VBUS", "VIN", "VBAT"].contains(&base.as_str());
+    if poured || volts || rail { "Power" } else { "Signal" }
+}
+
 fn text_variables(root: &Node, pro: &Value) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     if let Some(tb) = root.find("title_block") {
@@ -846,22 +864,35 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         ));
     }
 
-    let class_of = |net: &str| -> Option<String> {
-        assign
-            .iter()
-            .find(|(pat, _)| glob(pat, net))
-            .map(|(_, c)| c.clone())
-            .filter(|c| c != "Default")
+    let poured: BTreeSet<&str> = zones.iter().filter_map(|z| z["net"].as_str()).collect();
+    let default_rules = classes.iter().find(|c| c["name"] == "Default").cloned();
+    let mut kind_names: HashMap<&str, String> = HashMap::new();
+    for kind in ["Ground", "Power", "Signal"] {
+        let name = if classes.iter().any(|c| c["name"] == kind) {
+            format!("{kind}_kicad_default")
+        } else {
+            kind.to_string()
+        };
+        kind_names.insert(kind, name);
+    }
+    let class_of = |net: &str| -> String {
+        match assign.iter().find(|(pat, _)| glob(pat, net)).map(|(_, c)| c.clone()) {
+            Some(c) if c != "Default" => c,
+            _ => kind_names[default_kind(net, poured.contains(net))].clone(),
+        }
     };
+    let mut moved: BTreeMap<String, usize> = BTreeMap::new();
     let sch_nets: Vec<Value> = pins
         .iter()
         .filter(|(_, p)| p.len() >= 2)
         .map(|(n, p)| {
             let mut e = serde_json::Map::new();
             e.insert("name".into(), json!(n));
-            if let Some(c) = class_of(n) {
-                e.insert("class".into(), json!(c));
+            let c = class_of(n);
+            if kind_names.values().any(|k| *k == c) {
+                *moved.entry(c.clone()).or_default() += 1;
             }
+            e.insert("class".into(), json!(c));
             e.insert("style".into(), json!("label"));
             e.insert("pins".into(), json!(p.iter().collect::<Vec<_>>()));
             Value::Object(e)
@@ -888,12 +919,34 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
             rules.insert(ours.into(), json!(mm(v)));
         }
     }
+    for kind in ["Ground", "Power", "Signal"] {
+        let name = &kind_names[kind];
+        if !moved.contains_key(name) {
+            continue;
+        }
+        let mut c = default_rules.clone().unwrap_or_else(|| json!({}));
+        c["name"] = json!(name);
+        c["description"] = json!(format!(
+            "{} with the rules of the KiCad Default class",
+            match kind {
+                "Ground" => "ground nets by name",
+                "Power" => "supply rails by name and nets that own a pour",
+                _ => "the other nets KiCad leaves in Default",
+            }
+        ));
+        classes.push(c);
+    }
+    if !moved.is_empty() {
+        notes.push(format!(
+            "nets in the KiCad Default class were sorted into {}",
+            moved.iter().map(|(c, n)| format!("{c} ({n})")).collect::<Vec<_>>().join(", ")
+        ));
+    }
     let mut narrowest: HashMap<String, f64> = HashMap::new();
     for t in &tracks {
         let (Some(net), Some(w)) = (t["net"].as_str(), t["width"].as_str()) else { continue };
         let w: f64 = w.trim_end_matches("mm").parse().unwrap_or(f64::MAX);
-        let class = class_of(net).unwrap_or_else(|| "Default".into());
-        let e = narrowest.entry(class).or_insert(f64::MAX);
+        let e = narrowest.entry(class_of(net)).or_insert(f64::MAX);
         *e = e.min(w);
     }
     for c in classes.iter_mut() {
@@ -907,6 +960,16 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         let w: f64 = w.trim_end_matches("mm").parse().unwrap_or(0.0);
         if *n < w - 1e-9 {
             c["track_width"] = json!(mm(*n));
+            let kicad =
+                if kind_names.values().any(|k| *k == cname) { "Default" } else { cname.as_str() };
+            let was = format!(
+                "KiCad {kicad}, {w} mm; narrowed to the narrowest routed track {} mm",
+                round(*n)
+            );
+            c["description"] = match c["description"].as_str() {
+                Some(d) if !d.is_empty() => json!(format!("{d}; {was}")),
+                _ => json!(was),
+            };
             notes.push(format!("class {cname}: tracks down to {n} mm, under its {w} mm width, so the class takes {n} mm"));
         }
     }
@@ -1210,6 +1273,93 @@ mod tests {
             "{:?}",
             b.notes
         );
+    }
+
+    #[test]
+    fn nets_kicad_leaves_in_default_sort_into_ground_power_and_signal() {
+        let text = BOARD
+            .replace(
+                "(net 1 \"GND\") (net 2 \"SIG\")",
+                "(net 1 \"GND\") (net 2 \"SIG\") (net 3 \"/usb/D+\") (net 4 \"+3V3\") (net 5 \"Net-(U1-SW)\")",
+            )
+            .replacen(
+                "  (footprint \"Lib:TO-92\"",
+                "  (footprint \"Lib:U\" (layer \"F.Cu\") (at 15 15)
+    (property \"Reference\" \"U1\" (at 0 0 0) (layer \"F.SilkS\"))
+    (pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\") (net 3 \"/usb/D+\"))
+    (pad \"2\" smd rect (at 1 0) (size 0.5 0.5) (layers \"F.Cu\") (net 3 \"/usb/D+\"))
+    (pad \"3\" smd rect (at 2 0) (size 0.5 0.5) (layers \"F.Cu\") (net 4 \"+3V3\"))
+    (pad \"4\" smd rect (at 3 0) (size 0.5 0.5) (layers \"F.Cu\") (net 4 \"+3V3\"))
+    (pad \"5\" smd rect (at 4 0) (size 0.5 0.5) (layers \"F.Cu\") (net 5 \"Net-(U1-SW)\"))
+    (pad \"6\" smd rect (at 5 0) (size 0.5 0.5) (layers \"F.Cu\") (net 5 \"Net-(U1-SW)\")))
+  (footprint \"Lib:TO-92\"",
+                1,
+            )
+            .replacen(
+                "  (segment",
+                "  (zone (net 5) (net_name \"Net-(U1-SW)\") (layer \"F.Cu\") (polygon (pts (xy 0 0) (xy 20 0) (xy 20 20))))
+  (segment",
+                1,
+            );
+        let pro = r#"{"net_settings": {
+            "classes": [
+                {"name": "Default", "track_width": 0.3, "clearance": 0.15, "via_drill": 0.3, "via_diameter": 0.6, "diff_pair_gap": 0.2},
+                {"name": "usb", "track_width": 0.4, "clearance": 0.2, "via_drill": 0.3, "via_diameter": 0.6, "diff_pair_gap": 0.15}
+            ],
+            "netclass_patterns": [{"netclass": "usb", "pattern": "*/D+"}]
+        }}"#;
+        let b = import_board(&text, Some(pro), "t").unwrap();
+        let class = |n: &str| {
+            b.schematic.nets.iter().find(|x| x.name == n).unwrap().class.clone().unwrap_or_default()
+        };
+        assert_eq!(class("GND"), "Ground");
+        assert_eq!(class("+3V3"), "Power");
+        assert_eq!(class("Net-(U1-SW)"), "Power");
+        assert_eq!(class("SIG"), "Signal");
+        assert_eq!(class("/usb/D+"), "usb");
+        let nc = |n: &str| b.board.netclasses.iter().find(|c| c.name == n).unwrap().clone();
+        for n in ["Default", "Ground", "Power"] {
+            let c = nc(n);
+            assert_eq!(c.track_width, Some(agentee_core::units::Length::mm(0.3)), "{n}");
+            assert_eq!(c.clearance, Some(agentee_core::units::Length::mm(0.15)), "{n}");
+            assert_eq!(c.diff_gap, Some(agentee_core::units::Length::mm(0.2)), "{n}");
+            assert_eq!(c.via, nc("usb").via, "{n}");
+        }
+        let signal = nc("Signal");
+        assert_eq!(signal.track_width, Some(agentee_core::units::Length::mm(0.25)));
+        assert!(
+            signal
+                .description
+                .contains("KiCad Default, 0.3 mm; narrowed to the narrowest routed track 0.25 mm"),
+            "{}",
+            signal.description
+        );
+        assert_eq!(nc("usb").diff_gap, Some(agentee_core::units::Length::mm(0.15)));
+        assert!(
+            b.notes.iter().any(|n| n.contains("sorted into Ground (1), Power (2), Signal (1)")),
+            "{:?}",
+            b.notes
+        );
+    }
+
+    #[test]
+    fn rail_names_are_power_and_unsure_names_are_signal() {
+        for n in ["+1V2", "3V3AUX", "2V5FPGA", "/FPGA/VCCPLL", "VAA", "/Power/VBUS", "+5V", "3.3V"]
+        {
+            assert_eq!(default_kind(n, false), "Power", "{n}");
+        }
+        for n in [
+            "/Microcontroller/1V2_EN",
+            "!VAA_ENABLE",
+            "/Microcontroller/USB0_VBUS",
+            "CS_AD",
+            "/x/~{3V3AUX_EN}",
+        ] {
+            assert_eq!(default_kind(n, false), "Signal", "{n}");
+        }
+        for n in ["GND", "AGND", "GNDA", "/rf/GND", "VSS"] {
+            assert_eq!(default_kind(n, true), "Ground", "{n}");
+        }
     }
 
     #[test]
