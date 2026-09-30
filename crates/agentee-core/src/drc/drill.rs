@@ -1,6 +1,7 @@
 use super::{Category, Ctx, Hole, HoleOf, Owner, Report, Rule, Setup, every, near};
 use crate::board::LayerKind;
 use crate::diag::Severity;
+use crate::geom::{self, P};
 use crate::units::Length;
 use std::collections::BTreeMap;
 
@@ -67,6 +68,24 @@ pub static RULES: &[Rule] = &[
         when: "non-plated holes",
         applies: with_npth,
         check: hole_to_edge,
+    },
+    Rule {
+        id: "hole-to-hole",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "drill holes of different parts or vias closer than min_hole_to_hole, wall to wall",
+        when: "every board",
+        applies: every,
+        check: hole_to_hole,
+    },
+    Rule {
+        id: "stacked-via",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "a via on the same spot as another via of its net",
+        when: "every board",
+        applies: every,
+        check: stacked_via,
     },
 ];
 
@@ -371,5 +390,60 @@ fn hole_to_edge(cx: &Ctx, r: &mut Report) {
                 format!("non-plated hole {how}, needs {}", mm(need)),
             );
         }
+    }
+}
+
+fn hole_to_hole(cx: &Ctx, r: &mut Report) {
+    let mut drills: Vec<(P, f64, String, Option<usize>)> = cx
+        .vias
+        .iter()
+        .map(|v| (v.at, v.drill / 2.0, format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]), None))
+        .collect();
+    for (pi, p) in cx.parts.iter().enumerate() {
+        for pad in &p.pads {
+            if let Some((c, s, _)) = pad.drill {
+                let name = format!("{}.{}", p.reference, pad.number);
+                drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi)));
+            }
+        }
+    }
+    let hole_gap = cx.board.rules.min_hole_to_hole.to_mm();
+    let mut close = 0;
+    let mut first = None;
+    for i in 0..drills.len() {
+        for j in i + 1..drills.len() {
+            let (a, b) = (&drills[i], &drills[j]);
+            if a.3.is_some() && a.3 == b.3 {
+                continue;
+            }
+            let gap = geom::dist(a.0, b.0) - a.1 - b.1;
+            if gap + 1e-6 < hole_gap && geom::dist(a.0, b.0) > 1e-6 {
+                close += 1;
+                first.get_or_insert(format!("{} is {} from {}", a.2, mm(gap), b.2));
+            }
+        }
+    }
+    if let Some(f) = first {
+        r.emit("drills", format!("{close} drill pairs closer than {}, first: {f}", mm(hole_gap)));
+    }
+}
+
+fn stacked_via(cx: &Ctx, r: &mut Report) {
+    let mut stacked = 0;
+    let mut first = None;
+    for (i, a) in cx.vias.iter().enumerate() {
+        if cx.vias[..i].iter().any(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6) {
+            stacked += 1;
+            first.get_or_insert(format!(
+                "[{:.3}, {:.3}] ({})",
+                a.at[0], a.at[1], cx.nets[a.net].name
+            ));
+        }
+    }
+    if let Some(f) = first {
+        r.emit(
+            "vias",
+            format!("{stacked} vias sit on another of their net at the same spot, first at {f}"),
+        );
     }
 }

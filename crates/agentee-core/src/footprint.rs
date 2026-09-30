@@ -130,6 +130,8 @@ pub struct FootprintFile {
     pub model_scale: Option<[f64; 3]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask_web: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -218,6 +220,7 @@ pub struct Footprint {
     pub model_rotate: [f64; 3],
     pub model_scale: [f64; 3],
     pub height: Option<f64>,
+    pub mask_web: bool,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
 }
@@ -334,6 +337,7 @@ impl FootprintFile {
             model_rotate: self.model_rotate.unwrap_or([0.0; 3]),
             model_scale: self.model_scale.unwrap_or([1.0; 3]),
             height: self.height.map(Length::to_mm),
+            mask_web: self.mask_web.unwrap_or(true),
             pads,
             graphics,
         }

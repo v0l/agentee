@@ -496,3 +496,63 @@ fn assembly_advisories() {
     assert_eq!(hits(&p, "fiducials")[0].0, Severity::Info);
     assert_eq!(hits(&p, "tooling-holes")[0].0, Severity::Info);
 }
+
+#[test]
+fn layout_checks_carry_rule_ids_and_follow_the_drc_table() {
+    let pcb = "\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[4, 5], [6, 5]]\n\n\
+               [[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[4, 5], [4, 8]]\n";
+    let p = load(&Fixture { pcb, ..Default::default() });
+    let s = hits(&p, "short");
+    assert!(
+        s.len() == 1 && s[0].0 == Severity::Error && s[0].1.contains("R1.2 touches track 0 (A)"),
+        "{s:?}"
+    );
+    let w = hits(&p, "dangling-track");
+    assert!(w.len() == 2 && w[1].1.contains("end at [4.000, 8.000] connects to nothing"), "{w:?}");
+    let p = load(&Fixture {
+        pcb,
+        board: "[drc]\ndisable = [\"dangling-track\"]\nseverity = { \"short\" = \"warning\" }\n",
+        ..Default::default()
+    });
+    assert!(hits(&p, "dangling-track").is_empty());
+    let s = hits(&p, "short");
+    assert!(s.len() == 1 && s[0].0 == Severity::Warning, "{s:?}");
+    assert!(!p.layouts[0].diags.iter().any(|d| d.message.contains("connects to nothing")));
+}
+
+#[test]
+fn a_via_of_another_net_on_a_pad_is_a_short_not_a_cut() {
+    for at in [[4.45, 5.0], [4.0, 5.0]] {
+        let pcb = via("B", at);
+        let p = load(&Fixture { pcb: &pcb, ..Default::default() });
+        assert!(hits(&p, "via-cuts-pad").is_empty(), "{at:?}");
+        assert!(hits(&p, "via-in-pad").is_empty(), "{at:?}");
+        let s = hits(&p, "short");
+        assert!(s.len() == 1 && s[0].1.contains("R1.1 touches via at"), "{s:?}");
+    }
+}
+
+#[test]
+fn pads_that_share_a_number_are_starved_once() {
+    let dup = format!(
+        "{TWO_PADS}\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [-1.0, 0]\nsize = [1.0, 1.0]\n"
+    );
+    let zone = "\n[[zones]]\nnet = \"A\"\nlayers = [\"F.Cu\"]\n\
+                outline = [[4.4, 4.9], [5.2, 4.9], [5.2, 5.1], [4.4, 5.1]]\n\
+                min_width = 0.1\nmin_island_area = 0.0\n";
+    let p = load(&Fixture { footprints: &[("TWO", &dup)], pcb: zone, ..Default::default() });
+    let w = hits(&p, "starved-thermal");
+    assert!(w.len() == 1 && w[0].1.contains("by 1 spoke"), "{w:?}");
+}
+
+#[test]
+fn thin_board_silk_lines_are_flagged() {
+    let pcb = "\n[[graphics]]\nkind = \"line\"\nlayer = \"F.SilkS\"\nstart = [10, 12]\nend = [20, 12]\n\
+               width = \"0.1mm\"\n\n[[graphics]]\nkind = \"line\"\nlayer = \"F.SilkS\"\n\
+               start = [10, 14]\nend = [20, 14]\nwidth = \"0.2mm\"\n";
+    let w = hits(&load(&Fixture { pcb, ..Default::default() }), "silk-width");
+    assert!(w.len() == 1 && w[0].1.contains("1 board silk lines under"), "{w:?}");
+    assert!(w[0].1.contains("thinnest 0.1mm, at [10.000, 12.000] on F.SilkS"), "{w:?}");
+    let wide = pcb.replace("0.1mm", "0.15mm");
+    assert!(hits(&load(&Fixture { pcb: &wide, ..Default::default() }), "silk-width").is_empty());
+}

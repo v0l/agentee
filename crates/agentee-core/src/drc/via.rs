@@ -10,7 +10,7 @@ pub static RULES: &[Rule] = &[
         id: "via-cuts-pad",
         category: Category::Copper,
         severity: Severity::Error,
-        summary: "a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad",
+        summary: "a via whose copper overlaps or touches an SMD pad of its net while its drill is not fully inside the pad; a via of another net touching a pad is a `short`",
         when: "every board",
         applies: every,
         check: via_cuts_pad,
@@ -101,7 +101,10 @@ fn via_cuts_pad(cx: &Ctx, r: &mut Report) {
     for v in cx.vias {
         let rad = v.diameter / 2.0;
         for p in &pads {
-            if !near(&p.bounds, v.at, rad) || !p.q.copper.iter().any(|l| v.layers.contains(l)) {
+            if p.q.net != Some(v.net)
+                || !near(&p.bounds, v.at, rad)
+                || !p.q.copper.iter().any(|l| v.layers.contains(l))
+            {
                 continue;
             }
             let Some(ViaOnPad::Cuts { centre_inside, edge }) = via_on_pad(v, p.q) else {
@@ -121,9 +124,8 @@ fn via_cuts_pad(cx: &Ctx, r: &mut Report) {
             r.emit(
                 format!("via {}", at(v)),
                 format!(
-                    "{} via {how}: solder wicks down the barrel and the pad is damaged; centre it in the pad (filled and capped) or move it clear{}",
-                    cx.nets[v.net].name,
-                    if p.q.net == Some(v.net) { "" } else { ", and it shorts another net" }
+                    "{} via {how}: solder wicks down the barrel and the pad is damaged; centre it in the pad (filled and capped) or move it clear",
+                    cx.nets[v.net].name
                 ),
             );
         }

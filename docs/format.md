@@ -182,9 +182,9 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 
 | id | severity | runs when | checks |
 |---|---|---|---|
-| `via-cuts-pad` | error | always | a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad: solder wicks down the barrel and the pad edge is damaged. Any net; one of another net is also a short |
+| `via-cuts-pad` | error | always | a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad: solder wicks down the barrel and the pad edge is damaged. A via of another net touching a pad is reported as a `short` instead |
 | `via-annulus-past-pad` | warning | vias in pads | the drill sits in the pad but the via's annulus reaches past the pad edge under the mask |
-| `via-in-pad` | info | vias in pads | counts the vias in SMD pads (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
+| `via-in-pad` | info | vias in pads | counts the vias in SMD pads of their own net (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
 | `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill` |
 | `hole-to-smd-pad` | warning | always | a via hole closer than `min_hole_to_smd_pad` to an SMD pad of its own net (or no net) that it does not touch; paste and solder can flow into it |
 | `drill-size` | error | always | pad holes under `min_drill` (plated) or `min_npth_drill` (non-plated), or over `max_drill` (larger holes are routed, draw them as cutouts). Via sizes are checked on the board's `[[vias]]` |
@@ -205,9 +205,55 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
 | `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
 | `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
+| `short` | error | always | copper of two different nets touches |
+| `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
+| `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
+| `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
+| `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
+| `copper-to-edge` | error | always | a track or via closer than `min_copper_to_edge` to the board outline, or off the board |
+| `pad-off-board` | error | always | pads outside the outline; pads marked `edge = true` are exempt |
+| `stitching` | info | always | counts the vias each `[[stitching]]` entry placed |
+| `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
+| `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
+| `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair |
+| `stacked-via` | error | always | a via on the same spot as another via of its net |
+| `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
+| `class-width` | error | always | a track narrower than its class width that is not a neck-down |
+| `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
+| `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
+| `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap |
+| `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |
+| `zone-to-zone` | error | zones | fills of two nets on one layer closer than their clearance |
+| `zone-clearance` | error | zones | a fill that covers or comes too close to copper of another net |
+| `zone-tips` | warning | zones | fill tips sharper than 30 degrees; raise the zone's `min_width` |
+| `copper-neck` | warning | zones | necks in a fill narrower than 90% of the zone's `min_width`, which the fill should have opened; counted by place with the narrowest |
+| `zone-islands` | info | always | fill islands that reach nothing of the zone's net and were removed |
+| `courtyard-overlap` | error | parts | courtyards of two parts on one side overlap by their outline |
+| `courtyard-hole` | error | parts | a courtyard that covers a mounting hole or a non-plated hole of another part |
+| `mask-web` | error | always | pads of different nets whose mask openings leave less than `min_mask_web`, one line per pair of parts; pads of one footprint with `mask_web = false` are skipped among themselves |
+| `silk-text` | error | always | silk text that crowds other text, sits on pads, prints over vias, crosses a silk outline or runs off the board; a reference gets a clear spot (`agentee silk` moves it there) |
+| `silk-hidden` | warning | always | silk text only hidden under another part's body |
+| `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
+| `silk-artwork` | error | always | silk artwork on pads, over silk text or off the board |
+| `silk-width` | warning | always | board silk lines (the layout's `[[graphics]]`, not text) thinner than `min_silk_width`, counted with the thinnest; footprint silk is checked with the footprint |
+| `pair-skew` | error | pairs | a pair skewed over its `max_skew` or the class `max_skew`, with the net to lengthen |
+| `pair-skew-info` | info | pairs | the skew of each pair within its limit |
+| `pair-gap` | error | pairs | a pair run side by side at another gap than the class `diff_gap`, beyond `max_uncoupled` |
+| `pair-coupling` | warning | pairs | less than 80% of a pair runs side by side at the pair gap |
+| `match-length` | error | match groups | a member of a match group off its target by more than the tolerance |
+| `interface-pair` | error | interfaces | a net of a differential interface with no pair partner |
+| `interface-impedance` | error | interfaces | an interface net whose class has no impedance target, one outside the window, or no pair gap on a differential interface |
+| `interface-skew` | error | interfaces | a pair skewed over the interface's `max_skew` |
+| `interface-bus-skew` | error | interfaces | the data signals spread more than `max_bus_skew` |
+| `interface-clock-window` | error | interfaces | a data signal arriving outside `clock_window` from the clock |
+| `interface-vias` | error | interfaces | a lane with more vias than `max_vias` |
+| `interface-stub` | error | interfaces | a via stub longer than `max_stub` |
+| `interface-return-via` | error | interfaces | a signal via with no reference via within `return_via` |
+| `interface-length` | error | interfaces | a lane longer than `max_length` |
+| `interface-reference` | error | interfaces | a lane running more than `max_unreferenced` with no reference plane next to it |
 
-An id that names no rule is a warning. The older checks described under Layout (clearance,
-shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
+An id that names no rule is a warning. Errors in the files themselves (a net that is not in the
+schematic, a layer that is not copper, a bad preset) are not rules and cannot be disabled.
 
 ### What check computes
 
@@ -327,6 +373,8 @@ model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step
 model_offset = ["0mm", "0mm", "0mm"]   # optional, as in KiCad: model frame, Y up
 model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
+# mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
+                               # window, so min_mask_web is not checked between its own pads
 
 [[pads]]
 number = "1"
@@ -539,7 +587,8 @@ clearance, with round corners, so pours render and plot without stair steps. Nec
 narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fab would etch them.
 Where two clearance areas (antipads, track and pad clearances) come closer than `min_width`, the
 pour is cut back to the straight lines joining them, within about 1.5 `min_width` of the gap, so no
-stub or hairline waist is left pointing into it.
+stub or hairline waist is left pointing into it. The same holds between a clearance area and the
+board edge's clearance, a cutout, or the clearance around another zone's fill.
 
 A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad. Two
 segments of one net that lie on top of each other on a layer (parallel, overlapping by more
@@ -552,7 +601,9 @@ Two vias of one net at the same spot are an error too: the fab would drill the h
 Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
 different nets (or no net) that overlap or leave a mask web under `min_mask_web` are an error,
 counted per part pair with the first place named. Pads of one fine pitch part are checked too: fix
-it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it.
+it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it. A
+footprint with `mask_web = false` has its mask opened as one window over its pads (a gang
+opening), so pairs of its own pads are skipped; its pads are still checked against other parts.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and

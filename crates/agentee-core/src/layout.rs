@@ -381,6 +381,7 @@ pub struct ZoneFill {
     #[serde(skip)]
     pub mask: Vec<u8>,
     pub islands_removed: usize,
+    pub min_width: f64,
     #[serde(skip)]
     pub rings: Vec<Vec<P>>,
     #[serde(skip)]
@@ -551,7 +552,7 @@ fn max_clear_of(nets: &[LayoutNet], default: f64) -> f64 {
     nets.iter().map(|n| n.clearance).fold(default, f64::max)
 }
 
-fn class_of<'a>(board: &'a Board, name: &str) -> Option<&'a Netclass> {
+pub(crate) fn class_of<'a>(board: &'a Board, name: &str) -> Option<&'a Netclass> {
     board
         .netclasses
         .iter()
@@ -609,6 +610,7 @@ impl LayoutFile {
             })
             .collect();
         let net_index = |name: &str| sch.nets.iter().position(|n| n.name == name);
+        let mut found = crate::drc::Findings::default();
         let default_clearance = class_of(board, "Default")
             .map(|c| c.clearance.to_mm())
             .unwrap_or(board.rules.min_clearance.to_mm());
@@ -729,53 +731,11 @@ impl LayoutFile {
                 d.error(&at, "a track needs at least two points");
                 continue;
             }
-            let class_w = class_of(board, &nets[net].class)
-                .map(|c| c.width_on(&t.layer).to_mm())
-                .unwrap_or(nets[net].width);
-            let width = t.width.map(Length::to_mm).unwrap_or(class_w);
-            let length: f64 =
-                t.points.windows(2).map(|w| geom::dist(w[0].to_mm(), w[1].to_mm())).sum();
-            let neck_limit = class_of(board, &nets[net].class)
-                .and_then(|c| c.neckdown.map(Length::to_mm))
-                .unwrap_or(NECKDOWN);
-            let neckdown = width + 1e-6 < class_w
-                && length <= neck_limit
-                && width + 1e-6 >= board.rules.min_track_width.to_mm();
-            if neckdown {
-                d.info(
-                    &at,
-                    format!(
-                        "{:.3} mm neck-down to {}, allowed on runs up to {neck_limit} mm into a pad",
-                        length,
-                        Length::mm(width)
-                    ),
-                );
-            } else if width + 1e-6 < class_w {
-                d.error(
-                    &at,
-                    format!(
-                        "{} is narrower than the {} class width {}",
-                        Length::mm(width),
-                        nets[net].class,
-                        Length::mm(class_w)
-                    ),
-                );
-            }
-            if let Some(c) = class_of(board, &nets[net].class)
-                && c.impedance.is_some()
-                && (width - class_w).abs() > 1e-3
-                && !neckdown
-            {
-                d.warn(
-                    &at,
-                    format!(
-                        "{} differs from the {} class width {}, its impedance moves",
-                        Length::mm(width),
-                        c.name,
-                        Length::mm(class_w)
-                    ),
-                );
-            }
+            let width = t.width.map(Length::to_mm).unwrap_or_else(|| {
+                class_of(board, &nets[net].class)
+                    .map(|c| c.width_on(&t.layer).to_mm())
+                    .unwrap_or(nets[net].width)
+            });
             tracks.push(Track {
                 source: i,
                 net,
@@ -910,7 +870,11 @@ impl LayoutFile {
                 }
             }
             if placed == 0 {
-                d.warn(&at, "placed no vias: no pad with a net is left after the skips");
+                found.add(
+                    "fanout-empty",
+                    &at,
+                    "placed no vias: no pad with a net is left after the skips",
+                );
             }
         }
 
@@ -1111,9 +1075,13 @@ impl LayoutFile {
                 drills.push((c, drill / 2.0));
                 placed += 1;
             }
-            d.info(&at, format!("{placed} stitching vias"));
+            found.add("stitching", &at, format!("{placed} stitching vias"));
             if placed == 0 {
-                d.warn(&at, "placed no vias: every spot is blocked, or outside a zone of the net");
+                found.add(
+                    "stitching-empty",
+                    &at,
+                    "placed no vias: every spot is blocked, or outside a zone of the net",
+                );
             }
         }
 
@@ -1190,127 +1158,14 @@ impl LayoutFile {
                 }
             }
         }
-        for s in &shorts {
-            d.error("short", s.clone());
+        for s in shorts {
+            found.add("short", "short", s);
         }
-        for s in &tight {
-            d.error("clearance", s.clone());
-        }
-
-        let mut drills: Vec<(P, f64, String, Option<usize>)> = vias
-            .iter()
-            .map(|v| {
-                (v.at, v.drill / 2.0, format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]), None)
-            })
-            .collect();
-        for (pi, p) in parts.iter().enumerate() {
-            for pad in &p.pads {
-                if let Some((c, s, _)) = pad.drill {
-                    let name = format!("{}.{}", p.reference, pad.number);
-                    drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi)));
-                }
-            }
-        }
-        let hole_gap = board.rules.min_hole_to_hole.to_mm();
-        let mut close = 0;
-        let mut first = None;
-        for i in 0..drills.len() {
-            for j in i + 1..drills.len() {
-                let (a, b) = (&drills[i], &drills[j]);
-                if a.3.is_some() && a.3 == b.3 {
-                    continue;
-                }
-                let gap = geom::dist(a.0, b.0) - a.1 - b.1;
-                if gap + 1e-6 < hole_gap && geom::dist(a.0, b.0) > 1e-6 {
-                    close += 1;
-                    first.get_or_insert(format!("{} is {} from {}", a.2, Length::mm(gap), b.2));
-                }
-            }
-        }
-        if let Some(f) = first {
-            d.error(
-                "drills",
-                format!("{close} drill pairs closer than {}, first: {f}", Length::mm(hole_gap)),
-            );
-        }
-
-        let mut stacked = 0;
-        let mut first = None;
-        for (i, a) in vias.iter().enumerate() {
-            if vias[..i].iter().any(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6) {
-                stacked += 1;
-                first.get_or_insert(format!(
-                    "[{:.3}, {:.3}] ({})",
-                    a.at[0], a.at[1], nets[a.net].name
-                ));
-            }
-        }
-        if let Some(f) = first {
-            d.error(
-                "vias",
-                format!(
-                    "{stacked} vias sit on another of their net at the same spot, first at {f}"
-                ),
-            );
+        for s in tight {
+            found.add("clearance", "clearance", s);
         }
 
         let edge_clear = board.rules.min_copper_to_edge.to_mm();
-        if outline.len() >= 3 {
-            for it in &items {
-                if !matches!(it.owner, Owner::Seg(_) | Owner::Via(_)) {
-                    continue;
-                }
-                let inside = match &it.shape {
-                    Shape::Seg(a, b, _) => {
-                        geom::point_in_polygon(*a, &outline) && geom::point_in_polygon(*b, &outline)
-                    }
-                    Shape::Circle(c, _) => geom::point_in_polygon(*c, &outline),
-                    Shape::Poly(_) => true,
-                };
-                let to_edge = edges(&outline)
-                    .map(|(a, b)| it.shape.distance(&Shape::Seg(a, b, 0.0)))
-                    .fold(f64::MAX, f64::min);
-                if !inside {
-                    d.error("edge", format!("{} leaves the board", name_of(it)));
-                } else if to_edge + 1e-6 < edge_clear {
-                    d.error(
-                        "edge",
-                        format!(
-                            "{} is {} from the board edge, needs {}",
-                            name_of(it),
-                            Length::mm(to_edge),
-                            Length::mm(edge_clear)
-                        ),
-                    );
-                }
-            }
-            for p in &parts {
-                let off: Vec<&str> = p
-                    .pads
-                    .iter()
-                    .zip(&p.footprint.pads)
-                    .filter(|(_, f)| !f.edge)
-                    .map(|(q, _)| q)
-                    .filter(|q| {
-                        q.outlines.iter().flatten().any(|c| {
-                            !geom::point_in_polygon(*c, &outline)
-                                && edges(&outline)
-                                    .all(|(a, b)| geom::point_segment_distance(*c, a, b) > 1e-3)
-                        })
-                    })
-                    .map(|q| q.number.as_str())
-                    .collect();
-                if !off.is_empty() {
-                    d.error(
-                        format!("part {}", p.reference),
-                        format!("pads {} hang off the board", off.join(", ")),
-                    );
-                }
-            }
-        }
-
-        check_courtyards(&parts, d);
-        check_mask_webs(&parts, board.rules.min_mask_web.to_mm(), d);
 
         let cutouts: Vec<(Vec<String>, Vec<P>)> = self
             .cutouts
@@ -1376,7 +1231,8 @@ impl LayoutFile {
                     z.min_island_area.unwrap_or(2.0),
                 );
                 if fill.islands_removed > 0 {
-                    d.info(
+                    found.add(
+                        "zone-islands",
                         &at,
                         format!(
                             "{} copper islands on {layer} reach nothing of {} and were removed",
@@ -1393,7 +1249,7 @@ impl LayoutFile {
                 uf.union(group[0], group[1]);
             }
         }
-        check_zones(&zones, &items, &nets, &clearance_of, d);
+        check_zones(&zones, &items, &nets, &clearance_of, &mut found);
 
         let mut ratsnest = Vec::new();
         let mut stats: Vec<(usize, f64)> = Vec::new();
@@ -1438,7 +1294,8 @@ impl LayoutFile {
                         g.iter().map(|(i, _)| name_of(&items[*i])).collect::<Vec<_>>().join("+")
                     })
                     .collect();
-                d.error(
+                found.add(
+                    "unrouted",
                     format!("net {}", n.name),
                     format!("{unrouted} unrouted: {} are not joined", names.join(" | ")),
                 );
@@ -1450,68 +1307,6 @@ impl LayoutFile {
                 .sum();
             stats.push((unrouted, length));
         }
-
-        for pad in items.iter().filter(|it| matches!(it.owner, Owner::Pad(..)) && it.net.is_some())
-        {
-            let Owner::Pad(pi, k) = pad.owner else { continue };
-            let in_zone = zones.iter().any(|z| {
-                Some(z.net) == pad.net
-                    && pad.layers.contains(&z.layer)
-                    && z.filled(pad.bounds.center())
-            });
-            if in_zone {
-                continue;
-            }
-            let mut touching = Vec::new();
-            for seg in items.iter().filter(|it| {
-                matches!(it.owner, Owner::Seg(_))
-                    && it.net == pad.net
-                    && it.layers.iter().any(|l| pad.layers.contains(l))
-                    && it.shape.distance(&pad.shape) <= 0.0
-            }) {
-                if let Shape::Seg(a, b, hw) = seg.shape {
-                    let centre = Shape::Seg(a, b, 0.0).distance(&pad.shape);
-                    touching.push((hw - centre.max(0.0), hw));
-                }
-            }
-            if !touching.is_empty() && touching.iter().all(|(depth, hw)| *depth < *hw) {
-                let worst = touching.iter().map(|t| t.0).fold(f64::MAX, f64::min);
-                d.warn(
-                    format!("pad {}.{}", parts[pi].reference, parts[pi].pads[k].number),
-                    format!(
-                        "the track only grazes the pad ({worst:.3} mm of overlap), run it into the pad"
-                    ),
-                );
-            }
-        }
-
-        for (ti, t) in tracks.iter().enumerate() {
-            for end in [t.points[0], *t.points.last().unwrap()] {
-                let probe = Shape::Circle(end, t.width / 2.0);
-                let touches = items.iter().any(|it| {
-                    it.net == Some(t.net)
-                        && it.layers.contains(&t.layer)
-                        && match it.owner {
-                            Owner::Seg(s) => seg_track[s] != ti,
-                            _ => true,
-                        }
-                        && it.shape.distance(&probe) <= 1e-6
-                }) || t.points.len() > 2 && is_interior_join(t, end)
-                    || zones.iter().any(|z| z.net == t.net && z.layer == t.layer && z.filled(end));
-                if !touches {
-                    d.warn(
-                        format!("tracks[{ti}] {}", nets[t.net].name),
-                        format!("end at [{:.3}, {:.3}] connects to nothing", end[0], end[1]),
-                    );
-                }
-            }
-        }
-
-        check_overlaps(&tracks, &nets, d);
-        crate::drc::run(
-            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets),
-            d,
-        );
 
         let (graphics, artwork) = self.artwork_of(&cx.dir, d);
         let silk: Vec<SilkBox> = parts
@@ -1529,7 +1324,7 @@ impl LayoutFile {
             &artwork,
             &outline,
             board.rules.min_silk_text_height.to_mm(),
-            d,
+            &mut found,
         );
 
         let mut nets = nets;
@@ -1547,8 +1342,8 @@ impl LayoutFile {
                 })
                 .sum();
         }
-        let pairs = self.pairs_of(board, &nets, &tracks, &parts, d);
-        let match_groups = self.matches_of(&nets, d);
+        let pairs = self.pairs_of(board, &nets, &tracks, &parts, d, &mut found);
+        let match_groups = self.matches_of(&nets, d, &mut found);
         let interfaces = crate::interface::check(
             &self.interfaces,
             &crate::interface::Ctx {
@@ -1561,6 +1356,13 @@ impl LayoutFile {
                 zones: &zones,
                 pairs: &pairs,
             },
+            d,
+            &mut found,
+        );
+        crate::drc::run(
+            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets)
+                .with_signals(&graphics, &pairs, &match_groups, &interfaces)
+                .with_found(&found),
             d,
         );
         Layout {
@@ -1593,6 +1395,7 @@ impl LayoutFile {
         tracks: &[Track],
         parts: &[Placed],
         d: &mut Diags,
+        findings: &mut crate::drc::Findings,
     ) -> Vec<Pair> {
         let index = |n: &str| nets.iter().position(|x| x.name == n);
         let mut found: Vec<(usize, usize, Option<f64>)> = Vec::new();
@@ -1684,7 +1487,8 @@ impl LayoutFile {
                     (at.clone(), if skew_mm > 0.0 { pb.name.clone() } else { pa.name.clone() })
                 };
                 match limit {
-                    Some(l) if skew_mm.abs() > l + 1e-9 => d.error(
+                    Some(l) if skew_mm.abs() > l + 1e-9 => findings.add(
+                        "pair-skew",
                         &at,
                         format!(
                             "skew {:.3} mm ({:.2} ps), limit {l} mm: lengthen {} by {:.3} mm",
@@ -1694,7 +1498,11 @@ impl LayoutFile {
                             skew_mm.abs() - l
                         ),
                     ),
-                    _ => d.info(&at, format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps)),
+                    _ => findings.add(
+                        "pair-skew-info",
+                        &at,
+                        format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps),
+                    ),
                 }
             }
             let mut coupled = 0.0;
@@ -1722,14 +1530,16 @@ impl LayoutFile {
                     }
                 }
                 if let Some((got, len)) = wrong.filter(|_| uncoupled > budget) {
-                    d.error(
+                    findings.add(
+                        "pair-gap",
                         &at,
                         format!("runs {len:.2} mm at a {got:.3} mm gap, the class wants {g} mm"),
                     );
                 }
                 let longest = pa.length_mm.max(pb.length_mm);
                 if longest > 0.0 && coupled < 0.8 * longest {
-                    d.warn(
+                    findings.add(
+                        "pair-coupling",
                         &at,
                         format!(
                             "only {coupled:.2} of {longest:.2} mm run side by side at the pair gap"
@@ -1750,7 +1560,12 @@ impl LayoutFile {
         out
     }
 
-    fn matches_of(&self, nets: &[LayoutNet], d: &mut Diags) -> Vec<MatchGroup> {
+    fn matches_of(
+        &self,
+        nets: &[LayoutNet],
+        d: &mut Diags,
+        found: &mut crate::drc::Findings,
+    ) -> Vec<MatchGroup> {
         let mut out = Vec::new();
         for (i, m) in self.match_groups.iter().enumerate() {
             let at = format!("match_groups[{i}] {}", m.name);
@@ -1773,7 +1588,8 @@ impl LayoutFile {
                 let n = &nets[*k];
                 let off = n.length_mm - target;
                 if off.abs() > tol + 1e-9 {
-                    d.error(
+                    found.add(
+                        "match-length",
                         &at,
                         format!(
                             "{} is {:.3} mm, {:.3} mm {} the {:.3} mm target",
@@ -1911,7 +1727,7 @@ fn check_silk(
     artwork: &[Artwork],
     outline: &[P],
     min_height: f64,
-    d: &mut Diags,
+    d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
     let mut fixes = Vec::new();
     let mut texts: Vec<SilkText> =
@@ -1933,7 +1749,8 @@ fn check_silk(
             .map(|(p, q)| format!("{}.{}", p.reference, q.number))
             .collect();
         if !over.is_empty() {
-            d.error(
+            d.add(
+                "silk-artwork",
                 &at,
                 format!("`{}` sits on pads {}, it will be clipped", a.name, over.join(", ")),
             );
@@ -1947,19 +1764,20 @@ fn check_silk(
             .map(|(t, _)| t.text.as_str())
             .collect();
         if !hit.is_empty() {
-            d.error(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
+            d.add("silk-artwork", &at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
         }
         if outline.len() >= 3
             && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
         {
-            d.error(&at, format!("`{}` runs off the board", a.name));
+            d.add("silk-artwork", &at, format!("`{}` runs off the board", a.name));
         }
     }
     for (i, t) in texts.iter().enumerate() {
         let who = &t.owner;
         let at = format!("silk {who}");
         if t.size + 1e-9 < min_height {
-            d.warn(
+            d.add(
+                "silk-text-height",
                 &at,
                 format!(
                     "`{}` is {} tall, under the fab minimum {}",
@@ -1991,17 +1809,14 @@ fn check_silk(
         };
         let text: Vec<&str> = found.iter().map(|(_, s)| s.as_str()).collect();
         let message = format!("`{}` {}{hint}", t.text, text.join(", "));
-        if found.iter().any(|(error, _)| *error) {
-            d.error(&at, message);
-        } else {
-            d.warn(&at, message);
-        }
+        let rule = if found.iter().any(|(error, _)| *error) { "silk-text" } else { "silk-hidden" };
+        d.add(rule, &at, message);
     }
     fixes
 }
 
 const SILK_GAP: f64 = 0.4;
-const NECKDOWN: f64 = 0.5;
+pub(crate) const NECKDOWN: f64 = 0.5;
 
 #[allow(clippy::too_many_arguments)]
 fn silk_issues(
@@ -2186,253 +2001,6 @@ fn free_spot(
                     && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
             })
     })
-}
-
-struct Courtyard {
-    part: usize,
-    side: String,
-    poly: Vec<P>,
-    bounds: Bounds,
-}
-
-fn chain_loops(mut open: Vec<Vec<P>>) -> Vec<Vec<P>> {
-    let near = |a: P, b: P| geom::dist(a, b) < 1e-3;
-    let mut out = Vec::new();
-    while let Some(mut cur) = open.pop() {
-        loop {
-            let end = *cur.last().unwrap();
-            if cur.len() > 2 && near(cur[0], end) {
-                cur.pop();
-                break;
-            }
-            if let Some(j) = open.iter().position(|p| near(p[0], end)) {
-                let next = open.swap_remove(j);
-                cur.extend_from_slice(&next[1..]);
-            } else if let Some(j) = open.iter().position(|p| near(*p.last().unwrap(), end)) {
-                let next = open.swap_remove(j);
-                cur.extend(next.into_iter().rev().skip(1));
-            } else {
-                break;
-            }
-        }
-        if cur.len() >= 3 {
-            out.push(cur);
-        }
-    }
-    out
-}
-
-fn courtyards_of(pi: usize, p: &Placed) -> Vec<Courtyard> {
-    let tf = p.transform();
-    let mut out = Vec::new();
-    for side in ["F", "B"] {
-        let layer = format!("{side}.CrtYd");
-        let mut closed = Vec::new();
-        let mut open = Vec::new();
-        for g in p.footprint.graphics.iter().filter(|g| g.layer == layer) {
-            let mut path: Vec<P> =
-                crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
-            if path.len() < 2 {
-                continue;
-            }
-            let shut = match &g.shape {
-                crate::graphic::Shape::Rect { .. } | crate::graphic::Shape::Circle { .. } => true,
-                crate::graphic::Shape::Polyline { closed, .. } => *closed,
-                _ => false,
-            };
-            if shut {
-                if geom::dist(path[0], *path.last().unwrap()) < 1e-9 {
-                    path.pop();
-                }
-                closed.push(path);
-            } else {
-                open.push(path);
-            }
-        }
-        closed.extend(chain_loops(open));
-        let placed_side = p.flip_layer(&layer).trim_end_matches(".CrtYd").to_string();
-        for poly in closed.into_iter().filter(|c| c.len() >= 3) {
-            let mut bounds = Bounds::EMPTY;
-            poly.iter().for_each(|q| bounds.add(*q));
-            out.push(Courtyard { part: pi, side: placed_side.clone(), poly, bounds });
-        }
-    }
-    out
-}
-
-fn overlap_area(a: &[P], b: &[P]) -> f64 {
-    use i_overlay::core::fill_rule::FillRule;
-    use i_overlay::core::overlay_rule::OverlayRule;
-    use i_overlay::float::single::SingleFloatOverlay;
-    a.to_vec()
-        .overlay(&b.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
-        .iter()
-        .map(|shape| {
-            shape
-                .iter()
-                .enumerate()
-                .map(|(k, r)| {
-                    let area = crate::contour::area(r).abs();
-                    if k == 0 { area } else { -area }
-                })
-                .sum::<f64>()
-        })
-        .sum()
-}
-
-fn check_courtyards(parts: &[Placed], d: &mut Diags) {
-    const MIN_AREA: f64 = 1e-4;
-    let courts: Vec<Courtyard> =
-        parts.iter().enumerate().flat_map(|(i, p)| courtyards_of(i, p)).collect();
-    let mut overlapping: Vec<(usize, usize)> = Vec::new();
-    for (i, a) in courts.iter().enumerate() {
-        for b in &courts[i + 1..] {
-            if a.part == b.part
-                || a.side != b.side
-                || !a.bounds.overlaps(&b.bounds)
-                || overlapping.contains(&(a.part.min(b.part), a.part.max(b.part)))
-            {
-                continue;
-            }
-            let area = overlap_area(&a.poly, &b.poly);
-            if area > MIN_AREA {
-                overlapping.push((a.part.min(b.part), a.part.max(b.part)));
-                d.error(
-                    format!("part {}", parts[a.part].reference),
-                    format!(
-                        "courtyard overlaps {} on {}.CrtYd by {area:.3} mm2",
-                        parts[b.part].reference, a.side
-                    ),
-                );
-            }
-        }
-    }
-    let mut holes: Vec<(usize, String, Option<String>, Vec<P>)> = Vec::new();
-    for (pi, p) in parts.iter().enumerate() {
-        if p.footprint_name.starts_with("MountingHole") {
-            let own: Vec<&Courtyard> = courts.iter().filter(|c| c.part == pi).collect();
-            if own.is_empty() {
-                for pad in p.pads.iter().filter(|q| q.drill.is_some()) {
-                    for o in &pad.outlines {
-                        holes.push((pi, format!("mounting hole {}", p.reference), None, o.clone()));
-                    }
-                }
-            }
-            for c in own {
-                let name = format!("mounting hole {}", p.reference);
-                holes.push((pi, name, Some(c.side.clone()), c.poly.clone()));
-            }
-            continue;
-        }
-        for pad in p.pads.iter().filter(|q| q.kind == PadKind::Npth) {
-            for o in &pad.outlines {
-                holes.push((pi, format!("hole {}.{}", p.reference, pad.number), None, o.clone()));
-            }
-        }
-    }
-    let mut reported: Vec<(usize, usize)> = Vec::new();
-    for (hp, name, side, poly) in &holes {
-        let mut hb = Bounds::EMPTY;
-        poly.iter().for_each(|q| hb.add(*q));
-        for c in &courts {
-            let pair = (c.part.min(*hp), c.part.max(*hp));
-            if c.part == *hp
-                || side.as_ref() == Some(&c.side)
-                || !c.bounds.overlaps(&hb)
-                || overlapping.contains(&pair)
-                || reported.contains(&(c.part, *hp))
-            {
-                continue;
-            }
-            if overlap_area(&c.poly, poly) > MIN_AREA {
-                reported.push((c.part, *hp));
-                d.error(
-                    format!("part {}", parts[c.part].reference),
-                    format!("courtyard on {}.CrtYd covers the {name}", c.side),
-                );
-            }
-        }
-    }
-}
-
-fn check_mask_webs(parts: &[Placed], web: f64, d: &mut Diags) {
-    for layer in ["F.Mask", "B.Mask"] {
-        let mut openings: Vec<(usize, usize, Bounds)> = Vec::new();
-        for (pi, p) in parts.iter().enumerate() {
-            for (k, pad) in p.pads.iter().enumerate() {
-                if pad.mask.iter().any(|m| m == layer) {
-                    let mut b = Bounds::EMPTY;
-                    pad.outlines.iter().flatten().for_each(|q| b.add(*q));
-                    if !b.is_empty() {
-                        openings.push((pi, k, b));
-                    }
-                }
-            }
-        }
-        let mut found: BTreeMap<(usize, usize), (usize, String)> = BTreeMap::new();
-        for (i, (pa, ka, ba)) in openings.iter().enumerate() {
-            let a = &parts[*pa].pads[*ka];
-            let mut grown = *ba;
-            grown.add([ba.min[0] - web, ba.min[1] - web]);
-            grown.add([ba.max[0] + web, ba.max[1] + web]);
-            for (pb, kb, bb) in &openings[i + 1..] {
-                let b = &parts[*pb].pads[*kb];
-                if (a.net.is_some() && a.net == b.net)
-                    || !(grown.overlaps(bb) || grown.contains(bb) || bb.contains(&grown))
-                {
-                    continue;
-                }
-                let gap = a
-                    .outlines
-                    .iter()
-                    .flat_map(|o| b.outlines.iter().map(move |q| geom::polygon_distance(o, q)))
-                    .fold(f64::MAX, f64::min);
-                if gap + 1e-6 >= web {
-                    continue;
-                }
-                let (ca, cb) = (ba.center(), bb.center());
-                let what = if gap <= 0.0 {
-                    "overlaps".to_string()
-                } else {
-                    format!("leaves {} to", Length::mm(gap))
-                };
-                let entry = found.entry((*pa, *pb)).or_insert_with(|| {
-                    (
-                        0,
-                        format!(
-                            "{}.{} {what} {}.{} at [{:.3}, {:.3}]",
-                            parts[*pa].reference,
-                            a.number,
-                            parts[*pb].reference,
-                            b.number,
-                            (ca[0] + cb[0]) / 2.0,
-                            (ca[1] + cb[1]) / 2.0
-                        ),
-                    )
-                });
-                entry.0 += 1;
-            }
-        }
-        for ((pa, pb), (count, first)) in found {
-            let whom = if pa == pb {
-                format!("part {}", parts[pa].reference)
-            } else {
-                format!("parts {} and {}", parts[pa].reference, parts[pb].reference)
-            };
-            d.error(
-                format!("{whom} {layer}"),
-                format!(
-                    "{count} pad pairs of different nets leave less than the {} mask web, first: \
-                     {first}; openings follow the pad outlines, narrow the pads or move them apart",
-                    Length::mm(web)
-                ),
-            );
-        }
-    }
-}
-
-fn is_interior_join(t: &Track, end: P) -> bool {
-    t.points[1..t.points.len() - 1].iter().any(|p| geom::dist(*p, end) < 1e-9)
 }
 
 impl ZoneFill {
@@ -2638,6 +2206,7 @@ fn fill_zone(
         height: h,
         mask,
         islands_removed: removed,
+        min_width,
         rings: Vec::new(),
         triangles: Vec::new(),
     };
@@ -2853,6 +2422,21 @@ fn vector_fill(
     }
     if min_width > 0.0 {
         clip.extend(gap_bridges(&keepouts, min_width));
+        let mut walls: Vec<Wall> = Vec::new();
+        if board.len() >= 3 && edge_clear > 0.0 {
+            walls.extend(edges(board).map(|(a, b)| Wall { a, b, gap: edge_clear, group: 0 }));
+        }
+        for (k, c) in cutouts.iter().enumerate() {
+            walls.extend(edges(c).map(|(a, b)| Wall { a, b, gap: 0.0, group: 1 + k }));
+        }
+        for z in blockers {
+            let gap = clearance.max(clearance_of(Some(z.net)));
+            for r in &z.rings {
+                let group = 1 + cutouts.len() + walls.len();
+                walls.extend(edges(r).map(|(a, b)| Wall { a, b, gap, group }));
+            }
+        }
+        clip.extend(wall_bridges(&keepouts, &walls, min_width));
     }
     for z in blockers {
         let gap = clearance.max(clearance_of(Some(z.net)));
@@ -3034,6 +2618,87 @@ fn gap_bridges(keepouts: &[(&Shape, f64)], min_width: f64) -> Vec<Vec<P>> {
     out
 }
 
+struct Wall {
+    a: P,
+    b: P,
+    gap: f64,
+    group: usize,
+}
+
+fn wall_bridges(keepouts: &[(&Shape, f64)], walls: &[Wall], min_width: f64) -> Vec<Vec<P>> {
+    let cell = 1.0;
+    let key = |p: P| ((p[0] / cell).floor() as i64, (p[1] / cell).floor() as i64);
+    let mut bins: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for (k, w) in walls.iter().enumerate() {
+        let (lo, hi) = (
+            key([w.a[0].min(w.b[0]) - w.gap, w.a[1].min(w.b[1]) - w.gap]),
+            key([w.a[0].max(w.b[0]) + w.gap, w.a[1].max(w.b[1]) + w.gap]),
+        );
+        for x in lo.0..=hi.0 {
+            for y in lo.1..=hi.1 {
+                bins.entry((x, y)).or_default().push(k);
+            }
+        }
+    }
+    let side = |w: &Wall| {
+        if w.gap > 0.0 { vec![capsule(w.a, w.b, w.gap)] } else { vec![vec![w.a, w.b]] }
+    };
+    let mut out = Vec::new();
+    let mut near: Vec<usize> = Vec::new();
+    for (shape, gap) in keepouts {
+        let b = shape.bounds();
+        let reach = gap + min_width;
+        let (lo, hi) =
+            (key([b.min[0] - reach, b.min[1] - reach]), key([b.max[0] + reach, b.max[1] + reach]));
+        near.clear();
+        for x in lo.0..=hi.0 {
+            for y in lo.1..=hi.1 {
+                near.extend(bins.get(&(x, y)).into_iter().flatten());
+            }
+        }
+        near.sort_unstable_by_key(|&k| (walls[k].group, k));
+        near.dedup();
+        for group in near.chunk_by(|&x, &y| walls[x].group == walls[y].group) {
+            let mut best: Option<(f64, usize)> = None;
+            for &k in group {
+                let w = &walls[k];
+                let apart = shape.distance(&Shape::Seg(w.a, w.b, 0.0)) - gap - w.gap;
+                if best.is_none_or(|x| apart < x.0) {
+                    best = Some((apart, k));
+                }
+            }
+            let Some((apart, k)) = best else { continue };
+            if apart <= 1e-6 || apart >= min_width {
+                continue;
+            }
+            let w = &walls[k];
+            let (ca, ra) = core_of(shape);
+            let Some((qa, qb)) = nearest_points(&ca, &[(w.a, w.b)]) else { continue };
+            let core = geom::dist(qa, qb);
+            if core < 1e-9 {
+                continue;
+            }
+            let dir = [(qb[0] - qa[0]) / core, (qb[1] - qa[1]) / core];
+            let (ea, eb) = (ra + gap, w.gap);
+            let m = [
+                (qa[0] + dir[0] * ea + qb[0] - dir[0] * eb) / 2.0,
+                (qa[1] + dir[1] * ea + qb[1] - dir[1] * eb) / 2.0,
+            ];
+            let rho = apart / 2.0 + 1.5 * min_width;
+            let mut pts = Vec::new();
+            cap_points(&inflated(shape, *gap), m, rho, &mut pts);
+            for &j in group {
+                cap_points(&side(&walls[j]), m, rho, &mut pts);
+            }
+            let hull = convex_hull(pts);
+            if hull.len() >= 3 {
+                out.push(hull);
+            }
+        }
+    }
+    out
+}
+
 fn pair_base(name: &str, positive: bool) -> Option<String> {
     let upper = name.to_uppercase();
     for (p, n) in [("_DP", "_DN"), ("_P", "_N"), ("+", "-"), ("P", "N")] {
@@ -3045,7 +2710,7 @@ fn pair_base(name: &str, positive: bool) -> Option<String> {
     None
 }
 
-fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
+pub(crate) fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
     let da = [a1[0] - a0[0], a1[1] - a0[1]];
     let la = (da[0] * da[0] + da[1] * da[1]).sqrt();
     let db = [b1[0] - b0[0], b1[1] - b0[1]];
@@ -3066,60 +2731,6 @@ fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
     }
     let mid = [b0[0] - a0[0], b0[1] - a0[1]];
     Some((overlap, (u[0] * mid[1] - u[1] * mid[0]).abs()))
-}
-
-fn check_overlaps(tracks: &[Track], nets: &[LayoutNet], d: &mut Diags) {
-    for (ti, t) in tracks.iter().enumerate() {
-        for (k, w) in t.points.windows(3).enumerate() {
-            let (Some(u), Some(v)) = (unit(w[0], w[1]), unit(w[1], w[2])) else { continue };
-            let turn = (u[0] * v[0] + u[1] * v[1]).clamp(-1.0, 1.0).acos().to_degrees();
-            if turn > 90.0 + 1e-6 {
-                d.warn(
-                    format!("tracks[{ti}] {}", nets[t.net].name),
-                    format!(
-                        "turns back {:.0} degrees at [{:.3}, {:.3}] (point {}), an acute angle traps etchant; keep bends at 90 degrees or less",
-                        turn,
-                        w[1][0],
-                        w[1][1],
-                        k + 1
-                    ),
-                );
-            }
-        }
-    }
-    let mut groups: BTreeMap<(usize, &str), Vec<(usize, usize)>> = BTreeMap::new();
-    for (ti, t) in tracks.iter().enumerate() {
-        for k in 0..t.points.len().saturating_sub(1) {
-            groups.entry((t.net, t.layer.as_str())).or_default().push((ti, k));
-        }
-    }
-    let mut seen: std::collections::HashSet<(usize, usize)> = Default::default();
-    for ((net, layer), segs) in groups {
-        for x in 0..segs.len() {
-            for y in x + 1..segs.len() {
-                let ((ta, ka), (tb, kb)) = (segs[x], segs[y]);
-                if ta == tb && ka.abs_diff(kb) <= 1 {
-                    continue;
-                }
-                let (a, b) = (&tracks[ta], &tracks[tb]);
-                let (a0, a1, b0, b1) =
-                    (a.points[ka], a.points[ka + 1], b.points[kb], b.points[kb + 1]);
-                let Some((overlap, sep)) = parallel_overlap(a0, a1, b0, b1) else { continue };
-                let touch = (a.width + b.width) / 2.0;
-                if sep < touch - 1e-6
-                    && overlap > a.width.max(b.width)
-                    && seen.insert((ta.min(tb), ta.max(tb)))
-                {
-                    d.error(
-                        format!("tracks[{ta}] {}", nets[net].name),
-                        format!(
-                            "runs on top of tracks[{tb}] on {layer} for {overlap:.2} mm, {sep:.3} mm apart; the copper is doubled, merge or remove one"
-                        ),
-                    );
-                }
-            }
-        }
-    }
 }
 
 fn ring_bounds(rings: &[Vec<P>]) -> Bounds {
@@ -3191,7 +2802,7 @@ fn check_zones(
     items: &[Item],
     nets: &[LayoutNet],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
-    d: &mut Diags,
+    d: &mut crate::drc::Findings,
 ) {
     const TOL: f64 = 3e-3;
     let bins: Vec<EdgeBins> = zones.iter().map(|z| EdgeBins::new(&z.rings, 1.0)).collect();
@@ -3215,7 +2826,8 @@ fn check_zones(
             }
         }
         if let Some(p) = tips.first() {
-            d.warn(
+            d.add(
+                "zone-tips",
                 at(a),
                 format!(
                     "{} sharp copper tips under 30 degrees, first at [{:.3}, {:.3}]; they etch unevenly and can lift, raise the zone's min_width",
@@ -3245,7 +2857,8 @@ fn check_zones(
                 .find(|p| inside_rings(&b.rings, **p))
                 .or_else(|| b.rings.iter().flatten().find(|p| inside_rings(&a.rings, **p)));
             if let Some(p) = over {
-                d.error(
+                d.add(
+                    "zone-overlap",
                     at(a),
                     format!(
                         "overlaps the {} zone at [{:.3}, {:.3}], a short",
@@ -3269,7 +2882,8 @@ fn check_zones(
                 }
             }
             if let Some((gap, p)) = worst {
-                d.error(
+                d.add(
+                    "zone-to-zone",
                     at(a),
                     format!(
                         "comes {gap:.3} mm from the {} zone at [{:.3}, {:.3}], needs {need} mm",
@@ -3314,7 +2928,8 @@ fn check_zones(
         if let Some((name, gap, p)) = first {
             let what =
                 if gap < 0.0 { "covers".to_string() } else { format!("comes {gap:.3} mm from") };
-            d.error(
+            d.add(
+                "zone-clearance",
                 at(a),
                 format!("{what} {name} copper at [{:.3}, {:.3}] ({hits} places), the fill must clear other nets", p[0], p[1]),
             );
@@ -3322,7 +2937,7 @@ fn check_zones(
     }
 }
 
-fn unit(a: P, b: P) -> Option<P> {
+pub(crate) fn unit(a: P, b: P) -> Option<P> {
     let l = geom::dist(a, b);
     (l > 1e-9).then(|| [(b[0] - a[0]) / l, (b[1] - a[1]) / l])
 }
@@ -3417,6 +3032,93 @@ mod pair_tests {
         }
         assert!(copper([across[0] * 0.6, across[1] * 0.6]));
         assert!(copper([0.0, 1.0]) && copper([-1.0, 0.0]));
+    }
+
+    fn gap_is_cut(fill: &ZoneFill, y: f64) {
+        let copper =
+            |p: P| fill.rings.iter().filter(|r| geom::point_in_polygon(p, r)).count() % 2 == 1;
+        for k in -30..=30 {
+            let p = [k as f64 * 0.01, y];
+            assert!(!copper(p), "copper at {p:?}");
+        }
+        assert!(copper([-1.0, 1.0]) && copper([1.0, 0.0]));
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_an_antipad_and_the_board_edge() {
+        let items = [via(1, [0.0, 1.3]), via(0, [-1.5, -1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            &square,
+            0.2,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[],
+            &[],
+            0.25,
+            0.0,
+        );
+        gap_is_cut(&fill, (1.575 + 1.8) / 2.0);
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_an_antipad_and_a_cutout() {
+        let items = [via(1, [0.0, 1.3]), via(0, [-1.5, -1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let cut = vec![[-3.0, 1.8], [3.0, 1.8], [3.0, 3.0], [-3.0, 3.0]];
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            &[],
+            0.0,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[&cut],
+            &[],
+            0.25,
+            0.0,
+        );
+        gap_is_cut(&fill, (1.575 + 1.8) / 2.0);
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_an_antipad_and_another_fill() {
+        let items = [via(1, [0.0, 1.3]), via(0, [-1.5, -1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let other = ZoneFill {
+            net: 2,
+            layer: "In6.Cu".into(),
+            origin: [0.0, 0.0],
+            cell: 1.0,
+            width: 0,
+            height: 0,
+            mask: Vec::new(),
+            islands_removed: 0,
+            min_width: 0.25,
+            rings: vec![vec![[-2.0, 1.8], [2.0, 1.8], [2.0, 2.0], [-2.0, 2.0]]],
+            triangles: Vec::new(),
+        };
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            &[],
+            0.0,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[],
+            &[&other],
+            0.25,
+            0.0,
+        );
+        gap_is_cut(&fill, (1.575 + 1.7) / 2.0);
     }
 
     #[test]
