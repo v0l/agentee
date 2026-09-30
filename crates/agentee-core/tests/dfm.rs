@@ -1270,3 +1270,46 @@ fn stitching_keeps_hole_spacing_only_from_holes_through_its_dielectrics() {
     assert_eq!(stitched("uv"), 1);
     assert_eq!(stitched("bd"), 0);
 }
+
+#[test]
+fn test_pads_and_their_vias_keep_off_a_board_cutout() {
+    let window = "[[outline.cutouts]]\norigin = [16, 6]\nsize = [4, 8]\n";
+    let spots = |board: &str| {
+        let p =
+            load(&Fixture { board, parts: &[("R1", "TWO", [13.0, 10.0])], ..Default::default() });
+        let l = &p.layouts[0].item;
+        let targets: Vec<usize> = (0..l.nets.len()).collect();
+        let placed: Vec<([f64; 2], [f64; 2])> =
+            agentee_core::testpoint::place(l, &p.boards[0].item, &l.test, &targets, 1.27)
+                .iter()
+                .filter_map(|s| Some((s.at?, s.via?)))
+                .collect();
+        (p, placed)
+    };
+    let near = |at: [f64; 2]| at[0] > 16.0 - 3.5 && at[1] > 6.0 - 3.5 && at[1] < 14.0 + 3.5;
+    let (_, open) = spots("");
+    assert!(open.iter().any(|(at, _)| near(*at)), "{open:?}");
+    let (p, cut) = spots(window);
+    assert_eq!(cut.len(), 2, "{cut:?}");
+    let edge = p.layouts[0].item.edge();
+    for (at, via) in &cut {
+        assert!(edge.contains(*at) && edge.distance(*at) - 0.5 >= 3.0 - 1e-6, "{at:?}");
+        assert!(edge.contains(*via) && edge.distance(*via) - 0.3 >= 0.3 - 1e-6, "{via:?}");
+    }
+}
+
+#[test]
+fn stitching_vias_keep_off_a_board_cutout() {
+    let stitch = "\n[[zones]]\nnet = \"A\"\nlayers = [\"F.Cu\", \"B.Cu\"]\n\n[[stitching]]\nnet = \"A\"\npitch = \"1mm\"\n";
+    let p = load(&Fixture { board: SLOT, pcb: stitch, ..Default::default() });
+    let l = &p.layouts[0].item;
+    let edge = l.edge();
+    assert!(l.vias.len() > 100, "{}", l.vias.len());
+    for v in &l.vias {
+        assert!(edge.contains(v.at) && edge.distance(v.at) - 0.3 >= 0.3 - 1e-6, "{:?}", v.at);
+    }
+    let open = load(&Fixture { pcb: stitch, ..Default::default() });
+    let inside = |at: [f64; 2]| (13.4..=16.6).contains(&at[0]) && (7.4..=12.6).contains(&at[1]);
+    assert!(open.layouts[0].item.vias.iter().any(|v| inside(v.at)));
+    assert!(!l.vias.iter().any(|v| inside(v.at)));
+}
