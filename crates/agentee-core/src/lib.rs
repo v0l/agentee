@@ -18,8 +18,10 @@ pub mod schematic;
 pub mod sim;
 pub mod sparam;
 pub mod symbol;
+pub mod testpoint;
 pub mod tune;
 pub mod units;
+pub mod version;
 
 pub use diag::{Diagnostic, Severity};
 pub use project::{ItemRef, Kind, Project};

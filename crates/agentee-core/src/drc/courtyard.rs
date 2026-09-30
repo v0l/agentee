@@ -76,42 +76,76 @@ fn chain_loops(mut open: Vec<Vec<P>>) -> Vec<Vec<P>> {
     out
 }
 
-fn courtyards_of(pi: usize, p: &Placed) -> Vec<Courtyard> {
+fn outlines_on(p: &Placed, layer: &str) -> Vec<Vec<P>> {
     let tf = p.transform();
+    let mut closed = Vec::new();
+    let mut open = Vec::new();
+    for g in p.footprint.graphics.iter().filter(|g| g.layer == layer) {
+        let mut path: Vec<P> =
+            crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
+        if path.len() < 2 {
+            continue;
+        }
+        let shut = match &g.shape {
+            crate::graphic::Shape::Rect { .. } | crate::graphic::Shape::Circle { .. } => true,
+            crate::graphic::Shape::Polyline { closed, .. } => *closed,
+            _ => false,
+        };
+        if shut {
+            if geom::dist(path[0], *path.last().unwrap()) < 1e-9 {
+                path.pop();
+            }
+            closed.push(path);
+        } else {
+            open.push(path);
+        }
+    }
+    closed.extend(chain_loops(open));
+    closed.retain(|c| c.len() >= 3);
+    closed
+}
+
+fn courtyards_of(pi: usize, p: &Placed) -> Vec<Courtyard> {
     let mut out = Vec::new();
     for side in ["F", "B"] {
         let layer = format!("{side}.CrtYd");
-        let mut closed = Vec::new();
-        let mut open = Vec::new();
-        for g in p.footprint.graphics.iter().filter(|g| g.layer == layer) {
-            let mut path: Vec<P> =
-                crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
-            if path.len() < 2 {
-                continue;
-            }
-            let shut = match &g.shape {
-                crate::graphic::Shape::Rect { .. } | crate::graphic::Shape::Circle { .. } => true,
-                crate::graphic::Shape::Polyline { closed, .. } => *closed,
-                _ => false,
-            };
-            if shut {
-                if geom::dist(path[0], *path.last().unwrap()) < 1e-9 {
-                    path.pop();
-                }
-                closed.push(path);
-            } else {
-                open.push(path);
-            }
-        }
-        closed.extend(chain_loops(open));
         let placed_side = p.flip_layer(&layer).trim_end_matches(".CrtYd").to_string();
-        for poly in closed.into_iter().filter(|c| c.len() >= 3) {
+        for poly in outlines_on(p, &layer) {
             let mut bounds = Bounds::EMPTY;
             poly.iter().for_each(|q| bounds.add(*q));
             out.push(Courtyard { part: pi, side: placed_side.clone(), poly, bounds });
         }
     }
     out
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BodyFrom {
+    Fab,
+    Courtyard,
+    Pads,
+}
+
+impl BodyFrom {
+    pub fn name(self) -> &'static str {
+        match self {
+            BodyFrom::Fab => "fab outline",
+            BodyFrom::Courtyard => "courtyard",
+            BodyFrom::Pads => "pad copper",
+        }
+    }
+}
+
+pub fn body_outlines(p: &Placed) -> (BodyFrom, Vec<Vec<P>>) {
+    for (from, layers) in
+        [(BodyFrom::Fab, ["F.Fab", "B.Fab"]), (BodyFrom::Courtyard, ["F.CrtYd", "B.CrtYd"])]
+    {
+        let rings: Vec<Vec<P>> = layers.iter().flat_map(|l| outlines_on(p, l)).collect();
+        if !rings.is_empty() {
+            return (from, rings);
+        }
+    }
+    (BodyFrom::Pads, p.pads.iter().flat_map(|q| q.outlines.iter().cloned()).collect())
 }
 
 fn overlap_area(a: &[P], b: &[P]) -> f64 {

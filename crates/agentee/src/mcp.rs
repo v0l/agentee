@@ -172,6 +172,17 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "testpoints",
+            "description": "Add a test pad to each net that needs probe access and has none: a TestPoint part (TestPoint_Pad_D1.0mm footprint, both written into the project if missing) joined to the net in the schematic sheet that lists it, a footprint on the probe side in free space near the net's copper, and an autorouted track and via from the net's copper. Nets default to the layout's [test] nets; impedance and pair nets are skipped.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "nets": { "type": "string", "description": "comma separated, * and ? globs, any case; default the [test] nets" },
+                "side": { "type": "string", "description": "probe side F or B, default the [test] side (B)" },
+                "pitch": { "type": "number", "default": 2.54, "description": "grid and least spacing of the test pads, mm" },
+                "dry_run": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "sparam",
             "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
             "inputSchema": s(json!({
@@ -434,6 +445,24 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             };
             Ok(ok(vec![text(pretty(&ops::route(&ops::load(root)?, name, &opts, !dry_run)?))]))
         }
+        "testpoints" => {
+            let nets: Vec<String> = arg(a, "nets")
+                .map(|v| {
+                    v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                })
+                .unwrap_or_default();
+            let opts = ops::TestpointOptions {
+                nets,
+                side: arg(a, "side").map(str::to_string),
+                pitch: a.get("pitch").and_then(Value::as_f64).unwrap_or(2.54),
+                write: !flag(a, "dry_run"),
+            };
+            Ok(ok(vec![text(pretty(&ops::testpoints(
+                root,
+                arg(a, "name").ok_or("name is required")?,
+                &opts,
+            )?))]))
+        }
         "silk" => Ok(ok(vec![text(pretty(&ops::silk(
             root,
             arg(a, "name").ok_or("name is required")?,
@@ -613,6 +642,39 @@ mod tests {
         let call = json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "show_item", "arguments": { "name": "missing" } } });
         let r = handle(&demo(), &call).unwrap();
         assert_eq!(r["result"]["isError"], true);
+    }
+
+    #[test]
+    fn testpoints_adds_probed_pads_to_a_copy_of_the_lna() {
+        let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+        let dir = std::env::temp_dir().join(format!("agentee-testpoints-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["", "symbols", "footprints"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+            for e in std::fs::read_dir(lna.join(sub)).unwrap() {
+                let path = e.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if name.ends_with(".toml") && !name.ends_with(".sim.toml") {
+                    std::fs::copy(&path, dir.join(sub).join(name)).unwrap();
+                }
+            }
+        }
+        let call = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "testpoints", "arguments": { "name": "lna", "nets": "VCC,VBIAS" } } });
+        let r = handle(&dir, &call).unwrap();
+        assert_ne!(r["result"]["isError"], true, "{r}");
+        let text = r["result"]["content"][0]["text"].as_str().unwrap();
+        let v: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(v["placed"].as_array().unwrap().len(), 2, "{v}");
+        assert!(v["unrouted"].as_array().unwrap().is_empty(), "{v}");
+        let p = ops::load(&dir).unwrap();
+        let errors: Vec<_> =
+            p.layouts[0].diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!p.layouts[0].diags.iter().any(|d| d.rule.as_deref() == Some("test-access")));
+        let tps = p.layouts[0].item.parts.iter().filter(|q| q.reference.starts_with("TP"));
+        assert!(tps.clone().count() == 2 && tps.clone().all(|q| q.bottom));
+        let sch = std::fs::read_to_string(dir.join("lna.sch.toml")).unwrap();
+        assert!(sch.contains("\"TP1.1\"") && sch.contains("\"TP2.1\""));
     }
 
     #[test]

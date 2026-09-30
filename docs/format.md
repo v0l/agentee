@@ -124,7 +124,8 @@ All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `
 `min_silk_text_height`, `min_mask_web` (0.1 mm), `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
 `min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
 `min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
-`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`; plus
+`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`, `min_body_to_edge`,
+`flex_zone`; plus
 `max_aspect_ratio`, a plain number (board thickness over via drill). Footprints are checked against
 the rules of the board when the project has exactly one board, otherwise against `generic`.
 
@@ -162,12 +163,15 @@ Where agentee is stricter than the page, on purpose: `min_copper_to_edge` stays 
 allows 0.2 mm on a routed edge, which is milled to +/-0.2 mm, and 0.4 mm on a V-cut),
 `min_hole_to_hole` stays 0.5 mm (the page gives 0.45 mm between pad holes and 0.2 mm between
 vias), and `min_hole_to_smd_pad` (0.2 mm, the via hole to track figure) and `min_part_to_edge`
-(0.5 mm) are agentee's choices, not on the page.
+(0.5 mm) are agentee's choices, not on the page. `min_body_to_edge` (1.0 mm) follows assembly DFM
+guides, which keep every component 1 mm from the board edge for depaneling and handling.
+`flex_zone` (5 mm) follows Knowles on MLCC flex cracking: the stress zone is typically within
+5 mm of the PCB edge or fixing points.
 
 ### Design rule checks
 
 Layout checks run from a registry of rules, each with a stable id, a category (`copper`,
-`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`), a default severity, and a condition on the
+`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`, `test`), a default severity, and a condition on the
 board: a rule for inner layers runs only with 4 or more copper layers, a via fill rule only when
 vias sit in pads, a BGA rule only when there is a BGA. Every message of a rule starts with its id
 in brackets, e.g. `[via-cuts-pad]`. `agentee drc NAME --list` (MCP `drc` with `list = true`) prints
@@ -199,12 +203,20 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
 | `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
 | `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
+| `part-body-to-edge` | info | parts | a part body closer than `min_body_to_edge` to the outline, or past it (assembly DFM guides: no component within 1 mm of the edge). The body is the fab outline, else the courtyard, else the pad copper, and the message names which; skips fiducials, mounting holes, parts with `edge` pads and footprints with `overhang = true` |
 | `fiducials` | info | parts | no footprint named like `Fiducial` on the board |
 | `tooling-holes` | info | parts | no non-plated hole of 1.5 mm or more |
 | `bga-pad` | error | a BGA | BGA pads (16 or more round SMD pads) smaller than `min_bga_pad` |
 | `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
 | `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
 | `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
+| `mlcc-flex-zone-case` | info | ceramic capacitors | a ceramic capacitor of case 0805 (2012 metric) or larger within `flex_zone` of the outline, a board corner, a mounting hole (a `MountingHole*` footprint) or a non-plated hole of 2 mm or more (Knowles: the stress zone is typically within 5 mm of the PCB edge or fixing points); the longer the chip, the more strain its ends see |
+| `mlcc-flex-zone` | info | ceramic capacitors | a smaller ceramic capacitor within `flex_zone` whose long axis points at the nearest edge, corner or hole (Murata FAQ: orient the chip horizontal to the stress direction, so its long axis runs along the edge) |
+| `mlcc-flex-zone-info` | info | ceramic capacitors | counts the smaller ceramic capacitors within `flex_zone` that already lie along the edge |
+| `tombstone-risk` | info | chips of 0603 or smaller | a two-pad SMD part of 0603 (1608 metric) or smaller whose pads differ in size or shape, that has a via in one pad and not the other, or whose copper within 0.3 mm of one pad on its layer (tracks, vias, pours of its net) is over three times that of the other; the end that heats first wets first and stands the part up (EMS DFM guides: symmetric lands and balanced copper on both ends) |
+| `tall-part-shadow` | info | footprint heights over 3 mm | a two-pad chip of 0603 or smaller closer to a part taller than 3 mm than that part's height, measured from the chip's pads to the tall part's body (EMS rule of thumb 1:1: shadowing in reflow and inspection); heights come from the footprint `height`, parts without one are skipped |
+| `test-access` | info | parts | nets the `[test]` section asks for with no probe access from the probe side: no pad of a test point (reference `TP1`..., or a footprint named `TestPoint*`), no exposed plated through-hole pad (`through_holes`), no untented via (`vias`). Nets in classes with an impedance target or a pair gap, and nets of pairs, are exempt and named, since a stub hurts them |
+| `test-pad-geometry` | info | test points | a test point pad under `min_test_pad`, closer than `min_test_pad_pitch` to another centre to centre, closer than `min_test_pad_to_body` to another part's body on the probe side, closer than `min_test_pad_to_edge` to the board edge or a tooling hole (non-plated holes and mounting holes), or not on the probe side |
 | `short` | error | always | copper of two different nets touches |
 | `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
@@ -235,6 +247,7 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `silk-hidden` | warning | always | silk text only hidden under another part's body |
 | `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
 | `silk-artwork` | error | always | silk artwork on pads, over silk text or off the board |
+| `watermark` | error | always | the `agentee vX.Y.Z-HASH` watermark has no clear spot on the silk, or the `[watermark]` spot is not clear; fab refuses without a spot, and disabling the rule does not remove the watermark |
 | `silk-width` | warning | always | board silk lines (the layout's `[[graphics]]`, not text) thinner than `min_silk_width`, counted with the thinnest; footprint silk is checked with the footprint |
 | `pair-skew` | error | pairs | a pair skewed over its `max_skew` or the class `max_skew`, with the net to lengthen |
 | `pair-skew-info` | info | pairs | the skew of each pair within its limit |
@@ -251,6 +264,14 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `interface-return-via` | error | interfaces | a signal via with no reference via within `return_via` |
 | `interface-length` | error | interfaces | a lane longer than `max_length` |
 | `interface-reference` | error | interfaces | a lane running more than `max_unreferenced` with no reference plane next to it |
+
+The mechanical rules (`part-body-to-edge`, the `mlcc-flex-zone` rules, `tombstone-risk`,
+`tall-part-shadow`) are guidance and default to info; raise them with `[drc] severity`. A ceramic
+capacitor is a part with exactly two SMD pads whose footprint is named `C_*` or contains
+`Capacitor`, or whose reference is `C` and a digit, unless the footprint name says `CP_`,
+`Tantal`, `Elec` or `Polymer`; `mlcc` on the footprint or the placement overrides the guess. The
+case comes from the footprint name (`1608Metric`, else an imperial code such as `0603`), else
+from the distance between the two pad centres, which is close to the body length.
 
 An id that names no rule is a warning. Errors in the files themselves (a net that is not in the
 schematic, a layer that is not copper, a bad preset) are not rules and cannot be disabled.
@@ -383,6 +404,10 @@ model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
 # mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
                                # window, so min_mask_web is not checked between its own pads
+# overhang = true              # a connector meant to hang over the board edge: part-body-to-edge
+                               # skips it, its SMD pads still keep min_part_to_edge
+# mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules
+                               # skip it; true marks one that the name does not give away
 
 [[pads]]
 number = "1"
@@ -513,6 +538,7 @@ at = [13.0, 8.05]
 rotation = 90                  # degrees, counter-clockwise
 # side = "bottom"              # mirrors the footprint and swaps F./B. layers
 label = { at = [9.9, 7.4], rotation = 90 }   # move the silk reference; size = 0.8, hide = true
+# mlcc = false                 # this part is not a ceramic capacitor, over the footprint's `mlcc`
 
 [[tracks]]
 net = "RF_OUT"
@@ -572,7 +598,55 @@ icon = "arrow"                 # built in: arrow, warning, ground, antenna, ligh
 at = [7.4, 6.3]                # centre of the artwork
 height = 0.8                   # mm, the width follows the aspect ratio
 # rotation = 90
+
+[test]                         # in-circuit and flying probe test access, all optional
+# nets = ["3V3", "*RST*"]      # nets that need a probe, globs, any case; default below
+# exclude = ["LED_*"]          # nets to leave out
+# side = "B"                   # probe side, F or B
+# through_holes = true         # exposed plated through-hole pads count as access
+# vias = false                 # vias count as access; opens the probe side mask over every via
+# min_test_pad = "1.0mm"       # smallest test pad
+# min_test_pad_pitch = "1.27mm"   # centre to centre between test pads
+# min_test_pad_to_body = "1.0mm"  # to another part's body on the probe side
+# min_test_pad_to_edge = "3.0mm"  # to the board edge and tooling holes
+
+[watermark]                    # optional: where the agentee version watermark goes
+# at = [30, 21]                # centre of the text, default a clear spot found by check
+# layer = "B.SilkS"            # default B.SilkS, else F.SilkS
+# rotation = 90                # default 0, or 90 where only a tall gap is clear
 ```
+
+Every layout carries silk text `agentee vX.Y.Z-HASH`: the version of the agentee that built the
+package and the short git hash of its source, with `-dirty` when the tree had uncommitted
+changes, or `unknown` outside git. It is always plotted and cannot be turned off. It is
+`min_silk_text_height` tall, centred, and by default goes on `B.SilkS` (`F.SilkS` when the bottom
+has no room or the board has no bottom silk) at the clear spot nearest the board's bottom left
+corner, rotated 90 degrees if only a tall gap fits. A clear spot keeps off pads, vias, other silk
+text and lines, artwork and part bodies, and stays `min_copper_to_edge` inside the outline. The
+viewer, render and assembly drawings show it, and `fab-notes.txt` names it. When no spot is clear,
+check reports a `watermark` error with the size to clear and the least crowded spot, and fab
+refuses; clear room there or set `[watermark] at` (plus `layer`, `rotation`) yourself. A
+`[watermark]` spot that is not clear is a `watermark` error naming what it hits.
+
+Test access: by default the nets that need a probe are power nets (a class with `current`, or a
+name like `3V3`, `1V8`, `+5V`, `VCC*`, `VDD*`, `VBUS*`, `VBAT*`, `VIN*`, `VSYS*`), ground (`GND`,
+`*GND`, `GND*`) and nets named like `*RST*`, `*RESET*`, `*EN*`, `*PG*`, `*CLK*`, `*TX*`, `*RX*`,
+`*SCL*`, `*SDA*`, `*SWD*`, `*TCK*`, `*TMS*`, `*TDI*`, `*TDO*`. `nets` replaces that list and
+`exclude` takes nets out of it. A test point is a part with a reference `TP` and a number, or a
+footprint named `TestPoint*`; like every part it must be in the schematic. The built in
+`TestPoint_Pad_D1.0mm` footprint (a 1.0 mm round SMD pad, mask open, no paste) and `TestPoint`
+symbol are written into `footprints/` and `symbols/` by `agentee testpoints`.
+
+`agentee testpoints NAME --nets "3V3,*RST*" [--side B] [--pitch 2.54]` (MCP `testpoints`) adds a
+test pad to each matching net that has no probe access yet (nets are the `[test]` defaults when
+`--nets` is left out, impedance and pair nets are skipped): it looks on the probe side for a free
+spot on a `--pitch` grid near the net's copper, keeping `min_test_pad_to_edge` from the edge and
+tooling holes, `min_test_pad_to_body` from part bodies, `--pitch` from other test pads, and the
+net clearance from other copper. It adds a `TP` part joined to the net to the schematic sheet
+that names the net, a `[[footprints]]` entry on the probe side to the layout, then routes each
+new pad to the net's copper with the autorouter (a short track, and a via when the copper is on
+the other side) and appends those tracks and vias. `--dry-run` reports the spots without
+writing; nets with no spot or no route are listed.
 
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
 vias and other parts' bodies, and stay on the board. Each of these is an error, except text under
@@ -616,7 +690,8 @@ segments of one net that lie on top of each other on a layer (parallel, overlapp
 than a track width) are an error, since the copper is doubled; a bend sharper than 90 degrees is
 flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
-(the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
+(the class `neckdown`) where it meets a small pad; the router draws such necks itself (see
+Autorouting). Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
 Two vias of one net at the same spot are an error too: the fab would drill the hole twice.
 Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
@@ -648,7 +723,14 @@ it would cross, remembers the spot as congested, and those nets go back in the q
 steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
 45 degree bends; afterwards runs are pulled tight with two-segment 45 degree doglegs and any 90
 degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
-at another angle. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+at another angle. Where the class width does not fit into an end pad (wider than the pad's smaller
+side, or too close to the neighbouring pads to keep clearance), the route necks down: the class
+width track stops short of the pad and a separate `[[tracks]]` entry with an explicit `width` runs
+straight into the pad centre, at most the class `neckdown` long and no narrower than
+`min_track_width`. Its width is the smallest of the class width, the pad's smaller side and the
+widest that keeps clearance, rounded down to 0.01 mm; the wide track starts at the first spot out
+from the pad where its full width keeps clearance (and, for a pad narrower than the track, outside
+the pad). Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
 each routed connection that uses vias is tried again on one layer at a time with the rest held
 fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
 vias of neighbouring parallel connections that change layer near each other are slid along their
@@ -1193,13 +1275,14 @@ imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 p
 | `F_Cu.gbr` ... `B_Cu.gbr` | copper per layer, RS-274X with X2 file attributes, zone fills as regions |
 | `F_Mask.gbr`, `B_Mask.gbr` | mask openings at the pad outlines, vias tented |
 | `F_Paste.gbr`, `B_Paste.gbr` | paste on SMD pads |
-| `F_SilkS.gbr`, `B_SilkS.gbr` | silk lines, artwork and text in the Hershey stroke font |
+| `F_SilkS.gbr`, `B_SilkS.gbr` | silk lines, artwork and text in the Hershey stroke font, with the `agentee vX.Y.Z-HASH` watermark |
 | `Edge_Cuts.gbr` | the board outline |
 | `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill, edge pads to keep |
-| `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them |
+| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, vias in pads to fill, edge pads to keep |
+| `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them; test point pads are end points with the probe side access code (`A01` top, `A02` bottom), vias are tented mid points unless `[test] vias = true` makes them probe side access |
+| `testpoints.csv` | every test point pad for the fixture builder: ref, pad, net, X, Y (mm, Y up), side, pad diameter |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |
 | `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |
 

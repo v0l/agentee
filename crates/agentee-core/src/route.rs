@@ -1,7 +1,8 @@
 use crate::board::Board;
 use crate::footprint::PadKind;
 use crate::geom::{self, P};
-use crate::layout::{Layout, glob};
+use crate::layout::{Layout, NECKDOWN, glob};
+use crate::units::Length;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -38,6 +39,8 @@ impl Default for RouteOptions {
 pub struct RoutedTrack {
     pub net: String,
     pub layer: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
     pub points: Vec<P>,
 }
 
@@ -85,6 +88,14 @@ impl Shape {
             }
             Shape::Seg(a, b, r) => (geom::point_segment_distance(p, *a, *b) - r).max(0.0),
             Shape::Circle(c, r) => (geom::dist(p, *c) - r).max(0.0),
+        }
+    }
+
+    fn seg_dist(&self, p: P, q: P) -> f64 {
+        match self {
+            Shape::Poly(v) => geom::polyline_polygon_distance(&[p, q], v),
+            Shape::Seg(a, b, r) => (geom::segment_segment_distance(p, q, *a, *b) - r).max(0.0),
+            Shape::Circle(c, r) => (geom::point_segment_distance(*c, p, q) - r).max(0.0),
         }
     }
 
@@ -204,6 +215,9 @@ impl Grid {
             for s in pts.windows(2) {
                 shapes.push((vec![*l], Shape::Seg(s[0], s[1], ctx.widths[*l] / 2.0)));
             }
+        }
+        for n in &c.necks {
+            shapes.push((vec![n.layer], Shape::Seg(n.from, n.to, n.width / 2.0)));
         }
         for v in &c.vias {
             shapes.push((ctx.via_layers.to_vec(), Shape::Circle(*v, ctx.via_r)));
@@ -521,6 +535,12 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             continue;
         }
         let routing = &class_routing;
+        let necking = Necking {
+            length: nc.and_then(|c| c.neckdown).map(Length::to_mm).unwrap_or(NECKDOWN),
+            min_width: board.rules.min_track_width.to_mm(),
+            edge,
+            outline: &layout.outline,
+        };
         let ctx = Ctx {
             drill_r: spec.drill.to_mm() / 2.0,
             hole_gap: board.rules.min_hole_to_hole.to_mm(),
@@ -535,6 +555,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             via_layers: &via_layers,
             routing,
             opts,
+            necking: Some(&necking),
         };
 
         let mut grid = build_grid(layout, opts.grid, &halves, via_r, edge);
@@ -650,12 +671,12 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     match search(&grid, &obstacles, &fresh, net, a, b, &ctx, true, attract.as_ref())
                     {
                         Ok(p) => {
-                            for &i in &p {
+                            for &i in &p.cells {
                                 if grid.ok(i, net, false, true).1 {
                                     grid.hist[i] += (grid.g * 10.0) as f32;
                                 }
                             }
-                            let conn = conn_of(&grid, &p, a, b, net);
+                            let conn = conn_found(&grid, &p, net);
                             let mut hits: Vec<usize> = (0..routed.len())
                                 .filter(|&k| {
                                     routed[k]
@@ -695,7 +716,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                             for r in routed.iter().flatten() {
                                 grid.mark_routed(r, &ctx);
                             }
-                            if !p.iter().all(|&i| grid.ok(i, net, false, false).0) {
+                            if !p.cells.iter().all(|&i| grid.ok(i, net, false, false).0) {
                                 ripped[ci] += 1;
                                 queue.push_back(ci);
                                 continue;
@@ -712,7 +733,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     }
                 }
             };
-            let mut conn = conn_of(&grid, &path, a, b, net);
+            let mut conn = conn_found(&grid, &path, net);
             if let Some((left, iface)) = room(net, &routed, &[ci])
                 && conn.vias.len() > left
             {
@@ -791,7 +812,22 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                 out.tracks.push(RoutedTrack {
                     net: name.clone(),
                     layer: copper[l].clone(),
+                    width: None,
                     points: pts,
+                });
+            }
+            for n in conn.necks {
+                obstacles.push(Obstacle {
+                    net: Some(conn.net),
+                    layers: vec![n.layer],
+                    shape: Shape::Seg(n.from, n.to, n.width / 2.0),
+                    clearance,
+                });
+                out.tracks.push(RoutedTrack {
+                    net: name.clone(),
+                    layer: copper[n.layer].clone(),
+                    width: Some(n.width),
+                    points: vec![n.from, n.to],
                 });
             }
             for at in conn.vias {
@@ -822,6 +858,14 @@ struct Ctx<'a> {
     via_layers: &'a [usize],
     routing: &'a [usize],
     opts: &'a RouteOptions,
+    necking: Option<&'a Necking<'a>>,
+}
+
+struct Necking<'a> {
+    length: f64,
+    min_width: f64,
+    edge: f64,
+    outline: &'a [P],
 }
 
 impl Ctx<'_> {
@@ -835,11 +879,41 @@ struct Conn {
     net: usize,
     tracks: Vec<(usize, Vec<P>)>,
     vias: Vec<P>,
+    necks: Vec<Neck>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Neck {
+    layer: usize,
+    from: P,
+    to: P,
+    width: f64,
+}
+
+struct Found {
+    cells: Vec<usize>,
+    a: P,
+    b: P,
+    necks: Vec<Neck>,
 }
 
 fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Conn {
     let (tracks, vias) = geometry(grid, path, a, b, net);
-    Conn { net, tracks, vias }
+    Conn { net, tracks, vias, necks: Vec::new() }
+}
+
+fn conn_found(grid: &Grid, f: &Found, net: usize) -> Conn {
+    Conn { necks: f.necks.clone(), ..conn_of(grid, &f.cells, f.a, f.b, net) }
+}
+
+fn wires(c: &Conn, ctx: &Ctx) -> Vec<(usize, P, P, f64)> {
+    let mut out: Vec<(usize, P, P, f64)> = c
+        .tracks
+        .iter()
+        .flat_map(|(l, pts)| pts.windows(2).map(|w| (*l, w[0], w[1], ctx.widths[*l])))
+        .collect();
+    out.extend(c.necks.iter().map(|n| (n.layer, n.from, n.to, n.width)));
+    out
 }
 
 fn track_length(c: &Conn) -> f64 {
@@ -868,7 +942,7 @@ fn one_layer(
         let layer = [l];
         let one = Ctx { widths: ctx.widths.clone(), routing: &layer, ..*ctx };
         if let Ok(p) = search(grid, obstacles, fresh, net, a, b, &one, false, None) {
-            let c = conn_of(grid, &p, a, b, net);
+            let c = conn_found(grid, &p, net);
             if c.vias.is_empty() && best.as_ref().is_none_or(|x| track_length(&c) < track_length(x))
             {
                 best = Some(c);
@@ -899,7 +973,7 @@ fn fewer_vias(
         };
         let wary = Ctx { widths: ctx.widths.clone(), opts: &dear, ..*ctx };
         if let Ok(p) = search(grid, obstacles, fresh, net, a, b, &wary, false, None) {
-            let c = conn_of(grid, &p, a, b, net);
+            let c = conn_found(grid, &p, net);
             if c.vias.len() <= left {
                 return Some(c);
             }
@@ -1204,15 +1278,13 @@ fn snap_vias(
 
 fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
     let mut out = Vec::new();
-    for (l, pts) in &c.tracks {
-        for w in pts.windows(2) {
-            out.push(Obstacle {
-                net: Some(c.net),
-                layers: vec![*l],
-                shape: Shape::Seg(w[0], w[1], ctx.widths[*l] / 2.0),
-                clearance: ctx.clearance,
-            });
-        }
+    for (l, a, b, w) in wires(c, ctx) {
+        out.push(Obstacle {
+            net: Some(c.net),
+            layers: vec![l],
+            shape: Shape::Seg(a, b, w / 2.0),
+            clearance: ctx.clearance,
+        });
     }
     for v in &c.vias {
         out.push(Obstacle {
@@ -1226,42 +1298,30 @@ fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
 }
 
 fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
-    let need = |l: usize| ctx.widths[l] + ctx.clearance - 1e-6;
     let keep = ctx.via_keep();
-    let via_need = |l: usize| ctx.via_r + ctx.widths[l] / 2.0 + keep - 1e-6;
+    let via_need = |w: f64| ctx.via_r + w / 2.0 + keep - 1e-6;
     let vv_need = 2.0 * ctx.via_r + keep - 1e-6;
-    for (la, pa) in &r.tracks {
-        for (lb, pb) in &c.tracks {
-            if la != lb {
-                continue;
-            }
-            for s in pa.windows(2) {
-                for t in pb.windows(2) {
-                    if geom::segment_segment_distance(s[0], s[1], t[0], t[1]) < need(*la) {
-                        return true;
-                    }
-                }
-            }
-        }
-        for v in &c.vias {
-            if ctx.via_layers.contains(la)
-                && pa
-                    .windows(2)
-                    .any(|s| geom::point_segment_distance(*v, s[0], s[1]) < via_need(*la))
+    let (rw, cw) = (wires(r, ctx), wires(c, ctx));
+    for &(la, a0, a1, wa) in &rw {
+        for &(lb, b0, b1, wb) in &cw {
+            if la == lb
+                && geom::segment_segment_distance(a0, a1, b0, b1)
+                    < (wa + wb) / 2.0 + ctx.clearance - 1e-6
             {
                 return true;
             }
+        }
+        if ctx.via_layers.contains(&la)
+            && c.vias.iter().any(|v| geom::point_segment_distance(*v, a0, a1) < via_need(wa))
+        {
+            return true;
         }
     }
     for v in &r.vias {
-        for (lb, pb) in &c.tracks {
-            if ctx.via_layers.contains(lb)
-                && pb
-                    .windows(2)
-                    .any(|s| geom::point_segment_distance(*v, s[0], s[1]) < via_need(*lb))
-            {
-                return true;
-            }
+        if cw.iter().any(|&(lb, b0, b1, wb)| {
+            ctx.via_layers.contains(&lb) && geom::point_segment_distance(*v, b0, b1) < via_need(wb)
+        }) {
+            return true;
         }
         if c.vias.iter().any(|w| geom::dist(*v, *w) < vv_need) {
             return true;
@@ -1435,10 +1495,156 @@ fn search(
     ctx: &Ctx,
     soft: bool,
     attract: Option<&std::collections::HashSet<usize>>,
-) -> Result<Vec<usize>, String> {
-    let sources = anchors(grid, obstacles, fresh, net, a, ctx.routing);
-    let goals = anchors(grid, obstacles, fresh, net, b, ctx.routing);
-    search_between(grid, net, a, b, &sources, &goals, ctx, soft, attract, None)
+) -> Result<Found, String> {
+    let from = end_of(grid, obstacles, fresh, net, a, ctx, soft);
+    let to = end_of(grid, obstacles, fresh, net, b, ctx, soft);
+    let cells = search_between(grid, net, a, b, &from.cells, &to.cells, ctx, soft, attract, None)?;
+    let (a, na) = from.start(cells[0], a);
+    let (b, nb) = to.start(cells[cells.len() - 1], b);
+    Ok(Found { cells, a, b, necks: na.into_iter().chain(nb).collect() })
+}
+
+struct End {
+    cells: Vec<usize>,
+    stubs: Vec<(usize, Neck)>,
+}
+
+impl End {
+    fn start(&self, cell: usize, p: P) -> (P, Option<Neck>) {
+        match self.stubs.iter().find(|(c, _)| *c == cell) {
+            Some((_, n)) => (n.to, Some(n.clone())),
+            None => (p, None),
+        }
+    }
+}
+
+fn end_of(
+    grid: &Grid,
+    obstacles: &[Obstacle],
+    fresh: &[Obstacle],
+    net: usize,
+    p: P,
+    ctx: &Ctx,
+    soft: bool,
+) -> End {
+    let cells = anchors(grid, obstacles, fresh, net, p, ctx.routing);
+    let pad = obstacles.iter().find_map(|o| match &o.shape {
+        Shape::Poly(v) if o.net == Some(net) && geom::point_in_polygon(p, v) => Some((v, o)),
+        _ => None,
+    });
+    let (Some(nk), Some((pad, o))) = (ctx.necking, pad) else {
+        return End { cells, stubs: Vec::new() };
+    };
+    let plane = grid.w * grid.h;
+    let pad_w = geom::min_extent(pad);
+    let layers: Vec<usize> = o
+        .layers
+        .iter()
+        .copied()
+        .filter(|l| ctx.routing.contains(l))
+        .filter(|&l| {
+            ctx.widths[l] > pad_w + 1e-6
+                || !cells.iter().any(|&i| i / plane == l && grid.ok(i, net, false, soft).0)
+        })
+        .collect();
+    let stubs: Vec<(usize, Neck)> = layers
+        .iter()
+        .flat_map(|&l| stubs(grid, obstacles, net, p, pad, l, ctx, nk, soft))
+        .collect();
+    if stubs.is_empty() {
+        return End { cells, stubs };
+    }
+    let shape = Shape::Poly(pad.clone());
+    let mut cells: Vec<usize> = cells
+        .into_iter()
+        .filter(|&i| {
+            let (l, k) = (i / plane, i % plane);
+            !layers.contains(&l)
+                || shape.dist(grid.center(k % grid.w, k / grid.w)) >= ctx.widths[l] / 2.0
+        })
+        .chain(stubs.iter().map(|s| s.0))
+        .collect();
+    cells.sort_unstable();
+    cells.dedup();
+    End { cells, stubs }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stubs(
+    grid: &Grid,
+    obstacles: &[Obstacle],
+    net: usize,
+    p: P,
+    pad: &[P],
+    l: usize,
+    ctx: &Ctx,
+    nk: &Necking,
+    soft: bool,
+) -> Vec<(usize, Neck)> {
+    let wide = ctx.widths[l];
+    let pad_w = geom::min_extent(pad);
+    let overhangs = wide > pad_w + 1e-6;
+    let reach = nk.length + wide + ctx.clearance + 1.0;
+    let near: Vec<(&Shape, f64)> = obstacles
+        .iter()
+        .filter(|o| o.net != Some(net) && o.layers.contains(&l))
+        .filter(|o| {
+            let (lo, hi) = o.shape.bounds();
+            lo[0] <= p[0] + reach
+                && lo[1] <= p[1] + reach
+                && hi[0] >= p[0] - reach
+                && hi[1] >= p[1] - reach
+        })
+        .map(|o| (&o.shape, o.clearance.max(ctx.clearance)))
+        .collect();
+    let n = nk.outline.len();
+    let edges: Vec<(P, P)> = (0..n).map(|i| (nk.outline[i], nk.outline[(i + 1) % n])).collect();
+    let cell = |q: P| {
+        let (x, y) = grid.cell(q);
+        (x >= 0 && y >= 0 && (x as usize) < grid.w && (y as usize) < grid.h)
+            .then(|| grid.idx(l, x as usize, y as usize))
+    };
+    let mut out = Vec::new();
+    for (dx, dy) in DIRS {
+        let norm = ((dx * dx + dy * dy) as f64).sqrt();
+        let u = [dx as f64 / norm, dy as f64 / norm];
+        let mut k = 1;
+        while k as f64 * grid.g <= nk.length + 1e-9 {
+            let len = k as f64 * grid.g;
+            k += 1;
+            let q = [p[0] + u[0] * len, p[1] + u[1] * len];
+            let gap = near
+                .iter()
+                .map(|(s, c)| s.seg_dist(p, q) - c)
+                .chain(
+                    edges.iter().map(|e| geom::segment_segment_distance(p, q, e.0, e.1) - nk.edge),
+                )
+                .fold(f64::MAX, f64::min);
+            let width = (wide.min(pad_w).min(2.0 * gap) * 100.0 + 1e-6).floor() / 100.0;
+            if width < nk.min_width - 1e-9 {
+                break;
+            }
+            let cap = !(overhangs && geom::point_in_polygon(q, pad))
+                && near.iter().all(|(s, c)| s.dist(q) >= wide / 2.0 + c - 1e-9)
+                && edges
+                    .iter()
+                    .all(|e| geom::point_segment_distance(q, e.0, e.1) >= nk.edge + wide / 2.0);
+            let Some(i) = cell(q).filter(|&i| cap && grid.ok(i, net, false, soft).0) else {
+                continue;
+            };
+            let steps = (len / (grid.g * 0.25)).ceil() as usize;
+            let free = (0..=steps).all(|s| {
+                let t = s as f64 / steps as f64;
+                cell([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t])
+                    .is_some_and(|j| Grid::free(&grid.rt, j, net))
+            });
+            if free {
+                out.push((i, Neck { layer: l, from: p, to: q, width }));
+            }
+            break;
+        }
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1464,7 +1670,10 @@ fn search_between(
     };
     let (sources, goals) = (legal(sources), legal(goals));
     if sources.is_empty() || goals.is_empty() {
-        return Err("the class width does not fit into an end pad, neck it down by hand".into());
+        return Err(
+            "the class width does not fit into an end pad and no neck-down within the class neckdown length keeps clearance"
+                .into(),
+        );
     }
     let (sources, goals) = (sources.as_slice(), goals.as_slice());
     let plane = grid.w * grid.h;
@@ -1941,8 +2150,10 @@ fn route_pair(
         let straight = geom::dist(left[0], ap) + geom::dist(right[0], an);
         let swapped = geom::dist(left[0], an) + geom::dist(right[0], ap);
         let (pp, np) = if straight <= swapped { (left, right) } else { (right, left) };
-        let pc = Conn { net: p, tracks: vec![(l, pp.clone())], vias: Vec::new() };
-        let nc = Conn { net: n, tracks: vec![(l, np.clone())], vias: Vec::new() };
+        let pc =
+            Conn { net: p, tracks: vec![(l, pp.clone())], vias: Vec::new(), necks: Vec::new() };
+        let nc =
+            Conn { net: n, tracks: vec![(l, np.clone())], vias: Vec::new(), necks: Vec::new() };
         grid.mark_routed(&pc, ctx);
         grid.mark_routed(&nc, ctx);
         let mut parts: Vec<Conn> = Vec::new();
@@ -2000,6 +2211,7 @@ fn route_pair(
             net,
             tracks: a.tracks.iter().chain(b.tracks.iter()).cloned().chain([(l, main)]).collect(),
             vias: a.vias.iter().chain(b.vias.iter()).cloned().collect(),
+            necks: Vec::new(),
         };
         return Some((join(p, pp, &parts[0], &parts[2]), join(n, np, &parts[1], &parts[3])));
     }
@@ -2197,6 +2409,7 @@ mod tests {
             via_layers: layers,
             routing: layers,
             opts: &opts,
+            necking: None,
         };
         let (pa, pb) = (grid.center(a.0, a.1), grid.center(b.0, b.1));
         let path = search_between(
@@ -2268,6 +2481,7 @@ mod tests {
             via_layers: &[0, 1],
             routing: &[0, 1],
             opts: &opts,
+            necking: None,
         };
         let (a, b) = (grid.center(5, 5), grid.center(55, 5));
         let pad = |at: P| Obstacle {
@@ -2278,7 +2492,7 @@ mod tests {
         };
         let pads = [pad(a), pad(b)];
         let path = search(&grid, &pads, &[], 0, a, b, &ctx, false, None).unwrap();
-        assert_eq!(conn_of(&grid, &path, a, b, 0).vias.len(), 2);
+        assert_eq!(conn_found(&grid, &path, 0).vias.len(), 2);
         let c = fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 0).unwrap();
         assert!(c.vias.is_empty() && c.tracks.iter().all(|t| t.0 == 0));
         assert!(fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 2).unwrap().vias.len() <= 2);
@@ -2301,11 +2515,13 @@ mod tests {
             via_layers: &[0, 1],
             routing: &[0, 1],
             opts: &opts,
+            necking: None,
         };
         let conn = |net: usize, y: f64, x: f64| Conn {
             net,
             tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
             vias: vec![[x, y]],
+            necks: Vec::new(),
         };
         let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
         let before: Vec<f64> = routed.iter().flatten().map(track_length).collect();
@@ -2355,6 +2571,7 @@ mod tests {
                 via_layers: &[0, 1],
                 routing: &[0, 1],
                 opts: &opts,
+                necking: None,
             };
             let mut grid = open_grid(50, 50, 2);
             grid.block_smd(&ctx);
@@ -2401,11 +2618,13 @@ mod tests {
             via_layers: &[0, 1],
             routing: &[0, 1],
             opts: &opts,
+            necking: None,
         };
         let conn = |net: usize, y: f64, x: f64| Conn {
             net,
             tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
             vias: vec![[x, y]],
+            necks: Vec::new(),
         };
         let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
         snap_vias(&grid, &[], &mut routed, &[false, false], &ctx);
@@ -2430,6 +2649,7 @@ mod tests {
             via_layers: &[0],
             routing: &[0],
             opts: &opts,
+            necking: None,
         };
         let mut grid = open_grid(40, 40, 1);
         let track = Obstacle {
@@ -2441,11 +2661,15 @@ mod tests {
         grid.add(&track, &[0.05], ctx.via_r, ctx.clearance, ctx.drill_r + ctx.hole_cu);
         assert!(!grid.ok(grid.idx(0, 14, 20), 0, true, false).0, "hole 0.35 mm from the track");
         assert!(grid.ok(grid.idx(0, 17, 20), 0, true, false).0, "hole 0.65 mm from the track");
-        let via = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.45, 2.05]] };
-        let near =
-            Conn { net: 1, tracks: vec![(0, vec![[1.0, 0.5], [1.0, 3.5]])], vias: Vec::new() };
+        let via = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.45, 2.05]], necks: Vec::new() };
+        let near = Conn {
+            net: 1,
+            tracks: vec![(0, vec![[1.0, 0.5], [1.0, 3.5]])],
+            vias: Vec::new(),
+            necks: Vec::new(),
+        };
         assert!(conflicts(&near, &via, &ctx) && conflicts(&via, &near, &ctx));
-        let far = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.65, 2.05]] };
+        let far = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.65, 2.05]], necks: Vec::new() };
         assert!(!conflicts(&near, &far, &ctx));
     }
 
@@ -2467,6 +2691,7 @@ mod tests {
             via_layers: &[0],
             routing: &[0],
             opts: &opts,
+            necking: None,
         };
         let (a, b) = (grid.center(5, 10), grid.center(35, 10));
         let got = search_between(
@@ -2482,5 +2707,107 @@ mod tests {
             None,
         );
         assert!(got.is_err());
+    }
+
+    fn square(c: P, h: f64) -> Vec<P> {
+        vec![[c[0] - h, c[1] - h], [c[0] + h, c[1] - h], [c[0] + h, c[1] + h], [c[0] - h, c[1] + h]]
+    }
+
+    fn necked_route(pitch: f64, necking: Option<&Necking>) -> Result<(Found, Conn), String> {
+        let opts = RouteOptions { margin: 10.0, ..Default::default() };
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
+            widths: vec![0.4],
+            clearance: 0.15,
+            via_r: 0.2,
+            via_layers: &[0],
+            routing: &[0],
+            opts: &opts,
+            necking,
+        };
+        let (a, b) = ([1.025, 2.025], [5.025, 2.025]);
+        let pad = |net: usize, c: P, h: f64| Obstacle {
+            net: Some(net),
+            layers: vec![0],
+            shape: Shape::Poly(square(c, h)),
+            clearance: 0.15,
+        };
+        let obstacles = [
+            pad(0, a, 0.15),
+            pad(1, [a[0], a[1] + pitch], 0.15),
+            pad(2, [a[0], a[1] - pitch], 0.15),
+            pad(0, b, 0.5),
+        ];
+        let mut grid = open_grid(60, 40, 1);
+        for o in &obstacles {
+            grid.add(o, &[0.2], ctx.via_r, ctx.clearance, 0.0);
+        }
+        let found = search(&grid, &obstacles, &[], 0, a, b, &ctx, false, None)?;
+        let conn = conn_found(&grid, &found, 0);
+        Ok((found, conn))
+    }
+
+    #[test]
+    fn a_wide_track_necks_down_into_a_small_pad() {
+        let outline = square([3.0, 2.0], 3.0);
+        let necking = Necking { length: 0.6, min_width: 0.1, edge: 0.0, outline: &outline };
+        assert!(necked_route(0.5, None).is_err());
+        let (found, conn) = necked_route(0.5, Some(&necking)).unwrap();
+        assert_eq!(found.necks.len(), 1);
+        let n = &found.necks[0];
+        assert_eq!(n.from, [1.025, 2.025]);
+        assert!((n.width - 0.3).abs() < 1e-9, "neck width {}", n.width);
+        let len = geom::dist(n.from, n.to);
+        assert!(len <= 0.6 + 1e-9 && n.to[0] > 1.175, "neck {n:?}");
+        assert_eq!(conn.tracks[0].1[0], n.to);
+        assert_eq!(conn.necks, found.necks);
+        let (found, _) = necked_route(0.425, Some(&necking)).unwrap();
+        let n = &found.necks[0];
+        assert!(n.width <= 0.25 + 1e-9 && n.width >= 0.24 - 1e-9, "neck width {}", n.width);
+        let tight = Necking { length: 0.2, ..necking };
+        assert!(necked_route(0.5, Some(&tight)).is_err());
+        let fab = Necking { min_width: 0.35, ..necking };
+        assert!(necked_route(0.5, Some(&fab)).is_err());
+    }
+
+    #[test]
+    fn necks_count_at_their_own_width_in_conflicts() {
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
+            widths: vec![0.4],
+            clearance: 0.15,
+            via_r: 0.2,
+            via_layers: &[0],
+            routing: &[0],
+            opts: &opts,
+            necking: None,
+        };
+        let neck = |net: usize, y: f64| Conn {
+            net,
+            tracks: Vec::new(),
+            vias: Vec::new(),
+            necks: vec![Neck { layer: 0, from: [0.0, y], to: [0.5, y], width: 0.2 }],
+        };
+        assert!(!conflicts(&neck(0, 0.0), &neck(1, 0.36), &ctx));
+        assert!(conflicts(&neck(0, 0.0), &neck(1, 0.34), &ctx));
+        let wide = Conn {
+            net: 1,
+            tracks: vec![(0, vec![[0.0, 0.46], [0.5, 0.46]])],
+            vias: Vec::new(),
+            necks: Vec::new(),
+        };
+        assert!(!conflicts(&neck(0, 0.0), &wide, &ctx));
+        assert!(conflicts(&neck(0, 0.1), &wide, &ctx));
     }
 }

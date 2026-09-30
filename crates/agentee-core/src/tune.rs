@@ -48,13 +48,13 @@ enum Shape {
     Circle(P, f64),
 }
 
-struct Obstacle {
-    net: Option<usize>,
-    layers: Vec<String>,
+pub(crate) struct Obstacle {
+    pub(crate) net: Option<usize>,
+    pub(crate) layers: Vec<String>,
     shape: Shape,
-    clearance: f64,
-    lo: P,
-    hi: P,
+    pub(crate) clearance: f64,
+    pub(crate) lo: P,
+    pub(crate) hi: P,
 }
 
 impl Obstacle {
@@ -71,7 +71,7 @@ impl Obstacle {
         Obstacle { net, layers, shape, clearance, lo, hi }
     }
 
-    fn distance(&self, line: &[P]) -> f64 {
+    pub(crate) fn distance(&self, line: &[P]) -> f64 {
         match &self.shape {
             Shape::Poly(p) => geom::polyline_polygon_distance(line, p),
             Shape::Seg(a, b, r) => {
@@ -585,7 +585,7 @@ fn legal(
     true
 }
 
-fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
+pub(crate) fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
     let mut out = Vec::new();
     let clearance = |n: Option<usize>| n.map(|n| layout.nets[n].clearance).unwrap_or(0.0);
     for part in &layout.parts {
