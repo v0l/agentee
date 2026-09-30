@@ -259,16 +259,40 @@ fn via_z(v: &agentee_core::layout::Via, l: &Layout, board: &Board, z: (f32, f32)
     (first, last)
 }
 
+fn backdrilled(
+    v: &agentee_core::layout::Via,
+    l: &Layout,
+    board: &Board,
+    z: (f32, f32),
+) -> Option<(Hole, (f32, f32))> {
+    let bd = v.backdrill.as_ref()?;
+    let side = l.copper.iter().position(|c| *c == bd.from)?;
+    let stop = l.copper.iter().position(|c| *c == bd.to)?;
+    let barrel = via_z(v, l, board, z);
+    let stop_z = z.0 - board.stackup.copper_z(&bd.to)? as f32;
+    let stub = bd.max_stub.to_mm() as f32;
+    let ring = disc(v.at, bd.diameter.to_mm() / 2.0, 16);
+    if side < stop {
+        let floor = (stop_z + stub).min(z.0);
+        Some((Hole { ring, plated: false, z: (z.0, floor) }, (floor, barrel.1)))
+    } else {
+        let floor = (stop_z - stub).max(z.1);
+        Some((Hole { ring, plated: false, z: (floor, z.1) }, (barrel.0, floor)))
+    }
+}
+
 fn holes(l: &Layout, board: &Board, z: (f32, f32)) -> Vec<Hole> {
-    let mut out: Vec<Hole> = l
-        .vias
-        .iter()
-        .map(|v| Hole {
-            ring: disc(v.at, v.drill / 2.0, 12),
-            plated: true,
-            z: via_z(v, l, board, z),
-        })
-        .collect();
+    let mut out: Vec<Hole> = Vec::new();
+    for v in &l.vias {
+        let ring = disc(v.at, v.drill / 2.0, 12);
+        match backdrilled(v, l, board, z) {
+            Some((hole, barrel)) => {
+                out.push(hole);
+                out.push(Hole { ring, plated: true, z: barrel });
+            }
+            None => out.push(Hole { ring, plated: true, z: via_z(v, l, board, z) }),
+        }
+    }
     for part in &l.parts {
         for pad in &part.pads {
             let Some((c, d, rot)) = pad.drill else { continue };
@@ -956,6 +980,60 @@ mod tests {
         let low = plated.positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
         let depth = board.stackup.copper_z("In1.Cu").unwrap() as f32;
         assert!((low - (t / 2.0 - depth)).abs() < 1e-4, "{low}");
+    }
+
+    #[test]
+    fn a_backdrill_opens_the_drilled_face_wider_and_leaves_its_stub_plated() {
+        let dir = std::env::temp_dir().join(format!("agentee-3d-backdrill-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\nfab = \"hdi\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[vias]]\nname = \"bd\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\nbackdrill = { from = \"B.Cu\", to = \"In2.Cu\", max_stub = \"0.1mm\", diameter = \"0.5mm\" }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[nets]]\nname = \"A\"\npins = []\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[vias]]\nnet = \"A\"\nat = [5, 5]\nvia = \"bd\"\n",
+        )
+        .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let (l, board) = (&p.layouts[0].item, &p.boards[0].item);
+        let scene = build(l, board, &dir, Fetch::Blocking);
+        let area = |s: &Surface| {
+            s.positions
+                .chunks_exact(3)
+                .map(|t| {
+                    let (u, v) = (
+                        [t[1][0] - t[0][0], t[1][1] - t[0][1]],
+                        [t[2][0] - t[0][0], t[2][1] - t[0][1]],
+                    );
+                    ((u[0] * v[1] - u[1] * v[0]) / 2.0).abs() as f64
+                })
+                .sum::<f64>()
+        };
+        let ring_area =
+            |r: f64, n: usize| 0.5 * n as f64 * r * r * (std::f64::consts::TAU / n as f64).sin();
+        assert!((area(&scene.surfaces[0]) - (200.0 - ring_area(0.15, 12))).abs() < 1e-3);
+        assert!((area(&scene.surfaces[1]) - (200.0 - ring_area(0.25, 16))).abs() < 1e-3);
+        let t = board.stackup.thickness().to_mm() as f32;
+        let floor = t / 2.0 - board.stackup.copper_z("In2.Cu").unwrap() as f32 - 0.1;
+        let plated = &scene.surfaces[3];
+        let low = plated.positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
+        assert!((low - floor).abs() < 1e-4, "{low} {floor}");
+        let wide: Vec<f32> = scene.surfaces[2]
+            .positions
+            .iter()
+            .filter(|q| ((q[0] - 5.0).powi(2) + (q[1] + 5.0).powi(2)).sqrt() < 0.3)
+            .map(|q| q[2])
+            .collect();
+        let top = wide.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(!wide.is_empty() && (top - floor).abs() < 1e-4, "{top} {floor}");
     }
 
     #[test]

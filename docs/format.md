@@ -218,10 +218,16 @@ holes whose spans share a dielectric, and `stacked-via`: two vias at one spot th
 dielectric are drilled twice, while vias meeting at one layer (a microvia on a buried via, or a
 stack of microvias) are stacked vias, allowed only with `stacked_microvias`. Silk text keeps off only the vias whose
 hole opens on its side, so a buried via under a label is fine. The DC, thermal
-and FDTD models run a barrel only between the via's first and last layer, the 2D viewer
+and FDTD models run a barrel only between the via's first and last layer; a backdrilled via also
+keeps its stub, `max_stub` of barrel past the stop layer toward the drilled side (short of the
+next layer): FDTD meshes it as metal to the nearest mesh plane, thermal conducts along it as
+copper and through the rest of the dielectric as FR-4, and DC leaves it out since a dead end
+carries no current. The 2D viewer
 draws a via only when one of its layers is shown, rings it in its type's colour (through gold,
 blind teal, buried lavender, microvia cyan) with its two end layers' colours on the rim, and the 3D
-viewer drills the board face only on the sides a via reaches and ends its barrel at its span.
+viewer drills the board face only on the sides a via reaches and ends its barrel at its span; a
+backdrill shows as a wider unplated hole, at the backdrill diameter, from the drilled face to the
+stub, where the plated barrel ends.
 
 A net class may list several vias, `via = ["std", "uvia-top", "uvia-bot"]`. A layout
 `[[vias]]` entry and `[[stitching]]` use the first unless they name one, `[[fanouts]]` the
