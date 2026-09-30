@@ -1120,11 +1120,16 @@ impl LayoutFile {
             let margin = st.margin.map(Length::to_mm).unwrap_or(0.0);
             let edge = board.rules.min_copper_to_edge.to_mm().max(margin) + r;
             let hole_gap = board.rules.min_hole_to_hole.to_mm();
-            let mut drills: Vec<(P, f64)> = vias.iter().map(|v| (v.at, v.drill / 2.0)).collect();
+            let through = (0, copper.len().saturating_sub(1));
+            let span = spec.span(&copper);
+            let mut drills: Vec<(P, f64, (usize, usize))> = vias
+                .iter()
+                .map(|v| (v.at, v.drill / 2.0, v.span_of(&copper).unwrap_or(through)))
+                .collect();
             for p in &parts {
                 for pad in &p.pads {
                     if let Some((c, sz, _)) = pad.drill {
-                        drills.push((c, sz[0].max(sz[1]) / 2.0));
+                        drills.push((c, sz[0].max(sz[1]) / 2.0, through));
                     }
                 }
             }
@@ -1146,9 +1151,10 @@ impl LayoutFile {
                 if !board_edge.contains(c)
                     || board_edge.distance(c) < edge - 1e-9
                     || !zoned.iter().any(|z| geom::point_in_polygon(c, z))
-                    || drills
-                        .iter()
-                        .any(|(q, dr)| geom::dist(c, *q) - dr - drill / 2.0 < hole_gap - 1e-9)
+                    || drills.iter().any(|(q, dr, (a, b))| {
+                        span.0.max(*a) < span.1.min(*b)
+                            && geom::dist(c, *q) - dr - drill / 2.0 < hole_gap - 1e-9
+                    })
                 {
                     continue;
                 }
@@ -1190,7 +1196,7 @@ impl LayoutFile {
                     shape: probe,
                     pour_gap: via_pour_gap(vias.last().unwrap()),
                 });
-                drills.push((c, drill / 2.0));
+                drills.push((c, drill / 2.0, span));
                 placed += 1;
             }
             found.add("stitching", &at, format!("{placed} stitching vias"));

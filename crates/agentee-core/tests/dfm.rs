@@ -1258,3 +1258,15 @@ fn a_fanout_takes_the_first_listed_via_that_reaches_the_pad() {
     assert_eq!(fanout("[\"bu\", \"uv\"]"), ["uv", "uv"]);
     assert_eq!(fanout("\"bu\""), ["bu", "bu"]);
 }
+
+#[test]
+fn stitching_keeps_hole_spacing_only_from_holes_through_its_dielectrics() {
+    let ub = "[[vias]]\nname = \"ub\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"In4.Cu\"\nto = \"B.Cu\"\n";
+    let stitch = "\n[[zones]]\nnet = \"A\"\nlayers = [\"B.Cu\"]\noutline = [[8.0, 8.0], [12.0, 8.0], [12.0, 12.0], [8.0, 12.0]]\n\n[[stitching]]\nnet = \"A\"\nvia = \"ub\"\npitch = \"1mm\"\noutline = [[9.8, 9.8], [10.2, 9.8], [10.2, 10.2], [9.8, 10.2]]\n";
+    let stitched = |kind: &str| {
+        let p = hdi(&format!("{}{stitch}", typed_via("B", [10.3, 10.0], kind)), ub);
+        p.layouts[0].item.vias.iter().filter(|v| v.name == "ub").count()
+    };
+    assert_eq!(stitched("uv"), 1);
+    assert_eq!(stitched("bd"), 0);
+}
