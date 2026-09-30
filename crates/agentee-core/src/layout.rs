@@ -1506,6 +1506,8 @@ impl LayoutFile {
             }
         }
 
+        check_overlaps(&tracks, &nets, d);
+
         let (graphics, artwork) = self.artwork_of(&cx.dir, d);
         let silk: Vec<SilkBox> = parts
             .iter()
@@ -2561,6 +2563,65 @@ fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
     }
     let mid = [b0[0] - a0[0], b0[1] - a0[1]];
     Some((overlap, (u[0] * mid[1] - u[1] * mid[0]).abs()))
+}
+
+fn check_overlaps(tracks: &[Track], nets: &[LayoutNet], d: &mut Diags) {
+    for (ti, t) in tracks.iter().enumerate() {
+        for (k, w) in t.points.windows(3).enumerate() {
+            let (Some(u), Some(v)) = (unit(w[0], w[1]), unit(w[1], w[2])) else { continue };
+            let turn = (u[0] * v[0] + u[1] * v[1]).clamp(-1.0, 1.0).acos().to_degrees();
+            if turn > 90.0 + 1e-6 {
+                d.warn(
+                    format!("tracks[{ti}] {}", nets[t.net].name),
+                    format!(
+                        "turns back {:.0} degrees at [{:.3}, {:.3}] (point {}), an acute angle traps etchant; keep bends at 90 degrees or less",
+                        turn,
+                        w[1][0],
+                        w[1][1],
+                        k + 1
+                    ),
+                );
+            }
+        }
+    }
+    let mut groups: BTreeMap<(usize, &str), Vec<(usize, usize)>> = BTreeMap::new();
+    for (ti, t) in tracks.iter().enumerate() {
+        for k in 0..t.points.len().saturating_sub(1) {
+            groups.entry((t.net, t.layer.as_str())).or_default().push((ti, k));
+        }
+    }
+    let mut seen: std::collections::HashSet<(usize, usize)> = Default::default();
+    for ((net, layer), segs) in groups {
+        for x in 0..segs.len() {
+            for y in x + 1..segs.len() {
+                let ((ta, ka), (tb, kb)) = (segs[x], segs[y]);
+                if ta == tb && ka.abs_diff(kb) <= 1 {
+                    continue;
+                }
+                let (a, b) = (&tracks[ta], &tracks[tb]);
+                let (a0, a1, b0, b1) =
+                    (a.points[ka], a.points[ka + 1], b.points[kb], b.points[kb + 1]);
+                let Some((overlap, sep)) = parallel_overlap(a0, a1, b0, b1) else { continue };
+                let touch = (a.width + b.width) / 2.0;
+                if sep < touch - 1e-6
+                    && overlap > a.width.max(b.width)
+                    && seen.insert((ta.min(tb), ta.max(tb)))
+                {
+                    d.error(
+                        format!("tracks[{ta}] {}", nets[net].name),
+                        format!(
+                            "runs on top of tracks[{tb}] on {layer} for {overlap:.2} mm, {sep:.3} mm apart; the copper is doubled, merge or remove one"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn unit(a: P, b: P) -> Option<P> {
+    let l = geom::dist(a, b);
+    (l > 1e-9).then(|| [(b[0] - a[0]) / l, (b[1] - a[1]) / l])
 }
 
 pub fn glob(pat: &str, s: &str) -> bool {

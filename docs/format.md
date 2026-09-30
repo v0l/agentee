@@ -442,7 +442,10 @@ Zone fills are exact polygons: the zone outline less every other net's copper gr
 clearance, with round corners, so pours render and plot without stair steps. Necks and slivers
 narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fab would etch them.
 
-A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad.
+A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad. Two
+segments of one net that lie on top of each other on a layer (parallel, overlapping by more
+than a track width) are an error, since the copper is doubled; a bend sharper than 90 degrees is
+flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
 (the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.

@@ -227,3 +227,20 @@ clock_window = ["-1ps", "1ps"]
     );
     assert!(interface_errors(&project(spec, PAIR)).is_empty());
 }
+
+#[test]
+fn same_net_tracks_on_top_of_each_other_are_an_error() {
+    let doubled = format!(
+        "{PAIR}\n[[tracks]]\nnet = \"USB_DP\"\nlayer = \"F.Cu\"\npoints = [[5.0, 4.85], [12.0, 4.85]]\n"
+    );
+    let m = messages(&project("", &doubled));
+    assert!(m.iter().any(|(s, t)| *s == Severity::Error && t.contains("runs on top of")), "{m:?}");
+    let m = messages(&project("", PAIR));
+    assert!(!m.iter().any(|(_, t)| t.contains("runs on top of")), "{m:?}");
+    let folded = PAIR.replace(
+        "[[2.49, 4], [2.49, 4.85], [27.49, 4.85], [27.49, 4]]",
+        "[[2.49, 4], [2.49, 4.85], [20.0, 4.85], [15.0, 4.7], [27.49, 4.7], [27.49, 4]]",
+    );
+    let m = messages(&project("", &folded));
+    assert!(m.iter().any(|(_, t)| t.contains("turns back")), "{m:?}");
+}
