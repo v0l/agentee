@@ -255,6 +255,28 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Place the schematic's parts on the board: connectors on edges, holes and fiducials in
+    /// corners, large chips central, passives clustered by the netlist, then legalised and refined
+    Place {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Parts to place, globs allowed, comma separated; default every part
+        #[arg(long, value_delimiter = ',')]
+        parts: Vec<String>,
+        /// Leave every part that already has a placement where it is
+        #[arg(long)]
+        keep_placed: bool,
+        /// Sides to place on: F, B or both
+        #[arg(long, default_value = "F")]
+        side: String,
+        /// Seed for the refinement, the same seed gives the same placement
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Report without writing the file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Move every failing silk reference to the clear spot check suggests, again until they
     /// settle, and hide the ones with nowhere to go when asked
     Silk {
@@ -659,6 +681,13 @@ fn run(cli: Cli) -> Result<bool, String> {
             let opts = agentee_core::tune::TuneOptions { nets, amplitude, pitch };
             let r = ops::tune(&p, &name, &opts, !dry_run)?;
             let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
+        }
+        Cmd::Place { name, project, parts, keep_placed, side, seed, dry_run } => {
+            let a = ops::PlaceArgs { parts, keep_placed, side, seed, write: !dry_run };
+            let r = ops::place(&project, &name, &a)?;
+            let ok = r["failed"].as_array().is_none_or(|f| f.is_empty());
             print_json(&r);
             Ok(ok)
         }

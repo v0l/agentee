@@ -163,6 +163,18 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "place",
+            "description": "Place the layout's parts automatically as a quick start: connectors and edge-mount parts on the board edges (never an RF and a USB connector on one edge unless it must), mounting holes and fiducials in the corners, the largest chips near the centre, each IC's decoupling caps, crystal and pull-ups clustered at the pins they serve, placed by weighted wirelength, then legalised on a 0.05 mm grid with no courtyard overlaps and refined by simulated annealing. Writes at, rotation and side into [[footprints]] and refreshes the stored fills. Parts with locked = true stay put.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "parts": { "type": "string", "description": "comma separated globs of the parts to place, default all" },
+                "keep_placed": { "type": "boolean", "description": "leave every part that already has a placement" },
+                "side": { "type": "string", "description": "F, B or both, default F" },
+                "seed": { "type": "integer", "description": "default 1; the same seed gives the same placement" },
+                "dry_run": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "silk",
             "description": "Move every silk reference that check flags to the clear spot it suggests, repeating until the labels settle, and optionally hide the ones that have nowhere to go. Writes label = { at, rotation } or hide = true into the footprints.",
             "inputSchema": s(json!({
@@ -461,6 +473,25 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 root,
                 arg(a, "name").ok_or("name is required")?,
                 &opts,
+            )?))]))
+        }
+        "place" => {
+            let parts: Vec<String> = arg(a, "parts")
+                .map(|v| {
+                    v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                })
+                .unwrap_or_default();
+            let args = ops::PlaceArgs {
+                parts,
+                keep_placed: flag(a, "keep_placed"),
+                side: arg(a, "side").unwrap_or("F").to_string(),
+                seed: a.get("seed").and_then(Value::as_u64).unwrap_or(1),
+                write: !flag(a, "dry_run"),
+            };
+            Ok(ok(vec![text(pretty(&ops::place(
+                root,
+                arg(a, "name").ok_or("name is required")?,
+                &args,
             )?))]))
         }
         "silk" => Ok(ok(vec![text(pretty(&ops::silk(

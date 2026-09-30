@@ -11,6 +11,7 @@ pub mod graphic;
 pub mod ibis;
 pub mod interface;
 pub mod layout;
+pub mod place;
 pub mod project;
 pub mod rf;
 pub mod route;
