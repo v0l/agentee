@@ -155,24 +155,65 @@ impl<'a> Step<'a> {
         ]
     }
 
-    fn unit(&self) -> f64 {
-        for body in self.bodies.values() {
-            if body.starts_with('(') && body.contains("LENGTH_UNIT") {
-                if body.contains("'INCH'") {
-                    return 25.4;
-                }
-                if body.contains(".MILLI.") {
-                    return 1.0;
-                }
-                if body.contains(".CENTI.") {
-                    return 10.0;
-                }
-                if body.contains(".METRE.") {
-                    return 1000.0;
-                }
-            }
+    fn length_unit(&self, id: u64, depth: usize) -> Option<f64> {
+        let body = self.bodies.get(&id)?;
+        if !body.contains("LENGTH_UNIT") || depth > 4 {
+            return None;
         }
-        1.0
+        if let Some(at) = body.find("CONVERSION_BASED_UNIT") {
+            let a = args(&body[at..]);
+            let name = a.first().map(|n| n.trim_matches('\'').to_ascii_uppercase());
+            let measured = a.get(1).and_then(|m| refs(m).first().copied()).and_then(|m| {
+                let mb = self.bodies.get(&m)?;
+                let ma = args(mb);
+                let value = floats(ma.first()?.split_once('(')?.1).first().copied()?;
+                let base = self.length_unit(refs(ma.get(1)?).first().copied()?, depth + 1)?;
+                (value.is_finite() && value > 0.0).then_some(value * base)
+            });
+            return measured.or(match name.as_deref() {
+                Some("INCH") => Some(25.4),
+                Some("FOOT") => Some(304.8),
+                Some("MIL") | Some("THOU") => Some(0.0254),
+                _ => None,
+            });
+        }
+        let at = body.find("SI_UNIT(")?;
+        let a = args(&body[at..]);
+        if a.get(1).is_some_and(|n| n.trim() != ".METRE.") {
+            return None;
+        }
+        Some(match a.first().map(|p| p.trim()) {
+            Some(".MILLI.") => 1.0,
+            Some(".CENTI.") => 10.0,
+            Some(".DECI.") => 100.0,
+            Some(".MICRO.") => 1e-3,
+            Some(".NANO.") => 1e-6,
+            Some(".KILO.") => 1e6,
+            _ => 1000.0,
+        })
+    }
+
+    fn context_unit(&self, ctx: u64) -> Option<f64> {
+        let body = self.bodies.get(&ctx)?;
+        let at = body.find("GLOBAL_UNIT_ASSIGNED_CONTEXT")?;
+        let rest = &body[at..];
+        let list = args(rest);
+        refs(list.first()?).into_iter().find_map(|u| self.length_unit(u, 0))
+    }
+
+    fn rep_unit(&self, rep: u64) -> Option<f64> {
+        let body = self.bodies.get(&rep)?;
+        let ctx = args(body).get(2).and_then(|c| refs(c).first().copied())?;
+        self.context_unit(ctx)
+    }
+
+    fn default_unit(&self, reps: &[u64]) -> f64 {
+        if let Some(u) = reps.iter().find_map(|&r| self.rep_unit(r)) {
+            return u;
+        }
+        let mut ids: Vec<u64> = self.bodies.keys().copied().collect();
+        ids.sort_unstable();
+        ids.into_iter().find_map(|id| self.length_unit(id, 0)).unwrap_or(1.0)
     }
 
     fn colour_of(&self, id: u64, depth: usize) -> Option<[f32; 3]> {
@@ -206,7 +247,18 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
     if step.bodies.is_empty() {
         return Err("no DATA section".into());
     }
-    let unit = step.unit();
+    let mut shape_reps: Vec<u64> = step
+        .bodies
+        .iter()
+        .filter(|(_, b)| {
+            let k = kind(b);
+            k.ends_with("SHAPE_REPRESENTATION") && k != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
+        })
+        .map(|(&id, _)| id)
+        .collect();
+    shape_reps.sort_unstable();
+    let fallback = step.default_unit(&shape_reps);
+    let unit_of = |rep: u64| step.rep_unit(rep).unwrap_or(fallback);
     let mut colours: HashMap<u64, [f32; 3]> = HashMap::new();
     for body in step.bodies.values() {
         let k = kind(body);
@@ -236,8 +288,8 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
                         let tr = refs(t);
                         if tr.len() >= 2 {
                             mul(
-                                &step.placement(tr[1], unit),
-                                &inverse_rigid(&step.placement(tr[0], unit)),
+                                &step.placement(tr[1], unit_of(r[1])),
+                                &inverse_rigid(&step.placement(tr[0], unit_of(r[0]))),
                             )
                         } else {
                             IDENTITY
@@ -275,8 +327,10 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
             let Some(map) = r.first().and_then(|m| step.bodies.get(m)) else { continue };
             let mr = refs(map);
             if mr.len() >= 2 && r.len() >= 2 {
-                let m =
-                    mul(&step.placement(r[1], unit), &inverse_rigid(&step.placement(mr[0], unit)));
+                let m = mul(
+                    &step.placement(r[1], unit_of(rep)),
+                    &inverse_rigid(&step.placement(mr[0], unit_of(mr[1]))),
+                );
                 children.entry(rep).or_default().push((mr[1], m));
             }
         }
@@ -301,7 +355,7 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
             placed_below.extend(component(*c));
         }
     }
-    let mut instances: Vec<(u64, M)> = Vec::new();
+    let mut instances: Vec<(u64, M, f64)> = Vec::new();
     let mut done_roots: HashSet<u64> = HashSet::new();
     let mut reps: Vec<u64> = items.keys().copied().collect();
     reps.sort();
@@ -315,7 +369,7 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
         while let Some((comp, m, depth)) = stack.pop() {
             for r in &comp {
                 for &it in items.get(r).into_iter().flatten() {
-                    instances.push((it, m));
+                    instances.push((it, m, unit_of(*r)));
                 }
                 if depth < 24 {
                     for (c, cm) in children.get(r).into_iter().flatten() {
@@ -330,9 +384,9 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
         .map_err(|e| format!("STEP parse: {e:?}"))
         .map(|ex| ex.data.first().map(Table::from_data_section))?
         .ok_or("empty STEP")?;
-    let mut shells: Vec<(u64, u64, M)> = Vec::new();
+    let mut shells: Vec<(u64, u64, M, f64)> = Vec::new();
     let mut seen = HashSet::new();
-    for (item, m) in instances {
+    for (item, m, unit) in instances {
         let body = step.bodies.get(&item).copied().unwrap_or("");
         let found: Vec<u64> = match kind(body) {
             "MANIFOLD_SOLID_BREP"
@@ -347,20 +401,22 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
         for s in found {
             let key = (s, m.iter().flatten().map(|v| (v * 1e6).round() as i64).collect::<Vec<_>>());
             if seen.insert(key) {
-                shells.push((s, item, m));
+                shells.push((s, item, m, unit));
             }
         }
     }
     if shells.is_empty() {
         let mut ids: Vec<u64> = table.shell.keys().copied().collect();
         ids.sort();
-        shells = ids.into_iter().map(|s| (s, s, IDENTITY)).collect();
+        shells = ids.into_iter().map(|s| (s, s, IDENTITY, fallback)).collect();
     }
     let mut out = MeshBuilder::default();
-    let mut cache: HashMap<u64, Option<FaceTris>> = HashMap::new();
-    for (shell, owner, m) in shells {
-        let tris =
-            cache.entry(shell).or_insert_with(|| triangulate(&step, &table, shell, unit)).clone();
+    let mut cache: HashMap<(u64, u64), Option<FaceTris>> = HashMap::new();
+    for (shell, owner, m, unit) in shells {
+        let tris = cache
+            .entry((shell, unit.to_bits()))
+            .or_insert_with(|| triangulate(&step, &table, shell, unit))
+            .clone();
         let Some(faces) = tris else { continue };
         let base =
             colours.get(&owner).or_else(|| colours.get(&shell)).copied().unwrap_or([0.6, 0.6, 0.6]);
@@ -593,6 +649,34 @@ mod tests {
         let (lo, hi) = mesh.bounds();
         for k in 0..3 {
             assert!((lo[k] + 0.5).abs() < 1e-4 && (hi[k] - 0.5).abs() < 1e-4, "{lo:?} {hi:?}");
+        }
+    }
+
+    fn with_units(extra_context_unit: Option<&str>) -> String {
+        let text = include_str!("../tests/data/filleted_box.step");
+        let end = text.rfind("ENDSEC;").unwrap();
+        let extra = "#90001 = ( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.) );\n\
+            #90002 = ( CONVERSION_BASED_UNIT('INCH',#90003) LENGTH_UNIT() NAMED_UNIT(#90004) );\n\
+            #90003 = LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#434);\n\
+            #90004 = DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);\n";
+        let mut out = format!("{}{extra}{}", &text[..end], &text[end..]);
+        if let Some(u) = extra_context_unit {
+            out = out.replace("((#434,#435,#436))", &format!("(({u},#435,#436))"));
+        }
+        out
+    }
+
+    #[test]
+    fn length_unit_comes_from_the_shape_context() {
+        for (unit, half) in [(None, 0.5), (Some("#90002"), 12.7), (Some("#90001"), 500.0)] {
+            let text = with_units(unit);
+            for _ in 0..4 {
+                let (lo, hi) = parse(&text).unwrap().bounds();
+                for k in 0..3 {
+                    let tol = half * 1e-4;
+                    assert!((lo[k] + half).abs() < tol && (hi[k] - half).abs() < tol, "{lo:?}");
+                }
+            }
         }
     }
 
