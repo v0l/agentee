@@ -847,6 +847,7 @@ impl LayoutFile {
                 .iter()
                 .filter(|p| glob(&f.reference, &p.reference))
                 .filter(|p| !f.exclude.iter().any(|x| glob(x, &p.reference)))
+                .filter(|p| p.reference == f.reference || !crate::testpoint::is_test_point(p))
                 .collect();
             if matched.is_empty() {
                 d.error(&at, format!("no placed part matches `{}`", f.reference));
@@ -2051,14 +2052,18 @@ fn silk_issues(
             format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }),
         ));
     }
+    let flipped = flip(&t.layer, true);
     let crossed: Vec<&str> = parts
         .iter()
         .filter(|p| {
             let tf = p.transform();
+            let layer = if p.bottom { &flipped } else { &t.layer };
             p.footprint.graphics.iter().any(|g| {
-                p.flip_layer(&g.layer) == t.layer
-                    && !matches!(g.shape, crate::graphic::Shape::Text { .. })
-                    && {
+                g.layer == *layer && !matches!(g.shape, crate::graphic::Shape::Text { .. }) && {
+                    let reach = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
+                    let b = g.bounds();
+                    let corners = [b.min, [b.max[0], b.min[1]], b.max, [b.min[0], b.max[1]]];
+                    near(&mut corners.map(|q| tf.apply(q)).into_iter(), reach) && {
                         let path: Vec<P> = crate::footprint::graphic_path(g)
                             .into_iter()
                             .map(|q| tf.apply(q))
@@ -2069,6 +2074,7 @@ fn silk_issues(
                             && geom::polyline_polygon_distance(&path, bx)
                                 < g.width.to_mm() / 2.0 + SILK_GAP / 2.0
                     }
+                }
             })
         })
         .map(|p| p.reference.as_str())
@@ -2398,7 +2404,7 @@ fn place_watermark(
             .collect(),
     };
     let Some(first) = layers.first() else {
-        let msg = "the board has no silk layer for the watermark".to_string();
+        let msg = "the board has no silk layer for the watermark: add a `[[stackup.layers]]` with `kind = \"silk\"` outside the mask at the top and bottom of the board's stackup".to_string();
         found.add("watermark", "watermark", &msg);
         return (None, Some(msg));
     };

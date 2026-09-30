@@ -1292,6 +1292,87 @@ fn ensure_library(root: &Path, p: &Project) -> Result<Vec<String>, String> {
 
 type Placed = (String, String, [f64; 2], Option<String>, Option<[f64; 2]>);
 
+fn unjoined(layout: &agentee_core::layout::Layout, placed: &[Placed]) -> Vec<String> {
+    placed
+        .iter()
+        .filter(|(r, ..)| {
+            let pads = layout.parts.iter().filter(|q| q.reference == *r).flat_map(|q| &q.pads);
+            pads.into_iter().any(|x| {
+                let c = agentee_core::testpoint::pad_center(x);
+                layout.ratsnest.iter().any(|(a, b, n)| {
+                    Some(*n) == x.net
+                        && (agentee_core::geom::dist(*a, c) < 1e-3
+                            || agentee_core::geom::dist(*b, c) < 1e-3)
+                })
+            })
+        })
+        .map(|(r, ..)| r.clone())
+        .collect()
+}
+
+fn drop_testpoints(layout: &Path, dropped: &[Placed]) -> Result<(), String> {
+    let point = |v: &toml_edit::Value| -> Option<[f64; 2]> {
+        let a = v.as_array()?;
+        let n = |v: &toml_edit::Value| v.as_float().or_else(|| v.as_integer().map(|i| i as f64));
+        Some([n(a.get(0)?)?, n(a.get(1)?)?])
+    };
+    let same = |a: Option<[f64; 2]>, b: [f64; 2]| {
+        a.is_some_and(|a| (a[0] - b[0]).abs() < 1e-3 && (a[1] - b[1]).abs() < 1e-3)
+    };
+    let text = |t: &toml_edit::Table, k: &str| t.get(k).and_then(|v| v.as_str()).map(String::from);
+    let mut doc = edit_toml(layout)?;
+    if let Some(a) = doc.get_mut("footprints").and_then(|v| v.as_array_of_tables_mut()) {
+        a.retain(|t| !dropped.iter().any(|(r, ..)| text(t, "ref").as_deref() == Some(r)));
+    }
+    if let Some(a) = doc.get_mut("tracks").and_then(|v| v.as_array_of_tables_mut()) {
+        a.retain(|t| {
+            let pts: Vec<Option<[f64; 2]>> = t
+                .get("points")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().map(point).collect())
+                .unwrap_or_default();
+            !dropped.iter().any(|(_, net, at, _, via)| {
+                text(t, "net").as_deref() == Some(net)
+                    && pts.len() == 2
+                    && same(pts[0], *at)
+                    && via.is_some_and(|v| same(pts[1], v))
+            })
+        });
+    }
+    if let Some(a) = doc.get_mut("vias").and_then(|v| v.as_array_of_tables_mut()) {
+        a.retain(|t| {
+            let at = t.get("at").and_then(|v| v.as_value()).and_then(point);
+            !dropped.iter().any(|(_, net, _, _, via)| {
+                text(t, "net").as_deref() == Some(net) && via.is_some_and(|v| same(at, v))
+            })
+        });
+    }
+    std::fs::write(layout, doc.to_string()).map_err(|e| e.to_string())?;
+    let mut sheets: Vec<&String> = dropped.iter().filter_map(|d| d.3.as_ref()).collect();
+    sheets.sort();
+    sheets.dedup();
+    for sheet in sheets {
+        let path = Path::new(sheet);
+        let mut doc = edit_toml(path)?;
+        let gone: Vec<&str> =
+            dropped.iter().filter(|d| d.3.as_ref() == Some(sheet)).map(|d| d.0.as_str()).collect();
+        if let Some(a) = doc.get_mut("parts").and_then(|v| v.as_array_of_tables_mut()) {
+            a.retain(|t| !gone.iter().any(|r| text(t, "ref").as_deref() == Some(*r)));
+        }
+        if let Some(a) = doc.get_mut("nets").and_then(|v| v.as_array_of_tables_mut()) {
+            for t in a.iter_mut() {
+                if let Some(pins) = t.get_mut("pins").and_then(|v| v.as_array_mut()) {
+                    pins.retain(|p| {
+                        !gone.iter().any(|r| p.as_str() == Some(format!("{r}.1").as_str()))
+                    });
+                }
+            }
+        }
+        std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value, String> {
     use agentee_core::testpoint as tp;
     let p = load(root)?;
@@ -1388,7 +1469,8 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     }
     let library = ensure_library(entry.path.parent().unwrap_or(root), &p)?;
     let f = |v: f64| (v * 1e4).round() / 1e4;
-    let mut text = format!("\n# agentee testpoints {}\n", o.nets.join(" "));
+    let mut text = format!("\n# agentee testpoints {}", o.nets.join(" ")).trim_end().to_string();
+    text.push('\n');
     for (r, _, at, _, _) in &placed {
         text += &format!("\n[[footprints]]\nref = \"{r}\"\nat = [{}, {}]\n", f(at[0]), f(at[1]));
         if spec.bottom() {
@@ -1453,9 +1535,24 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     drop(p);
 
     let mut labels: std::collections::BTreeMap<String, Value> = Default::default();
+    let mut settled = None;
     for pass in 0..2 {
         let p = load(root)?;
         let i = layout_index(&p, &layout_name)?;
+        let mut dropped_now = false;
+        if pass == 0 {
+            let unjoined = unjoined(&p.layouts[i].item, &placed);
+            let (dropped, kept): (Vec<Placed>, Vec<Placed>) =
+                placed.into_iter().partition(|(r, ..)| unjoined.contains(r));
+            placed = kept;
+            if !dropped.is_empty() {
+                drop_testpoints(&path, &dropped)?;
+                dropped_now = true;
+            }
+            for (r, net, ..) in &dropped {
+                failed.push(json!({ "net": net, "reason": format!("the router found no path from {r} to the net's copper, so it was taken out again") }));
+            }
+        }
         let fixes: Vec<_> = p.layouts[i]
             .item
             .label_fixes
@@ -1463,41 +1560,55 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
             .filter(|f| placed.iter().any(|(r, ..)| *r == f.reference))
             .cloned()
             .collect();
-        if fixes.is_empty() {
-            break;
-        }
-        let mut doc = edit_toml(&path)?;
-        let Some(parts) = doc.get_mut("footprints").and_then(|v| v.as_array_of_tables_mut()) else {
-            break;
-        };
-        for fx in &fixes {
-            let Some(t) = parts
-                .iter_mut()
-                .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(fx.reference.as_str()))
-            else {
-                continue;
-            };
-            let mut label = toml_edit::InlineTable::new();
-            match fx.at {
-                Some(at) if pass == 0 => {
-                    let mut pt = toml_edit::Array::new();
-                    pt.push((at[0] * 100.0).round() / 100.0);
-                    pt.push((at[1] * 100.0).round() / 100.0);
-                    label.insert("at", pt.into());
-                    if fx.rotation != 0.0 {
-                        label.insert("rotation", fx.rotation.into());
+        if !fixes.is_empty() {
+            let mut doc = edit_toml(&path)?;
+            if let Some(parts) = doc.get_mut("footprints").and_then(|v| v.as_array_of_tables_mut())
+            {
+                for fx in &fixes {
+                    let Some(t) = parts.iter_mut().find(|t| {
+                        t.get("ref").and_then(|v| v.as_str()) == Some(fx.reference.as_str())
+                    }) else {
+                        continue;
+                    };
+                    let mut label = toml_edit::InlineTable::new();
+                    match fx.at {
+                        Some(at) if pass == 0 => {
+                            let mut pt = toml_edit::Array::new();
+                            pt.push((at[0] * 100.0).round() / 100.0);
+                            pt.push((at[1] * 100.0).round() / 100.0);
+                            label.insert("at", pt.into());
+                            if fx.rotation != 0.0 {
+                                label.insert("rotation", fx.rotation.into());
+                            }
+                            labels.insert(fx.reference.clone(), json!({ "moved": at }));
+                        }
+                        _ => {
+                            label.insert("hide", true.into());
+                            labels.insert(fx.reference.clone(), json!({ "hidden": true }));
+                        }
                     }
-                    labels.insert(fx.reference.clone(), json!({ "moved": at }));
+                    t["label"] = toml_edit::value(label);
                 }
-                _ => {
-                    label.insert("hide", true.into());
-                    labels.insert(fx.reference.clone(), json!({ "hidden": true }));
-                }
+                std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
             }
-            t["label"] = toml_edit::value(label);
         }
-        std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
+        if !dropped_now {
+            settled = Some(p);
+        }
+        if fixes.is_empty() && !dropped_now {
+            break;
+        }
     }
+    let p = match settled {
+        Some(p) => p,
+        None => load(root)?,
+    };
+    let i = layout_index(&p, &layout_name)?;
+    let refilled = if p.layouts[i].item.fill_keys.iter().any(|k| k.stored || k.stale) {
+        Some(write_fills(&p, &layout_name)?)
+    } else {
+        None
+    };
     let mut out = base;
     out["written"] = json!(true);
     out["placed"] = json!(listed(&placed));
@@ -1509,5 +1620,6 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     out["vias"] = json!(routed.vias.len());
     out["unrouted"] = json!(routed.failed);
     out["labels"] = json!(labels);
+    out["fills"] = json!(refilled);
     Ok(out)
 }

@@ -231,7 +231,7 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `mlcc-flex-zone-info` | info | ceramic capacitors | counts the smaller ceramic capacitors within `flex_zone` that already lie along the edge |
 | `tombstone-risk` | info | chips of 0603 or smaller | a two-pad SMD part of 0603 (1608 metric) or smaller whose pads differ in size or shape, that has a via in one pad and not the other, or whose copper within 0.3 mm of one pad on its layer (tracks, vias, pours of its net) is over three times that of the other; the end that heats first wets first and stands the part up (EMS DFM guides: symmetric lands and balanced copper on both ends) |
 | `tall-part-shadow` | info | footprint heights over 3 mm | a two-pad chip of 0603 or smaller closer to a part taller than 3 mm than that part's height, measured from the chip's pads to the tall part's body (EMS rule of thumb 1:1: shadowing in reflow and inspection); heights come from the footprint `height`, parts without one are skipped |
-| `test-access` | info | parts | nets the `[test]` section asks for with no probe access from the probe side: no pad of a test point (reference `TP1`..., or a footprint named `TestPoint*`), no exposed plated through-hole pad (`through_holes`), no untented via (`vias`). Nets in classes with an impedance target or a pair gap, and nets of pairs, are exempt and named, since a stub hurts them |
+| `test-access` | info | parts | nets the `[test]` section asks for with no probe access from the probe side: no pad of a test point (reference `TP1`..., or a footprint named `TestPoint*`), no exposed plated through-hole pad (`through_holes`), no untented via (`vias`). Nets in classes with an impedance target, and the nets of pairs, are exempt and named, since a stub hurts them |
 | `test-pad-geometry` | info | test points | a test point pad under `min_test_pad`, closer than `min_test_pad_pitch` to another centre to centre, closer than `min_test_pad_to_body` to another part's body on the probe side, closer than `min_test_pad_to_edge` to the board edge or a tooling hole (non-plated holes and mounting holes), or not on the probe side |
 | `short` | error | always | copper of two different nets touches |
 | `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
@@ -576,7 +576,8 @@ ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans
 # always = ["GND", "3V3"]      # nets that get a via even in those rings
 # skip = ["A1", "B7"]          # pads to leave alone
 # nets = ["GND", "3V3"]        # only pads on these nets, globs allowed
-# exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob
+# exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob; a glob never
+                               # matches test points, a probe pad keeps no via
 
 [[stitching]]                  # ground vias wherever they clear every other net
 net = "GND"
@@ -643,7 +644,8 @@ text and lines, artwork and part bodies, and stays `min_copper_to_edge` inside t
 viewer, render and assembly drawings show it, and `fab-notes.txt` names it. When no spot is clear,
 check reports a `watermark` error with the size to clear and the least crowded spot, and fab
 refuses; clear room there or set `[watermark] at` (plus `layer`, `rotation`) yourself. A
-`[watermark]` spot that is not clear is a `watermark` error naming what it hits.
+`[watermark]` spot that is not clear is a `watermark` error naming what it hits, and a stackup
+with no `kind = "silk"` layer is a `watermark` error asking for one.
 
 Test access: by default the nets that need a probe are power nets (a class with `current`, or a
 name like `3V3`, `1V8`, `+5V`, `VCC*`, `VDD*`, `VBUS*`, `VBAT*`, `VIN*`, `VSYS*`), ground (`GND`,
@@ -659,11 +661,14 @@ test pad to each matching net that has no probe access yet (nets are the `[test]
 `--nets` is left out, impedance and pair nets are skipped): it looks on the probe side for a free
 spot on a `--pitch` grid near the net's copper, keeping `min_test_pad_to_edge` from the edge and
 tooling holes, `min_test_pad_to_body` from part bodies, `--pitch` from other test pads, and the
-net clearance from other copper. It adds a `TP` part joined to the net to the schematic sheet
-that names the net, a `[[footprints]]` entry on the probe side to the layout, then routes each
-new pad to the net's copper with the autorouter (a short track, and a via when the copper is on
-the other side) and appends those tracks and vias. `--dry-run` reports the spots without
-writing; nets with no spot or no route are listed.
+net clearance from other copper and from the pads, stubs and vias it placed for other nets. It
+adds a `TP` part joined to the net to the schematic sheet that names the net, a `[[footprints]]`
+entry on the probe side to the layout with a short stub track to a via beside the pad, then
+routes each new pad to the net's copper with the autorouter and appends those tracks and vias.
+A pad the router cannot join is taken out of the schematic and layout again and listed with the
+nets that found no spot. Labels of the new pads are moved to a clear spot or hidden, and when the
+layout stores zone fills they are refreshed as `agentee fill` would. `--dry-run` reports the
+spots without writing.
 
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
 vias and other parts' bodies, and stay on the board. Each of these is an error, except text under
