@@ -3,7 +3,7 @@ name = "Xilinx_FTG256"
 description = "Artix-7 BGA, NSMD pad definition Appendix A, 17x17mm, 256 Ball, 16x16 Layout, 1mm Pitch, generated with kicad-footprint-generator ipc_bga_generator.py, https://www.xilinx.com/support/documentation/user_guides/ug475_7Series_Pkg_Pinout.pdf#page=269"
 tags = ["BGA", "256", "1", "F", "T", "2", "5", "6", "F", "T", "G", "2", "5", "6"]
 mount = "smd"
-model = "${KICAD9_3DMODEL_DIR}/Package_BGA.3dshapes/Xilinx_FTG256.step"
+model = "${KICAD9_3DMODEL_DIR}/Package_BGA.3dshapes/BGA-256_17.0x17.0mm_Layout16x16_P1.0mm_Ball0.5mm_Pad0.4mm_NSMD.step"
 
 [[pads]]
 number = "A1"

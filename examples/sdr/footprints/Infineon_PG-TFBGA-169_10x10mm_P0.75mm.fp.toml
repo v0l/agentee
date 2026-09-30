@@ -2,6 +2,7 @@ name = "Infineon_PG-TFBGA-169_10x10mm_P0.75mm"
 description = "Infineon PG-TFBGA-169 (FCA169), 10x10 mm, 13x13 balls, 0.75 mm pitch, 0.3 mm ball"
 tags = ["BGA"]
 mount = "smd"
+model = "3dmodels/Infineon_PG-TFBGA-169_10x10mm_P0.75mm.step"
 height = "1.2mm"
 
 [[pads]]

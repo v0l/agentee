@@ -3,7 +3,7 @@ name = "Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm"
 description = "Abracon ASE, Miniature Crystal Clock Oscillator, 3.2x2.5mm package, SMD, generated with kicad-footprint-generator make_crystal.py, http://www.abracon.com/Oscillators/ASEseries.pdf"
 tags = ["SMD", "SMT", "crystal", "oscillator"]
 mount = "smd"
-model = "${KICAD9_3DMODEL_DIR}/Oscillator.3dshapes/Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm.step"
+model = "3dmodels/Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm.step"
 
 [[pads]]
 number = "1"

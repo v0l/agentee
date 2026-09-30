@@ -2,6 +2,7 @@ name = "AD_BC-144-7_CSP_BGA_10x10mm_P0.8mm"
 description = "Analog Devices BC-144-7, 144-ball CSP_BGA, 10x10 mm, 0.8 mm pitch"
 tags = ["BGA"]
 mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_BGA.3dshapes/LFBGA-144_10x10mm_Layout12x12_P0.8mm.step"
 height = "1.7mm"
 
 [[pads]]

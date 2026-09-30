@@ -3,7 +3,7 @@ name = "Texas_S-PDSO-N10_EP1.2x2mm"
 description = "DFN, 10 Pin (http://www.ti.com/lit/ds/symlink/tps7a91.pdf#page=30), generated with kicad-footprint-generator ipc_noLead_generator.py"
 tags = ["DFN", "NoLead"]
 mount = "smd"
-model = "${KICAD9_3DMODEL_DIR}/Package_DFN_QFN.3dshapes/Texas_S-PDSO-N10_EP1.2x2mm.step"
+model = "3dmodels/Texas_S-PDSO-N10_EP1.2x2mm.step"
 
 [[pads]]
 kind = "smd"

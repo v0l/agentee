@@ -2,6 +2,7 @@ name = "MiniCircuits_DB1627"
 description = "Mini-Circuits case DB1627 (TCM1-63AX+), land pattern PL-364"
 tags = ["transformer", "balun"]
 mount = "smd"
+model = "3dmodels/MiniCircuits_DB1627.step"
 height = "3.1mm"
 
 [[pads]]
