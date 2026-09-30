@@ -65,70 +65,41 @@ pub fn thin_edge_charges(d: f64, dz_above: f64, dz_below: f64, count: usize) -> 
         ]
     };
     let nbrs = |i: usize, j: usize| [(i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)];
-    let apply = |v: &[f64], out: &mut [f64]| {
-        for i in 1..nx - 1 {
-            for j in 1..nz - 1 {
-                if fixed(i, j) {
-                    continue;
-                }
-                let w = weights(i, j);
-                let mut s = (w[0] + w[1] + w[2] + w[3]) * v[at(i, j)];
-                for (k, (a, b)) in nbrs(i, j).into_iter().enumerate() {
-                    if !fixed(a, b) {
-                        s -= w[k] * v[at(a, b)];
-                    }
-                }
-                out[at(i, j)] = s;
-            }
-        }
-    };
-    let mut rhs = vec![0.0f64; nx * nz];
-    let mut diag = vec![1.0f64; nx * nz];
+    let mut unknown = vec![usize::MAX; nx * nz];
+    let mut order = Vec::new();
     for i in 1..nx - 1 {
         for j in 1..nz - 1 {
-            if fixed(i, j) {
-                continue;
-            }
-            let w = weights(i, j);
-            diag[at(i, j)] = w.iter().sum();
-            for (k, (a, b)) in nbrs(i, j).into_iter().enumerate() {
-                if fixed(a, b) {
-                    rhs[at(i, j)] += w[k] * value(a, b);
-                }
+            if !fixed(i, j) {
+                unknown[at(i, j)] = order.len();
+                order.push((i, j));
             }
         }
     }
-    let n = nx * nz;
-    let mut x = vec![0.0f64; n];
-    let mut r = rhs.clone();
-    let mut z: Vec<f64> = (0..n).map(|k| r[k] / diag[k]).collect();
-    let mut p = z.clone();
-    let mut rz: f64 = (0..n).map(|k| r[k] * z[k]).sum();
-    let norm0 = rhs.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-300);
-    let mut ap = vec![0.0f64; n];
-    for _ in 0..20000 {
-        apply(&p, &mut ap);
-        let pap: f64 = (0..n).map(|k| p[k] * ap[k]).sum();
-        if pap <= 0.0 {
-            break;
+    let mut triplets = Vec::with_capacity(3 * order.len());
+    let mut rhs = vec![0.0f64; order.len()];
+    for (row, (i, j)) in order.iter().copied().enumerate() {
+        let w = weights(i, j);
+        triplets.push(faer::sparse::Triplet::new(row, row, w.iter().sum::<f64>()));
+        for (k, (a, b)) in nbrs(i, j).into_iter().enumerate() {
+            if fixed(a, b) {
+                rhs[row] += w[k] * value(a, b);
+            } else if unknown[at(a, b)] < row {
+                triplets.push(faer::sparse::Triplet::new(row, unknown[at(a, b)], -w[k]));
+            }
         }
-        let alpha = rz / pap;
-        for k in 0..n {
-            x[k] += alpha * p[k];
-            r[k] -= alpha * ap[k];
-        }
-        if r.iter().map(|v| v * v).sum::<f64>().sqrt() < 1e-12 * norm0 {
-            break;
-        }
-        for k in 0..n {
-            z[k] = r[k] / diag[k];
-        }
-        let rz_new: f64 = (0..n).map(|k| r[k] * z[k]).sum();
-        let beta = rz_new / rz;
-        rz = rz_new;
-        for k in 0..n {
-            p[k] = z[k] + beta * p[k];
-        }
+    }
+    faer::set_global_parallelism(faer::Par::Seq);
+    let solved = {
+        use faer::linalg::solvers::Solve;
+        let m = order.len();
+        let a = faer::sparse::SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &triplets)
+            .expect("slit matrix");
+        let llt = a.sp_cholesky(faer::Side::Lower).expect("slit matrix is positive definite");
+        llt.solve(faer::Mat::<f64>::from_fn(m, 1, |r, _| rhs[r]))
+    };
+    let mut x = vec![0.0f64; nx * nz];
+    for (row, (i, j)) in order.iter().enumerate() {
+        x[at(*i, *j)] = solved[(row, 0)];
     }
     for i in 0..nx {
         for j in 0..nz {
