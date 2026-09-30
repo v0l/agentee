@@ -287,23 +287,27 @@ guides, which keep every component 1 mm from the board edge for depaneling and h
 
 The `generic` and `jlcpcb` presets build through vias only (`hdi = false`); their microvia and
 blind via limits (0.1 mm laser drill, 0.3 mm pad, 0.8:1, 0.2 mm blind drill) apply once
-`[rules] hdi = true` is set. The `hdi` preset is `generic` with an HDI fab's figures, for the
-IPC-2226 builds: type I (one microvia layer, 1+N+1), type II (type I with buried vias in the
-core) and type III (two or more microvia layers, 2+N+2), on the `hdi-6l-1n1` and `hdi-8l-2n2`
-stackups:
+`[rules] hdi = true` is set. The `hdi` preset is `generic` with PCBWay's published HDI capability
+table (https://www.pcbway.com/hdi-pcb.html, "HDI PCB Manufacturing Capabilities": builds 1+N+1 to
+6+N+6, 0.065/0.065 mm trace and space, 0.15 mm mechanical drill, 4 mil laser drill standard and
+8 mil at most on a dielectric of 0.15 mm or less, 0.15 mm controlled depth PTH drill, 14:1 aspect
+ratio, 4 mil green mask bridge), for the IPC-2226 builds: type I (one microvia layer, 1+N+1), type II
+(type I with buried vias in the core) and type III (two or more microvia layers, 2+N+2), on the
+`hdi-6l-1n1` and `hdi-8l-2n2` stackups. Rules the table does not give keep a named reason:
 
-| rule | `hdi` | why |
+| rule | `hdi` | source |
 |---|---|---|
-| `hdi`, `stacked_microvias` | true | sequential lamination, copper filled stacked microvias |
-| `min_microvia_drill`, `max_microvia_drill` | 0.1, 0.15 | laser drill; IPC-T-50 once bounded a microvia at 0.15 mm |
-| `min_microvia_diameter` | 0.25 | capture pad, 0.075 mm ring on the 0.1 mm drill |
-| `max_microvia_aspect_ratio` | 0.8 | under the 1:1 of IPC-T-50, room for plating to fill |
-| `min_via_drill`, `min_blind_via_drill` | 0.15 | mechanical drill |
-| `min_via_diameter`, `min_annular_ring` | 0.35, 0.1 | |
-| `min_track_width`, `min_clearance` | 0.075 | 3 mil lines for escape between 0.4 mm BGA balls |
-| `min_hole_to_hole`, `min_via_hole_to_copper` | 0.25, 0.15 | |
-| `min_bga_pad`, `min_bga_pitch` | 0.2, 0.4 | |
-| `max_aspect_ratio` | 10 | |
+| `hdi`, `stacked_microvias` | true | PCBWay builds 1+N+1 to 6+N+6 by sequential lamination; stacked microvias are copper filled |
+| `min_microvia_drill`, `max_microvia_drill` | 0.1, 0.2 | PCBWay min laser drill 4 mil standard, max laser drill 8 mil |
+| `min_via_drill`, `min_drill`, `min_blind_via_drill` | 0.15 | PCBWay min mechanical drill 0.15 mm, min controlled depth PTH drill 0.15 mm |
+| `min_track_width`, `min_clearance` | 0.065 | PCBWay min trace/spacing 0.065 mm |
+| `max_aspect_ratio` | 14 | PCBWay max 14:1 |
+| `min_mask_web` | 0.1 | PCBWay 4 mil green mask bridge (the `generic` value) |
+| `min_microvia_diameter` | 0.25 | not in the table: capture pad, 0.075 mm ring on the 0.1 mm drill |
+| `max_microvia_aspect_ratio` | 0.8 | not in the table: under the 1:1 of IPC-T-50, room for plating to fill; PCBWay's 8 mil drill on 0.15 mm is 0.75:1 |
+| `min_via_diameter`, `min_annular_ring` | 0.35, 0.1 | not in the table: 0.1 mm ring on the 0.15 mm drill |
+| `min_hole_to_hole`, `min_via_hole_to_copper` | 0.25, 0.15 | not in the table |
+| `min_bga_pad`, `min_bga_pitch` | 0.2, 0.4 | not in the table |
 
 A 0.07 mm 1080 build-up layer under a 0.1 mm laser drill is 0.7:1, inside the 0.8:1.
 
