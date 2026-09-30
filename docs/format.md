@@ -120,9 +120,68 @@ dielectric; mask, paste and silk sit outside the outer copper.
 ### Rules
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
-`min_annular_ring`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
-`min_silk_text_height`. Footprints are checked against the rules of the board when the project has
-exactly one board, otherwise against `generic`.
+`min_annular_ring` (vias), `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
+`min_silk_text_height`, `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
+`min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
+`min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
+`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`; plus
+`max_aspect_ratio`, a plain number (board thickness over via drill). Footprints are checked against
+the rules of the board when the project has exactly one board, otherwise against `generic`.
+
+The fab preset is a table keyed by the copper layer count, the outer copper weight (from the
+first copper layer's thickness) and the finish, so a 4 layer 1 oz board gets tighter track rules
+than a 2 layer 2 oz one. Anything in `[rules]` overrides the table. The `jlcpcb` values come from
+<https://jlcpcb.com/capabilities/pcb-capabilities>:
+
+| rule | 1 layer | 2 layers | 4+ layers | source line |
+|---|---|---|---|---|
+| `min_track_width`, `min_clearance`, 1 oz | 0.10 | 0.10 | 0.09 | min. track width and spacing (1 oz) |
+| same, 2 oz | 0.16 | 0.16 | 0.15 | min. track width and spacing (2 oz) |
+| same, 2.5 / 3.5 / 4.5 oz | | 0.2 / 0.25 / 0.3 | | 2 layer heavy copper |
+| `min_drill`, `min_via_drill` | 0.3 | 0.15 | 0.15 | drill diameter, min. via hole size |
+| `min_via_diameter` | 0.5 | 0.25 | 0.25 | min. via diameter |
+| `min_annular_ring` (via) | 0.05 | 0.05 | 0.05 | via diameter 0.1 mm over the hole |
+| `min_pth_annular_ring`, 1 oz | 0.18 | 0.18 | 0.15 | PTH annular ring, absolute minimum |
+| same, 2 oz | 0.254 | 0.254 | 0.254 | PTH annular ring, 2 oz |
+| `max_drill` | 6.3 | 6.3 | 6.3 | drill diameter, larger holes are routed |
+| `min_npth_drill` | 0.5 | 0.5 | 0.5 | min. non-plated holes |
+| `min_plated_slot_width` | 0.5 | 0.5 | 0.35 | min. plated slot width, slot at least 2 widths long |
+| `min_npth_slot_width` | 1.0 | 1.0 | 1.0 | min. non-plated slots |
+| `min_via_hole_to_copper` | 0.2 | 0.2 | 0.2 | via hole to track, inner layer via hole to copper |
+| `min_pth_hole_to_copper` | 0.28 | 0.28 | 0.28 | PTH to track |
+| `min_inner_pth_hole_to_copper` | | | 0.3 | inner layer PTH pad hole to copper |
+| `min_npth_to_copper` | 0.2 | 0.2 | 0.2 | NPTH to track |
+| `min_smd_pad_gap` | 0.15 | 0.15 | 0.15 | SMD pad to pad clearance, different nets |
+| `max_filled_via_drill` | 0.55 | 0.55 | 0.55 | via-in-pad epoxy or copper fill, 0.15 to 0.55 mm |
+| `min_bga_pad` | 0.25 (0.2 ENIG) | | | BGA pad, 0.2 to 0.25 mm needs ENIG |
+| `min_bga_pitch` | 0.3 | 0.3 | 0.3 | PCBA capabilities, standard: 0.3 mm BGA centre to centre |
+| `min_silk_width`, `min_silk_text_height` | 0.15, 1.0 | | | legend line width, text height |
+| `max_aspect_ratio` | 10.7 | 10.7 | 10.7 | the 0.15 mm drill on a 1.6 mm board |
+
+Where agentee is stricter than the page, on purpose: `min_copper_to_edge` stays 0.3 mm (the page
+allows 0.2 mm on a routed edge, which is milled to +/-0.2 mm, and 0.4 mm on a V-cut),
+`min_hole_to_hole` stays 0.5 mm (the page gives 0.45 mm between pad holes and 0.2 mm between
+vias), and `min_hole_to_smd_pad` (0.2 mm, the via hole to track figure) and `min_part_to_edge`
+(0.5 mm) are agentee's choices, not on the page.
+
+### Design rule checks
+
+Layout checks run from a registry of rules, each with a stable id, a category (`copper`,
+`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`), a default severity, and a condition on the
+board: a rule for inner layers runs only with 4 or more copper layers, a via fill rule only when
+vias sit in pads, a BGA rule only when there is a BGA. Every message of a rule starts with its id
+in brackets, e.g. `[via-cuts-pad]`. `agentee drc NAME --list` (MCP `drc` with `list = true`) prints
+every rule with its category, severity, and whether it applies to this board and why; `agentee
+drc NAME` prints the layout's rule messages alone.
+
+```toml
+[drc]                          # in the board file
+disable = ["silk-width"]       # rule ids to skip
+severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
+```
+
+An id that names no rule is a warning. The older checks described under Layout (clearance,
+shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
 
 ### What check computes
 

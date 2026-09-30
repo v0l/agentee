@@ -1511,6 +1511,10 @@ impl LayoutFile {
         }
 
         check_overlaps(&tracks, &nets, d);
+        crate::drc::run(
+            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets),
+            d,
+        );
 
         let (graphics, artwork) = self.artwork_of(&cx.dir, d);
         let silk: Vec<SilkBox> = parts

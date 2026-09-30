@@ -1,0 +1,469 @@
+use crate::board::Board;
+use crate::diag::{Diags, Severity};
+use crate::footprint::PadKind;
+use crate::geom::{self, P};
+use crate::graphic::Bounds;
+use crate::layout::{Layout, LayoutNet, Placed, PlacedPad, Track, Via, ZoneFill};
+use serde::Serialize;
+use std::cell::OnceCell;
+use std::collections::HashMap;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Category {
+    Copper,
+    Drill,
+    Mask,
+    Silk,
+    Assembly,
+    Zone,
+    Signal,
+}
+
+pub struct Rule {
+    pub id: &'static str,
+    pub category: Category,
+    pub severity: Severity,
+    pub summary: &'static str,
+    pub when: &'static str,
+    pub applies: fn(&Setup) -> bool,
+    pub check: fn(&Ctx, &mut Report),
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Setup {
+    pub fab: String,
+    pub copper_layers: usize,
+    pub thickness_mm: f64,
+    pub finish: String,
+    pub outer_oz: f64,
+    pub inner_oz: Option<f64>,
+    pub blind_buried: bool,
+    pub impedance: bool,
+    pub layout: bool,
+    pub via_in_pad: bool,
+    pub parts: usize,
+    pub bottom_parts: bool,
+    pub zones: bool,
+    pub npth: bool,
+    pub slots: bool,
+    pub bga: bool,
+}
+
+impl Setup {
+    pub fn of_board(board: &Board) -> Setup {
+        let copper = board.stackup.copper_names();
+        let (first, last) = (copper.first(), copper.last());
+        let inner: Vec<f64> =
+            board.stackup.copper().map(|(_, l)| l.thickness.to_mm() / 0.035).skip(1).collect();
+        Setup {
+            fab: board.fab.clone(),
+            copper_layers: copper.len(),
+            thickness_mm: board.stackup.thickness().to_mm(),
+            finish: board.stackup.finish.clone(),
+            outer_oz: board.stackup.outer_oz(),
+            inner_oz: inner.split_last().and_then(|(_, v)| v.iter().copied().reduce(f64::max)),
+            blind_buried: board.vias.iter().any(|v| Some(&v.from) != first || Some(&v.to) != last),
+            impedance: board.netclasses.iter().any(|n| n.impedance.is_some()),
+            ..Setup::default()
+        }
+    }
+
+    pub fn of(cx: &Ctx) -> Setup {
+        let pads = || cx.parts.iter().flat_map(|p| p.pads.iter());
+        Setup {
+            layout: true,
+            via_in_pad: !vias_in_pads(cx.parts, cx.vias).is_empty(),
+            parts: cx.parts.len(),
+            bottom_parts: cx.parts.iter().any(|p| p.bottom),
+            zones: cx.zones.iter().any(|z| !z.rings.is_empty()),
+            npth: pads().any(|q| q.kind == PadKind::Npth),
+            slots: pads().any(|q| q.drill.is_some_and(|(_, s, _)| (s[0] - s[1]).abs() > 1e-6)),
+            bga: cx.parts.iter().any(|p| assembly::bga_pitch(p).is_some()),
+            ..Setup::of_board(cx.board)
+        }
+    }
+}
+
+pub struct Ctx<'a> {
+    pub board: &'a Board,
+    pub copper: &'a [String],
+    pub outline: &'a [P],
+    pub parts: &'a [Placed],
+    pub tracks: &'a [Track],
+    pub vias: &'a [Via],
+    pub zones: &'a [ZoneFill],
+    pub nets: &'a [LayoutNet],
+    items: OnceCell<Vec<Cu>>,
+    fills: OnceCell<Vec<FillIndex>>,
+}
+
+impl<'a> Ctx<'a> {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        board: &'a Board,
+        copper: &'a [String],
+        outline: &'a [P],
+        parts: &'a [Placed],
+        tracks: &'a [Track],
+        vias: &'a [Via],
+        zones: &'a [ZoneFill],
+        nets: &'a [LayoutNet],
+    ) -> Ctx<'a> {
+        Ctx {
+            board,
+            copper,
+            outline,
+            parts,
+            tracks,
+            vias,
+            zones,
+            nets,
+            items: OnceCell::new(),
+            fills: OnceCell::new(),
+        }
+    }
+
+    pub fn of_layout(board: &'a Board, l: &'a Layout) -> Ctx<'a> {
+        Ctx::new(board, &l.copper, &l.outline, &l.parts, &l.tracks, &l.vias, &l.zones, &l.nets)
+    }
+
+    pub fn net_name(&self, n: Option<usize>) -> &str {
+        n.and_then(|n| self.nets.get(n)).map(|n| n.name.as_str()).unwrap_or("no net")
+    }
+
+    pub fn pad_name(&self, part: usize, pad: usize) -> String {
+        format!("{}.{}", self.parts[part].reference, self.parts[part].pads[pad].number)
+    }
+
+    pub fn copper_items(&self) -> &[Cu] {
+        self.items.get_or_init(|| {
+            let mut out = Vec::new();
+            for (pi, p) in self.parts.iter().enumerate() {
+                for (k, q) in p.pads.iter().enumerate() {
+                    if q.copper.is_empty() {
+                        continue;
+                    }
+                    out.push(Cu {
+                        owner: Owner::Pad(pi, k),
+                        net: q.net,
+                        layers: q.copper.clone(),
+                        bounds: rings_bounds(&q.outlines),
+                        shape: CuShape::Poly(q.outlines.clone()),
+                    });
+                }
+            }
+            for (ti, t) in self.tracks.iter().enumerate() {
+                for w in t.points.windows(2) {
+                    let mut b = Bounds::EMPTY;
+                    b.add_circle(w[0], t.width / 2.0);
+                    b.add_circle(w[1], t.width / 2.0);
+                    out.push(Cu {
+                        owner: Owner::Track(ti),
+                        net: Some(t.net),
+                        layers: vec![t.layer.clone()],
+                        bounds: b,
+                        shape: CuShape::Seg(w[0], w[1], t.width / 2.0),
+                    });
+                }
+            }
+            for (vi, v) in self.vias.iter().enumerate() {
+                let mut b = Bounds::EMPTY;
+                b.add_circle(v.at, v.diameter / 2.0);
+                out.push(Cu {
+                    owner: Owner::Via(vi),
+                    net: Some(v.net),
+                    layers: v.layers.clone(),
+                    bounds: b,
+                    shape: CuShape::Circle(v.at, v.diameter / 2.0),
+                });
+            }
+            out
+        })
+    }
+
+    pub fn fills(&self) -> &[FillIndex] {
+        self.fills.get_or_init(|| self.zones.iter().map(|z| FillIndex::new(&z.rings)).collect())
+    }
+
+    pub fn describe(&self, c: &Cu) -> String {
+        match c.owner {
+            Owner::Pad(p, k) => self.pad_name(p, k),
+            Owner::Track(t) => format!("track {} ({})", t, self.nets[self.tracks[t].net].name),
+            Owner::Via(v) => format!(
+                "via at [{:.3}, {:.3}] ({})",
+                self.vias[v].at[0], self.vias[v].at[1], self.nets[self.vias[v].net].name
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Owner {
+    Pad(usize, usize),
+    Track(usize),
+    Via(usize),
+}
+
+pub struct Cu {
+    pub owner: Owner,
+    pub net: Option<usize>,
+    pub layers: Vec<String>,
+    pub bounds: Bounds,
+    pub shape: CuShape,
+}
+
+pub enum CuShape {
+    Poly(Vec<Vec<P>>),
+    Seg(P, P, f64),
+    Circle(P, f64),
+}
+
+impl CuShape {
+    pub fn circle_gap(&self, c: P, r: f64) -> f64 {
+        match self {
+            CuShape::Poly(v) => rings_point_gap(v, c) - r,
+            CuShape::Seg(a, b, hw) => geom::point_segment_distance(c, *a, *b) - hw - r,
+            CuShape::Circle(o, ro) => geom::dist(c, *o) - ro - r,
+        }
+    }
+}
+
+pub fn rings_bounds(rings: &[Vec<P>]) -> Bounds {
+    let mut b = Bounds::EMPTY;
+    rings.iter().flatten().for_each(|p| b.add(*p));
+    b
+}
+
+pub fn edge_distance(poly: &[P], p: P) -> f64 {
+    (0..poly.len())
+        .map(|i| geom::point_segment_distance(p, poly[i], poly[(i + 1) % poly.len()]))
+        .fold(f64::MAX, f64::min)
+}
+
+pub fn rings_point_gap(rings: &[Vec<P>], p: P) -> f64 {
+    if rings.iter().any(|r| geom::point_in_polygon(p, r)) {
+        return 0.0;
+    }
+    rings.iter().map(|r| edge_distance(r, p)).fold(f64::MAX, f64::min)
+}
+
+pub fn near(b: &Bounds, p: P, reach: f64) -> bool {
+    !b.is_empty()
+        && p[0] >= b.min[0] - reach
+        && p[0] <= b.max[0] + reach
+        && p[1] >= b.min[1] - reach
+        && p[1] <= b.max[1] + reach
+}
+
+pub fn is_smd(q: &PlacedPad) -> bool {
+    q.drill.is_none() && !q.copper.is_empty()
+}
+
+pub fn outline_distance(outline: &[P], p: P) -> f64 {
+    edge_distance(outline, p)
+}
+
+pub struct FillIndex {
+    edges: Vec<(P, P)>,
+    cell: f64,
+    y0: f64,
+    rows: Vec<Vec<usize>>,
+    bins: HashMap<(i64, i64), Vec<usize>>,
+    pub bounds: Bounds,
+}
+
+impl FillIndex {
+    pub fn new(rings: &[Vec<P>]) -> FillIndex {
+        let cell = 0.5;
+        let bounds = rings_bounds(rings);
+        let mut edges = Vec::new();
+        for r in rings {
+            for i in 0..r.len() {
+                edges.push((r[i], r[(i + 1) % r.len()]));
+            }
+        }
+        let y0 = if bounds.is_empty() { 0.0 } else { bounds.min[1] };
+        let n_rows =
+            if bounds.is_empty() { 0 } else { ((bounds.max[1] - y0) / cell).floor() as usize + 1 };
+        let mut rows = vec![Vec::new(); n_rows];
+        let mut bins: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (k, (a, b)) in edges.iter().enumerate() {
+            let (lo, hi) = (a[1].min(b[1]), a[1].max(b[1]));
+            let (r0, r1) =
+                (((lo - y0) / cell).floor() as usize, ((hi - y0) / cell).floor() as usize);
+            for row in rows.iter_mut().take(r1.min(n_rows.saturating_sub(1)) + 1).skip(r0) {
+                row.push(k);
+            }
+            let (x0, x1) =
+                ((a[0].min(b[0]) / cell).floor() as i64, (a[0].max(b[0]) / cell).floor() as i64);
+            let (y0b, y1b) = ((lo / cell).floor() as i64, (hi / cell).floor() as i64);
+            for x in x0..=x1 {
+                for y in y0b..=y1b {
+                    bins.entry((x, y)).or_default().push(k);
+                }
+            }
+        }
+        FillIndex { edges, cell, y0, rows, bins, bounds }
+    }
+
+    pub fn contains(&self, p: P) -> bool {
+        if !near(&self.bounds, p, 0.0) {
+            return false;
+        }
+        let row = ((p[1] - self.y0) / self.cell).floor();
+        if row < 0.0 || row as usize >= self.rows.len() {
+            return false;
+        }
+        let mut wind = 0;
+        for &k in &self.rows[row as usize] {
+            let (a, b) = self.edges[k];
+            if (a[1] > p[1]) != (b[1] > p[1]) {
+                let x = a[0] + (p[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+                if x > p[0] {
+                    wind += if b[1] > a[1] { 1 } else { -1 };
+                }
+            }
+        }
+        wind != 0
+    }
+
+    pub fn edge_gap(&self, p: P, reach: f64) -> f64 {
+        let (x0, x1) = (
+            ((p[0] - reach) / self.cell).floor() as i64,
+            ((p[0] + reach) / self.cell).floor() as i64,
+        );
+        let (y0, y1) = (
+            ((p[1] - reach) / self.cell).floor() as i64,
+            ((p[1] + reach) / self.cell).floor() as i64,
+        );
+        let mut best = f64::MAX;
+        for x in x0..=x1 {
+            for y in y0..=y1 {
+                for &k in self.bins.get(&(x, y)).into_iter().flatten() {
+                    let (a, b) = self.edges[k];
+                    best = best.min(geom::point_segment_distance(p, a, b));
+                }
+            }
+        }
+        best
+    }
+
+    pub fn circle_gap(&self, c: P, r: f64, reach: f64) -> f64 {
+        if self.contains(c) {
+            return -r;
+        }
+        self.edge_gap(c, r + reach) - r
+    }
+}
+
+pub struct Report<'a> {
+    d: &'a mut Diags,
+    rule: &'static str,
+    severity: Severity,
+}
+
+impl Report<'_> {
+    pub fn emit(&mut self, at: impl Into<String>, message: impl Into<String>) {
+        self.d.push_rule(self.severity, self.rule, at, message);
+    }
+}
+
+pub fn every(_: &Setup) -> bool {
+    true
+}
+
+pub fn registry() -> impl Iterator<Item = &'static Rule> {
+    via::RULES
+        .iter()
+        .chain(drill::RULES)
+        .chain(copper::RULES)
+        .chain(assembly::RULES)
+        .chain(silk::RULES)
+}
+
+pub fn find(id: &str) -> Option<&'static Rule> {
+    registry().find(|r| r.id == id)
+}
+
+pub fn severity_of(board: &Board, rule: &Rule) -> Severity {
+    board.drc.severity.get(rule.id).copied().unwrap_or(rule.severity)
+}
+
+pub fn enabled(board: &Board, rule: &Rule) -> bool {
+    !board.drc.disable.iter().any(|d| d == rule.id)
+}
+
+pub fn run(cx: &Ctx, d: &mut Diags) {
+    let setup = Setup::of(cx);
+    for rule in registry() {
+        if !(rule.applies)(&setup) || !enabled(cx.board, rule) {
+            continue;
+        }
+        let mut report = Report { d, rule: rule.id, severity: severity_of(cx.board, rule) };
+        (rule.check)(cx, &mut report);
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RuleStatus {
+    pub id: &'static str,
+    pub category: Category,
+    pub severity: Severity,
+    pub default_severity: Severity,
+    pub summary: &'static str,
+    pub when: &'static str,
+    pub applies: bool,
+    pub enabled: bool,
+}
+
+pub fn status(board: &Board, setup: &Setup) -> Vec<RuleStatus> {
+    registry()
+        .map(|r| RuleStatus {
+            id: r.id,
+            category: r.category,
+            severity: severity_of(board, r),
+            default_severity: r.severity,
+            summary: r.summary,
+            when: r.when,
+            applies: (r.applies)(setup),
+            enabled: enabled(board, r),
+        })
+        .collect()
+}
+
+pub fn vias_in_pads(parts: &[Placed], vias: &[Via]) -> Vec<(usize, usize, usize)> {
+    let pads: Vec<(usize, usize, &PlacedPad, Bounds)> = parts
+        .iter()
+        .enumerate()
+        .flat_map(|(pi, p)| p.pads.iter().enumerate().map(move |(k, q)| (pi, k, q)))
+        .filter(|(_, _, q)| is_smd(q))
+        .map(|(pi, k, q)| (pi, k, q, rings_bounds(&q.outlines)))
+        .collect();
+    let mut out = Vec::new();
+    for (vi, v) in vias.iter().enumerate() {
+        for &(pi, k, q, b) in &pads {
+            if near(&b, v.at, v.diameter / 2.0)
+                && q.copper.iter().any(|l| v.layers.contains(l))
+                && via::via_on_pad(v, q) == Some(via::ViaOnPad::Inside)
+            {
+                out.push((vi, pi, k));
+            }
+        }
+    }
+    out
+}
+
+pub fn list(items: &[String]) -> String {
+    let mut s = items.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+    if items.len() > 6 {
+        s += &format!(" and {} more", items.len() - 6);
+    }
+    s
+}
+
+mod assembly;
+mod copper;
+mod drill;
+mod silk;
+mod via;
