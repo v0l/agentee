@@ -38,6 +38,7 @@ pub struct Extras {
     pub freqs: Vec<f64>,
     pub plane_k: Option<usize>,
     pub ntff: Option<Vec<u32>>,
+    pub fused_e: bool,
 }
 
 pub struct Pulse {
@@ -65,11 +66,11 @@ struct CoefSets {
 }
 
 impl CoefSets {
-    fn new(sim: &Sim) -> CoefSets {
-        CoefSets::build(sim, 1 << 16)
+    fn new(sim: &Sim, marked: &[u32]) -> CoefSets {
+        CoefSets::build(sim, 1 << 16, marked)
     }
 
-    fn build(sim: &Sim, narrow: usize) -> CoefSets {
+    fn build(sim: &Sim, narrow: usize, marked: &[u32]) -> CoefSets {
         let nn = sim.ca[0].len();
         let mut lookup: std::collections::HashMap<(u32, u32), u32> = Default::default();
         let mut sets = vec![[0f32; 2]];
@@ -77,7 +78,8 @@ impl CoefSets {
         let mut flat = Vec::with_capacity(3 * nn);
         let mut last = ((0u32, 0u32), 0u32);
         for c in 0..3 {
-            for (a, b) in sim.ca[c].iter().zip(&sim.cb[c]) {
+            for (id, (a, b)) in sim.ca[c].iter().zip(&sim.cb[c]).enumerate() {
+                let b = &if marked.get(c * nn + id).is_some_and(|m| *m != 0) { -*b } else { *b };
                 let key = if *b == 0.0 { (0, 0) } else { (a.to_bits(), b.to_bits()) };
                 if key != last.0 {
                     let id = *lookup.entry(key).or_insert_with(|| {
@@ -126,6 +128,10 @@ fn port_loop(sim: &Sim, p: &PortDef, axis: usize, k: usize) -> Vec<(usize, usize
         .collect()
 }
 
+pub fn fused_update() -> bool {
+    std::env::var("AGENTEE_FDTD_FUSED").is_ok_and(|v| v != "0")
+}
+
 pub fn run(
     sim: &Sim,
     driven: usize,
@@ -140,7 +146,6 @@ pub fn run(
     if nn >= (1 << 24) * 4 {
         return Err(format!("{} cells is too many for one run", sim.grid.cells()));
     }
-    let coef = CoefSets::new(sim);
     let mut offsets = [0u32; 20];
     let mut psi_total = 0usize;
     for e in 0..2 {
@@ -216,6 +221,24 @@ pub fn run(
         debye_edges.extend_from_slice(&[f32::from_bits((c * nn + id) as u32), *dd as f32, 0.0]);
     }
     let debye_count = sim.debye_edges.len();
+    let fused = extras.fused_e;
+    let mut extra = vec![0u32; if fused { 3 * nn } else { 1 }];
+    if fused {
+        let mut mark = |f: usize, kind: u32, slot: usize| extra[f] = (kind << 29) | slot as u32;
+        for (s, (c, id, _)) in sim.debye_edges.iter().enumerate() {
+            mark(c * nn + id, 1, s);
+        }
+        for s in 0..sheet_count {
+            mark(sheets[s * 16].to_bits() as usize, 2, s);
+        }
+        for (i, (comp, id, _)) in sim.port_src[driven].iter().enumerate() {
+            mark(comp * nn + id, 3, i);
+        }
+        for (i, (comp, id, _, _)) in sim.inductors.iter().enumerate() {
+            mark(comp * nn + id, 4, i);
+        }
+    }
+    let coef = CoefSets::new(sim, if fused { &extra } else { &[] });
     let mut debye_table = vec![sim.debye.poles.len() as f32];
     for (x, a) in &sim.debye.poles {
         let d = 1.0 + 0.5 * x * sim.dt;
@@ -353,7 +376,8 @@ pub fn run(
         (10, &b_h),
         (11, &b_coef_set),
     ];
-    let group1: [(u32, &wgpu::Buffer); 14] = [
+    let b_extra = g.storage("extra", &extra);
+    let group1: [(u32, &wgpu::Buffer); 15] = [
         (0, &b_inductor),
         (1, &b_probe),
         (2, &b_partial),
@@ -368,6 +392,7 @@ pub fn run(
         (11, &b_debye_edges),
         (12, &b_debye_table),
         (13, &b_debye_state),
+        (14, &b_extra),
     ];
     let make = |entry: &str, uses0: &[u32], uses1: &[u32]| {
         let pipe = g.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -405,30 +430,35 @@ pub fn run(
     let grid = [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), n[0] as u32];
     let lumped_n = (sim.port_src[driven].len().max(sim.inductors.len()) as u32).div_ceil(64).max(1);
     let mut pipes = vec![(make("update_h", &[2, 3, 4, 5, 8, 9], &[]), grid)];
-    let sheet_groups = [(sheet_count as u32).div_ceil(64), 1, 1];
-    if sheet_count > 0 {
-        pipes.push((make("sheet_pre", &[0, 4, 10], &[9]), sheet_groups));
-    }
-    let debye_groups = [(debye_count as u32).div_ceil(64).max(1), 1, 1];
-    let debye_groups = if debye_groups[0] > 65535 {
-        [65535, debye_groups[0].div_ceil(65535), 1]
+    if fused {
+        pipes.push((
+            make("update_e_fused", &[0, 1, 2, 3, 4, 5, 7, 10, 11], &[0, 8, 9, 10, 11, 12, 13, 14]),
+            grid,
+        ));
     } else {
-        debye_groups
-    };
-    if debye_count > 0 {
-        pipes.push((make("debye_pre", &[0, 4], &[11]), debye_groups));
+        let sheet_groups = [(sheet_count as u32).div_ceil(64), 1, 1];
+        if sheet_count > 0 {
+            pipes.push((make("sheet_pre", &[0, 4, 10], &[9]), sheet_groups));
+        }
+        let debye_groups = [(debye_count as u32).div_ceil(64).max(1), 1, 1];
+        let debye_groups = if debye_groups[0] > 65535 {
+            [65535, debye_groups[0].div_ceil(65535), 1]
+        } else {
+            debye_groups
+        };
+        if debye_count > 0 {
+            pipes.push((make("debye_pre", &[0, 4], &[11]), debye_groups));
+        }
+        pipes.push((make("update_e", &[0, 1, 2, 3, 4, 10, 11], &[]), grid));
+        if sheet_count > 0 {
+            pipes.push((make("sheet_post", &[0, 4], &[8, 9, 10]), sheet_groups));
+        }
+        if debye_count > 0 {
+            pipes.push((make("debye_post", &[0, 1, 4, 11], &[11, 12, 13]), debye_groups));
+        }
+        pipes.push((make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]));
     }
-    pipes.extend([(make("update_e", &[0, 1, 2, 3, 4, 10, 11], &[]), grid)]);
-    if sheet_count > 0 {
-        pipes.push((make("sheet_post", &[0, 4], &[8, 9, 10]), sheet_groups));
-    }
-    if debye_count > 0 {
-        pipes.push((make("debye_post", &[0, 1, 4, 11], &[11, 12, 13]), debye_groups));
-    }
-    pipes.extend([
-        (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),
-        (make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [ports as u32, 1, 1]),
-    ]);
+    pipes.push((make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [ports as u32, 1, 1]));
     if plane_len > 0 {
         pipes.push((
             make("field_dft", &[4, 5, 8, 10], &[5]),
@@ -487,7 +517,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fdtd::engine::{Debye, Edge, Grid, Materials, Media, PortDef};
+    use crate::fdtd::engine::{Debye, Edge, Element, Grid, Materials, Media, PortDef};
     use crate::fdtd::surface::Surface;
 
     fn at(sets: &CoefSets, f: usize) -> [f32; 2] {
@@ -574,7 +604,7 @@ mod tests {
         let sim = Sim::new(grid, &mats, &|c, p| c == 0 && p[2] == 2, &[], vec![port], &[], media);
         let nn = sim.ca[0].len();
         for narrow in [1 << 16, 1] {
-            let sets = CoefSets::build(&sim, narrow);
+            let sets = CoefSets::build(&sim, narrow, &[]);
             assert_eq!(sets.wide, narrow == 1);
             assert!(sets.sets.len() > 2);
             for c in 0..3 {
@@ -587,5 +617,58 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_fused_e_update_matches_the_separate_corrections() {
+        use crate::fdtd::model::Sheet;
+        use crate::fdtd::model::{Copper, Dielectric, Meshing, ModelElement, ModelPort, PcbModel};
+        if gpu().is_none() {
+            return;
+        }
+        let board = vec![[0.0, -2.0], [8.0, -2.0], [8.0, 2.0], [0.0, 2.0]];
+        let m = PcbModel {
+            outline: board.clone(),
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.035 },
+                Sheet { name: "B.Cu".into(), z: -0.4, thickness: 0.035 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.4, z1: 0.0, er: 4.0, tan: 0.02, pinned: true }],
+            copper: vec![
+                (0, Copper::Seg([0.5, 0.0], [3.5, 0.0], 0.6)),
+                (0, Copper::Seg([4.5, 0.0], [7.5, 0.0], 0.6)),
+                (1, Copper::Poly(board)),
+            ],
+            ports: vec![ModelPort {
+                name: "P1".into(),
+                at: [0.5, 0.0],
+                area: vec![],
+                sheet: 0,
+                reference: 1,
+                r: 50.0,
+            }],
+            elements: vec![ModelElement {
+                name: "L1".into(),
+                a: [3.5, 0.0],
+                b: [4.5, 0.0],
+                sheet: 0,
+                element: Element::Inductor(1e-9),
+            }],
+            ..Default::default()
+        };
+        let opt = Meshing { cell: 0.2, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let sim = m.build(&opt).unwrap();
+        assert!(!sim.sheets.is_empty() && !sim.debye_edges.is_empty() && !sim.inductors.is_empty());
+        let pulse = Pulse { f0: 3e9, fc: 3e9 };
+        let record = |fused_e: bool| {
+            let extras =
+                Extras { max_steps: 3000, decay_db: f64::INFINITY, fused_e, ..Default::default() };
+            run(&sim, 0, &pulse, &extras, &mut |_, _| {}).unwrap().series
+        };
+        let (apart, fused) = (record(false), record(true));
+        assert!(apart.iter().any(|v| *v != 0.0));
+        let worst = apart.iter().zip(&fused).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+        let scale = apart.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+        assert!(worst <= 1e-5 * scale, "{worst} of {scale}");
     }
 }

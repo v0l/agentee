@@ -54,6 +54,7 @@ struct Params {
 @group(1) @binding(11) var<storage, read_write> debye_edge: array<f32>;
 @group(1) @binding(12) var<storage, read> debye_table: array<f32>;
 @group(1) @binding(13) var<storage, read_write> debye_state: array<f32>;
+@group(1) @binding(14) var<storage, read> extra: array<u32>;
 
 const STRIDE: u32 = 10u;
 
@@ -124,6 +125,32 @@ fn curl_e(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i
     let f = c * P.nn + id;
     let cf = coef_at(f);
     if cf.y == 0.0 { return; }
+    e[f] = cf.x * e[f] + cf.y * curl_of_h(c, u, v, id, du, dv, pu, pv, i, j, k);
+}
+
+fn curl_e_fused(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) {
+    let f = c * P.nn + id;
+    let cf = coef_at(f);
+    if cf.y == 0.0 { return; }
+    let cb = abs(cf.y);
+    let old = e[f];
+    let curl = curl_of_h(c, u, v, id, du, dv, pu, pv, i, j, k);
+    if cf.y > 0.0 {
+        e[f] = cf.x * old + cb * curl;
+        return;
+    }
+    let x = extra[f];
+    let kind = x >> 29u;
+    let slot = x & 0x1fffffffu;
+    if kind == 2u { sheet_before(slot, old); }
+    e[f] = cf.x * old + cb * curl;
+    if kind == 1u { debye_after(slot, f, old, cb); }
+    if kind == 2u { sheet_after(slot); }
+    if kind == 3u { source_at(slot); }
+    if kind == 4u { inductor_at(slot); }
+}
+
+fn curl_of_h(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) -> f32 {
     let hv = h_ro[v * P.nn + id] - h_ro[v * P.nn + id - du];
     let hu = h_ro[u * P.nn + id] - h_ro[u * P.nn + id - dv];
     var t1 = hv * axv(u, pu, 1u);
@@ -142,7 +169,7 @@ fn curl_e(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i
             t2 += psi[q];
         }
     }
-    e[f] = cf.x * e[f] + cf.y * (t1 - t2);
+    return t1 - t2;
 }
 
 @compute @workgroup_size(64, 4, 1)
@@ -177,14 +204,32 @@ fn update_e(@builtin(global_invocation_id) g: vec3<u32>) {
     curl_e(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
 }
 
+@compute @workgroup_size(64, 4, 1)
+fn update_e_fused(@builtin(global_invocation_id) g: vec3<u32>) {
+    let i = g.z;
+    let j = g.y;
+    let k = g.x;
+    if i >= P.n0 || j >= P.n1 || k >= P.n2 { return; }
+    let sx = P.n1 * P.n2;
+    let sy = P.n2;
+    let id = i * sx + j * sy + k;
+    curl_e_fused(0u, 1u, 2u, id, sy, 1u, j, k, i, j, k);
+    curl_e_fused(1u, 2u, 0u, id, 1u, sx, k, i, i, j, k);
+    curl_e_fused(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
+}
+
 const SHEET: u32 = 16u;
 
 @compute @workgroup_size(64, 1, 1)
 fn sheet_pre(@builtin(global_invocation_id) g: vec3<u32>) {
     let s = g.x;
     if s >= P.sheets { return; }
+    sheet_before(s, e[bitcast<u32>(sheet[s * SHEET])]);
+}
+
+fn sheet_before(s: u32, old: f32) {
     let b = s * SHEET;
-    sheet[b + 12u] = e[bitcast<u32>(sheet[b])];
+    sheet[b + 12u] = old;
     let ha = h_ro[bitcast<u32>(sheet[b + 1u])];
     let hb = h_ro[bitcast<u32>(sheet[b + 2u])];
     let aa = sheet[b + 7u] + ha * ha;
@@ -211,6 +256,10 @@ fn sheet_pre(@builtin(global_invocation_id) g: vec3<u32>) {
 fn sheet_post(@builtin(global_invocation_id) g: vec3<u32>) {
     let s = g.x;
     if s >= P.sheets { return; }
+    sheet_after(s);
+}
+
+fn sheet_after(s: u32) {
     let b = s * SHEET;
     let f = bitcast<u32>(sheet[b]);
     let len = sheet[b + 3u];
@@ -272,14 +321,17 @@ fn debye_post(@builtin(global_invocation_id) g: vec3<u32>) {
     let s = debye_index(g);
     if s >= P.debye { return; }
     let f = bitcast<u32>(debye_edge[s * 3u]);
+    debye_after(s, f, debye_edge[s * 3u + 2u], coef_at(f).y);
+}
+
+fn debye_after(s: u32, f: u32, old: f32, cb: f32) {
     let dd = debye_edge[s * 3u + 1u];
-    let old = debye_edge[s * 3u + 2u];
     let np = u32(debye_table[0]);
     var s0 = 0.0;
     for (var k = 0u; k < np; k++) {
         s0 += 0.5 * (1.0 + debye_table[1u + 2u * k]) * debye_state[k * P.debye + s];
     }
-    let next = e[f] - coef_at(f).y * s0;
+    let next = e[f] - cb * s0;
     e[f] = next;
     let de = next - old;
     for (var k = 0u; k < np; k++) {
@@ -297,19 +349,27 @@ fn pulse(t: f32) -> f32 {
 fn lumped(@builtin(global_invocation_id) g: vec3<u32>) {
     let i = g.x;
     if i < P.sources {
-        let n = step();
-        let t = (f32(n) + 0.5) * P.dt;
-        let id = u32(source[i * 3u]);
-        let comp = u32(source[i * 3u + 2u]);
-        e[comp * P.nn + id] -= source[i * 3u + 1u] * pulse(t);
+        source_at(i);
     }
     if i < P.inductors {
-        let b = i * 5u;
-        let f = u32(inductor[b]) * P.nn + u32(inductor[b + 1u]);
-        let x = e[f] - inductor[b + 2u] * inductor[b + 4u];
-        e[f] = x;
-        inductor[b + 4u] += inductor[b + 3u] * x;
+        inductor_at(i);
     }
+}
+
+fn source_at(i: u32) {
+    let n = step();
+    let t = (f32(n) + 0.5) * P.dt;
+    let id = u32(source[i * 3u]);
+    let comp = u32(source[i * 3u + 2u]);
+    e[comp * P.nn + id] -= source[i * 3u + 1u] * pulse(t);
+}
+
+fn inductor_at(i: u32) {
+    let b = i * 5u;
+    let f = u32(inductor[b]) * P.nn + u32(inductor[b + 1u]);
+    let x = e[f] - inductor[b + 2u] * inductor[b + 4u];
+    e[f] = x;
+    inductor[b + 4u] += inductor[b + 3u] * x;
 }
 
 var<workgroup> probe_sum: array<vec2<f32>, 256>;
