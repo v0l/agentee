@@ -381,6 +381,7 @@ pub struct ZoneFill {
     #[serde(skip)]
     pub mask: Vec<u8>,
     pub islands_removed: usize,
+    pub min_width: f64,
     #[serde(skip)]
     pub rings: Vec<Vec<P>>,
     #[serde(skip)]
@@ -2205,6 +2206,7 @@ fn fill_zone(
         height: h,
         mask,
         islands_removed: removed,
+        min_width,
         rings: Vec::new(),
         triangles: Vec::new(),
     };
