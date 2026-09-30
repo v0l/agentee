@@ -621,7 +621,8 @@ segments of one net that lie on top of each other on a layer (parallel, overlapp
 than a track width) are an error, since the copper is doubled; a bend sharper than 90 degrees is
 flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
-(the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
+(the class `neckdown`) where it meets a small pad; the router draws such necks itself (see
+Autorouting). Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
 Two vias of one net at the same spot are an error too: the fab would drill the hole twice.
 Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
@@ -653,7 +654,14 @@ it would cross, remembers the spot as congested, and those nets go back in the q
 steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
 45 degree bends; afterwards runs are pulled tight with two-segment 45 degree doglegs and any 90
 degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
-at another angle. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+at another angle. Where the class width does not fit into an end pad (wider than the pad's smaller
+side, or too close to the neighbouring pads to keep clearance), the route necks down: the class
+width track stops short of the pad and a separate `[[tracks]]` entry with an explicit `width` runs
+straight into the pad centre, at most the class `neckdown` long and no narrower than
+`min_track_width`. Its width is the smallest of the class width, the pad's smaller side and the
+widest that keeps clearance, rounded down to 0.01 mm; the wide track starts at the first spot out
+from the pad where its full width keeps clearance (and, for a pad narrower than the track, outside
+the pad). Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
 each routed connection that uses vias is tried again on one layer at a time with the rest held
 fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
 vias of neighbouring parallel connections that change layer near each other are slid along their

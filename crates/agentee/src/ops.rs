@@ -1316,8 +1316,9 @@ pub fn route(
         let mut text = format!("\n# agentee route {}\n", opts.nets.join(" "));
         for t in &result.tracks {
             let pts: Vec<String> = t.points.iter().map(|q| pt(*q)).collect();
+            let width = t.width.map(|w| format!("width = {}\n", f(w))).unwrap_or_default();
             text += &format!(
-                "\n[[tracks]]\nnet = \"{}\"\nlayer = \"{}\"\npoints = [{}]\n",
+                "\n[[tracks]]\nnet = \"{}\"\nlayer = \"{}\"\n{width}points = [{}]\n",
                 t.net,
                 t.layer,
                 pts.join(", ")
