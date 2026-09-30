@@ -1048,7 +1048,11 @@ What goes where, strongest first, and why:
   for Switching Power Supplies; Linear Technology AN139, Power Supply Layout and EMI).
 - Hot parts (sources of 0.25 W or more in a thermal sim of this layout, and large packages over
   49 mm2) are pushed 10 mm apart so their heat does not stack (TI SNVA419, AN-2020 Thermal Design
-  by Insight, not Hindsight; IPC-2221B, thermal management).
+  by Insight, not Hindsight; IPC-2221B, thermal management). Where the hot parts, each grown by
+  `hot_distance`, take at most a quarter of one side of the board, their courtyards must also
+  keep `hot_distance` apart, as `placement-hot-parts-close` measures it (a part that fits nowhere
+  else drops the rule); on a tighter board wirelength wins. `hot_spread` in the output gives that
+  share and whether the rule applied.
 - Ceramic capacitors of 0805 or larger stay out of `flex_zone`, and smaller ones inside it lie
   along the edge, corner or mounting hole they are nearest (Murata and TDK MLCC mounting guidance
   on board flexure; Knowles). The zone is measured as the `mlcc-flex-zone` checks measure it,
@@ -1071,6 +1075,8 @@ centre; the spreading step bisects the free board area (inside the outline and c
 keepouts and placed parts) in turn along its longer side, giving each block a region the size of
 its area, and each round pulls the blocks harder to their regions. Connectors are then assigned
 to edges (every assignment tried up to seven connectors, greedy past that) and slid along them,
+flush with the outline where it runs at that point (a notch or a step counts as edge), trying
+the other edges nearest first when no spot on the assigned one is free,
 and the solve runs again with them fixed. Legalisation places each cluster as a whole: its anchor
 at each quarter turn (for chips) and five nudges of a third of the cluster's width, its members
 around it, keeping the cheapest by wirelength and crossings; each part goes to the nearest spot on
