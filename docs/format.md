@@ -591,7 +591,11 @@ clearance to every other net and to the board edge, and islands that reach nothi
 Check reports unrouted connections (with the ratsnest), shorts, clearance violations, tracks
 narrower than their class or off their impedance width, copper near the edge, courtyard
 overlaps, unplaced parts, track ends that connect to nothing, and silk text that overlaps other
-text, crosses a silk outline, sits on a pad or runs off the board. Name an item with its kind when
+text, crosses a silk outline, sits on a pad or runs off the board. Courtyards are the closed
+outlines drawn on `F.CrtYd` / `B.CrtYd`, placed with the part (a bottom part's land on the other
+side); two parts whose courtyards overlap on the same side are an error, and so is a courtyard on
+either side over another part's NPTH hole or over a `MountingHole*` footprint's courtyard (its pad
+outline when it has none). Name an item with its kind when
 names collide: `agentee render pcb:lna`, `sch:lna`, `board:lna`.
 
 ## Simulation (`*.sim.toml`)
