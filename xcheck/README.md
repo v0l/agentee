@@ -67,6 +67,9 @@ runs.
 | `via` | S11 renormalised to each side's own line Z0 (49.5 / 48.2 ohm), 1 / 3 / 5 GHz | -43.9 / -33.7 / -32.1 dB | -45.5 / -29.7 / -25.2 dB |
 | `via` | agentee S11 at 5 GHz, cells 0.1 / 0.05 / 0.025 / 0.0125 mm, strips run 0.05 mm past the port centres | -29.9 / -30.6 / -27.1 / -28.5 dB | |
 | `via` | agentee S11 at 5 GHz, 0.1 mm cells with mesh lines at the drill edge (x and y) | -25.1 dB | |
+| `via` | agentee S11 at 5 GHz, cells 0.1 / 0.05 / 0.025 / 0.0125 mm, port columns on the copper only, square strip ends at the ports | -29.9 / -32.6 / -28.3 / -29.9 dB | |
+| `via` | the same with mesh lines at the drill, pad and antipad edges (from 0.05 mm) | -29.9 / -31.5 / -30.5 / -31.1 dB | |
+| `via` | the same lines at 0.1 mm too, pad and antipad lines moved like strip edges / not moved | -27.5 / -25.5 dB | |
 
 Hammerstad-Jensen gives 49.4 ohm for `msl50` on an infinite substrate at DC. agentee's 2D field
 solver (`xsection`) on the cross-section as simulated, a 12 mm board and ground, gives 49.8 ohm
@@ -129,10 +132,17 @@ Findings:
   the drill and antipad edges and 0.15 mm cells there. The 2D Laplace equivalent radius of the
   drill's node set is 0.125 mm for agentee's 3 x 3 block at 0.1 mm cells and 0.141 mm for
   openEMS's cross of five nodes (drill radius 0.15 mm), which does not order the two results,
-  so the barrel radius alone is not the cause. Not fixed: agentee at 0.1 mm reads the via 2 to
-  4 dB better matched than its own fine-mesh runs.
-- At cells finer than 0.05 mm the xcheck ports (0.1 mm long, centred on the strip end) get node
-  columns off the copper, and a 20 mm line reads S11 near -13 dB; the fine via runs above extend
-  the strips 0.05 mm past the port centres for that reason.
+  so the barrel radius alone is not the cause. With the port columns fixed (below) and square
+  strip ends, the fine runs read -28.3 to -32.6 dB, and the 0.1 mm run sits inside that spread.
+  Mesh lines at the drill, pad and antipad edges bring the 0.05 to 0.0125 mm runs within 1 dB
+  of each other (-30.5 to -31.5 dB, largest S11 difference to the finest run over the band
+  0.0048 against 0.0090 without them), but at 0.1 mm they put lines inside the 0.95 mm strip that
+  crosses the via, its edge cells stop being a whole cell, and S11 moves away from the fine runs
+  (0.019 against 0.007 largest difference, -45 dB at 1 GHz where the line alone reads -57 dB).
+  The lines are therefore only added for a drill radius of at least two cells.
+- At cells finer than 0.05 mm the xcheck ports (0.1 mm long, centred on the strip end) got node
+  columns off the copper, and a 20 mm line read S11 near -13 dB. A port now keeps only the node
+  columns that touch copper on its sheet; the same line at 0.025 mm reads -43.4 / -54.4 / -38.6
+  dB at 1 / 3 / 5 GHz.
 - `thin_lossy` S11 and S21 differ by 0.7 dB and 0.2 dB because agentee widens the strip for its
   35 um thickness and openEMS's conducting sheet has none.
