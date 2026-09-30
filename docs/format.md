@@ -572,7 +572,13 @@ group member short of its target it meanders the short side, on its longest stra
 anywhere along a series chain, with bumps that keep every other net's clearance and the board
 edge rule, and writes the new points into the tracks. `--nets` limits it, `--amplitude` caps the
 bump height and `--pitch` fixes the bump pitch (default three track widths, tighter where that is
-all that fits). A net that is over its group target is reported, not shortened. `agentee calc
+all that fits). Interfaces count too, in time as well as length: a pair over
+its `max_skew` in ps gets the short side lengthened by that delay; for `max_bus_skew` and
+`clock_window` the clock is lengthened until the latest data line falls inside its window and
+every data line short of the bus spread or the window's early edge is lengthened to the latest
+one (inside the window), both legs of a pair together. Delays turn into millimetres at each net's
+own ps per mm. When one leg of a pair cannot take all of it, the other leg is held to what it got.
+A net that is over its group target is reported, not shortened. `agentee calc
 serpentine --from x,y --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of one such
 meander on a segment you pick. Net lengths and delays are in `agentee show pcb:NAME`.
 
