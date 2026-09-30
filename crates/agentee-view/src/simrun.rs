@@ -1,11 +1,14 @@
+use agentee_core::project::Project;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 struct Run {
-    child: Child,
-    log: PathBuf,
-    started: std::time::Instant,
+    handle: JoinHandle<Result<(), String>>,
+    cancel: Arc<AtomicBool>,
+    started: Instant,
 }
 
 #[derive(Default)]
@@ -14,76 +17,50 @@ pub struct Runs {
     failed: HashMap<String, String>,
 }
 
-fn log_path(name: &str) -> PathBuf {
-    let safe: String =
-        name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).collect();
-    std::env::temp_dir().join(format!("agentee-sim-{safe}.log"))
-}
-
 impl Runs {
-    pub fn start(&mut self, project: &Path, name: &str) {
+    pub fn start(&mut self, project: &Project, name: &str) {
         self.failed.remove(name);
-        let exe = match std::env::current_exe() {
-            Ok(e) => e,
-            Err(e) => {
-                self.failed.insert(name.to_string(), e.to_string());
-                return;
-            }
-        };
-        let log = log_path(name);
-        let stderr = match std::fs::File::create(&log) {
-            Ok(f) => Stdio::from(f),
-            Err(_) => Stdio::null(),
-        };
-        let spawned = Command::new(exe)
-            .arg("sim")
-            .arg(name)
-            .arg("--project")
-            .arg(project)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(stderr)
-            .spawn();
-        match spawned {
-            Ok(child) => {
-                self.running.insert(
-                    name.to_string(),
-                    Run { child, log, started: std::time::Instant::now() },
-                );
-            }
-            Err(e) => {
-                self.failed.insert(name.to_string(), e.to_string());
-            }
-        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        let (p, sim, flag) = (project.clone(), name.to_string(), cancel.clone());
+        let handle = std::thread::spawn(move || {
+            agentee_sim::runner::with_cancel(flag, || {
+                agentee_sim::runner::run(&p, &sim, false, &mut |_, _, _| {}).map(|_| ())
+            })
+        });
+        self.running.insert(name.to_string(), Run { handle, cancel, started: Instant::now() });
     }
 
     pub fn stop(&mut self, name: &str, pid: Option<u32>) {
-        if let Some(mut run) = self.running.remove(name) {
-            let _ = run.child.kill();
-            let _ = run.child.wait();
+        if let Some(run) = self.running.get(name) {
+            run.cancel.store(true, Ordering::Relaxed);
             return;
         }
         #[cfg(unix)]
-        if let Some(pid) = pid {
-            let _ = Command::new("kill").arg(pid.to_string()).status();
+        if let Some(pid) = pid.filter(|p| *p != std::process::id()) {
+            let _ = std::process::Command::new("kill").arg(pid.to_string()).status();
         }
         #[cfg(not(unix))]
         let _ = pid;
     }
 
     pub fn poll(&mut self) {
-        let mut done = Vec::new();
-        for (name, run) in self.running.iter_mut() {
-            if let Ok(Some(status)) = run.child.try_wait() {
-                done.push((name.clone(), status.success(), run.log.clone()));
-            }
-        }
-        for (name, ok, log) in done {
-            self.running.remove(&name);
-            if !ok {
-                let text = std::fs::read_to_string(&log).unwrap_or_default();
-                let last = text.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("failed");
-                self.failed.insert(name, last.to_string());
+        let done: Vec<String> = self
+            .running
+            .iter()
+            .filter(|(_, r)| r.handle.is_finished())
+            .map(|(n, _)| n.clone())
+            .collect();
+        for name in done {
+            let Some(run) = self.running.remove(&name) else { continue };
+            let stopped = run.cancel.load(Ordering::Relaxed);
+            match run.handle.join() {
+                Ok(Err(e)) if !stopped => {
+                    self.failed.insert(name, e);
+                }
+                Err(_) => {
+                    self.failed.insert(name, "the run panicked".into());
+                }
+                _ => {}
             }
         }
     }
@@ -92,7 +69,7 @@ impl Runs {
         self.running.contains_key(name)
     }
 
-    pub fn elapsed(&self, name: &str) -> Option<std::time::Duration> {
+    pub fn elapsed(&self, name: &str) -> Option<Duration> {
         self.running.get(name).map(|r| r.started.elapsed())
     }
 

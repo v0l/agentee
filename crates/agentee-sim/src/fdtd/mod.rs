@@ -438,6 +438,15 @@ mod tests {
         execute(&p, "line", 0, &mut |_, _, _| {}).unwrap()
     }
 
+    #[test]
+    fn a_cancelled_run_stops_at_the_first_progress_check() {
+        let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let t = std::time::Instant::now();
+        let out = std::panic::catch_unwind(|| crate::runner::with_cancel(flag, || line(20.0)));
+        assert!(out.is_err());
+        assert!(t.elapsed().as_secs_f64() < 10.0);
+    }
+
     fn delay(r: &SimResult, k: usize) -> f64 {
         let mut unwrapped = 0.0f64;
         let mut last = 0.0f64;

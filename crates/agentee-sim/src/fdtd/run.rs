@@ -463,6 +463,9 @@ pub fn run(
         peak = peak.max(e);
         decay = if e > 0.0 && peak > 0.0 { 10.0 * (peak / e).log10() } else { 0.0 };
         progress(steps, decay);
+        if crate::runner::cancelled() {
+            return Err("stopped".into());
+        }
         if steps > pulse_end.max(min_steps) && decay >= decay_db {
             break;
         }

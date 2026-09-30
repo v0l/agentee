@@ -7,4 +7,5 @@ pub mod gpu;
 pub mod loss;
 pub mod nodal;
 pub mod pdn;
+pub mod runner;
 pub mod xsection;

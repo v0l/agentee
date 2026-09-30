@@ -1151,13 +1151,13 @@ fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState
             }
             if starting {
                 let secs = st.runs.elapsed(&s.name).map(|d| d.as_secs()).unwrap_or(0);
-                note(ui, format!("loading the project, {secs} s"), LEGEND);
+                note(ui, format!("starting, {secs} s"), LEGEND);
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
             }
         } else {
             let label = if has_result { "re-run" } else { "run" };
             if toggle(ui, label, false).clicked() {
-                st.runs.start(&project.root, &s.name);
+                st.runs.start(project, &s.name);
             }
             if s.stale {
                 note(ui, "the copper or the spec changed since the last run", WARN);

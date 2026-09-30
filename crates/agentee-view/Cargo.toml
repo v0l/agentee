@@ -9,6 +9,7 @@ description = "egui viewer and headless renderer for agentee"
 [dependencies]
 agentee-core.workspace = true
 agentee-3d.workspace = true
+agentee-sim.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_bench.workspace = true
