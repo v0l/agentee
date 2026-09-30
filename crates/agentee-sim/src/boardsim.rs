@@ -117,6 +117,22 @@ fn barrel_area_m2(r_mm: f64) -> f64 {
     std::f64::consts::PI * (ro * ro - ri * ri)
 }
 
+fn stub_links(zs: &[f64], from: f64, to: f64, rad: f64, cell_m: f64) -> Vec<(usize, f64)> {
+    let (lo, hi) = (from.min(to), from.max(to));
+    let mut out = Vec::new();
+    for k in 0..zs.len().saturating_sub(1) {
+        let covered = (zs[k].min(hi) - zs[k + 1].max(lo)).max(0.0) * 1e-3;
+        if covered <= 1e-12 {
+            continue;
+        }
+        let dz = (zs[k] - zs[k + 1]) * 1e-3;
+        let copper = covered / (K_CU * barrel_area_m2(rad));
+        let fr4 = (dz - covered).max(0.0) / (K_FR4_THROUGH * cell_m * cell_m);
+        out.push((k, 1.0 / (copper + fr4)));
+    }
+    out
+}
+
 fn pad_sheets(layout: &Layout, model: &PcbModel, p: &PadRef) -> Vec<usize> {
     layout.parts[p.part].pads[p.pad]
         .copper
@@ -521,6 +537,13 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
             p.gz[id(i, j, k)] += (K_CU * barrel_area_m2(*rad) / dz.max(1e-9)) as f32;
         }
     }
+    for (c, rad, s, end) in &model.stubs {
+        let (i, j) = r.node(*c);
+        let z: Vec<f64> = zs.iter().map(|z| z.0).collect();
+        for (k, g) in stub_links(&z, model.sheets[*s].z, *end, *rad, cell_m) {
+            p.gz[id(i, j, k)] += g as f32;
+        }
+    }
     let mut source_nodes: Vec<Vec<usize>> = Vec::new();
     for h in &spec.sources {
         let part = &layout.parts[h.part];
@@ -653,6 +676,25 @@ mod tests {
     }
 
     #[test]
+    fn a_stub_conducts_as_copper_where_it_runs_and_fr4_past_its_end() {
+        let zs = [0.0, -0.1, -0.2, -0.3];
+        let cell = 0.25e-3;
+        let links = stub_links(&zs, 0.0, -0.15, 0.15, cell);
+        let full = K_CU * barrel_area_m2(0.15) / 0.1e-3;
+        let half = 1.0
+            / (0.05e-3 / (K_CU * barrel_area_m2(0.15)) + 0.05e-3 / (K_FR4_THROUGH * cell * cell));
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].0, 0);
+        assert!((links[0].1 - full).abs() < 1e-9 * full);
+        assert_eq!(links[1].0, 1);
+        assert!((links[1].1 - half).abs() < 1e-9 * half);
+        assert!(links[1].1 < full / 100.0);
+        let up = stub_links(&zs, -0.3, -0.2, 0.15, cell);
+        assert_eq!(up.len(), 1);
+        assert_eq!(up[0].0, 2);
+    }
+
+    #[test]
     fn via_barrels_run_only_through_their_span() {
         let dir = std::env::temp_dir().join(format!("agentee-sim-vias-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -683,6 +725,11 @@ mod tests {
         let model = PcbModel::geometry(layout, board);
         let spans: Vec<(usize, usize)> = model.vias.iter().map(|v| (v.2, v.3)).collect();
         assert_eq!(spans, [(0, 1), (1, 4), (0, 2)]);
+        assert_eq!(model.stubs.len(), 1);
+        let (at, rad, stop, end) = model.stubs[0];
+        assert_eq!((at, rad, stop), ([15.0, 5.0], 0.15, 2));
+        let gap = model.sheets[2].z - model.sheets[3].z;
+        assert!((model.sheets[2].z - end - 0.25f64.min(0.95 * gap)).abs() < 1e-9, "{end}");
         let r = raster(&model, board, 0.25);
         let on = |q: P, s: usize| {
             let (i, j) = r.node(q);

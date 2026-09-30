@@ -168,6 +168,7 @@ fn main() {
             }],
             copper: cu,
             vias: vec![],
+            stubs: vec![],
             ports: [0.5, len - 0.5]
                 .iter()
                 .enumerate()

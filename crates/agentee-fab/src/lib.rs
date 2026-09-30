@@ -636,6 +636,8 @@ fn ipc356(layout: &Layout) -> String {
             name.chars().rev().take(14).collect::<Vec<_>>().into_iter().rev().collect();
         format!("{tail:<14}")
     };
+    let n = layout.copper.len();
+    let bottom = format!("A{:02}", n.max(2));
     let mut out = String::from("C  IPC-D-356 bare board netlist\n");
     let _ = writeln!(out, "C  {}", layout.name);
     out += "P  JOB   agentee\nP  CODE 00\nP  UNITS CUST 0\nP  arrayDim   N\n";
@@ -661,7 +663,7 @@ fn ipc356(layout: &Layout) -> String {
                         if pad.kind == PadKind::Npth { 'U' } else { 'P' }
                     ),
                     match (test_point, layout.test.bottom()) {
-                        (true, true) => "A02",
+                        (true, true) => bottom.as_str(),
                         (true, false) => "A01",
                         (false, _) => "A00",
                     },
@@ -670,7 +672,7 @@ fn ipc356(layout: &Layout) -> String {
                 None if pad.copper.iter().any(|l| l == "F.Cu") => {
                     (327, "      ".to_string(), "A01", "S2")
                 }
-                None => (327, "      ".to_string(), "A02", "S1"),
+                None => (327, "      ".to_string(), bottom.as_str(), "S1"),
             };
             let _ = writeln!(
                 out,
@@ -684,19 +686,21 @@ fn ipc356(layout: &Layout) -> String {
         }
     }
     let probe_cu = layout.test.copper();
-    let n = layout.copper.len();
     for v in &layout.vias {
         let probed = layout.test.vias && v.layers.contains(&probe_cu);
-        let (a, b) = v.span_of(&layout.copper).unwrap_or((0, n.saturating_sub(1)));
+        let on: Vec<usize> =
+            v.layers.iter().filter_map(|l| layout.copper.iter().position(|c| c == l)).collect();
+        let a = on.iter().copied().min().unwrap_or(0);
+        let b = on.iter().copied().max().unwrap_or(n.saturating_sub(1));
         let side = match (a == 0, b + 1 == n) {
             (true, true) => "A00".to_string(),
             (true, false) => "A01".to_string(),
-            (false, true) => format!("A{n:02}"),
+            (false, true) => bottom.clone(),
             (false, false) => format!("A{:02}", a + 1),
         };
         let (mid, access, mask) = match (probed, layout.test.bottom()) {
             (false, _) => ('M', side, "S3"),
-            (true, true) => (' ', "A02".to_string(), "S1"),
+            (true, true) => (' ', bottom.clone(), "S1"),
             (true, false) => (' ', "A01".to_string(), "S2"),
         };
         let _ = writeln!(

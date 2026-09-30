@@ -163,6 +163,7 @@ pub struct PcbModel {
     pub dielectrics: Vec<Dielectric>,
     pub copper: Vec<(usize, Copper)>,
     pub vias: Vec<(P, f64, usize, usize)>,
+    pub stubs: Vec<(P, f64, usize, f64)>,
     pub ports: Vec<ModelPort>,
     pub elements: Vec<ModelElement>,
     pub features_x: Vec<f64>,
@@ -361,6 +362,22 @@ impl PcbModel {
         Ok(m)
     }
 
+    fn barrels(&self, ks: &[usize], grid: &Grid) -> Vec<(P, f64, usize, usize)> {
+        let stubs = self.stubs.iter().map(|(c, r, s, z)| {
+            let next = if *z < self.sheets[*s].z { s + 1 } else { s - 1 };
+            let (k, kn) = (grid.nearest(2, *z), ks[next]);
+            let end = if k != kn {
+                k
+            } else if kn > ks[*s] {
+                kn - 1
+            } else {
+                kn + 1
+            };
+            (*c, *r, ks[*s], end)
+        });
+        self.vias.iter().map(|(c, r, a, b)| (*c, *r, ks[*a], ks[*b])).chain(stubs).collect()
+    }
+
     pub fn geometry(layout: &Layout, board: &Board) -> PcbModel {
         let (sheets, dielectrics) = stack(board);
         let sheet = |name: &str| sheets.iter().position(|s| s.name == name);
@@ -424,6 +441,15 @@ impl PcbModel {
             }
             if let (Some(a), Some(b)) = (ks.iter().min(), ks.iter().max()) {
                 m.vias.push((v.at, v.drill / 2.0, *a, *b));
+            }
+            if let Some(bd) = &v.backdrill
+                && let (Some(side), Some(stop)) = (sheet(&bd.from), sheet(&bd.to))
+                && side != stop
+            {
+                let next = if side > stop { stop + 1 } else { stop - 1 };
+                let gap = sheets[next].z - sheets[stop].z;
+                let len = bd.max_stub.to_mm().min(gap.abs() * 0.95);
+                m.stubs.push((v.at, v.drill / 2.0, stop, sheets[stop].z + len * gap.signum()));
             }
         }
         m.plating = plating(layout, board, &sheets);
@@ -733,7 +759,7 @@ impl PcbModel {
             }
         }
         let mut via_edges: std::collections::HashSet<(usize, usize, usize)> = Default::default();
-        for (c, r, a, b) in &self.vias {
+        for (c, r, a, b) in self.barrels(&ks, &grid) {
             let (i, j) = (grid.nearest(0, c[0]), grid.nearest(1, c[1]));
             let outside = |i: usize, j: usize| {
                 i <= grid.pml
@@ -744,12 +770,12 @@ impl PcbModel {
             if outside(i, j) {
                 continue;
             }
-            let (lo, hi) = (ks[*a].min(ks[*b]), ks[*a].max(ks[*b]));
+            let (lo, hi) = (a.min(b), a.max(b));
             let (i0, i1) = (grid.cell_of(0, c[0] - r), grid.cell_of(0, c[0] + r) + 1);
             let (j0, j1) = (grid.cell_of(1, c[1] - r), grid.cell_of(1, c[1] + r) + 1);
             for ii in i0..=i1 {
                 for jj in j0..=j1 {
-                    let inside = geom::dist([grid.x[ii], grid.y[jj]], *c) <= *r;
+                    let inside = geom::dist([grid.x[ii], grid.y[jj]], c) <= r;
                     if (inside && !outside(ii, jj)) || (ii, jj) == (i, j) {
                         for k in lo..hi {
                             via_edges.insert((ii, jj, k));
@@ -1091,6 +1117,27 @@ mod tests {
         let lines = mesh_lines(&[0.0, 0.11, 0.3, 1.0], &[(0.0, cell), (1.0, cell)], 0.5, 1.3);
         assert_eq!(&lines[..3], &[0.0, 0.11, 0.3]);
         assert!(lines.windows(2).all(|w| w[1] - w[0] >= FILL * cell - 1e-9), "{lines:?}");
+    }
+
+    #[test]
+    fn a_backdrill_stub_is_a_barrel_short_of_the_next_sheet() {
+        let m = PcbModel {
+            outline: vec![[0.0, -2.0], [6.0, -2.0], [6.0, 2.0], [0.0, 2.0]],
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.0 },
+                Sheet { name: "B.Cu".into(), z: -0.4, thickness: 0.0 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.4, z1: 0.0, er: 4.0, tan: 0.0, pinned: true }],
+            stubs: vec![([2.0, 0.0], 0.15, 0, -0.2), ([4.0, 0.0], 0.15, 0, -0.39)],
+            ..Default::default()
+        };
+        let opt = Meshing { cell: 0.05, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let grid = m.mesh(&opt);
+        let ks: Vec<usize> = m.sheets.iter().map(|s| grid.nearest(2, s.z)).collect();
+        let b = m.barrels(&ks, &grid);
+        assert_eq!(b[0].2, ks[0]);
+        assert!((grid.z[b[0].3] + 0.2).abs() < 0.03, "{}", grid.z[b[0].3]);
+        assert!(b[1].3 != ks[1] && b[1].3.abs_diff(ks[1]) == 1, "{:?} {ks:?}", b[1]);
     }
 
     #[test]

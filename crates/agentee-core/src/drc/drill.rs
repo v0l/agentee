@@ -64,7 +64,7 @@ pub static RULES: &[Rule] = &[
         id: "hole-to-edge",
         category: Category::Drill,
         severity: Severity::Error,
-        summary: "a non-plated hole wall closer than min_copper_to_edge to the board outline",
+        summary: "a non-plated hole wall closer than min_copper_to_edge to the board outline or a board cutout",
         when: "non-plated holes",
         applies: with_npth,
         check: hole_to_edge,

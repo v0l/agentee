@@ -1180,6 +1180,21 @@ fn the_router_picks_the_cheapest_class_via_that_spans_the_layer_change() {
     assert_eq!(routed(1.0, &["F.Cu", "In1.Cu"]), ["uv"]);
     assert_eq!(routed(5.0, &["F.Cu", "In1.Cu"]), ["std"]);
     assert_eq!(routed(1.0, &["F.Cu", "In2.Cu"]), ["std"]);
+    let chosen = |via: &[&str]| {
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: vec!["F.Cu".into(), "In1.Cu".into()],
+            grid: 0.1,
+            via: via.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        agentee_core::route::route(l, &p.boards[0].item, &opts)
+            .map(|r| r.vias.iter().map(|v| v.via.clone()).collect::<Vec<_>>())
+    };
+    let uv = chosen(&["std", "uv"]).unwrap();
+    assert!(!uv.is_empty() && uv.iter().all(|v| v == "uv"), "{uv:?}");
+    assert!(chosen(&["std"]).unwrap().iter().all(|v| v == "std"));
+    assert!(chosen(&["std", "nope"]).unwrap_err().contains("nope"));
 }
 
 #[test]
@@ -1222,4 +1237,79 @@ fn the_router_staggers_vias_unless_the_fab_stacks_them() {
     assert_eq!(kinds.into_iter().collect::<Vec<_>>(), ["bu", "uv"]);
     let (stacked, _) = routed(true);
     assert!(stacked);
+}
+
+#[test]
+fn a_fanout_takes_the_first_listed_via_that_reaches_the_pad() {
+    let board = format!("{HDI_VIAS}{HDI_VIA_TYPES}");
+    let fanout = |via: &str| {
+        let pcb = format!("\n[[fanouts]]\nref = \"R1\"\nvia = {via}\n");
+        let p = load(&Fixture {
+            preset: "hdi-6l-1n1",
+            board: &board,
+            parts: &[("R1", "TWO", [5.0, 5.0])],
+            nets: &[("A", &["R1.1"]), ("B", &["R1.2"])],
+            pcb: &pcb,
+            ..Default::default()
+        });
+        let names: Vec<String> = p.layouts[0].item.vias.iter().map(|v| v.name.clone()).collect();
+        names
+    };
+    assert_eq!(fanout("[\"bu\", \"uv\"]"), ["uv", "uv"]);
+    assert_eq!(fanout("\"bu\""), ["bu", "bu"]);
+}
+
+#[test]
+fn stitching_keeps_hole_spacing_only_from_holes_through_its_dielectrics() {
+    let ub = "[[vias]]\nname = \"ub\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"In4.Cu\"\nto = \"B.Cu\"\n";
+    let stitch = "\n[[zones]]\nnet = \"A\"\nlayers = [\"B.Cu\"]\noutline = [[8.0, 8.0], [12.0, 8.0], [12.0, 12.0], [8.0, 12.0]]\n\n[[stitching]]\nnet = \"A\"\nvia = \"ub\"\npitch = \"1mm\"\noutline = [[9.8, 9.8], [10.2, 9.8], [10.2, 10.2], [9.8, 10.2]]\n";
+    let stitched = |kind: &str| {
+        let p = hdi(&format!("{}{stitch}", typed_via("B", [10.3, 10.0], kind)), ub);
+        p.layouts[0].item.vias.iter().filter(|v| v.name == "ub").count()
+    };
+    assert_eq!(stitched("uv"), 1);
+    assert_eq!(stitched("bd"), 0);
+}
+
+#[test]
+fn test_pads_and_their_vias_keep_off_a_board_cutout() {
+    let window = "[[outline.cutouts]]\norigin = [16, 6]\nsize = [4, 8]\n";
+    let spots = |board: &str| {
+        let p =
+            load(&Fixture { board, parts: &[("R1", "TWO", [13.0, 10.0])], ..Default::default() });
+        let l = &p.layouts[0].item;
+        let targets: Vec<usize> = (0..l.nets.len()).collect();
+        let placed: Vec<([f64; 2], [f64; 2])> =
+            agentee_core::testpoint::place(l, &p.boards[0].item, &l.test, &targets, 1.27)
+                .iter()
+                .filter_map(|s| Some((s.at?, s.via?)))
+                .collect();
+        (p, placed)
+    };
+    let near = |at: [f64; 2]| at[0] > 16.0 - 3.5 && at[1] > 6.0 - 3.5 && at[1] < 14.0 + 3.5;
+    let (_, open) = spots("");
+    assert!(open.iter().any(|(at, _)| near(*at)), "{open:?}");
+    let (p, cut) = spots(window);
+    assert_eq!(cut.len(), 2, "{cut:?}");
+    let edge = p.layouts[0].item.edge();
+    for (at, via) in &cut {
+        assert!(edge.contains(*at) && edge.distance(*at) - 0.5 >= 3.0 - 1e-6, "{at:?}");
+        assert!(edge.contains(*via) && edge.distance(*via) - 0.3 >= 0.3 - 1e-6, "{via:?}");
+    }
+}
+
+#[test]
+fn stitching_vias_keep_off_a_board_cutout() {
+    let stitch = "\n[[zones]]\nnet = \"A\"\nlayers = [\"F.Cu\", \"B.Cu\"]\n\n[[stitching]]\nnet = \"A\"\npitch = \"1mm\"\n";
+    let p = load(&Fixture { board: SLOT, pcb: stitch, ..Default::default() });
+    let l = &p.layouts[0].item;
+    let edge = l.edge();
+    assert!(l.vias.len() > 100, "{}", l.vias.len());
+    for v in &l.vias {
+        assert!(edge.contains(v.at) && edge.distance(v.at) - 0.3 >= 0.3 - 1e-6, "{:?}", v.at);
+    }
+    let open = load(&Fixture { pcb: stitch, ..Default::default() });
+    let inside = |at: [f64; 2]| (13.4..=16.6).contains(&at[0]) && (7.4..=12.6).contains(&at[1]);
+    assert!(open.layouts[0].item.vias.iter().any(|v| inside(v.at)));
+    assert!(!l.vias.iter().any(|v| inside(v.at)));
 }

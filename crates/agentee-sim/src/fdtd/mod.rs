@@ -405,6 +405,7 @@ mod tests {
                 (1, Copper::Poly(vec![[0.0, -5.0], [len, -5.0], [len, 5.0], [0.0, 5.0]])),
             ],
             vias: vec![],
+            stubs: vec![],
             ports: vec![
                 ModelPort {
                     name: "P1".into(),

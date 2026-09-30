@@ -418,22 +418,22 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
     let enig = s.finish.eq_ignore_ascii_case("ENIG");
     match name {
         "hdi" => Some(Rules {
-            min_track_width: mm(0.075),
-            min_clearance: mm(0.075),
-            min_drill: mm(0.2),
+            min_track_width: mm(0.065),
+            min_clearance: mm(0.065),
+            min_drill: mm(0.15),
             min_via_drill: mm(0.15),
             min_via_diameter: mm(0.35),
             min_annular_ring: mm(0.1),
             min_blind_via_drill: mm(0.15),
             min_microvia_drill: mm(0.1),
-            max_microvia_drill: mm(0.15),
+            max_microvia_drill: mm(0.2),
             min_microvia_diameter: mm(0.25),
             min_hole_to_hole: mm(0.25),
             min_via_hole_to_copper: mm(0.15),
             min_copper_to_edge: mm(0.3),
             min_bga_pad: mm(0.2),
             min_bga_pitch: mm(0.4),
-            max_aspect_ratio: 10.0,
+            max_aspect_ratio: 14.0,
             max_microvia_aspect_ratio: 0.8,
             hdi: true,
             stacked_microvias: true,
@@ -1138,13 +1138,23 @@ impl Board {
         class: Option<&Netclass>,
         reach: &[&str],
     ) -> Option<&Via> {
+        let names: Vec<String> = name.map(|n| vec![n.to_string()]).unwrap_or_default();
+        self.via_among(&names, class, reach)
+    }
+
+    pub fn via_among(
+        &self,
+        names: &[String],
+        class: Option<&Netclass>,
+        reach: &[&str],
+    ) -> Option<&Via> {
         let copper = self.stackup.copper_names();
         let named = |n: &str| self.vias.iter().find(|v| v.name == n);
-        if let Some(n) = name {
-            return named(n).or(self.vias.first());
-        }
-        let listed: Vec<&Via> =
-            class.map(|c| c.via.iter().filter_map(|n| named(n)).collect()).unwrap_or_default();
+        let listed: Vec<&Via> = if names.is_empty() {
+            class.map(|c| c.via.iter().filter_map(|n| named(n)).collect()).unwrap_or_default()
+        } else {
+            names.iter().filter_map(|n| named(n)).collect()
+        };
         let reaches = |v: &&Via| {
             let on = v.copper_layers(&copper);
             reach.iter().all(|r| on.iter().any(|x| x == r))
@@ -1874,6 +1884,11 @@ severity = { "via-in-pad" = "error" }
         assert_eq!(b.via_for(None, fast, &["B.Cu"]).unwrap().name, "ub");
         assert_eq!(b.via_for(None, fast, &["F.Cu"]).unwrap().name, "std");
         assert_eq!(b.via_for(Some("std"), fast, &[]).unwrap().name, "std");
+        let both = ["std".to_string(), "ub".to_string()];
+        assert_eq!(b.via_among(&both, None, &["B.Cu", "In4.Cu"]).unwrap().name, "std");
+        assert_eq!(b.via_among(&both[1..], None, &["F.Cu"]).unwrap().name, "ub");
+        let ub_first = ["ub".to_string(), "std".to_string()];
+        assert_eq!(b.via_among(&ub_first, None, &["F.Cu"]).unwrap().name, "std");
     }
 
     #[test]
