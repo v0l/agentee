@@ -127,6 +127,10 @@ fn port_loop(sim: &Sim, p: &PortDef, axis: usize, k: usize) -> Vec<(usize, usize
         .collect()
 }
 
+fn fused_tile(depth: usize) -> (u32, u32) {
+    if depth > 64 { (32, 8) } else { (64, 4) }
+}
+
 pub fn fused_update() -> bool {
     std::env::var("AGENTEE_FDTD_FUSED").is_ok_and(|v| v != "0")
 }
@@ -336,11 +340,17 @@ pub fn run(
     let b_debye_state =
         g.zeroed("debye_state", ((debye_count * sim.debye.poles.len()).max(1) * 4) as u64);
     let b_currents = g.zeroed("currents", ((sheet_count * states).max(1) * 4) as u64);
+    let (tk, tj) = fused_tile(n[2]);
     let module = unsafe {
         g.device.create_shader_module_trusted(
             wgpu::ShaderModuleDescriptor {
                 label: Some("fdtd"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("fdtd.wgsl").into()),
+                source: wgpu::ShaderSource::Wgsl(
+                    include_str!("fdtd.wgsl")
+                        .replace("const TK: u32 = 64u;", &format!("const TK: u32 = {tk}u;"))
+                        .replace("const TJ: u32 = 4u;", &format!("const TJ: u32 = {tj}u;"))
+                        .into(),
+                ),
             },
             wgpu::ShaderRuntimeChecks::unchecked(),
         )
@@ -448,7 +458,7 @@ pub fn run(
     };
     if fused {
         let blocks =
-            [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), (n[0] as u32).div_ceil(4)];
+            [(n[2] as u32).div_ceil(tk), (n[1] as u32).div_ceil(tj), (n[0] as u32).div_ceil(4)];
         for (parity, entry) in ["step_even", "step_odd"].iter().enumerate() {
             let uses0 = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12];
             pipes.push((parity, make_with(entry, &uses0, &[], &stepped[parity]), blocks));
