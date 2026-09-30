@@ -10,7 +10,6 @@ const CERAMIC: [f32; 3] = [0.78, 0.66, 0.48];
 const FERRITE: [f32; 3] = [0.3, 0.3, 0.32];
 const LED_BODY: [f32; 3] = [0.95, 0.95, 0.92];
 const MARK: [f32; 3] = [0.55, 0.55, 0.57];
-const LID: [f32; 3] = [0.86, 0.86, 0.88];
 
 type R = [f64; 2];
 
@@ -335,16 +334,6 @@ fn shield(fp: &Footprint) -> Option<Mesh> {
     m.cuboid(METAL, [lo[0] + wall, hi[1] - lip], [hi[0] - wall, hi[1] - wall], top, height);
     m.cuboid(METAL, [lo[0] + wall, lo[1] + lip], [lo[0] + lip, hi[1] - lip], top, height);
     m.cuboid(METAL, [hi[0] - lip, lo[1] + lip], [hi[0] - wall, hi[1] - lip], top, height);
-    if fp.description.to_uppercase().contains("TWO PIECE") {
-        let (t, skirt, gap) = (0.15, 1.5, 0.1);
-        let (a, b) = ([lo[0] - gap - t, lo[1] - gap - t], [hi[0] + gap + t, hi[1] + gap + t]);
-        m.cuboid(LID, a, b, height, height + t);
-        let z0 = height - skirt;
-        m.cuboid(LID, a, [b[0], a[1] + t], z0, height);
-        m.cuboid(LID, [a[0], b[1] - t], b, z0, height);
-        m.cuboid(LID, a, [a[0] + t, b[1]], z0, height);
-        m.cuboid(LID, [b[0] - t, a[1]], b, z0, height);
-    }
     Some(m.finish())
 }
 

@@ -855,8 +855,7 @@ aims the camera at that area.
 Common parts are drawn from the footprint without loading a model: chip resistors, capacitors,
 inductors, LEDs and diodes (names with a `Metric` size), vertical pin headers and sockets, SOIC,
 SOT, QFP, QFN, DFN, SON, TSLP and BGA packages, crystals and oscillators, edge mount SMA
-connectors, and shield frames (`Shield` in the name or description, with the cover on when the
-description says `Two Piece`). The body is the `F.Fab` outline, the height comes from
+connectors, and shield frames (`Shield` in the name or description), drawn without a cover. The body is the `F.Fab` outline, the height comes from
 `height`, an `_h1.25mm` part of the name, or the package family, and leads sit on the pads outside
 the body. Mounting holes, fiducials, pad test points, solder jumpers and Tag-Connect footprints
 get no body. A model file in the project (`3dmodels/` or a path relative to it) still wins over a
