@@ -1287,3 +1287,48 @@ pub fn route(
         "failed": result.failed,
     }))
 }
+
+pub fn tune(
+    p: &Project,
+    name: &str,
+    opts: &agentee_core::tune::TuneOptions,
+    write: bool,
+) -> Result<Value, String> {
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let entry = &p.layouts[i];
+    let board = p.boards.iter().find(|b| b.name == entry.item.board).ok_or("board is missing")?;
+    let result = agentee_core::tune::tune(&entry.item, &board.item, opts)?;
+    if write && !result.edits.is_empty() {
+        let path = &entry.path;
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+        let tracks = doc
+            .get_mut("tracks")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .ok_or("the layout has no [[tracks]]")?;
+        let round = |v: f64| (v * 1e4).round() / 1e4;
+        for e in &result.edits {
+            let t = tracks.get_mut(e.track).ok_or("track index out of range")?;
+            let mut arr = toml_edit::Array::new();
+            for q in &e.points {
+                let mut pt = toml_edit::Array::new();
+                pt.push(round(q[0]));
+                pt.push(round(q[1]));
+                arr.push(pt);
+            }
+            t["points"] = toml_edit::value(arr);
+        }
+        std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
+    }
+    Ok(json!({
+        "layout": entry.name,
+        "written": write,
+        "tuned": result.tuned,
+        "failed": result.failed,
+        "over": result.over,
+        "tracks_changed": result.edits.len(),
+    }))
+}

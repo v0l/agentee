@@ -137,6 +137,17 @@ fn tools() -> Value {
             }), &["name", "nets"]),
         },
         {
+            "name": "tune",
+            "description": "Length-match a layout: meander the short net of every pair over its skew limit and every match group member short of its target, on the longest segments where the bumps clear every other net, and write the points back into the tracks.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "nets": { "type": "string", "description": "comma separated globs, default all" },
+                "amplitude": { "type": "number", "description": "largest bump height in mm" },
+                "pitch": { "type": "number", "description": "bump pitch in mm" },
+                "dry_run": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "sparam",
             "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
             "inputSchema": s(json!({
@@ -391,6 +402,25 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 ..Default::default()
             };
             Ok(ok(vec![text(pretty(&ops::route(&ops::load(root)?, name, &opts, !dry_run)?))]))
+        }
+        "tune" => {
+            let nets: Vec<String> = arg(a, "nets")
+                .map(|v| {
+                    v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                })
+                .unwrap_or_else(|| vec!["*".into()]);
+            let opts = agentee_core::tune::TuneOptions {
+                nets,
+                amplitude: a.get("amplitude").and_then(Value::as_f64),
+                pitch: a.get("pitch").and_then(Value::as_f64),
+            };
+            let name = arg(a, "name").ok_or("name is required")?;
+            Ok(ok(vec![text(pretty(&ops::tune(
+                &ops::load(root)?,
+                name,
+                &opts,
+                !flag(a, "dry_run"),
+            )?))]))
         }
         "sparam" => {
             let p = ops::load(root)?;

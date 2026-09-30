@@ -1,0 +1,416 @@
+use crate::board::Board;
+use crate::footprint::PadKind;
+use crate::geom::{self, P};
+use crate::layout::{Layout, glob, serpentine};
+use serde::Serialize;
+
+#[derive(Clone, Debug)]
+pub struct TuneOptions {
+    pub nets: Vec<String>,
+    pub amplitude: Option<f64>,
+    pub pitch: Option<f64>,
+}
+
+impl Default for TuneOptions {
+    fn default() -> Self {
+        TuneOptions { nets: vec!["*".into()], amplitude: None, pitch: None }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Tuned {
+    pub net: String,
+    pub why: String,
+    pub wanted_mm: f64,
+    pub added_mm: f64,
+    pub meanders: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TrackEdit {
+    pub track: usize,
+    pub points: Vec<P>,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TuneResult {
+    pub tuned: Vec<Tuned>,
+    pub failed: Vec<Tuned>,
+    pub over: Vec<String>,
+    #[serde(skip)]
+    pub edits: Vec<TrackEdit>,
+}
+
+enum Shape {
+    Poly(Vec<P>),
+    Seg(P, P, f64),
+    Circle(P, f64),
+}
+
+struct Obstacle {
+    net: Option<usize>,
+    layers: Vec<String>,
+    shape: Shape,
+    clearance: f64,
+    lo: P,
+    hi: P,
+}
+
+impl Obstacle {
+    fn new(net: Option<usize>, layers: Vec<String>, shape: Shape, clearance: f64) -> Self {
+        let (lo, hi) = match &shape {
+            Shape::Poly(p) => p.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| {
+                ([lo[0].min(q[0]), lo[1].min(q[1])], [hi[0].max(q[0]), hi[1].max(q[1])])
+            }),
+            Shape::Seg(a, b, r) => {
+                ([a[0].min(b[0]) - r, a[1].min(b[1]) - r], [a[0].max(b[0]) + r, a[1].max(b[1]) + r])
+            }
+            Shape::Circle(c, r) => ([c[0] - r, c[1] - r], [c[0] + r, c[1] + r]),
+        };
+        Obstacle { net, layers, shape, clearance, lo, hi }
+    }
+
+    fn distance(&self, line: &[P]) -> f64 {
+        match &self.shape {
+            Shape::Poly(p) => geom::polyline_polygon_distance(line, p),
+            Shape::Seg(a, b, r) => {
+                line.windows(2)
+                    .map(|w| geom::segment_segment_distance(w[0], w[1], *a, *b))
+                    .fold(f64::MAX, f64::min)
+                    - r
+            }
+            Shape::Circle(c, r) => {
+                line.windows(2)
+                    .map(|w| geom::point_segment_distance(*c, w[0], w[1]))
+                    .fold(f64::MAX, f64::min)
+                    - r
+            }
+        }
+    }
+}
+
+struct Demand {
+    nets: Vec<usize>,
+    add: f64,
+    why: String,
+}
+
+pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneResult, String> {
+    let wanted = |n: usize| opts.nets.iter().any(|g| glob(g, &layout.nets[n].name));
+    let mut out = TuneResult::default();
+    let mut demands: Vec<Demand> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for pair in &layout.pairs {
+        let Some(limit) = pair.limit_mm else { continue };
+        if pair.skew_mm.abs() <= limit + 1e-9 || !seen.insert(pair.chain.clone()) {
+            continue;
+        }
+        let pick = |m: &(usize, usize)| if pair.skew_mm > 0.0 { m.1 } else { m.0 };
+        let short: Vec<usize> = pair.chain.iter().map(pick).collect();
+        if short.iter().any(|&n| wanted(n)) {
+            let other = |m: &(usize, usize)| if pair.skew_mm > 0.0 { m.0 } else { m.1 };
+            let partner: Vec<&str> =
+                pair.chain.iter().map(|m| layout.nets[other(m)].name.as_str()).collect();
+            demands.push(Demand {
+                nets: short,
+                add: pair.skew_mm.abs(),
+                why: format!("skew to {}", partner.join("+")),
+            });
+        }
+    }
+    for g in &layout.match_groups {
+        for &n in &g.nets {
+            let off = layout.nets[n].length_mm - g.target_mm;
+            if off < -g.tolerance_mm - 1e-9 && wanted(n) {
+                if let Some(d) = demands.iter_mut().find(|d| d.nets == [n]) {
+                    d.add = d.add.max(-off);
+                } else {
+                    demands.push(Demand {
+                        nets: vec![n],
+                        add: -off,
+                        why: format!("match group {}", g.name),
+                    });
+                }
+            } else if off > g.tolerance_mm + 1e-9 && wanted(n) {
+                out.over.push(format!(
+                    "{} is {:.3} mm over the {} target, shorten it by hand",
+                    layout.nets[n].name, off, g.name
+                ));
+            }
+        }
+    }
+
+    let mut obstacles = obstacles_of(layout);
+    let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
+    let edge = board.rules.min_copper_to_edge.to_mm();
+    let floor = board.rules.min_clearance.to_mm();
+
+    for d in demands {
+        let mut left = d.add;
+        let mut meanders = 0;
+        'grow: while left > 1e-4 {
+            let mut segs: Vec<(usize, usize, f64)> = layout
+                .tracks
+                .iter()
+                .enumerate()
+                .filter(|(_, t)| d.nets.contains(&t.net))
+                .flat_map(|(ti, _)| {
+                    points[ti]
+                        .windows(2)
+                        .enumerate()
+                        .map(|(k, w)| (ti, k, geom::dist(w[0], w[1])))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            segs.sort_by(|a, b| b.2.total_cmp(&a.2));
+            for (ti, k, _) in segs {
+                let t = &layout.tracks[ti];
+                let net = &layout.nets[t.net];
+                let (a, b) = (points[ti][k], points[ti][k + 1]);
+                let floor_pitch = t.width + net.clearance.max(floor);
+                let pitches: Vec<f64> = match opts.pitch {
+                    Some(p) => vec![p],
+                    None => {
+                        [3.0, 2.5, 2.0].iter().map(|f| (f * t.width).max(floor_pitch)).collect()
+                    }
+                };
+                let Some((pts, added)) = pitches.iter().find_map(|&pitch| {
+                    fit(a, b, left, pitch, opts.amplitude, |line| {
+                        legal(
+                            line,
+                            t.width,
+                            &t.layer,
+                            t.net,
+                            net.clearance,
+                            floor,
+                            edge,
+                            &obstacles,
+                            &layout.outline,
+                        )
+                    })
+                }) else {
+                    continue;
+                };
+                for w in pts.windows(2) {
+                    obstacles.push(Obstacle::new(
+                        Some(t.net),
+                        vec![t.layer.clone()],
+                        Shape::Seg(w[0], w[1], t.width / 2.0),
+                        net.clearance,
+                    ));
+                }
+                let mut np = points[ti][..k].to_vec();
+                np.extend(pts);
+                np.extend_from_slice(&points[ti][k + 2..]);
+                points[ti] = np;
+                left -= added;
+                meanders += 1;
+                if !out.edits.iter().any(|e| e.track == ti) {
+                    out.edits.push(TrackEdit { track: ti, points: Vec::new() });
+                }
+                continue 'grow;
+            }
+            break;
+        }
+        let t = Tuned {
+            net: d.nets.iter().map(|&n| layout.nets[n].name.as_str()).collect::<Vec<_>>().join("+"),
+            why: d.why,
+            wanted_mm: d.add,
+            added_mm: d.add - left.max(0.0),
+            meanders,
+        };
+        if left < 1e-4 { out.tuned.push(t) } else { out.failed.push(t) }
+    }
+    for e in &mut out.edits {
+        e.points = points[e.track].clone();
+    }
+    for e in &mut out.edits {
+        e.track = layout.tracks[e.track].source;
+    }
+    Ok(out)
+}
+
+fn fit(
+    a: P,
+    b: P,
+    want: f64,
+    pitch: f64,
+    amplitude: Option<f64>,
+    ok: impl Fn(&[P]) -> bool,
+) -> Option<(Vec<P>, f64)> {
+    let l = geom::dist(a, b);
+    let margin = (pitch / 2.0).max(0.15);
+    let room = l - 2.0 * margin;
+    if room < 2.0 * pitch {
+        return None;
+    }
+    let u = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+    let at = |s: f64| [a[0] + u[0] * s, a[1] + u[1] * s];
+    let amps: Vec<f64> = match amplitude {
+        Some(x) => vec![x],
+        None => [1.2, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2]
+            .into_iter()
+            .filter(|x| *x >= pitch * 0.5)
+            .collect(),
+    };
+    let mut best: Option<(Vec<P>, f64)> = None;
+    for amp in amps {
+        let max_bumps = (room / (2.0 * pitch)).floor();
+        let bumps = (want / (2.0 * amp)).ceil().min(max_bumps).max(1.0);
+        let add = (2.0 * amp * bumps).min(want);
+        let run = 2.0 * pitch * bumps;
+        let steps = (((room - run) / pitch).floor() as usize).min(24);
+        let mut starts: Vec<f64> =
+            (0..=steps).map(|i| margin + (room - run) / 2.0 + i as f64 * pitch / 2.0).collect();
+        starts.extend((1..=steps).map(|i| margin + (room - run) / 2.0 - i as f64 * pitch / 2.0));
+        for s0 in starts {
+            if s0 < margin - 1e-9 || s0 + run > l - margin + 1e-9 {
+                continue;
+            }
+            let (p, q) = (at(s0), at(s0 + run));
+            for side in [1.0, -1.0] {
+                let Ok(mut pts) = (if side > 0.0 {
+                    serpentine(p, q, add, amp, pitch)
+                } else {
+                    serpentine(q, p, add, amp, pitch)
+                }) else {
+                    continue;
+                };
+                if side < 0.0 {
+                    pts.reverse();
+                }
+                if ok(&pts) {
+                    let mut full = vec![a];
+                    full.extend(pts);
+                    full.push(b);
+                    full.dedup_by(|x, y| geom::dist(*x, *y) < 1e-9);
+                    if best.as_ref().is_none_or(|(_, got)| add > *got + 1e-9) {
+                        best = Some((full, add));
+                    }
+                    break;
+                }
+            }
+            if best.as_ref().is_some_and(|(_, got)| *got >= want - 1e-9) {
+                return best;
+            }
+        }
+    }
+    best
+}
+
+#[allow(clippy::too_many_arguments)]
+fn legal(
+    line: &[P],
+    width: f64,
+    layer: &str,
+    net: usize,
+    clearance: f64,
+    floor: f64,
+    edge: f64,
+    obstacles: &[Obstacle],
+    outline: &[P],
+) -> bool {
+    let half = width / 2.0;
+    let (lo, hi) = line.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| {
+        ([lo[0].min(q[0]), lo[1].min(q[1])], [hi[0].max(q[0]), hi[1].max(q[1])])
+    });
+    if !line.iter().all(|p| geom::point_in_polygon(*p, outline)) {
+        return false;
+    }
+    let n = outline.len();
+    for i in 0..n {
+        let (p, q) = (outline[i], outline[(i + 1) % n]);
+        for w in line.windows(2) {
+            if geom::segment_segment_distance(w[0], w[1], p, q) < edge + half - 1e-9 {
+                return false;
+            }
+        }
+    }
+    let reach = half + clearance.max(floor) + 1.0;
+    for o in obstacles {
+        if o.net == Some(net) || !o.layers.iter().any(|l| l == layer) {
+            continue;
+        }
+        if o.hi[0] < lo[0] - reach
+            || o.lo[0] > hi[0] + reach
+            || o.hi[1] < lo[1] - reach
+            || o.lo[1] > hi[1] + reach
+        {
+            continue;
+        }
+        let need = clearance.max(o.clearance).max(floor) + half;
+        if o.distance(line) < need - 1e-6 {
+            return false;
+        }
+    }
+    true
+}
+
+fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
+    let mut out = Vec::new();
+    let clearance = |n: Option<usize>| n.map(|n| layout.nets[n].clearance).unwrap_or(0.0);
+    for part in &layout.parts {
+        for pad in &part.pads {
+            for o in &pad.outlines {
+                out.push(Obstacle::new(
+                    pad.net,
+                    pad.copper.clone(),
+                    Shape::Poly(o.clone()),
+                    clearance(pad.net),
+                ));
+            }
+            if let Some((c, s, _)) = pad.drill
+                && (pad.kind == PadKind::Npth || pad.copper.is_empty())
+            {
+                out.push(Obstacle::new(
+                    None,
+                    layout.copper.clone(),
+                    Shape::Circle(c, s[0].max(s[1]) / 2.0),
+                    0.0,
+                ));
+            }
+        }
+    }
+    for t in &layout.tracks {
+        for w in t.points.windows(2) {
+            out.push(Obstacle::new(
+                Some(t.net),
+                vec![t.layer.clone()],
+                Shape::Seg(w[0], w[1], t.width / 2.0),
+                clearance(Some(t.net)),
+            ));
+        }
+    }
+    for v in &layout.vias {
+        out.push(Obstacle::new(
+            Some(v.net),
+            v.layers.clone(),
+            Shape::Circle(v.at, v.diameter / 2.0),
+            clearance(Some(v.net)),
+        ));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_meander_fits_between_walls_and_adds_what_was_asked() {
+        let wall = |y: f64| {
+            Obstacle::new(Some(1), vec!["F.Cu".into()], Shape::Seg([0.0, y], [10.0, y], 0.05), 0.1)
+        };
+        let obstacles = vec![wall(0.8), wall(-0.8)];
+        let outline = vec![[-1.0, -5.0], [11.0, -5.0], [11.0, 5.0], [-1.0, 5.0]];
+        let ok = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles, &outline);
+        let (pts, added) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, ok).unwrap();
+        let len: f64 = pts.windows(2).map(|w| geom::dist(w[0], w[1])).sum();
+        assert!((added - 1.5).abs() < 1e-9 && (len - 11.5).abs() < 1e-9, "{added} {len}");
+        assert!(pts.iter().all(|p| p[1].abs() <= 0.55 + 1e-9));
+        assert!(fit([0.0, 0.0], [0.8, 0.0], 1.5, 0.3, None, ok).is_none());
+        let tight = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[..1], &outline);
+        let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, tight).unwrap();
+        assert!(pts.iter().all(|p| p[1] <= 1e-9), "meanders away from the wall");
+    }
+}

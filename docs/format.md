@@ -463,9 +463,18 @@ tolerance = "0.5mm"
 
 Check reports each pair's skew in mm and ps (from the layer's effective permittivity), a stretch
 of the pair run at the wrong gap, and pairs that spend less than 80% of their length side by side.
-Match groups say which net is short or over and by how much. `agentee calc serpentine --from x,y
---to x,y --add 2.5mm` (MCP `serpentine`) returns the points of a trombone meander that adds exactly
-that length to a straight segment. Net lengths and delays are in `agentee show pcb:NAME`.
+Match groups say which net is short or over and by how much. A pair that runs through series
+two-pin parts, like the AC caps on a USB lane, is measured end to end: its skew is the sum over
+every pair it joins, reported as `FX_TX1_P+SS_TX1_P/FX_TX1_N+SS_TX1_N`.
+
+`agentee tune NAME` (MCP `tune`) fixes these: for every pair over its skew limit and every match
+group member short of its target it meanders the short side, on its longest straight segments,
+anywhere along a series chain, with bumps that keep every other net's clearance and the board
+edge rule, and writes the new points into the tracks. `--nets` limits it, `--amplitude` caps the
+bump height and `--pitch` fixes the bump pitch (default three track widths, tighter where that is
+all that fits). A net that is over its group target is reported, not shortened. `agentee calc
+serpentine --from x,y --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of one such
+meander on a segment you pick. Net lengths and delays are in `agentee show pcb:NAME`.
 
 The viewer's layout page has a `3d` tab (`agentee view --3d` opens on it): the board in its
 stackup thickness, mask and silk colours and finish, copper under the mask, bare pads, plated and

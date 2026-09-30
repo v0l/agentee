@@ -211,6 +211,25 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Meander the short net of every pair over its skew limit and every match group member
+    /// short of its target, and write the new points into the tracks
+    Tune {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Nets to tune, globs allowed, comma separated
+        #[arg(long, default_value = "*", value_delimiter = ',')]
+        nets: Vec<String>,
+        /// Largest bump height in mm, default tries 1.2 mm down to 0.2 mm
+        #[arg(long)]
+        amplitude: Option<f64>,
+        /// Bump pitch in mm, default three track widths
+        #[arg(long)]
+        pitch: Option<f64>,
+        /// Report without writing the file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Trace calculators
     Calc {
         #[command(subcommand)]
@@ -549,6 +568,14 @@ fn run(cli: Cli) -> Result<bool, String> {
                 ..Default::default()
             };
             let r = ops::route(&p, &name, &opts, !dry_run)?;
+            let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
+        }
+        Cmd::Tune { name, project, nets, amplitude, pitch, dry_run } => {
+            let p = ops::load(&project)?;
+            let opts = agentee_core::tune::TuneOptions { nets, amplitude, pitch };
+            let r = ops::tune(&p, &name, &opts, !dry_run)?;
             let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
             print_json(&r);
             Ok(ok)

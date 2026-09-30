@@ -201,7 +201,9 @@ pub struct Pair {
     pub n: usize,
     pub skew_mm: f64,
     pub skew_ps: f64,
+    pub limit_mm: Option<f64>,
     pub coupled_mm: f64,
+    pub chain: Vec<(usize, usize)>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -326,6 +328,7 @@ fn flip(l: &str, bottom: bool) -> String {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Track {
+    pub source: usize,
     pub net: usize,
     pub layer: String,
     pub width: f64,
@@ -734,6 +737,7 @@ impl LayoutFile {
                 );
             }
             tracks.push(Track {
+                source: i,
                 net,
                 layer: t.layer.clone(),
                 width,
@@ -1326,7 +1330,7 @@ impl LayoutFile {
                 })
                 .sum();
         }
-        let pairs = self.pairs_of(board, &nets, &tracks, d);
+        let pairs = self.pairs_of(board, &nets, &tracks, &parts, d);
         let match_groups = self.matches_of(&nets, d);
         Layout {
             name: self.name.clone(),
@@ -1354,6 +1358,7 @@ impl LayoutFile {
         board: &Board,
         nets: &[LayoutNet],
         tracks: &[Track],
+        parts: &[Placed],
         d: &mut Diags,
     ) -> Vec<Pair> {
         let index = |n: &str| nets.iter().position(|x| x.name == n);
@@ -1381,27 +1386,83 @@ impl LayoutFile {
                 found.push((a, b, None));
             }
         }
+        let series: Vec<(usize, usize)> = parts
+            .iter()
+            .filter_map(|p| {
+                let mut nets = p.pads.iter().filter(|q| !q.copper.is_empty()).map(|q| q.net);
+                match (nets.next(), nets.next(), nets.next()) {
+                    (Some(Some(a)), Some(Some(b)), None) if a != b => Some((a, b)),
+                    _ => None,
+                }
+            })
+            .collect();
+        let joined =
+            |x: usize, y: usize| series.iter().any(|&(u, v)| (u, v) == (x, y) || (v, u) == (x, y));
+        let mut group: Vec<usize> = (0..found.len()).collect();
+        fn root(g: &mut [usize], i: usize) -> usize {
+            if g[i] != i {
+                let r = root(g, g[i]);
+                g[i] = r;
+            }
+            g[i]
+        }
+        for i in 0..found.len() {
+            for j in i + 1..found.len() {
+                if joined(found[i].0, found[j].0) && joined(found[i].1, found[j].1) {
+                    let (ri, rj) = (root(&mut group, i), root(&mut group, j));
+                    group[rj] = ri;
+                }
+            }
+        }
+        type Skew = (f64, f64, Option<f64>, Vec<(usize, usize)>);
+        let mut skews: std::collections::HashMap<usize, Skew> = std::collections::HashMap::new();
+        for (i, &(a, b, skew_limit)) in found.iter().enumerate() {
+            let r = root(&mut group, i);
+            let class = class_of(board, &nets[a].class);
+            let limit = skew_limit.or(class.and_then(|c| c.max_skew.map(Length::to_mm)));
+            let e = skews.entry(r).or_insert((0.0, 0.0, None, Vec::new()));
+            e.0 += nets[a].length_mm - nets[b].length_mm;
+            e.1 += nets[a].delay_ps - nets[b].delay_ps;
+            e.2 = match (e.2, limit) {
+                (Some(x), Some(y)) => Some(x.min(y)),
+                (x, y) => x.or(y),
+            };
+            e.3.push((a, b));
+        }
+        let mut reported = std::collections::HashSet::new();
         let mut out = Vec::new();
-        for (a, b, skew_limit) in found {
+        for (i, (a, b, _)) in found.clone().into_iter().enumerate() {
             let (pa, pb) = (&nets[a], &nets[b]);
             let class = class_of(board, &pa.class);
             let gap = class.and_then(|c| c.diff_gap.map(Length::to_mm));
             let at = format!("pair {}/{}", pa.name, pb.name);
-            let skew_mm = pa.length_mm - pb.length_mm;
-            let skew_ps = pa.delay_ps - pb.delay_ps;
-            let limit = skew_limit.or(class.and_then(|c| c.max_skew.map(Length::to_mm)));
-            match limit {
-                Some(l) if skew_mm.abs() > l + 1e-9 => d.error(
-                    &at,
-                    format!(
-                        "skew {:.3} mm ({:.2} ps), limit {l} mm: lengthen {} by {:.3} mm",
-                        skew_mm,
-                        skew_ps,
-                        if skew_mm > 0.0 { &pb.name } else { &pa.name },
-                        skew_mm.abs() - l
+            let r = root(&mut group, i);
+            let (skew_mm, skew_ps, limit, chain) = skews[&r].clone();
+            if reported.insert(r) {
+                let names = |pick: fn(&(usize, usize)) -> usize| {
+                    chain.iter().map(|m| nets[pick(m)].name.as_str()).collect::<Vec<_>>().join("+")
+                };
+                let (at, short) = if chain.len() > 1 {
+                    (
+                        format!("pair {}/{}", names(|m| m.0), names(|m| m.1)),
+                        if skew_mm > 0.0 { names(|m| m.1) } else { names(|m| m.0) },
+                    )
+                } else {
+                    (at.clone(), if skew_mm > 0.0 { pb.name.clone() } else { pa.name.clone() })
+                };
+                match limit {
+                    Some(l) if skew_mm.abs() > l + 1e-9 => d.error(
+                        &at,
+                        format!(
+                            "skew {:.3} mm ({:.2} ps), limit {l} mm: lengthen {} by {:.3} mm",
+                            skew_mm,
+                            skew_ps,
+                            short,
+                            skew_mm.abs() - l
+                        ),
                     ),
-                ),
-                _ => d.info(&at, format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps)),
+                    _ => d.info(&at, format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps)),
+                }
             }
             let mut coupled = 0.0;
             let mut wrong: Option<(f64, f64)> = None;
@@ -1443,7 +1504,15 @@ impl LayoutFile {
                     );
                 }
             }
-            out.push(Pair { p: a, n: b, skew_mm, skew_ps, coupled_mm: coupled });
+            out.push(Pair {
+                p: a,
+                n: b,
+                skew_mm,
+                skew_ps,
+                limit_mm: limit,
+                coupled_mm: coupled,
+                chain,
+            });
         }
         out
     }
