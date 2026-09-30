@@ -876,3 +876,29 @@ fn a_pour_clears_a_board_cutout_and_its_stored_fill_goes_stale() {
     assert_ne!(moved, slotted);
     assert_eq!(pour("").0, plain);
 }
+
+#[test]
+fn the_router_goes_around_a_board_cutout() {
+    let p = load(&Fixture {
+        board: "[[outline.cutouts]]\norigin = [14, 5]\nsize = [2, 10]\n",
+        parts: &[("R1", "TWO", [10.0, 10.0]), ("R2", "TWO", [20.0, 10.0])],
+        nets: &[("A", &["R1.2", "R2.1"])],
+        ..Default::default()
+    });
+    let l = &p.layouts[0].item;
+    let opts = agentee_core::route::RouteOptions {
+        nets: vec!["A".into()],
+        layers: vec!["F.Cu".into()],
+        grid: 0.1,
+        ..Default::default()
+    };
+    let r = agentee_core::route::route(l, &p.boards[0].item, &opts).unwrap();
+    assert!(r.connections == 1 && r.routed == 1, "{:?}", r.failed);
+    let edge = l.edge();
+    let closest = r
+        .tracks
+        .iter()
+        .flat_map(|t| t.points.windows(2).map(|w| edge.segment_distance(w[0], w[1])))
+        .fold(f64::MAX, f64::min);
+    assert!(closest >= 0.3 + 0.1 - 1e-6, "track centre {closest} from the edge");
+}

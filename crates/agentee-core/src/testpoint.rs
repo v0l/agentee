@@ -425,9 +425,10 @@ pub fn place(
         }
         candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
         let clear = |c: P, taken: &[P]| -> bool {
-            if layout.outline.len() < 3
-                || !geom::point_in_polygon(c, &layout.outline)
-                || crate::drc::edge_distance(&layout.outline, c) - r < spec.min_test_pad_to_edge
+            let board = layout.edge();
+            if !board.is_closed()
+                || !board.contains(c)
+                || board.distance(c) - r < spec.min_test_pad_to_edge
             {
                 return false;
             }
@@ -526,10 +527,10 @@ fn via_clear(
     dr: f64,
     clearance: f64,
 ) -> bool {
-    let outline = &layout.outline;
-    if outline.len() < 3
-        || !geom::point_in_polygon(at, outline)
-        || crate::drc::edge_distance(outline, at) - vr < board.rules.min_copper_to_edge.to_mm()
+    let edge = layout.edge();
+    if !edge.is_closed()
+        || !edge.contains(at)
+        || edge.distance(at) - vr < board.rules.min_copper_to_edge.to_mm()
     {
         return false;
     }
