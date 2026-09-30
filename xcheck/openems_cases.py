@@ -4,8 +4,46 @@ import sys
 
 import numpy as np
 from CSXCAD import ContinuousStructure
+from CSXCAD.CSProperties import CSProperties
 from openEMS import openEMS
-from openEMS.physical_constants import EPS0
+
+
+def djordjevic_sarkar(er, tan, f_ref, f):
+    w1, w2 = 2 * np.pi * 1e3, 2 * np.pi * 1e12
+    g = lambda f: np.log10((w2 + 2j * np.pi * f) / (w1 + 2j * np.pi * f)) / np.log10(w2 / w1)
+    delta = er * tan / -g(f_ref).imag
+    return er + delta * (g(f) - g(f_ref).real)
+
+
+def debye_band(f_lo, f_hi):
+    x0, x1 = 2 * np.pi * f_lo / 30, 2 * np.pi * f_hi * 30
+    span = np.log(x1 / x0)
+    n = max(int(np.ceil(span / 0.7)), 1)
+    h = span / n
+    x = x0 * np.exp(h * np.arange(n + 1))
+    a = np.full(n + 1, h / span)
+    a[[0, -1]] *= 0.5
+    return x, a
+
+
+def debye_eps(inf, delta, x, a, f):
+    return inf + np.sum(delta * a / (1 + 2j * np.pi * np.asarray(f)[..., None] / x), axis=-1)
+
+
+def debye_fit(er, tan, f_lo, f_hi):
+    x, a = debye_band(f_lo, f_hi)
+    f_mid = np.sqrt(f_lo * f_hi)
+    e = djordjevic_sarkar(er, tan, 1e9, f_mid)
+    s = debye_eps(0.0, 1.0, x, a, f_mid)
+    delta = -e.imag / -s.imag
+    inf = e.real - delta * s.real
+    f = np.geomspace(f_lo, f_hi, 50)
+    fit, want = debye_eps(inf, delta, x, a, f), djordjevic_sarkar(er, tan, 1e9, f)
+    err_er = np.max(np.abs(fit.real - want.real))
+    err_tan = np.max(np.abs((fit.imag / fit.real) / (want.imag / want.real) - 1))
+    print(f"Debye fit, {len(x)} poles: er off by {err_er:.4f}, tan off by {100 * err_tan:.2f}% over {f_lo / 1e9:.2f} to {f_hi / 1e9:.2f} GHz", flush=True)
+    assert err_er < 0.01 and err_tan < 0.03
+    return inf, delta * a, 1 / x
 
 cases = json.load(open(sys.argv[1]))
 out = os.path.abspath(sys.argv[2])
@@ -28,8 +66,16 @@ for c in cases:
     mesh = csx.GetGrid()
     mesh.SetDeltaUnit(1e-3)
 
-    kappa = 2 * np.pi * fc * EPS0 * c["er"] * c["tan"]
-    sub = csx.AddMaterial("sub", epsilon=c["er"], kappa=kappa)
+    if c["tan"] > 0:
+        f_lo = max(2 * fc - f1, f1 * 1e-3)
+        inf, eps_delta, eps_relax = debye_fit(c["er"], c["tan"], f_lo, f1)
+        sub = CSProperties.fromTypeName("DebyeMaterial", csx.GetParameterSet(), order=len(eps_delta), epsilon=float(inf))
+        sub.SetName("sub")
+        csx.AddProperty(sub)
+        for k in range(len(eps_delta)):
+            sub.SetDispersiveMaterialProperty(k, eps_delta=float(eps_delta[k]), eps_relax=float(eps_relax[k]))
+    else:
+        sub = csx.AddMaterial("sub", epsilon=c["er"])
     sub.AddBox([0, y0, 0], [L, y1, h])
     if c["copper"] > 0:
         metal = csx.AddConductingSheet("cu", conductivity=5.8e7, thickness=c["copper"] * 1e-3)
