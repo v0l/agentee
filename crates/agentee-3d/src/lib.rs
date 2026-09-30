@@ -1,3 +1,4 @@
+pub mod parametric;
 pub mod step;
 pub mod wrl;
 
@@ -131,6 +132,18 @@ fn roots(project: &Path) -> Vec<PathBuf> {
     out.push(cache_dir());
     out.push(PathBuf::from("/usr/share/kicad/3dmodels"));
     out
+}
+
+pub fn in_project(model: &str, project: &Path) -> Option<PathBuf> {
+    let direct = project.join(model);
+    if !model.starts_with("${") && direct.is_file() {
+        return Some(direct);
+    }
+    let rel = relative(model);
+    [rel.clone(), with_ext(&rel, "step"), with_ext(&rel, "stp"), with_ext(&rel, "wrl")]
+        .into_iter()
+        .map(|n| project.join("3dmodels").join(n))
+        .find(|p| p.is_file())
 }
 
 pub fn locate(model: &str, project: &Path) -> Option<PathBuf> {

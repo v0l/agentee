@@ -8,8 +8,12 @@ repository.workspace = true
 description = "3D component models (STEP, VRML) for agentee"
 
 [dependencies]
+agentee-core.workspace = true
 truck-stepio = "0.3"
 truck-meshalgo = "0.4"
 truck-topology = "0.6"
 ruststep = "0.4"
 ureq = "3"
+
+[dev-dependencies]
+toml.workspace = true

@@ -3,6 +3,7 @@ name = "Laird_Technologies_BMI-S-230-F_50.8x38.1mm"
 description = "Laird Technologies BMI-S-230-F Shielding Cabinet Two Piece SMD 50.8x38.1mm"
 tags = ["Shielding", "Cabinet"]
 mount = "smd"
+height = 5.08
 model = "${KICAD8_3DMODEL_DIR}/RF_Shielding.3dshapes/Laird_Technologies_BMI-S-230-F_50.8x38.1mm.wrl"
 
 [[pads]]

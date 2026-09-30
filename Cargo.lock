@@ -50,7 +50,9 @@ dependencies = [
 name = "agentee-3d"
 version = "0.1.0"
 dependencies = [
+ "agentee-core",
  "ruststep",
+ "toml",
  "truck-meshalgo",
  "truck-stepio",
  "truck-topology",

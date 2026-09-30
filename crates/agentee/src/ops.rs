@@ -875,8 +875,16 @@ fn run_cascade(
 }
 
 pub fn fetch_models(p: &Project) -> Result<Value, String> {
-    let mut wanted: Vec<String> =
-        p.footprints.iter().filter_map(|f| f.item.model.clone()).collect();
+    let mut generated: Vec<&str> = Vec::new();
+    let mut wanted: Vec<String> = Vec::new();
+    for f in p.footprints.iter().map(|f| &f.item) {
+        let own = f.model.as_deref().is_some_and(|m| agentee_3d::in_project(m, &p.root).is_some());
+        if !own && agentee_3d::parametric::generate(f).is_some() {
+            generated.push(&f.name);
+        } else if let Some(m) = &f.model {
+            wanted.push(m.clone());
+        }
+    }
     wanted.sort();
     wanted.dedup();
     let mut models = Vec::new();
@@ -895,7 +903,7 @@ pub fn fetch_models(p: &Project) -> Result<Value, String> {
         };
         models.push(row);
     }
-    Ok(json!({ "cache": agentee_3d::cache_dir(), "models": models }))
+    Ok(json!({ "cache": agentee_3d::cache_dir(), "generated": generated.len(), "models": models }))
 }
 
 pub fn serpentine(

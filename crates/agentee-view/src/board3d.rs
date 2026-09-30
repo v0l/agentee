@@ -423,14 +423,17 @@ fn is_metal(c: [f32; 3]) -> bool {
 fn place_model(
     part: &Placed,
     mesh: &agentee_3d::Mesh,
+    model_frame: bool,
     top: f32,
     bot: f32,
     groups: &mut HashMap<[u16; 3], Surface>,
 ) {
     let fp = &part.footprint;
-    let r = rotation(fp.model_rotate);
-    let s = fp.model_scale;
-    let o = fp.model_offset;
+    let (r, s, o) = if model_frame {
+        (rotation(fp.model_rotate), fp.model_scale, fp.model_offset)
+    } else {
+        (rotation([0.0; 3]), [1.0; 3], [0.0; 3])
+    };
     let tf = part.transform();
     let rot = |v: [f64; 3]| [0, 1, 2].map(|i| r[i][0] * v[0] + r[i][1] * v[1] + r[i][2] * v[2]);
     for p in &mesh.parts {
@@ -527,13 +530,25 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     s.surfaces.push(plated);
     let mut groups: HashMap<[u16; 3], Surface> = HashMap::new();
     let mut boxes = Vec::new();
+    let mut generated: HashMap<String, Option<agentee_3d::Mesh>> = HashMap::new();
     for part in &l.parts {
-        let status = match &part.footprint.model {
+        let fp = &part.footprint;
+        let own = fp.model.as_deref().filter(|m| agentee_3d::in_project(m, root).is_some());
+        if own.is_none() {
+            let mesh = generated
+                .entry(fp.name.clone())
+                .or_insert_with(|| agentee_3d::parametric::generate(fp));
+            if let Some(mesh) = mesh {
+                place_model(part, mesh, false, top, bot, &mut groups);
+                continue;
+            }
+        }
+        let status = match &fp.model {
             Some(m) => agentee_3d::get(m, root, fetch),
             None => Status::Missing(String::new()),
         };
         match status {
-            Status::Ready(mesh) => place_model(part, &mesh, top, bot, &mut groups),
+            Status::Ready(mesh) => place_model(part, &mesh, true, top, bot, &mut groups),
             Status::Pending => {
                 s.pending += 1;
                 place_box(part, top, bot, &mut boxes);

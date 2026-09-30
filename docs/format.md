@@ -376,7 +376,7 @@ name = "SOIC-8_3.9x4.9mm_P1.27mm"
 description = "SOIC, 8 pin"
 tags = ["SOIC", "SO"]
 mount = "smd"                  # smd | tht | other, default from the pads
-height = "1.5mm"               # box height for the 3D view when there is no model
+height = "1.5mm"               # body height in the 3D view when there is no model
 model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step"
 model_offset = ["0mm", "0mm", "0mm"]   # optional, as in KiCad: model frame, Y up
 model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
@@ -765,6 +765,15 @@ shift-drag to pan, scroll to zoom, double-click to reset. The viewer draws with 
 ([three-d](https://github.com/asny/three-d)); `agentee render pcb:NAME --show 3d` (or `3d-top`,
 `3d-bottom`) draws the same scene in software, `--hide parts` leaves the models out and `--region`
 aims the camera at that area.
+
+Common parts are drawn from the footprint without loading a model: chip resistors, capacitors,
+inductors, LEDs and diodes (names with a `Metric` size), vertical pin headers and sockets, SOIC,
+SOT, QFP, QFN, DFN, SON, TSLP and BGA packages, crystals and oscillators, and shield frames
+(`Shield` in the name or description). The body is the `F.Fab` outline, the height comes from
+`height`, an `_h1.25mm` part of the name, or the package family, and leads sit on the pads outside
+the body. Mounting holes, fiducials, pad test points, solder jumpers and Tag-Connect footprints
+get no body. A model file in the project (`3dmodels/` or a path relative to it) still wins over a
+generated part; `agentee models` skips the generated ones.
 
 Models are STEP or VRML, placed the way KiCad places them (`model_offset`, `model_rotate`,
 `model_scale`). A model path is looked up as given, then under `KICAD9_3DMODEL_DIR` and friends,
