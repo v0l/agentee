@@ -289,6 +289,7 @@ pub fn run(
         seconds: started.elapsed().as_secs_f64(),
         device: "cpu".into(),
         spec_hash,
+        layout_hash: None,
         maps: Vec::new(),
         readings,
         curves,

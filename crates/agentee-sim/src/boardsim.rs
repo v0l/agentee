@@ -470,6 +470,7 @@ pub fn dc(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<MapRe
         seconds: t0.elapsed().as_secs_f64(),
         device: sol.device,
         spec_hash: hash,
+        layout_hash: None,
     })
 }
 
@@ -628,5 +629,6 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
         seconds: t0.elapsed().as_secs_f64(),
         device: sol.device,
         spec_hash: hash,
+        layout_hash: None,
     })
 }

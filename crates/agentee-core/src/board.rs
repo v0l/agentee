@@ -323,6 +323,33 @@ impl Stackup {
             .sum()
     }
 
+    pub fn copper_z(&self, name: &str) -> Option<f64> {
+        let mut z = 0.0;
+        for l in &self.layers {
+            let t = l.thickness.to_mm();
+            if l.name == name && l.kind == LayerKind::Copper {
+                return Some(z + t / 2.0);
+            }
+            if l.kind == LayerKind::Copper || l.kind.is_dielectric() {
+                z += t;
+            }
+        }
+        None
+    }
+
+    pub fn er_between(&self, a: &str, b: &str) -> f64 {
+        let (Some(i), Some(j)) = (self.index_of(a), self.index_of(b)) else { return 4.2 };
+        let (lo, hi) = (i.min(j), i.max(j));
+        let (mut h, mut w) = (0.0, 0.0);
+        for l in &self.layers[lo..=hi] {
+            if l.kind.is_dielectric() {
+                h += l.thickness.to_mm();
+                w += l.thickness.to_mm() * l.er;
+            }
+        }
+        if h > 0.0 { w / h } else { 4.2 }
+    }
+
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.layers.iter().position(|l| l.name == name)
     }

@@ -159,6 +159,8 @@ pub struct LayoutFile {
     pub fanouts: Vec<FanoutFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stitching: Vec<StitchFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub interfaces: Vec<crate::interface::InterfaceFile>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -415,6 +417,7 @@ pub struct Layout {
     pub silk: Vec<SilkBox>,
     #[serde(skip)]
     pub label_fixes: Vec<LabelFix>,
+    pub interfaces: Vec<crate::interface::Interface>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1539,6 +1542,20 @@ impl LayoutFile {
         }
         let pairs = self.pairs_of(board, &nets, &tracks, &parts, d);
         let match_groups = self.matches_of(&nets, d);
+        let interfaces = crate::interface::check(
+            &self.interfaces,
+            &crate::interface::Ctx {
+                board,
+                copper: &copper,
+                nets: &nets,
+                tracks: &tracks,
+                vias: &vias,
+                parts: &parts,
+                zones: &zones,
+                pairs: &pairs,
+            },
+            d,
+        );
         Layout {
             name: self.name.clone(),
             board: board.name.clone(),
@@ -1558,6 +1575,7 @@ impl LayoutFile {
             match_groups,
             silk,
             label_fixes,
+            interfaces,
         }
     }
 

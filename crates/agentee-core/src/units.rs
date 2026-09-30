@@ -270,6 +270,22 @@ scalar!(
     "%"
 );
 
+scalar!(
+    Picos,
+    "a time",
+    |s| {
+        let (v, u) = split_number(s)?;
+        match u.to_ascii_lowercase().as_str() {
+            "" | "ps" => Ok(v),
+            "fs" => Ok(v / 1000.0),
+            "ns" => Ok(v * 1000.0),
+            "us" => Ok(v * 1e6),
+            u => Err(format!("unknown time unit `{u}` (use ps or ns)")),
+        }
+    },
+    "ps"
+);
+
 fn split_number(s: &str) -> Result<(f64, &str), String> {
     let s = s.trim();
     let end = s

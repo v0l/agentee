@@ -488,6 +488,67 @@ Match groups say which net is short or over and by how much. A pair that runs th
 two-pin parts, like the AC caps on a USB lane, is measured end to end: its skew is the sum over
 every pair it joins, reported as `FX_TX1_P+SS_TX1_P/FX_TX1_N+SS_TX1_N`.
 
+### Interfaces
+
+An interface says what a link must meet, and check measures the copper against it: impedance,
+skew, length, vias, via stubs, the reference plane under every track, the return vias, bus
+timing, and the S-parameters and eye of the sims that model it.
+
+```toml
+[[interfaces]]
+name = "usb-ss"
+preset = "usb3-gen2"           # usb3-gen1, usb3-gen2, usb2-hs, lvds, rf-50, cmos
+nets = ["SS_TX*", "SS_RX*"]    # globs; differential presets pair them up, through series parts
+# differential = true
+# impedance = "90ohm"          # the member classes' targets must sit inside this
+# impedance_tolerance = "7%"
+# max_skew = "5mil"            # within each pair, a length or a time ("1ps")
+# max_length = "3in"           # end to end, through series parts
+# max_vias = 2                 # per trace
+# max_stub = "15mil"           # the via barrel past the last layer the trace uses
+# max_unreferenced = "0.5mm"   # total run with no plane of `reference` under it
+# reference = ["GND"]
+# return_via = "200mil"        # a reference via this close to every signal via
+
+[[interfaces]]
+name = "ad-rx"
+preset = "cmos"
+nets = ["AD_P1_D*", "AD_RX_FRAME", "AD_DATA_CLK"]
+clock = "AD_DATA_CLK"          # a pair's clock is named by either leg
+max_bus_skew = "30ps"          # spread of arrival across the data lines
+clock_window = ["-50ps", "150ps"]   # data minus clock arrival, from the setup and hold budget
+
+[[interfaces.measure]]         # read from a finished sim; missing or stale results are errors
+sim = "sdr-usb"                # an FDTD run
+pair = ["TX1_FX+", "TX1_FX-", "TX1_J+", "TX1_J-"]   # IN+, IN-, OUT+, OUT-; or through = [IN, OUT]
+up_to = "5GHz"                 # Nyquist, the band the limits apply over
+max_loss = 1.5                 # dB, worst Sdd21 (or S21) in the band
+min_return_loss = 10.0         # dB, worst Sdd11
+max_mode_conversion = -30.0    # dB, worst Scd21
+
+[[interfaces.measure]]
+sim = "sdr-usb-eye"            # a channel sim
+min_eye_height = "70mV"
+min_eye_width = "0.47UI"       # or ps
+```
+
+| preset | impedance | skew | vias | stub | other |
+|---|---|---|---|---|---|
+| `usb3-gen1`, `usb3-gen2` | 90 ohm +/-7% diff | 5 mil | 2 | 15 mil | 3500 / 3000 mil long, GND return via within 200 mil, 0.5 mm unreferenced |
+| `usb2-hs` | 90 ohm +/-10% diff | 50 mil | 4 | | 12000 mil long, 1 mm unreferenced |
+| `lvds` | 100 ohm +/-10% diff | | | | 1 mm unreferenced |
+| `rf-50` | 50 ohm +/-10% | | 0 | | 0.5 mm unreferenced |
+| `cmos` | | | | | 2 mm unreferenced |
+
+The USB numbers are TI's High-Speed Interface Layout Guidelines (SPRAAR7J, Appendix A), the Gen 2
+length is congatec AN37. Anything a preset sets, the interface can override.
+
+Delays are the track delay from each layer's effective permittivity plus the via barrel the
+signal crosses. A plane counts as the reference where the first copper found walking away from
+the track, past cut-out layers, is a zone of a `reference` net that covers the track's full
+width. Every sim result records a hash of the copper it saw (the sim's `region` only, plus the
+stackup); a result whose copper has changed since is stale, and a measure on it fails.
+
 `agentee tune NAME` (MCP `tune`) fixes these: for every pair over its skew limit and every match
 group member short of its target it meanders the short side, on its longest straight segments,
 anywhere along a series chain, with bumps that keep every other net's clearance and the board

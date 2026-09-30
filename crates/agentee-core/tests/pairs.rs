@@ -150,3 +150,80 @@ target = "27mm"
     let m = messages(&p);
     assert!(m.iter().any(|(_, t)| t.contains("USB_DP is 26.700 mm, 0.300 mm short of the 27.000 mm target")), "{m:?}");
 }
+
+const PAIR: &str = r#"
+[[tracks]]
+net = "USB_DP"
+layer = "F.Cu"
+points = [[2.49, 4], [2.49, 4.85], [27.49, 4.85], [27.49, 4]]
+
+[[tracks]]
+net = "USB_DN"
+layer = "F.Cu"
+points = [[2.49, 6], [2.49, 5.15], [27.49, 5.15], [27.49, 6]]
+"#;
+
+fn interface_errors(p: &Project) -> Vec<String> {
+    p.layouts[0]
+        .diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error && d.at.starts_with("interface"))
+        .map(|d| d.message.clone())
+        .collect()
+}
+
+#[test]
+fn an_interface_wants_a_plane_under_the_pair() {
+    let spec = r#"
+[[interfaces]]
+name = "hs"
+preset = "usb2-hs"
+nets = ["USB_D?"]
+"#;
+    let e = interface_errors(&project(spec, PAIR));
+    assert!(e.iter().any(|t| t.contains("USB_DP runs") && t.contains("no GND plane")), "{e:?}");
+}
+
+#[test]
+fn an_interface_checks_pair_skew_in_time() {
+    let spec = r#"
+[[interfaces]]
+name = "hs"
+nets = ["USB_D?"]
+differential = true
+max_skew = "0.5ps"
+"#;
+    let skewed = PAIR.replace(
+        "[27.49, 5.15], [27.49, 6]",
+        "[27.49, 5.15], [27.49, 5.5], [26.0, 5.5], [26.0, 6], [27.49, 6]",
+    );
+    let e = interface_errors(&project(spec, &skewed));
+    assert!(e.iter().any(|t| t.contains("skew") && t.contains("0.50 ps")), "{e:?}");
+    assert!(interface_errors(&project(spec, PAIR)).is_empty());
+    let p = project(spec, &skewed);
+    let iface = &p.layouts[0].item.interfaces[0];
+    assert_eq!(iface.lanes.len(), 2);
+    assert!((iface.pairs[0].2 + 2.98).abs() < 0.01, "{:?}", iface.pairs);
+}
+
+#[test]
+fn a_bus_line_outside_its_clock_window_is_flagged() {
+    let spec = r#"
+[[interfaces]]
+name = "bus"
+nets = ["USB_D?"]
+differential = false
+clock = "USB_DP"
+clock_window = ["-1ps", "1ps"]
+"#;
+    let late = PAIR.replace(
+        "[27.49, 5.15], [27.49, 6]",
+        "[27.49, 5.15], [27.49, 5.5], [26.0, 5.5], [26.0, 6], [27.49, 6]",
+    );
+    let e = interface_errors(&project(spec, &late));
+    assert!(
+        e.iter().any(|t| t.contains("USB_DN arrives") && t.contains("after the clock")),
+        "{e:?}"
+    );
+    assert!(interface_errors(&project(spec, PAIR)).is_empty());
+}

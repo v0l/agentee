@@ -379,12 +379,58 @@ impl Project {
                 }
                 None => d.info("result", "not run yet, `agentee sim` runs it"),
             }
+            item.copper_then = fdtd
+                .as_ref()
+                .and_then(|r| r.layout_hash)
+                .or(maps.as_ref().and_then(|r| r.layout_hash))
+                .or(channel.as_ref().and_then(|r| r.layout_hash));
+            item.copper_now = if cascade(&file) {
+                p.sims.iter().find(|s| s.name == item.board).and_then(|s| s.item.copper_now)
+            } else {
+                p.boards
+                    .iter()
+                    .find(|b| b.name == layout.item.board)
+                    .map(|b| crate::sim::copper_hash(&layout.item, &b.item, item.region))
+            };
+            if item.copper_then.is_some() && item.copper_then != item.copper_now {
+                d.info(
+                    "result",
+                    "the layout changed since the last run, the result shown is stale",
+                );
+                item.stale = true;
+            }
             item.result = fdtd;
             item.maps = maps;
             item.channel = channel;
             p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
+        p.measure_interfaces();
         Ok(p)
+    }
+
+    fn measure_interfaces(&mut self) {
+        let sims: Vec<crate::interface::Measured> = self
+            .sims
+            .iter()
+            .map(|s| crate::interface::Measured {
+                name: &s.name,
+                stale: s.item.stale,
+                untracked: s.item.copper_then.is_none(),
+                fdtd: s.item.result.as_ref(),
+                channel: s.item.channel.as_ref(),
+            })
+            .collect();
+        let mut found = Vec::new();
+        for (i, l) in self.layouts.iter().enumerate() {
+            let mut d = Diags::new(l.name.clone());
+            for iface in &l.item.interfaces {
+                crate::interface::measure(iface, &sims, &mut d);
+            }
+            found.push((i, tag(d, &l.path)));
+        }
+        for (i, diags) in found {
+            self.layouts[i].diags.extend(diags);
+        }
     }
 
     fn check_pdn(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {

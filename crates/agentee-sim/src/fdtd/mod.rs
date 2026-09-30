@@ -184,6 +184,7 @@ pub fn execute(
         seconds: t0.elapsed().as_secs_f64(),
         device: crate::gpu::gpu().map(|g| g.name.clone()).unwrap_or_default(),
         spec_hash,
+        layout_hash: None,
         maps,
         readings,
         curves: Vec::new(),
