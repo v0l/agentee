@@ -29,15 +29,71 @@ pub enum Copper {
     Seg(P, P, f64),
     Circle(P, f64),
     Fill(ZoneFill),
+    Rings(Rings),
+}
+
+#[derive(Clone, Debug)]
+pub struct Rings {
+    pub rings: Vec<Vec<P>>,
+    y0: f64,
+    step: f64,
+    bins: Vec<Vec<(P, P)>>,
+}
+
+impl Rings {
+    pub fn new(rings: Vec<Vec<P>>) -> Rings {
+        let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+        for p in rings.iter().flatten() {
+            lo = lo.min(p[1]);
+            hi = hi.max(p[1]);
+        }
+        let n = 512usize;
+        let step = ((hi - lo) / n as f64).max(1e-9);
+        let mut bins = vec![Vec::new(); n];
+        for r in &rings {
+            for i in 0..r.len() {
+                let (a, b) = (r[i], r[(i + 1) % r.len()]);
+                if (a[1] - b[1]).abs() < 1e-15 {
+                    continue;
+                }
+                let k0 = (((a[1].min(b[1]) - lo) / step).floor() as isize).clamp(0, n as isize - 1)
+                    as usize;
+                let k1 = (((a[1].max(b[1]) - lo) / step).floor() as isize).clamp(0, n as isize - 1)
+                    as usize;
+                for bin in &mut bins[k0..=k1] {
+                    bin.push((a, b));
+                }
+            }
+        }
+        Rings { rings, y0: lo, step, bins }
+    }
+
+    fn contains(&self, p: P) -> bool {
+        let k = (p[1] - self.y0) / self.step;
+        if k < 0.0 || k as usize >= self.bins.len() {
+            return false;
+        }
+        let mut inside = false;
+        for (a, b) in &self.bins[k as usize] {
+            if (a[1] > p[1]) != (b[1] > p[1]) {
+                let x = a[0] + (p[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+                if x > p[0] {
+                    inside = !inside;
+                }
+            }
+        }
+        inside
+    }
 }
 
 impl Copper {
-    fn contains(&self, p: P) -> bool {
+    pub fn contains(&self, p: P) -> bool {
         match self {
             Copper::Poly(v) => geom::point_in_polygon(p, v),
             Copper::Seg(a, b, w) => geom::point_segment_distance(p, *a, *b) <= w / 2.0,
             Copper::Circle(c, r) => geom::dist(p, *c) <= *r,
             Copper::Fill(z) => z.filled(p),
+            Copper::Rings(r) => r.contains(p),
         }
     }
 
@@ -57,7 +113,7 @@ impl Copper {
         }
     }
 
-    fn bounds(&self) -> Bounds {
+    pub fn bounds(&self) -> Bounds {
         let mut b = Bounds::EMPTY;
         match self {
             Copper::Poly(v) => v.iter().for_each(|q| b.add(*q)),
@@ -66,6 +122,7 @@ impl Copper {
                 b.add_circle(*c, w / 2.0);
             }
             Copper::Circle(c, r) => b.add_circle(*c, *r),
+            Copper::Rings(r) => r.rings.iter().flatten().for_each(|q| b.add(*q)),
             Copper::Fill(z) => {
                 b.add(z.origin);
                 b.add([
@@ -296,7 +353,11 @@ impl PcbModel {
                         }
                     }
                 }
-                m.copper.push((s, Copper::Fill(z.clone())));
+                if z.rings.is_empty() {
+                    m.copper.push((s, Copper::Fill(z.clone())));
+                } else {
+                    m.copper.push((s, Copper::Rings(Rings::new(z.rings.clone()))));
+                }
             }
         }
         m
@@ -458,6 +519,7 @@ impl PcbModel {
             let rings: Vec<&[P]> = match c {
                 Copper::Poly(v) => vec![&v[..]],
                 Copper::Fill(z) => z.rings.iter().map(|r| &r[..]).collect(),
+                Copper::Rings(r) => r.rings.iter().map(|r| &r[..]).collect(),
                 Copper::Seg(a, b, w) => {
                     let hw = w / 2.0;
                     if (a[1] - b[1]).abs() < 1e-9 {
@@ -513,6 +575,9 @@ impl PcbModel {
         let grid = self.mesh(opt);
         let n = grid.dims();
         let mut mats = Materials::new(&grid);
+        let f_lo = (2.0 * opt.f0 - opt.f_max).max(opt.f_max * 1e-3);
+        let debye = engine::Debye::band(f_lo, opt.f_max);
+        let f_mid = (f_lo * opt.f_max).sqrt();
         let w = 2.0 * std::f64::consts::PI * opt.f0;
         for i in 0..n[0] - 1 {
             let xc = 0.5 * (grid.x[i] + grid.x[i + 1]);
@@ -525,8 +590,23 @@ impl PcbModel {
                     let zc = 0.5 * (grid.z[k] + grid.z[k + 1]);
                     if let Some(d) = self.dielectrics.iter().find(|d| zc >= d.z0 && zc <= d.z1) {
                         let id = (i * (n[1] - 1) + j) * (n[2] - 1) + k;
-                        mats.eps[id] = d.er as f32;
-                        mats.sigma[id] = (w * engine::EPS0 * d.er * d.tan) as f32;
+                        let (er0, tan0) = crate::loss::djordjevic_sarkar(
+                            d.er,
+                            d.tan,
+                            crate::loss::REFERENCE_HZ,
+                            opt.f0,
+                        );
+                        mats.eps[id] = er0 as f32;
+                        mats.sigma[id] = (w * engine::EPS0 * er0 * tan0) as f32;
+                        let (erc, tanc) = crate::loss::djordjevic_sarkar(
+                            d.er,
+                            d.tan,
+                            crate::loss::REFERENCE_HZ,
+                            f_mid,
+                        );
+                        let (inf, dd) = debye.fit(erc, tanc, f_mid);
+                        mats.inf[id] = inf as f32;
+                        mats.debye[id] = dd as f32;
                     }
                 }
             }
@@ -734,7 +814,15 @@ impl PcbModel {
             x_min: (omega0 / 1000.0).max(dc),
             x_max: 2.0 * pi * opt.f_max.max(opt.f0) * 100.0,
         };
-        Ok(Sim::new(metres, &mats, &pec, &lumped, ports, &resistive, band))
+        Ok(Sim::new(
+            metres,
+            &mats,
+            &pec,
+            &lumped,
+            ports,
+            &resistive,
+            engine::Media { skin: band, debye },
+        ))
     }
 }
 

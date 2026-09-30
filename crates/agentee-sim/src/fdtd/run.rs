@@ -1,4 +1,4 @@
-use super::engine::{MU0, Sim, idx, pulse_shape};
+use super::engine::{EPS0, MU0, Sim, idx, pulse_shape};
 use crate::gpu::{Gpu, gpu};
 use bytemuck::{Pod, Zeroable};
 
@@ -25,6 +25,8 @@ struct Params {
     plane_k: u32,
     plane_n: u32,
     patches: u32,
+    debye: u32,
+    pad: [u32; 3],
 }
 
 #[derive(Clone, Default)]
@@ -144,6 +146,17 @@ pub fn run(
         ]);
     }
     let sheet_count = sheets.len() / 12;
+    let mut debye_edges = Vec::with_capacity(sim.debye_edges.len() * 3);
+    for (c, id, dd) in &sim.debye_edges {
+        debye_edges.extend_from_slice(&[f32::from_bits((c * nn + id) as u32), *dd as f32, 0.0]);
+    }
+    let debye_count = sim.debye_edges.len();
+    let mut debye_table = vec![sim.debye.poles.len() as f32];
+    for (x, a) in &sim.debye.poles {
+        let d = 1.0 + 0.5 * x * sim.dt;
+        debye_table
+            .extend_from_slice(&[((1.0 - 0.5 * x * sim.dt) / d) as f32, (EPS0 * a * x / d) as f32]);
+    }
     let mut probe_def = Vec::new();
     let mut port_edges = Vec::new();
     let mut loops = Vec::new();
@@ -232,6 +245,8 @@ pub fn run(
         plane_k: extras.plane_k.unwrap_or(0) as u32,
         plane_n: if extras.plane_k.is_some() { (n[0] * n[1]) as u32 } else { 0 },
         patches: extras.ntff.as_ref().map(|v| v.len() / 13).unwrap_or(0) as u32,
+        debye: debye_count as u32,
+        pad: [0; 3],
     };
     let nf = extras.freqs.len().min(4);
     let plane_len = if extras.plane_k.is_some() { n[0] * n[1] * nf * 10 } else { 0 };
@@ -259,6 +274,10 @@ pub fn run(
     let b_ntff = g.zeroed("ntff", ((patches * nf * 12).max(1) * 4) as u64);
     let b_sheets = g.storage("sheets", &nonempty(sheets));
     let b_branches = g.storage("branches", &branches);
+    let b_debye_edges = g.storage("debye_edges", &nonempty(debye_edges));
+    let b_debye_table = g.storage("debye_table", &debye_table);
+    let b_debye_state =
+        g.zeroed("debye_state", ((debye_count * sim.debye.poles.len()).max(1) * 4) as u64);
     let b_currents =
         g.zeroed("currents", ((sheet_count * sim.skin.branches.len()).max(1) * 4) as u64);
     let module = unsafe {
@@ -283,7 +302,7 @@ pub fn run(
         (9, &b_h),
         (10, &b_h),
     ];
-    let group1: [(u32, &wgpu::Buffer); 11] = [
+    let group1: [(u32, &wgpu::Buffer); 14] = [
         (0, &b_inductor),
         (1, &b_probe),
         (2, &b_partial),
@@ -295,6 +314,9 @@ pub fn run(
         (8, &b_branches),
         (9, &b_sheets),
         (10, &b_currents),
+        (11, &b_debye_edges),
+        (12, &b_debye_table),
+        (13, &b_debye_state),
     ];
     let make = |entry: &str, uses0: &[u32], uses1: &[u32]| {
         let pipe = g.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -336,9 +358,21 @@ pub fn run(
     if sheet_count > 0 {
         pipes.push((make("sheet_pre", &[0, 4, 10], &[9]), sheet_groups));
     }
+    let debye_groups = [(debye_count as u32).div_ceil(64).max(1), 1, 1];
+    let debye_groups = if debye_groups[0] > 65535 {
+        [65535, debye_groups[0].div_ceil(65535), 1]
+    } else {
+        debye_groups
+    };
+    if debye_count > 0 {
+        pipes.push((make("debye_pre", &[0, 4], &[11]), debye_groups));
+    }
     pipes.extend([(make("update_e", &[0, 1, 2, 3, 4, 10], &[]), grid)]);
     if sheet_count > 0 {
         pipes.push((make("sheet_post", &[0, 4], &[8, 9, 10]), sheet_groups));
+    }
+    if debye_count > 0 {
+        pipes.push((make("debye_post", &[0, 1, 4], &[11, 12, 13]), debye_groups));
     }
     pipes.extend([
         (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),

@@ -220,6 +220,8 @@ pub struct Sim {
     pub inductors: Vec<(usize, usize, f32, f32)>,
     pub sheets: Vec<SheetEdge>,
     pub skin: Skin,
+    pub debye: Debye,
+    pub debye_edges: Vec<(usize, usize, f64)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -281,18 +283,72 @@ impl Skin {
 pub struct Materials {
     pub eps: Vec<f32>,
     pub sigma: Vec<f32>,
+    pub inf: Vec<f32>,
+    pub debye: Vec<f32>,
+}
+
+pub struct Media {
+    pub skin: SkinBand,
+    pub debye: Debye,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Debye {
+    pub poles: Vec<(f64, f64)>,
+}
+
+impl Debye {
+    pub fn band(f_lo: f64, f_hi: f64) -> Debye {
+        let (x0, x1) =
+            (2.0 * std::f64::consts::PI * f_lo / 30.0, 2.0 * std::f64::consts::PI * f_hi * 30.0);
+        let span = (x1 / x0).ln();
+        let n = (span / 0.7).ceil().max(1.0) as usize;
+        let h = span / n as f64;
+        let poles = (0..=n)
+            .map(|k| {
+                let w = if k == 0 || k == n { 0.5 * h } else { h };
+                (x0 * (k as f64 * h).exp(), w / span)
+            })
+            .collect();
+        Debye { poles }
+    }
+
+    pub fn response(&self, w: f64) -> (f64, f64) {
+        let mut re = 0.0;
+        let mut im = 0.0;
+        for (x, a) in &self.poles {
+            let r = w / x;
+            re += a / (1.0 + r * r);
+            im += a * r / (1.0 + r * r);
+        }
+        (re, im)
+    }
+
+    pub fn fit(&self, er: f64, tan: f64, f: f64) -> (f64, f64) {
+        if tan <= 0.0 || self.poles.is_empty() {
+            return (er, 0.0);
+        }
+        let (s1, s2) = self.response(2.0 * std::f64::consts::PI * f);
+        let delta = er * tan / s2;
+        (er - delta * s1, delta)
+    }
 }
 
 impl Materials {
     pub fn new(grid: &Grid) -> Materials {
         let cells = grid.cells();
-        Materials { eps: vec![1.0; cells], sigma: vec![0.0; cells] }
+        Materials {
+            eps: vec![1.0; cells],
+            sigma: vec![0.0; cells],
+            inf: vec![1.0; cells],
+            debye: vec![0.0; cells],
+        }
     }
 
-    fn at(&self, dims: [usize; 3], c: [isize; 3]) -> (f64, f64) {
+    fn at(&self, dims: [usize; 3], c: [isize; 3]) -> [f64; 4] {
         let c = [0, 1, 2].map(|a| c[a].clamp(0, dims[a] as isize - 2) as usize);
         let id = (c[0] * (dims[1] - 1) + c[1]) * (dims[2] - 1) + c[2];
-        (self.eps[id] as f64, self.sigma[id] as f64)
+        [self.eps[id], self.sigma[id], self.inf[id], self.debye[id]].map(|v| v as f64)
     }
 }
 
@@ -304,8 +360,9 @@ impl Sim {
         lumped: &[Lumped],
         ports: Vec<PortDef>,
         resistive: &[(usize, usize, f64, bool)],
-        band: SkinBand,
+        media: Media,
     ) -> Sim {
+        let Media { skin: band, debye } = media;
         let dt = time_step(&grid);
         let pml = grid.pml;
         let ax = [axis(&grid.x, pml, dt), axis(&grid.y, pml, dt), axis(&grid.z, pml, dt)];
@@ -315,6 +372,8 @@ impl Sim {
         let mut cb = [vec![0f32; total], vec![0f32; total], vec![0f32; total]];
         let mut eps_edge = [vec![0f64; total], vec![0f64; total], vec![0f64; total]];
         let mut sig_edge = [vec![0f64; total], vec![0f64; total], vec![0f64; total]];
+        let mut inf_edge = [vec![0f64; total], vec![0f64; total], vec![0f64; total]];
+        let mut dd_edge = [vec![0f64; total], vec![0f64; total], vec![0f64; total]];
         for c in 0..3 {
             let (u, v) = ((c + 1) % 3, (c + 2) % 3);
             for i in 0..n[0] {
@@ -329,20 +388,24 @@ impl Sim {
                         {
                             continue;
                         }
-                        let (mut e_sum, mut s_sum, mut w_sum) = (0.0, 0.0, 0.0);
+                        let mut sum = [0.0f64; 4];
+                        let mut w_sum = 0.0;
                         for (ou, ov) in [(-1isize, -1isize), (0, -1), (-1, 0), (0, 0)] {
                             let mut cell = [p[0] as isize, p[1] as isize, p[2] as isize];
                             cell[u] += ou;
                             cell[v] += ov;
                             let w = ax[u].d[cell[u] as usize] * ax[v].d[cell[v] as usize];
-                            let (e, s) = mats.at(n, cell);
-                            e_sum += e * w;
-                            s_sum += s * w;
+                            let m = mats.at(n, cell);
+                            for q in 0..4 {
+                                sum[q] += m[q] * w;
+                            }
                             w_sum += w;
                         }
                         let id = idx(n, i, j, k);
-                        eps_edge[c][id] = EPS0 * e_sum / w_sum;
-                        sig_edge[c][id] = s_sum / w_sum;
+                        eps_edge[c][id] = EPS0 * sum[0] / w_sum;
+                        sig_edge[c][id] = sum[1] / w_sum;
+                        inf_edge[c][id] = sum[2] / w_sum;
+                        dd_edge[c][id] = sum[3] / w_sum;
                     }
                 }
             }
@@ -389,6 +452,35 @@ impl Sim {
                         }
                     }
                 }
+            }
+        }
+        let mut excluded: std::collections::HashSet<(usize, usize)> = Default::default();
+        for l in lumped {
+            for e in &l.edges {
+                excluded.insert((e.comp, idx(n, e.at[0], e.at[1], e.at[2])));
+            }
+        }
+        for p in &ports {
+            for e in p.columns.iter().flatten() {
+                excluded.insert((e.comp, idx(n, e.at[0], e.at[1], e.at[2])));
+            }
+        }
+        for (comp, id, _, _) in resistive {
+            excluded.insert((*comp, *id));
+        }
+        let half_g: f64 =
+            debye.poles.iter().map(|(x, a)| a * x * dt / (1.0 + 0.5 * x * dt)).sum::<f64>() * 0.5;
+        let mut debye_edges = Vec::new();
+        for c in 0..3 {
+            for id in 0..total {
+                let dd = dd_edge[c][id];
+                if dd <= 0.0 || cb[c][id] == 0.0 || excluded.contains(&(c, id)) {
+                    continue;
+                }
+                let eps = EPS0 * (inf_edge[c][id] + dd * half_g);
+                ca[c][id] = 1.0;
+                cb[c][id] = (dt / eps) as f32;
+                debye_edges.push((c, id, dd));
             }
         }
         let resistor = |ca: &mut [Vec<f32>; 3], cb: &mut [Vec<f32>; 3], e: &Edge, r: f64| -> f64 {
@@ -442,7 +534,21 @@ impl Sim {
                 }
             }
         }
-        Sim { grid, ax, dt, ca, cb, pml, ports, port_src, inductors, sheets, skin }
+        Sim {
+            grid,
+            ax,
+            dt,
+            ca,
+            cb,
+            pml,
+            ports,
+            port_src,
+            inductors,
+            sheets,
+            skin,
+            debye,
+            debye_edges,
+        }
     }
 
     pub fn dims(&self) -> [usize; 3] {
@@ -462,6 +568,19 @@ pub fn pulse_shape(fc: f64) -> (f64, f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debye_poles_hold_the_loss_tangent_across_the_band() {
+        let d = Debye::band(1e8, 4e10);
+        let (inf, dd) = d.fit(3.5, 0.004, 2e9);
+        for f in [1e8, 1e9, 1e10, 4e10] {
+            let (a, b) = d.response(2.0 * std::f64::consts::PI * f);
+            let (re, im) = (inf + dd * a, dd * b);
+            let (want_re, want_tan) = crate::loss::djordjevic_sarkar(3.5, 0.004, 2e9, f);
+            assert!((im / re / want_tan - 1.0).abs() < 0.03, "{f}: tan {} vs {want_tan}", im / re);
+            assert!((re - want_re).abs() < 0.01, "{f}: er {re} vs {want_re}");
+        }
+    }
 
     #[test]
     fn skin_poles_follow_one_over_root_s() {

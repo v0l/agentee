@@ -108,29 +108,11 @@ pub fn raster(model: &PcbModel, board: &Board, cell: f64) -> Raster {
 }
 
 fn contains(c: &Copper, p: P) -> bool {
-    match c {
-        Copper::Poly(v) => geom::point_in_polygon(p, v),
-        Copper::Seg(a, b, w) => geom::point_segment_distance(p, *a, *b) <= w / 2.0,
-        Copper::Circle(c, r) => geom::dist(p, *c) <= *r,
-        Copper::Fill(z) => z.filled(p),
-    }
+    c.contains(p)
 }
 
 fn copper_bounds(c: &Copper) -> Bounds {
-    let mut b = Bounds::EMPTY;
-    match c {
-        Copper::Poly(v) => v.iter().for_each(|q| b.add(*q)),
-        Copper::Seg(a, c, w) => {
-            b.add_circle(*a, w / 2.0);
-            b.add_circle(*c, w / 2.0);
-        }
-        Copper::Circle(c, r) => b.add_circle(*c, *r),
-        Copper::Fill(z) => {
-            b.add(z.origin);
-            b.add([z.origin[0] + z.width as f64 * z.cell, z.origin[1] + z.height as f64 * z.cell]);
-        }
-    }
-    b
+    c.bounds()
 }
 
 fn barrel_area_m2(r_mm: f64) -> f64 {

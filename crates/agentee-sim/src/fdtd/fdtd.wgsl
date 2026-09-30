@@ -22,6 +22,10 @@ struct Params {
     plane_k: u32,
     plane_n: u32,
     patches: u32,
+    debye: u32,
+    pad1: u32,
+    pad2: u32,
+    pad3: u32,
 }
 
 @group(0) @binding(0) var<storage, read_write> e: array<f32>;
@@ -46,6 +50,9 @@ struct Params {
 @group(1) @binding(8) var<storage, read> branch: array<f32>;
 @group(1) @binding(9) var<storage, read_write> sheet: array<f32>;
 @group(1) @binding(10) var<storage, read_write> current: array<f32>;
+@group(1) @binding(11) var<storage, read_write> debye_edge: array<f32>;
+@group(1) @binding(12) var<storage, read> debye_table: array<f32>;
+@group(1) @binding(13) var<storage, read_write> debye_state: array<f32>;
 
 const STRIDE: u32 = 10u;
 
@@ -205,6 +212,40 @@ fn sheet_post(@builtin(global_invocation_id) g: vec3<u32>) {
     for (var k = 0u; k < nb; k++) {
         let alpha = branch[2u + 2u * k];
         current[base + k] = alpha * current[base + k] + y * branch[3u + 2u * k] * v;
+    }
+}
+
+fn debye_index(g: vec3<u32>) -> u32 {
+    return g.y * 65535u * 64u + g.x;
+}
+
+@compute @workgroup_size(64, 1, 1)
+fn debye_pre(@builtin(global_invocation_id) g: vec3<u32>) {
+    let s = debye_index(g);
+    if s >= P.debye { return; }
+    debye_edge[s * 3u + 2u] = e[bitcast<u32>(debye_edge[s * 3u])];
+}
+
+@compute @workgroup_size(64, 1, 1)
+fn debye_post(@builtin(global_invocation_id) g: vec3<u32>) {
+    let s = debye_index(g);
+    if s >= P.debye { return; }
+    let f = bitcast<u32>(debye_edge[s * 3u]);
+    let dd = debye_edge[s * 3u + 1u];
+    let old = debye_edge[s * 3u + 2u];
+    let np = u32(debye_table[0]);
+    var s0 = 0.0;
+    for (var k = 0u; k < np; k++) {
+        s0 += 0.5 * (1.0 + debye_table[1u + 2u * k]) * debye_state[k * P.debye + s];
+    }
+    let comp = f / P.nn;
+    let cb = coef[(3u + comp) * P.nn + (f % P.nn)];
+    let next = e[f] - cb * s0;
+    e[f] = next;
+    let de = next - old;
+    for (var k = 0u; k < np; k++) {
+        let q = k * P.debye + s;
+        debye_state[q] = debye_table[1u + 2u * k] * debye_state[q] + dd * debye_table[2u + 2u * k] * de;
     }
 }
 

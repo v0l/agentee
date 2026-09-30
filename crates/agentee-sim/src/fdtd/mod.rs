@@ -508,21 +508,23 @@ mod tests {
         let clean = run_line(len, w, h, er, 0.0, 0.0, (0.5e9, 4e9), 0.12);
         let lossy = run_line(len, w, h, er, tan, 0.0, (0.5e9, 4e9), 0.12);
         let eeff: f64 = 3.4388;
-        let f0 = 2.25e9;
-        let q = (eeff - 1.0) / (er - 1.0);
-        let want = 20.0 / std::f64::consts::LN_10 * std::f64::consts::PI * f0 / engine::C0 * er
-            / eeff.sqrt()
-            * q
-            * tan
-            * len
-            * 1e-3;
         for f in [1.5e9, 2.2e9, 3.0e9] {
+            let (er_f, tan_f) =
+                crate::loss::djordjevic_sarkar(er, tan, crate::loss::REFERENCE_HZ, f);
+            let q = (eeff - 1.0) / (er - 1.0);
+            let want = 20.0 / std::f64::consts::LN_10 * std::f64::consts::PI * f / engine::C0
+                * er_f
+                / eeff.sqrt()
+                * q
+                * tan_f
+                * len
+                * 1e-3;
             let got = db_at(&clean, f) - db_at(&lossy, f);
             eprintln!(
                 "{} GHz: dielectric loss {got:.4} dB, filling factor formula {want:.4} dB",
                 f / 1e9
             );
-            assert!((got - want).abs() / want < 0.1, "{got} {want}");
+            assert!((got - want).abs() / want < 0.05, "{got} {want}");
         }
     }
 
