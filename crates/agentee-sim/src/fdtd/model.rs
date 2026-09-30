@@ -590,9 +590,87 @@ impl PcbModel {
                 })
                 .collect()
         };
-        let x = axis_lines(b.min[0], b.max[0], pinned(&|p| p[0]), &moved(0, &self.features_x));
-        let y = axis_lines(b.min[1], b.max[1], pinned(&|p| p[1]), &moved(1, &self.features_y));
+        let via_lines = self.via_edges(&b, opt);
+        let soft = |axis: usize, list: &[f64]| -> Vec<f64> {
+            let mut out = moved(axis, list);
+            out.extend(via_lines[axis].iter().map(|(v, dir, s)| match s {
+                Some(s) => v + *dir as f64 * insets[*s],
+                None => *v,
+            }));
+            out
+        };
+        let x = axis_lines(b.min[0], b.max[0], pinned(&|p| p[0]), &soft(0, &self.features_x));
+        let y = axis_lines(b.min[1], b.max[1], pinned(&|p| p[1]), &soft(1, &self.features_y));
         Grid { x, y, z, pml: opt.pml }
+    }
+
+    fn via_edges(&self, b: &Bounds, opt: &Meshing) -> [Vec<(f64, i8, Option<usize>)>; 2] {
+        let mut out: [Vec<(f64, i8, Option<usize>)>; 2] = Default::default();
+        let pieces: Vec<(usize, Bounds, &Copper)> =
+            self.copper.iter().map(|(s, c)| (*s, c.bounds(), c)).collect();
+        let margin = opt.margin;
+        for (c, r, a, z) in &self.vias {
+            if *r < VIA_CELLS * opt.cell
+                || c[0] < b.min[0] - margin
+                || c[0] > b.max[0] + margin
+                || c[1] < b.min[1] - margin
+                || c[1] > b.max[1] + margin
+            {
+                continue;
+            }
+            let reach = r + VIA_REACH;
+            let near: Vec<&(usize, Bounds, &Copper)> = pieces
+                .iter()
+                .filter(|(s, pb, _)| {
+                    s >= a.min(z)
+                        && s <= a.max(z)
+                        && pb.max[0] >= c[0] - reach
+                        && pb.min[0] <= c[0] + reach
+                        && pb.max[1] >= c[1] - reach
+                        && pb.min[1] <= c[1] + reach
+                })
+                .collect();
+            for axis in 0..2 {
+                for sign in [-1.0, 1.0] {
+                    out[axis].push((c[axis] + sign * r, 0, None));
+                    let at = |t: f64| {
+                        let mut p = *c;
+                        p[axis] += sign * t;
+                        p
+                    };
+                    for s in *a.min(z)..=*a.max(z) {
+                        let covered =
+                            |t: f64| near.iter().any(|(k, _, cu)| *k == s && cu.contains(at(t)));
+                        let step = VIA_REACH / 400.0;
+                        let mut t = *r;
+                        let mut was = covered(t);
+                        while t < reach {
+                            let next = t + step;
+                            let now = covered(next);
+                            if now != was {
+                                let (mut lo, mut hi) = (t, next);
+                                for _ in 0..20 {
+                                    let mid = 0.5 * (lo + hi);
+                                    if covered(mid) == was {
+                                        lo = mid;
+                                    } else {
+                                        hi = mid;
+                                    }
+                                }
+                                let dir = if now == (sign > 0.0) { 1 } else { -1 };
+                                out[axis].push((c[axis] + sign * 0.5 * (lo + hi), dir, Some(s)));
+                                if now {
+                                    break;
+                                }
+                                was = now;
+                            }
+                            t = next;
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     fn thickness_growth(&self, sheet: &Sheet) -> f64 {
@@ -1044,6 +1122,8 @@ impl PcbModel {
 }
 
 const FILL: f64 = 0.8;
+const VIA_REACH: f64 = 1.5;
+const VIA_CELLS: f64 = 2.0;
 
 fn mesh_lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
     let mut fixed: Vec<f64> = fixed.to_vec();
@@ -1174,6 +1254,51 @@ mod tests {
         let sim = m.build(&opt).unwrap();
         assert!(!sim.ports[0].reference_above);
         assert!(sim.ports[1].reference_above);
+    }
+
+    #[test]
+    fn via_drill_pad_and_antipad_edges_are_mesh_lines_once_the_drill_spans_the_cells() {
+        let at = [3.0, 0.0];
+        let circle = |r: f64| -> Vec<P> {
+            (0..64)
+                .map(|k| {
+                    let a = k as f64 * std::f64::consts::TAU / 64.0;
+                    [at[0] + r * a.cos(), at[1] + r * a.sin()]
+                })
+                .collect()
+        };
+        let board = vec![[0.0, -2.0], [6.0, -2.0], [6.0, 2.0], [0.0, 2.0]];
+        let m = PcbModel {
+            outline: board.clone(),
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.0 },
+                Sheet { name: "In1.Cu".into(), z: -0.5, thickness: 0.0 },
+                Sheet { name: "B.Cu".into(), z: -1.0, thickness: 0.0 },
+            ],
+            dielectrics: vec![
+                Dielectric { z0: -0.5, z1: 0.0, er: 4.5, tan: 0.0, pinned: true },
+                Dielectric { z0: -1.0, z1: -0.5, er: 4.5, tan: 0.0, pinned: true },
+            ],
+            copper: vec![
+                (0, Copper::Circle(at, 0.3)),
+                (1, Copper::Rings(Rings::new(vec![board, circle(0.6)]))),
+                (2, Copper::Circle(at, 0.3)),
+            ],
+            vias: vec![(at, 0.15, 0, 2)],
+            ..Default::default()
+        };
+        let has = |line: &[f64], v: f64, tol: f64| line.iter().any(|x| (x - v).abs() < tol);
+        let fine = m.mesh(&Meshing { cell: 0.05, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 });
+        for (line, c) in [(&fine.x, at[0]), (&fine.y, at[1])] {
+            for sign in [-1.0, 1.0] {
+                assert!(has(line, c + sign * 0.15, 1e-9), "drill {line:?}");
+                for r in [0.3, 0.6] {
+                    assert!(has(line, c + sign * r, 0.02), "{r} {line:?}");
+                }
+            }
+        }
+        let coarse = m.mesh(&Meshing { cell: 0.1, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 });
+        assert!(!has(&coarse.x, at[0] + 0.15, 1e-9), "{:?}", coarse.x);
     }
 
     #[test]
