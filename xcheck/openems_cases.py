@@ -1,6 +1,10 @@
+import ctypes
+import ctypes.util
 import json
 import os
+import re
 import sys
+import time
 
 import numpy as np
 from CSXCAD import ContinuousStructure
@@ -44,6 +48,43 @@ def debye_fit(er, tan, f_lo, f_hi):
     print(f"Debye fit, {len(x)} poles: er off by {err_er:.4f}, tan off by {100 * err_tan:.2f}% over {f_lo / 1e9:.2f} to {f_hi / 1e9:.2f} GHz", flush=True)
     assert err_er < 0.01 and err_tan < 0.03
     return inf, delta * a, 1 / x
+
+# XCHECK_ENGINE picks the openEMS engine (e.g. gpu, multithreaded; default: openEMS's own),
+# XCHECK_EXACT=1 evaluates the end criteria on a fixed timestep schedule (GPU branch only), and
+# XCHECK_TAG names the output (<name>.<tag>.s2p, default openems).
+engine = os.environ.get("XCHECK_ENGINE")
+exact = os.environ.get("XCHECK_EXACT") == "1"
+tag = os.environ.get("XCHECK_TAG", "openems")
+
+
+def run_logged(fdtd, path, log):
+    kw = {"verbose": 0}
+    if engine:
+        kw["engine"] = engine
+    if exact:
+        kw["exact_endcriteria"] = True
+    sys.stdout.flush()
+    saved = os.dup(1)
+    t0 = time.time()
+    with open(log, "w") as fh:
+        os.dup2(fh.fileno(), 1)
+        try:
+            fdtd.Run(path, cleanup=True, **kw)
+        finally:
+            ctypes.CDLL(ctypes.util.find_library("c")).fflush(None)
+            os.dup2(saved, 1)
+            os.close(saved)
+    wall = time.time() - t0
+    text = open(log).read()
+    m = re.search(r"Time for (\d+) iterations with ([0-9.e+]+) cells : ([0-9.e+-]+) sec", text)
+    created = re.search(r"Create FDTD engine \((.*)\)", text)
+    steps, cells, ts = int(m.group(1)), float(m.group(2)), float(m.group(3))
+    print(
+        f"{os.path.basename(path)}: engine {created.group(1) if created else '?'}, {cells:.0f} cells, {steps} steps, "
+        f"run {wall:.2f}s, timestepping {ts:.2f}s ({cells * steps / ts / 1e6:.0f} MCells/s), setup+post {wall - ts:.2f}s",
+        flush=True,
+    )
+
 
 cases = json.load(open(sys.argv[1]))
 out = os.path.abspath(sys.argv[2])
@@ -110,16 +151,16 @@ for c in cases:
     mesh.SmoothMeshLines("z", max(h / 6, cell), 1.3)
     mesh.SmoothMeshLines("all", 3e8 / f1 / 1e-3 / 20, 1.4)
 
-    path = os.path.join(out, "openems_" + name)
+    path = os.path.join(out, tag + "_" + name)
     os.makedirs(path, exist_ok=True)
-    fdtd.Run(path, cleanup=True, verbose=0)
+    run_logged(fdtd, path, path + ".log")
     f = np.linspace(f0, f1, int(npts))
     for p in ports:
         p.CalcPort(path, f)
     s11 = ports[0].uf_ref / ports[0].uf_inc
     s21 = ports[1].uf_ref / ports[0].uf_inc
-    with open(os.path.join(out, name + ".openems.s2p"), "w") as fh:
-        fh.write(f"! openEMS {name}\n# Hz S RI R 50\n")
+    with open(os.path.join(out, f"{name}.{tag}.s2p"), "w") as fh:
+        fh.write(f"! openEMS {name} {tag}\n# Hz S RI R 50\n")
         for k in range(len(f)):
             fh.write(f"{f[k]:.6e} {s11[k].real:.6e} {s11[k].imag:.6e} {s21[k].real:.6e} {s21[k].imag:.6e} {s21[k].real:.6e} {s21[k].imag:.6e} {s11[k].real:.6e} {s11[k].imag:.6e}\n")
     print(name, "done", flush=True)
