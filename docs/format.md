@@ -615,7 +615,11 @@ artwork get the same checks as reference labels: overlap, pads, silk outlines, b
 ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the tracks and vias
 to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
 It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
-the board edge, keeps new vias `min_hole_to_hole` from every drill, uses the class via to change
+the board edge, keeps new vias `min_hole_to_hole` from every drill and their holes
+`min_via_hole_to_copper` from other nets' pads, tracks and vias, keeps them off SMD pads of every
+net, its own too (the via copper may not touch one, `via-cuts-pad`, and the hole stays
+`min_hole_to_smd_pad` from it, `hole-to-smd-pad`, unless `--via-in-pad`, MCP `via_in_pad`, lets it sit
+wholly inside an SMD pad of its net with a drill of at most `max_filled_via_drill`), uses the class via to change
 layer (`--via` to override, `--via-cost` in mm of track, default 3), charges `--bend-cost` mm of track for
 each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets

@@ -15,6 +15,7 @@ pub struct RouteOptions {
     pub bend_cost: f64,
     pub margin: f64,
     pub pairs: bool,
+    pub via_in_pad: bool,
 }
 
 impl Default for RouteOptions {
@@ -28,6 +29,7 @@ impl Default for RouteOptions {
             bend_cost: 0.1,
             margin: 5.0,
             pairs: false,
+            via_in_pad: false,
         }
     }
 }
@@ -113,6 +115,35 @@ struct Obstacle {
     clearance: f64,
 }
 
+struct SmdPad {
+    layers: Vec<usize>,
+    outlines: Vec<Vec<P>>,
+    lo: P,
+    hi: P,
+}
+
+impl SmdPad {
+    fn clears(&self, at: P, ctx: &Ctx) -> bool {
+        let reach = ctx.via_r.max(ctx.drill_r + ctx.hole_smd) + 1e-3;
+        if at[0] < self.lo[0] - reach
+            || at[1] < self.lo[1] - reach
+            || at[0] > self.hi[0] + reach
+            || at[1] > self.hi[1] + reach
+            || !self.layers.iter().any(|l| ctx.via_layers.contains(l))
+        {
+            return true;
+        }
+        if self.outlines.iter().any(|o| pad_gap(o, at) <= -(ctx.via_r + 1e-3)) {
+            return ctx.in_pad;
+        }
+        self.outlines.iter().all(|o| pad_gap(o, at) >= reach)
+    }
+}
+
+fn via_clears_smd(at: P, ctx: &Ctx) -> bool {
+    ctx.smd.iter().all(|p| p.clears(at, ctx))
+}
+
 const FREE: u16 = 0;
 const BLOCK: u16 = u16::MAX;
 
@@ -136,6 +167,26 @@ impl Grid {
             for l in 0..self.via.len() / (self.w * self.h) {
                 let i = self.idx(l, x, y);
                 self.via[i] = BLOCK;
+            }
+        }
+    }
+
+    fn block_smd(&mut self, ctx: &Ctx) {
+        let reach = ctx.via_r.max(ctx.drill_r + ctx.hole_smd) + 1e-3;
+        let layers = self.via.len() / (self.w * self.h);
+        for pad in ctx.smd {
+            if !pad.layers.iter().any(|l| ctx.via_layers.contains(l)) {
+                continue;
+            }
+            for o in &pad.outlines {
+                for (x, y) in self.cells_near(&Shape::Poly(o.clone()), reach) {
+                    if !pad.clears(self.center(x, y), ctx) {
+                        for l in 0..layers {
+                            let i = self.idx(l, x, y);
+                            self.via[i] = BLOCK;
+                        }
+                    }
+                }
             }
         }
     }
@@ -166,12 +217,14 @@ impl Grid {
             }
         }
         let widest = ctx.widths.iter().cloned().fold(0.0, f64::max);
+        let keep = ctx.via_keep();
         for (layers, shape) in shapes {
+            let c = if matches!(shape, Shape::Circle(..)) { keep } else { ctx.clearance };
             for is_via in [false, true] {
                 let reach = |l: usize| {
-                    (if is_via { ctx.via_r } else { ctx.widths[l] / 2.0 }) + ctx.clearance + slack
+                    (if is_via { ctx.via_r + keep } else { ctx.widths[l] / 2.0 + c }) + slack
                 };
-                let most = (if is_via { ctx.via_r } else { widest / 2.0 }) + ctx.clearance + slack;
+                let most = if is_via { ctx.via_r + keep } else { widest / 2.0 + c } + slack;
                 for (x, y) in self.cells_near(&shape, most) {
                     let d = shape.dist(self.center(x, y));
                     for &l in layers.iter().filter(|&&l| d <= reach(l)) {
@@ -249,18 +302,28 @@ impl Grid {
         }
     }
 
-    fn add(&mut self, o: &Obstacle, half_widths: &[f64], via_radius: f64, clearance: f64) {
+    fn add(
+        &mut self,
+        o: &Obstacle,
+        half_widths: &[f64],
+        via_radius: f64,
+        clearance: f64,
+        hole_reach: f64,
+    ) {
         let value = o.net.map(|n| n as u16 + 1).unwrap_or(BLOCK);
         let c = clearance.max(o.clearance);
         let slack = self.g * 0.6;
         let widest = o.layers.iter().map(|&l| half_widths[l]).fold(0.0, f64::max);
+        let via_reach = (via_radius + c).max(hole_reach) + slack;
         for is_via in [false, true] {
-            let most = (if is_via { via_radius } else { widest }) + c + slack;
+            let most = if is_via { via_reach } else { widest + c + slack };
             for (x, y) in self.cells_near(&o.shape, most) {
                 let d = o.shape.dist(self.center(x, y));
-                for &l in o.layers.iter().filter(|&&l| {
-                    d <= (if is_via { via_radius } else { half_widths[l] }) + c + slack
-                }) {
+                for &l in o
+                    .layers
+                    .iter()
+                    .filter(|&&l| d <= if is_via { via_reach } else { half_widths[l] + c + slack })
+                {
                     let i = self.idx(l, x, y);
                     if is_via {
                         Self::mark(&mut self.via, i, value);
@@ -318,10 +381,20 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         return Err("no net matches".into());
     }
 
+    let hole_cu = board.rules.min_via_hole_to_copper.to_mm();
     let mut obstacles = Vec::new();
+    let mut smd = Vec::new();
     for part in &layout.parts {
         for pad in &part.pads {
             let layers: Vec<usize> = pad.copper.iter().filter_map(|c| layer_of(c)).collect();
+            if pad.drill.is_none() && !layers.is_empty() {
+                let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+                for q in pad.outlines.iter().flatten() {
+                    lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+                    hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+                }
+                smd.push(SmdPad { layers: layers.clone(), outlines: pad.outlines.clone(), lo, hi });
+            }
             if !layers.is_empty() {
                 for o in &pad.outlines {
                     obstacles.push(Obstacle {
@@ -360,7 +433,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             net: Some(v.net),
             layers: v.layers.iter().filter_map(|c| layer_of(c)).collect(),
             shape: Shape::Circle(v.at, v.diameter / 2.0),
-            clearance: layout.nets[v.net].clearance,
+            clearance: layout.nets[v.net].clearance.max(v.drill / 2.0 + hole_cu - v.diameter / 2.0),
         });
     }
 
@@ -451,6 +524,11 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         let ctx = Ctx {
             drill_r: spec.drill.to_mm() / 2.0,
             hole_gap: board.rules.min_hole_to_hole.to_mm(),
+            hole_cu,
+            hole_smd: board.rules.min_hole_to_smd_pad.to_mm(),
+            in_pad: opts.via_in_pad
+                && spec.drill.to_mm() <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
+            smd: &smd,
             widths: widths.clone(),
             clearance,
             via_r,
@@ -461,11 +539,12 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
 
         let mut grid = build_grid(layout, opts.grid, &halves, via_r, edge);
         for o in &obstacles {
-            grid.add(o, &halves, via_r, clearance);
+            grid.add(o, &halves, via_r, clearance, ctx.drill_r + hole_cu);
         }
         for &(c, r) in &drills {
             grid.add_drill(c, r + ctx.drill_r + ctx.hole_gap);
         }
+        grid.block_smd(&ctx);
 
         let conns: Vec<(P, P, usize)> =
             layout.ratsnest.iter().filter(|(_, _, n)| nets.contains(n)).cloned().collect();
@@ -721,7 +800,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     net: Some(conn.net),
                     layers: via_layers.clone(),
                     shape: Shape::Circle(at, via_r),
-                    clearance,
+                    clearance: ctx.via_keep(),
                 });
                 out.vias.push(RoutedVia { net: name.clone(), at, via: spec.name.clone() });
             }
@@ -733,12 +812,22 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
 struct Ctx<'a> {
     drill_r: f64,
     hole_gap: f64,
+    hole_cu: f64,
+    hole_smd: f64,
+    in_pad: bool,
+    smd: &'a [SmdPad],
     widths: Vec<f64>,
     clearance: f64,
     via_r: f64,
     via_layers: &'a [usize],
     routing: &'a [usize],
     opts: &'a RouteOptions,
+}
+
+impl Ctx<'_> {
+    fn via_keep(&self) -> f64 {
+        self.clearance.max(self.drill_r + self.hole_cu - self.via_r)
+    }
 }
 
 #[derive(Clone)]
@@ -950,6 +1039,7 @@ fn via_fits(
     let lines_ok =
         run_layers.iter().all(|&l| run.windows(2).all(|w| clear_line(grid, l, w[0], w[1], c.net)));
     cell_ok
+        && via_clears_smd(to, ctx)
         && own_ok
         && lines_ok
         && others
@@ -1129,7 +1219,7 @@ fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
             net: Some(c.net),
             layers: ctx.via_layers.to_vec(),
             shape: Shape::Circle(*v, ctx.via_r),
-            clearance: ctx.clearance,
+            clearance: ctx.via_keep(),
         });
     }
     out
@@ -1137,8 +1227,9 @@ fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
 
 fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
     let need = |l: usize| ctx.widths[l] + ctx.clearance - 1e-6;
-    let via_need = |l: usize| ctx.via_r + ctx.widths[l] / 2.0 + ctx.clearance - 1e-6;
-    let vv_need = 2.0 * ctx.via_r + ctx.clearance - 1e-6;
+    let keep = ctx.via_keep();
+    let via_need = |l: usize| ctx.via_r + ctx.widths[l] / 2.0 + keep - 1e-6;
+    let vv_need = 2.0 * ctx.via_r + keep - 1e-6;
     for (la, pa) in &r.tracks {
         for (lb, pb) in &c.tracks {
             if la != lb {
@@ -2096,6 +2187,10 @@ mod tests {
         let ctx = Ctx {
             drill_r: 0.1,
             hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
             widths: vec![0.1; 2],
             clearance: 0.1,
             via_r: 0.2,
@@ -2163,6 +2258,10 @@ mod tests {
         let ctx = Ctx {
             drill_r: 0.1,
             hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
             widths: vec![0.1; 2],
             clearance: 0.1,
             via_r: 0.2,
@@ -2192,6 +2291,10 @@ mod tests {
         let ctx = Ctx {
             drill_r: 0.1,
             hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
             widths: vec![0.1; 2],
             clearance: 0.1,
             via_r: 0.2,
@@ -2221,6 +2324,132 @@ mod tests {
     }
 
     #[test]
+    fn via_cells_keep_off_smd_pads_unless_via_in_pad() {
+        let square = |c: P, h: f64| {
+            vec![
+                [c[0] - h, c[1] - h],
+                [c[0] + h, c[1] - h],
+                [c[0] + h, c[1] + h],
+                [c[0] - h, c[1] + h],
+            ]
+        };
+        let pad = SmdPad {
+            layers: vec![0],
+            outlines: vec![square([2.05, 2.05], 0.3)],
+            lo: [1.75, 1.75],
+            hi: [2.35, 2.35],
+        };
+        let smd = [pad];
+        let opts = RouteOptions::default();
+        for in_pad in [false, true] {
+            let ctx = Ctx {
+                drill_r: 0.1,
+                hole_gap: 0.2,
+                hole_cu: 0.0,
+                hole_smd: 0.2,
+                in_pad,
+                smd: &smd,
+                widths: vec![0.1; 2],
+                clearance: 0.1,
+                via_r: 0.2,
+                via_layers: &[0, 1],
+                routing: &[0, 1],
+                opts: &opts,
+            };
+            let mut grid = open_grid(50, 50, 2);
+            grid.block_smd(&ctx);
+            let via_ok = |x: usize| {
+                let at = grid.center(x, 20);
+                let cell = [0, 1].iter().all(|&l| grid.ok(grid.idx(l, x, 20), 0, true, false).0);
+                assert_eq!(cell, via_clears_smd(at, &ctx), "{at:?}");
+                cell
+            };
+            assert_eq!(via_ok(20), in_pad, "centred in the pad");
+            assert!(!via_ok(24), "cuts the pad edge");
+            assert!(!via_ok(25), "hole 0.1 mm from the pad");
+            assert!(via_ok(27), "hole 0.3 mm from the pad");
+            assert!(!via_ok(22), "annulus past the pad edge");
+        }
+    }
+
+    #[test]
+    fn snapped_vias_keep_off_smd_pads() {
+        let grid = open_grid(80, 40, 2);
+        let opts = RouteOptions::default();
+        let pad = |c: P| SmdPad {
+            layers: vec![0],
+            outlines: vec![vec![
+                [c[0] - 0.1, c[1] - 0.1],
+                [c[0] + 0.1, c[1] - 0.1],
+                [c[0] + 0.1, c[1] + 0.1],
+                [c[0] - 0.1, c[1] + 0.1],
+            ]],
+            lo: [c[0] - 0.1, c[1] - 0.1],
+            hi: [c[0] + 0.1, c[1] + 0.1],
+        };
+        let smd = [pad([3.05, 2.35]), pad([4.05, 0.75])];
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.2,
+            in_pad: false,
+            smd: &smd,
+            widths: vec![0.1; 2],
+            clearance: 0.1,
+            via_r: 0.2,
+            via_layers: &[0, 1],
+            routing: &[0, 1],
+            opts: &opts,
+        };
+        let conn = |net: usize, y: f64, x: f64| Conn {
+            net,
+            tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
+            vias: vec![[x, y]],
+        };
+        let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
+        snap_vias(&grid, &[], &mut routed, &[false, false], &ctx);
+        for c in routed.iter().flatten() {
+            assert!(via_clears_smd(c.vias[0], &ctx), "{:?}", c.vias[0]);
+        }
+    }
+
+    #[test]
+    fn vias_keep_hole_to_copper_from_other_nets() {
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            hole_cu: 0.4,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
+            widths: vec![0.1],
+            clearance: 0.1,
+            via_r: 0.2,
+            via_layers: &[0],
+            routing: &[0],
+            opts: &opts,
+        };
+        let mut grid = open_grid(40, 40, 1);
+        let track = Obstacle {
+            net: Some(1),
+            layers: vec![0],
+            shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.0),
+            clearance: 0.1,
+        };
+        grid.add(&track, &[0.05], ctx.via_r, ctx.clearance, ctx.drill_r + ctx.hole_cu);
+        assert!(!grid.ok(grid.idx(0, 14, 20), 0, true, false).0, "hole 0.35 mm from the track");
+        assert!(grid.ok(grid.idx(0, 17, 20), 0, true, false).0, "hole 0.65 mm from the track");
+        let via = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.45, 2.05]] };
+        let near =
+            Conn { net: 1, tracks: vec![(0, vec![[1.0, 0.5], [1.0, 3.5]])], vias: Vec::new() };
+        assert!(conflicts(&near, &via, &ctx) && conflicts(&via, &near, &ctx));
+        let far = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.65, 2.05]] };
+        assert!(!conflicts(&near, &far, &ctx));
+    }
+
+    #[test]
     fn no_path_fails_fast() {
         let mut grid = open_grid(40, 20, 1);
         block(&mut grid, 0, 20..21, 0..20);
@@ -2228,6 +2457,10 @@ mod tests {
         let ctx = Ctx {
             drill_r: 0.1,
             hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
             widths: vec![0.1],
             clearance: 0.1,
             via_r: 0.2,
