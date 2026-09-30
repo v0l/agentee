@@ -886,11 +886,18 @@ impl Project {
             .iter()
             .find(|s| s.name == layout.schematic)
             .ok_or("the layout's schematic is missing")?;
+        let sim_files: Vec<crate::sim::SimFile> = self
+            .sims
+            .iter()
+            .filter_map(|e| std::fs::read_to_string(&e.path).ok())
+            .filter_map(|src| parse(&src).ok())
+            .collect();
         let cx = Context {
             dir: path.parent().map(Path::to_path_buf).unwrap_or_default(),
             board: &board.item,
             schematic: &schematic.item,
             footprints: self.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+            heat: crate::place::thermal_heat(&sim_files, &file.name),
         };
         let mut d = Diags::new(&file.name);
         let item = file.resolve(&cx, &mut d);
