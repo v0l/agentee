@@ -11,6 +11,7 @@ pub mod pcb;
 pub mod plot;
 pub mod raster;
 pub mod sheet;
+pub mod simrun;
 
 pub use app::run;
 pub use headless::{RenderOptions, render_png};

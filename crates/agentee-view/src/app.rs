@@ -367,6 +367,10 @@ impl eframe::App for App {
             });
         let current = self.current();
         self.poll_progress(&ctx);
+        self.st.runs.poll();
+        if self.st.runs.any() {
+            ctx.request_repaint_after(Duration::from_millis(500));
+        }
         self.st.sim_progress = match current {
             Some(r @ ItemRef::Sim(_)) => self.progress.get(self.project.name_of(r)).cloned(),
             _ => None,

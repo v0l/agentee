@@ -40,6 +40,7 @@ pub struct PageState {
     pub show_parts: bool,
     pub soft_3d: crate::board3d::SoftCache,
     pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
+    pub runs: crate::simrun::Runs,
 }
 
 impl Default for PageState {
@@ -71,6 +72,7 @@ impl Default for PageState {
             show_parts: true,
             soft_3d: None,
             tdr_cache: None,
+            runs: Default::default(),
         }
     }
 }
@@ -987,6 +989,7 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
     let s = &project.sims[index].item;
     egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
         ui.set_min_size(ui.available_size());
+        sim_controls(ui, project, index, st);
         if let Some(pr) = &st.sim_progress {
             let secs = agentee_core::sim::now().saturating_sub(pr.started);
             section(ui, "running", &format!("pid {}", pr.pid), |ui| {
@@ -1063,7 +1066,7 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
                 note(
                     ui,
                     format!(
-                        "Run it with `agentee sim {}`, the plot appears here when it finishes.",
+                        "Press run, or run `agentee sim {}`; the plot appears here when it finishes.",
                         s.name
                     ),
                     VALUE,
@@ -1107,6 +1110,36 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             },
         );
     });
+}
+
+fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) {
+    let s = &project.sims[index].item;
+    let has_result = s.result.is_some() || s.maps.is_some() || s.channel.is_some();
+    let starting = st.runs.starting(&s.name) && st.sim_progress.is_none();
+    let running = st.sim_progress.is_some() || st.runs.starting(&s.name);
+    ui.horizontal(|ui| {
+        if running {
+            if toggle(ui, "stop", true).clicked() {
+                let pid = st.sim_progress.as_ref().map(|p| p.pid);
+                st.runs.stop(&s.name, pid);
+            }
+            if starting {
+                note(ui, "starting", LEGEND);
+            }
+        } else {
+            let label = if has_result { "re-run" } else { "run" };
+            if toggle(ui, label, false).clicked() {
+                st.runs.start(&project.root, &s.name);
+            }
+            if s.stale {
+                note(ui, "the copper or the spec changed since the last run", WARN);
+            }
+        }
+        if let Some(e) = st.runs.failure(&s.name) {
+            note(ui, format!("last run failed: {e}"), FAULT);
+        }
+    });
+    ui.add_space(6.0);
 }
 
 fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mut PageState) {
