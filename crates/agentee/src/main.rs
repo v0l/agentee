@@ -28,6 +28,7 @@ enum NewKind {
     Footprint,
     Schematic,
     Layout,
+    Sim,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -121,12 +122,15 @@ enum Cmd {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
-    /// Write a starter board, symbol or footprint
+    /// Write a starter board, symbol, footprint, schematic, layout or sim
     New {
         kind: NewKind,
         name: String,
         #[arg(short, long)]
         dir: Option<PathBuf>,
+        /// The sim to start from: an FDTD run of a layout, or a logic sim of a schematic
+        #[arg(long = "kind", value_enum, default_value = "fdtd")]
+        sim_kind: ops::SimTemplate,
     },
     /// Import from the installed KiCad libraries
     Import {
@@ -496,15 +500,17 @@ fn run(cli: Cli) -> Result<bool, String> {
             mcp::serve(&path).map_err(|e| e.to_string())?;
             Ok(true)
         }
-        Cmd::New { kind, name, dir } => {
+        Cmd::New { kind, name, dir, sim_kind } => {
             let (kind, default) = match kind {
                 NewKind::Board => (Kind::Board, "."),
                 NewKind::Symbol => (Kind::Symbol, "symbols"),
                 NewKind::Footprint => (Kind::Footprint, "footprints"),
                 NewKind::Schematic => (Kind::Schematic, "."),
                 NewKind::Layout => (Kind::Layout, "."),
+                NewKind::Sim => (Kind::Sim, "."),
             };
-            let path = ops::new_item(kind, &name, &dir.unwrap_or_else(|| default.into()))?;
+            let path =
+                ops::new_item(kind, sim_kind, &name, &dir.unwrap_or_else(|| default.into()))?;
             println!("{}", path.display());
             Ok(true)
         }

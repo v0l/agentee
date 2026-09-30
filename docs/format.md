@@ -1498,7 +1498,9 @@ temperature.
 ### Logic (`kind = "logic"`)
 
 An event-driven simulation of the digital parts of a schematic, straight from its netlist; no
-layout is needed. `agentee sim NAME` (MCP `run_sim`) writes `NAME.result.json` and a VCD
+layout is needed. `agentee new sim NAME --kind logic` (MCP `new_item` with `kind = "sim"` and
+`sim_kind = "logic"`) writes a starter with a clock, a reset and a clocked assertion to rename
+to your nets; `--kind fdtd`, the default, starts an FDTD run instead. `agentee sim NAME` (MCP `run_sim`) writes `NAME.result.json` and a VCD
 waveform `NAME.vcd` next to the spec; the viewer draws a trace per recorded net against time.
 
 In the waveform view the mouse wheel (or pinch, or ctrl and the wheel) zooms about the pointer,

@@ -96,11 +96,12 @@ fn tools() -> Value {
         },
         {
             "name": "new_item",
-            "description": "Write a starter file for a board, symbol or footprint that passes check, to edit from.",
+            "description": "Write a starter file for a board, symbol, footprint, schematic, layout or sim, to edit from. A sim starts as an FDTD run of a layout, or with sim_kind logic as a logic sim of a schematic (clock, reset, a clocked assertion) whose nets you rename.",
             "inputSchema": s(json!({
-                "kind": { "type": "string", "enum": ["board", "symbol", "footprint", "schematic", "layout"] },
+                "kind": { "type": "string", "enum": ["board", "symbol", "footprint", "schematic", "layout", "sim"] },
                 "name": { "type": "string" },
                 "dir": { "type": "string", "description": "relative to the project" },
+                "sim_kind": { "type": "string", "enum": ["fdtd", "logic"], "description": "with kind sim, default fdtd" },
             }), &["kind", "name"]),
         },
         {
@@ -396,8 +397,12 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 Some("footprint") => Kind::Footprint,
                 Some("schematic") => Kind::Schematic,
                 Some("layout") => Kind::Layout,
-                _ => return Err("kind is board, symbol, footprint, schematic or layout".into()),
+                Some("sim") => Kind::Sim,
+                _ => {
+                    return Err("kind is board, symbol, footprint, schematic, layout or sim".into());
+                }
             };
+            let sim = ops::SimTemplate::parse(arg(a, "sim_kind").unwrap_or("fdtd"))?;
             let default = match kind {
                 Kind::Symbol => "symbols",
                 Kind::Footprint => "footprints",
@@ -405,6 +410,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             };
             let path = ops::new_item(
                 kind,
+                sim,
                 arg(a, "name").ok_or("name is required")?,
                 &under(root, arg(a, "dir"), default),
             )?;
@@ -690,6 +696,49 @@ mod tests {
         let tools =
             handle(&demo(), &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
         assert!(tools["result"]["tools"].as_array().unwrap().len() > 5);
+    }
+
+    #[test]
+    fn new_item_writes_a_logic_sim_that_runs_on_the_counter() {
+        let logic = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/logic");
+        let dir = std::env::temp_dir().join(format!("agentee-new-logic-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["", "symbols", "footprints"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+            for e in std::fs::read_dir(logic.join(sub)).unwrap() {
+                let path = e.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if name.ends_with(".toml") && !name.ends_with(".sim.toml") {
+                    std::fs::copy(&path, dir.join(sub).join(name)).unwrap();
+                }
+            }
+        }
+        let call = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "new_item", "arguments": { "kind": "sim", "sim_kind": "logic", "name": "starter" } } });
+        let r = handle(&dir, &call).unwrap();
+        assert_eq!(r["result"]["isError"], false, "{r}");
+        let path = dir.join("starter.sim.toml");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("kind = \"logic\""));
+        std::fs::write(&path, text.replace("# ignore = [\"J1\"]", "ignore = [\"J1\", \"J2\"]"))
+            .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let s = p.sims.iter().find(|s| s.name == "starter").unwrap();
+        let errors: Vec<&str> = s
+            .diags
+            .iter()
+            .filter(|d| d.severity == agentee_core::Severity::Error)
+            .map(|d| d.message.as_str())
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}");
+        let spec = s.item.logic.as_ref().unwrap();
+        let (res, _) = agentee_sim::logic::run(spec, "starter", 0, "starter.vcd");
+        assert_eq!((res.passed, res.failures.len()), (1, 0), "{:?}", res.failures);
+        let bad = json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": "new_item", "arguments": { "kind": "sim", "sim_kind": "spice", "name": "x" } } });
+        assert_eq!(handle(&dir, &bad).unwrap()["result"]["isError"], true);
+        let fdtd = json!({ "jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": { "name": "new_item", "arguments": { "kind": "sim", "name": "rf" } } });
+        handle(&dir, &fdtd).unwrap();
+        let rf = std::fs::read_to_string(dir.join("rf.sim.toml")).unwrap();
+        assert!(rf.contains("[frequency]") && !rf.contains("logic"));
     }
 
     #[test]

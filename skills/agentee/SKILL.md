@@ -42,6 +42,7 @@ watching; you work from `render` and `show`.
 agentee new board NAME          # fab, stackup, outline, vias, net classes
 agentee new schematic NAME
 agentee new layout NAME
+agentee new sim NAME --kind logic   # a logic sim of the schematic; default --kind fdtd
 agentee check
 ```
 
