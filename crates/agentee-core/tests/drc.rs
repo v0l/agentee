@@ -3,6 +3,10 @@ use agentee_core::diag::Severity;
 use std::path::Path;
 
 fn project(parts: &[(&str, &str)], nets: &str, pcb: &str) -> Project {
+    project_with(&[], parts, nets, pcb)
+}
+
+fn project_with(files: &[(&str, &str)], parts: &[(&str, &str)], nets: &str, pcb: &str) -> Project {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let k = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("agentee-drc-{}-{k}", std::process::id()));
@@ -17,6 +21,9 @@ fn project(parts: &[(&str, &str)], nets: &str, pcb: &str) -> Project {
     for s in ["R_0402_1005Metric", "MountingHole_2.2mm_M2_Pad_Via"] {
         let f = format!("footprints/{s}.fp.toml");
         std::fs::copy(lna.join(&f), dir.join(&f)).unwrap();
+    }
+    for (name, text) in files {
+        std::fs::write(dir.join(name), text).unwrap();
     }
     std::fs::write(
         dir.join("t.board.toml"),
@@ -142,4 +149,46 @@ fn a_courtyard_over_a_mounting_hole_is_an_error_on_either_side() {
     let clear = under.replace("[21, 10]", "[24, 10]");
     let e = errors(&project(parts, "", &format!("{clear}{hole}")));
     assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
+}
+
+const TIGHT: &str = r#"name = "Tight2"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-0.19, 0]
+size = [0.3, 0.3]
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.19, 0]
+size = [0.3, 0.3]
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-0.5, -0.3]
+end = [0.5, 0.3]
+"#;
+
+#[test]
+fn mask_openings_of_different_nets_need_a_web() {
+    let files = [("footprints/Tight2.fp.toml", TIGHT)];
+    let sch = |b: &str| {
+        format!(
+            "\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+             footprint = \"Tight2\"\n\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"{b}]\n"
+        )
+    };
+    let pcb = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\nlabel = { hide = true }\n";
+    let split = format!("{}\n[[nets]]\nname = \"B\"\npins = [\"R1.2\"]\n", sch(""));
+    let e = errors(&project_with(&files, &[], &split, pcb));
+    assert!(
+        e.iter().any(|t| t.contains("part R1 F.Mask: 1 pad pairs")
+            && t.contains("0.1mm mask web")
+            && t.contains("R1.1 leaves 0.08mm to R1.2 at [10.000, 10.000]")),
+        "{e:?}"
+    );
+    let e = errors(&project_with(&files, &[], &sch(", \"R1.2\""), pcb));
+    assert!(!e.iter().any(|t| t.contains("mask")), "{e:?}");
 }

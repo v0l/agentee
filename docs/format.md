@@ -121,8 +121,8 @@ dielectric; mask, paste and silk sit outside the outer copper.
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
 `min_annular_ring`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
-`min_silk_text_height`. Footprints are checked against the rules of the board when the project has
-exactly one board, otherwise against `generic`.
+`min_silk_text_height`, `min_mask_web` (0.1 mm in both presets). Footprints are checked against the
+rules of the board when the project has exactly one board, otherwise against `generic`.
 
 ### What check computes
 
@@ -456,6 +456,10 @@ flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
 (the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
+Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
+different nets (or no net) that overlap or leave a mask web under `min_mask_web` are an error,
+counted per part pair with the first place named. Pads of one fine pitch part are checked too: fix
+it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and

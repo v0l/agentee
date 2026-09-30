@@ -191,6 +191,7 @@ rules! {
     min_copper_to_edge: "copper to board outline",
     min_silk_width: "silkscreen line width",
     min_silk_text_height: "silkscreen text height",
+    min_mask_web: "solder mask left between openings of different nets",
 }
 
 pub const FAB_PRESETS: &[&str] = &["generic", "jlcpcb"];
@@ -209,6 +210,7 @@ pub fn fab_rules(name: &str) -> Option<Rules> {
             min_copper_to_edge: mm(0.5),
             min_silk_width: mm(0.12),
             min_silk_text_height: mm(1.0),
+            min_mask_web: mm(0.1),
         }),
         "jlcpcb" => Some(Rules {
             min_track_width: mm(0.127),
@@ -221,6 +223,7 @@ pub fn fab_rules(name: &str) -> Option<Rules> {
             min_copper_to_edge: mm(0.3),
             min_silk_width: mm(0.15),
             min_silk_text_height: mm(1.0),
+            min_mask_web: mm(0.1),
         }),
         _ => None,
     }
