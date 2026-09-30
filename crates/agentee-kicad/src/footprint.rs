@@ -435,6 +435,15 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
             .map(Length::mm),
         overhang: false,
         mlcc: None,
+        net_tie_pad_groups: root
+            .find("net_tie_pad_groups")
+            .map(|g| {
+                (0..)
+                    .map_while(|i| g.arg(i))
+                    .map(|group| group.split(',').map(|n| n.trim().to_string()).collect())
+                    .collect()
+            })
+            .unwrap_or_default(),
         pads: collapse(pads),
         graphics,
     })
@@ -483,6 +492,13 @@ mod tests {
         assert_eq!(fp.clearance, Some(Length::mm(0.2)));
         let src = "(footprint \"R\" (pad \"1\" smd rect (at 0 0) (size 0.3 0.3) (layers \"F.Cu\") (clearance 0.3)))";
         assert_eq!(convert(&parse(src).unwrap()).unwrap().clearance, None);
+    }
+
+    #[test]
+    fn net_tie_pad_groups_split_on_commas() {
+        let src = "(footprint \"NT\" (net_tie_pad_groups \"1, 2\" \"3,4,5\") (pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\")))";
+        let fp = convert(&parse(src).unwrap()).unwrap();
+        assert_eq!(fp.net_tie_pad_groups, [vec!["1", "2"], vec!["3", "4", "5"]]);
     }
 
     #[test]

@@ -1293,3 +1293,31 @@ fn the_router_staggers_vias_unless_the_fab_stacks_them() {
     let (stacked, _) = routed(true);
     assert!(stacked);
 }
+
+#[test]
+fn a_track_on_a_net_tie_bridge_is_not_a_clearance_error_to_the_other_pad() {
+    let jumper = |groups: &str| {
+        format!(
+            "{groups}\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [-0.65, 0]\nsize = [1.0, 1.5]\ncount = 2\npitch = [1.3, 0]\n\n[[graphics]]\nkind = \"polygon\"\nlayer = \"F.Cu\"\npoints = [[0.25, -0.3], [-0.25, -0.3], [-0.25, 0.3], [0.25, 0.3]]\nfill = \"solid\"\n"
+        )
+    };
+    let diags = |fp: &str| {
+        let p = load(&Fixture {
+            footprints: &[("JP", fp)],
+            parts: &[("JP1", "JP", [10.0, 10.0])],
+            nets: &[("A", &["JP1.1"]), ("B", &["JP1.2"])],
+            pcb: &track("A", "F.Cu", "[[10.0, 10.0], [10.0, 6.0]]"),
+            ..Default::default()
+        });
+        p.layouts[0]
+            .diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+    };
+    let plain = diags(&jumper(""));
+    assert!(plain.iter().any(|m| m.contains("JP1.2 is")), "{plain:?}");
+    let tied = diags(&jumper("net_tie_pad_groups = [[\"1\", \"2\"]]\n"));
+    assert!(tied.is_empty(), "{tied:?}");
+}

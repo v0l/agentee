@@ -1250,6 +1250,13 @@ impl LayoutFile {
             Owner::Pad(pi, _) => parts[pi].footprint.clearance,
             _ => None,
         };
+        let net_tied = |pad: &Item, other: &Item| {
+            let Owner::Pad(pi, k) = pad.owner else { return false };
+            let p = &parts[pi];
+            let Some(group) = p.footprint.net_tie_group(&p.pads[k].number) else { return false };
+            other.net.is_some()
+                && p.pads.iter().any(|q| q.net == other.net && group.contains(&q.number))
+        };
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1275,7 +1282,7 @@ impl LayoutFile {
                     continue;
                 }
                 let same = a.net.is_some() && a.net == b.net;
-                if !same && !copper_rules {
+                if !same && (!copper_rules || net_tied(a, b) || net_tied(b, a)) {
                     continue;
                 }
                 let dist = a.shape.distance(&b.shape);

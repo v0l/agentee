@@ -570,6 +570,9 @@ model_scale = [1, 1, 1]                # optional
                                # skips it, its SMD pads still keep min_part_to_edge
 # mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules
                                # skip it; true marks one that the name does not give away
+# net_tie_pad_groups = [["1", "2"]]  # as KiCad's net tie: copper of these pads' nets may touch or
+                               # come near any pad of the group (a bridged solder jumper's strip
+                               # and the tracks landing on it) without a short or clearance error
 
 [[pads]]
 number = "1"

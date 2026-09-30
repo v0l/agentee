@@ -144,6 +144,8 @@ pub struct FootprintFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mlcc: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub net_tie_pad_groups: Vec<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphics: Vec<GraphicFile>,
@@ -267,6 +269,7 @@ pub struct Footprint {
     pub clearance: Option<f64>,
     pub overhang: bool,
     pub mlcc: Option<bool>,
+    pub net_tie_pad_groups: Vec<Vec<String>>,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
 }
@@ -389,6 +392,7 @@ impl FootprintFile {
             clearance: self.clearance.map(Length::to_mm),
             overhang: self.overhang,
             mlcc: self.mlcc,
+            net_tie_pad_groups: self.net_tie_pad_groups.clone(),
             pads,
             graphics,
         }
@@ -420,6 +424,10 @@ pub fn graphic_path(g: &Graphic) -> Vec<P> {
 }
 
 impl Footprint {
+    pub fn net_tie_group(&self, number: &str) -> Option<&[String]> {
+        self.net_tie_pad_groups.iter().find(|g| g.iter().any(|n| n == number)).map(Vec::as_slice)
+    }
+
     pub fn is_ball_grid(&self) -> bool {
         self.pads.iter().filter(|q| q.kind == PadKind::Smd && q.shape == PadShape::Circle).count()
             >= 16
