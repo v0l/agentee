@@ -726,18 +726,29 @@ impl PcbModel {
             }
         }
         let mut via_edges: std::collections::HashSet<(usize, usize, usize)> = Default::default();
-        for (c, _, a, b) in &self.vias {
+        for (c, r, a, b) in &self.vias {
             let (i, j) = (grid.nearest(0, c[0]), grid.nearest(1, c[1]));
-            if i <= grid.pml
-                || i + 2 + grid.pml >= grid.x.len()
-                || j <= grid.pml
-                || j + 2 + grid.pml >= grid.y.len()
-            {
+            let outside = |i: usize, j: usize| {
+                i <= grid.pml
+                    || i + 2 + grid.pml >= grid.x.len()
+                    || j <= grid.pml
+                    || j + 2 + grid.pml >= grid.y.len()
+            };
+            if outside(i, j) {
                 continue;
             }
             let (lo, hi) = (ks[*a].min(ks[*b]), ks[*a].max(ks[*b]));
-            for k in lo..hi {
-                via_edges.insert((i, j, k));
+            let (i0, i1) = (grid.cell_of(0, c[0] - r), grid.cell_of(0, c[0] + r) + 1);
+            let (j0, j1) = (grid.cell_of(1, c[1] - r), grid.cell_of(1, c[1] + r) + 1);
+            for ii in i0..=i1 {
+                for jj in j0..=j1 {
+                    let inside = geom::dist([grid.x[ii], grid.y[jj]], *c) <= *r;
+                    if (inside && !outside(ii, jj)) || (ii, jj) == (i, j) {
+                        for k in lo..hi {
+                            via_edges.insert((ii, jj, k));
+                        }
+                    }
+                }
             }
         }
         let mut ports = Vec::new();
