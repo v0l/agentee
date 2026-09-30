@@ -1666,6 +1666,24 @@ fn ensure_library(root: &Path, p: &Project) -> Result<Vec<String>, String> {
 
 type Placed = (String, String, [f64; 2], Option<String>, Option<[f64; 2]>);
 
+fn unjoined(layout: &agentee_core::layout::Layout, placed: &[Placed]) -> Vec<String> {
+    placed
+        .iter()
+        .filter(|(r, ..)| {
+            let pads = layout.parts.iter().filter(|q| q.reference == *r).flat_map(|q| &q.pads);
+            pads.into_iter().any(|x| {
+                let c = agentee_core::testpoint::pad_center(x);
+                layout.ratsnest.iter().any(|(a, b, n)| {
+                    Some(*n) == x.net
+                        && (agentee_core::geom::dist(*a, c) < 1e-3
+                            || agentee_core::geom::dist(*b, c) < 1e-3)
+                })
+            })
+        })
+        .map(|(r, ..)| r.clone())
+        .collect()
+}
+
 fn drop_testpoints(layout: &Path, dropped: &[Placed]) -> Result<(), String> {
     let point = |v: &toml_edit::Value| -> Option<[f64; 2]> {
         let a = v.as_array()?;
@@ -1891,9 +1909,25 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     drop(p);
 
     let mut labels: std::collections::BTreeMap<String, Value> = Default::default();
+    let mut placed = placed;
+    let mut settled = None;
     for pass in 0..2 {
         let p = load(root)?;
         let i = layout_index(&p, &layout_name)?;
+        let mut dropped_now = false;
+        if pass == 0 {
+            let unjoined = unjoined(&p.layouts[i].item, &placed);
+            let (dropped, kept): (Vec<Placed>, Vec<Placed>) =
+                placed.into_iter().partition(|(r, ..)| unjoined.contains(r));
+            placed = kept;
+            if !dropped.is_empty() {
+                drop_testpoints(&path, &dropped)?;
+                dropped_now = true;
+            }
+            for (r, net, ..) in &dropped {
+                failed.push(json!({ "net": net, "reason": format!("the router found no path from {r} to the net's copper, so it was taken out again") }));
+            }
+        }
         let fixes: Vec<_> = p.layouts[i]
             .item
             .label_fixes
@@ -1901,71 +1935,48 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
             .filter(|f| placed.iter().any(|(r, ..)| *r == f.reference))
             .cloned()
             .collect();
-        if fixes.is_empty() {
-            break;
-        }
-        let mut doc = edit_toml(&path)?;
-        let Some(parts) = doc.get_mut("footprints").and_then(|v| v.as_array_of_tables_mut()) else {
-            break;
-        };
-        for fx in &fixes {
-            let Some(t) = parts
-                .iter_mut()
-                .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(fx.reference.as_str()))
-            else {
-                continue;
-            };
-            let mut label = toml_edit::InlineTable::new();
-            match fx.at {
-                Some(at) if pass == 0 => {
-                    let mut pt = toml_edit::Array::new();
-                    pt.push((at[0] * 100.0).round() / 100.0);
-                    pt.push((at[1] * 100.0).round() / 100.0);
-                    label.insert("at", pt.into());
-                    if fx.rotation != 0.0 {
-                        label.insert("rotation", fx.rotation.into());
+        if !fixes.is_empty() {
+            let mut doc = edit_toml(&path)?;
+            if let Some(parts) = doc.get_mut("footprints").and_then(|v| v.as_array_of_tables_mut())
+            {
+                for fx in &fixes {
+                    let Some(t) = parts.iter_mut().find(|t| {
+                        t.get("ref").and_then(|v| v.as_str()) == Some(fx.reference.as_str())
+                    }) else {
+                        continue;
+                    };
+                    let mut label = toml_edit::InlineTable::new();
+                    match fx.at {
+                        Some(at) if pass == 0 => {
+                            let mut pt = toml_edit::Array::new();
+                            pt.push((at[0] * 100.0).round() / 100.0);
+                            pt.push((at[1] * 100.0).round() / 100.0);
+                            label.insert("at", pt.into());
+                            if fx.rotation != 0.0 {
+                                label.insert("rotation", fx.rotation.into());
+                            }
+                            labels.insert(fx.reference.clone(), json!({ "moved": at }));
+                        }
+                        _ => {
+                            label.insert("hide", true.into());
+                            labels.insert(fx.reference.clone(), json!({ "hidden": true }));
+                        }
                     }
-                    labels.insert(fx.reference.clone(), json!({ "moved": at }));
+                    t["label"] = toml_edit::value(label);
                 }
-                _ => {
-                    label.insert("hide", true.into());
-                    labels.insert(fx.reference.clone(), json!({ "hidden": true }));
-                }
+                std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
             }
-            t["label"] = toml_edit::value(label);
         }
-        std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
+        if !dropped_now {
+            settled = Some(p);
+        }
+        if fixes.is_empty() && !dropped_now {
+            break;
+        }
     }
-    let p = load(root)?;
-    let i = layout_index(&p, &layout_name)?;
-    let after = &p.layouts[i].item;
-    let unjoined: Vec<String> = placed
-        .iter()
-        .filter(|(r, ..)| {
-            let pads = after.parts.iter().filter(|q| q.reference == *r).flat_map(|q| &q.pads);
-            pads.into_iter().any(|x| {
-                let c = tp::pad_center(x);
-                after.ratsnest.iter().any(|(a, b, n)| {
-                    Some(*n) == x.net
-                        && (agentee_core::geom::dist(*a, c) < 1e-3
-                            || agentee_core::geom::dist(*b, c) < 1e-3)
-                })
-            })
-        })
-        .map(|(r, ..)| r.clone())
-        .collect();
-    let (dropped, placed): (Vec<Placed>, Vec<Placed>) =
-        placed.into_iter().partition(|(r, ..)| unjoined.contains(r));
-    let p = if dropped.is_empty() {
-        p
-    } else {
-        drop(p);
-        drop_testpoints(&path, &dropped)?;
-        for (r, net, ..) in &dropped {
-            labels.remove(r);
-            failed.push(json!({ "net": net, "reason": format!("the router found no path from {r} to the net's copper, so it was taken out again") }));
-        }
-        load(root)?
+    let p = match settled {
+        Some(p) => p,
+        None => load(root)?,
     };
     let i = layout_index(&p, &layout_name)?;
     let refilled = if p.layouts[i].item.fill_keys.iter().any(|k| k.stored || k.stale) {
