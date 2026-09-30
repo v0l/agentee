@@ -208,6 +208,7 @@ pub struct PortDef {
     pub name: String,
     pub columns: Vec<Vec<Edge>>,
     pub r: f64,
+    pub reference_above: bool,
 }
 
 pub struct Sim {

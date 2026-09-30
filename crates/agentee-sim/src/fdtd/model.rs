@@ -770,7 +770,7 @@ impl PcbModel {
                 .iter()
                 .map(|(ii, jj)| (lo..hi).map(|k| Edge { comp: 2, at: [*ii, *jj, k] }).collect())
                 .collect();
-            ports.push(PortDef { name: p.name.clone(), columns, r: p.r });
+            ports.push(PortDef { name: p.name.clone(), columns, r: p.r, reference_above: a > b });
         }
         let mut lumped = Vec::new();
         for e in &self.elements {
@@ -1073,5 +1073,31 @@ mod tests {
         let lines = mesh_lines(&[0.0, 0.11, 0.3, 1.0], &[(0.0, cell), (1.0, cell)], 0.5, 1.3);
         assert_eq!(&lines[..3], &[0.0, 0.11, 0.3]);
         assert!(lines.windows(2).all(|w| w[1] - w[0] >= FILL * cell - 1e-9), "{lines:?}");
+    }
+
+    #[test]
+    fn a_port_under_its_reference_reads_the_signal_side() {
+        let port = |name: &str, x: f64, sheet: usize, reference: usize| ModelPort {
+            name: name.into(),
+            at: [x, 0.0],
+            area: vec![],
+            sheet,
+            reference,
+            r: 50.0,
+        };
+        let m = PcbModel {
+            outline: vec![[0.0, -2.0], [6.0, -2.0], [6.0, 2.0], [0.0, 2.0]],
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.0 },
+                Sheet { name: "B.Cu".into(), z: -0.4, thickness: 0.0 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.4, z1: 0.0, er: 4.0, tan: 0.0, pinned: true }],
+            ports: vec![port("top", 1.0, 0, 1), port("bottom", 5.0, 1, 0)],
+            ..Default::default()
+        };
+        let opt = Meshing { cell: 0.1, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let sim = m.build(&opt).unwrap();
+        assert!(!sim.ports[0].reference_above);
+        assert!(sim.ports[1].reference_above);
     }
 }

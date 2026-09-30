@@ -230,7 +230,8 @@ pub fn run(
         let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
         let mid = &p.columns[p.columns.len() / 2];
         let first = port_edges.len() / 2;
-        let weight = 1.0 / p.columns.len() as f64;
+        let polarity = if p.reference_above { -1.0 } else { 1.0 };
+        let weight = polarity / p.columns.len() as f64;
         for col in &p.columns {
             for e in col {
                 port_edges.extend_from_slice(&[
@@ -244,7 +245,7 @@ pub fn run(
         let height: f64 = mid.iter().map(|e| sim.ax[axis].d[e.at[axis]]).sum();
         for e in mid {
             let k = e.at[axis];
-            let share = sim.ax[axis].d[k] / height;
+            let share = polarity * sim.ax[axis].d[k] / height;
             for (id, comp, w) in port_loop(sim, p, axis, k) {
                 loops.extend_from_slice(&[id as f32, (3 + comp) as f32, (w * share) as f32]);
             }
@@ -510,12 +511,18 @@ mod tests {
             .filter(|p| *p != (3, 3))
             .map(|(i, j)| column(i, j))
             .collect();
-        let port = PortDef { name: "p".into(), columns: ring.clone(), r: 50.0 };
+        let port =
+            PortDef { name: "p".into(), columns: ring.clone(), r: 50.0, reference_above: false };
         let sim = Sim::new(grid.clone(), &mats, &|_, _| false, &[], vec![port], &[], media());
         let n = sim.dims();
         let got = port_loop(&sim, &sim.ports[0], 2, 3);
         let single = |i: usize, j: usize| {
-            let one = PortDef { name: "q".into(), columns: vec![column(i, j)], r: 50.0 };
+            let one = PortDef {
+                name: "q".into(),
+                columns: vec![column(i, j)],
+                r: 50.0,
+                reference_above: false,
+            };
             port_loop(&sim, &one, 2, 3)
         };
         let mut want: std::collections::BTreeMap<(usize, usize), f64> = Default::default();
@@ -558,6 +565,7 @@ mod tests {
             name: "p".into(),
             columns: vec![vec![Edge { comp: 2, at: [4, 4, 3] }]],
             r: 50.0,
+            reference_above: false,
         };
         let media = Media {
             surface: Surface { scale: 1e9, ..Default::default() },

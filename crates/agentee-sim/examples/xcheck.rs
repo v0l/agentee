@@ -22,6 +22,7 @@ fn throughput(n: usize, pml: usize, steps: &[usize], reps: usize) {
         name: "src".into(),
         columns: vec![vec![Edge { comp: 2, at: [c, c, c] }]],
         r: 50.0,
+        reference_above: false,
     };
     let w0 = 2.0 * std::f64::consts::PI * 5e9;
     let media =
