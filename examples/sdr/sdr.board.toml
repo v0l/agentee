@@ -1,5 +1,5 @@
 name = "sdr"
-description = "1x1 70 MHz to 6 GHz SDR: AD9364, Artix-7 XC7A50T and an EZ-USB FX20 on USB 3.2 Gen 2x2, 61.44 MS/s full duplex"
+description = "1x1 70 MHz to 6 GHz SDR: AD9364, Artix-7 XC7A50T and an EZ-USB FX5 on USB 3.2 Gen 1, 61.44 MS/s full duplex"
 fab = "jlcpcb"
 
 [outline]
@@ -144,7 +144,7 @@ via = "std"
 
 [[netclasses]]
 name = "USB_SS"
-description = "USB 3.2 Gen 2x2 lanes, 10 Gbps each: 85 ohm pairs on F.Cu over In1.Cu, or B.Cu over In6.Cu for the connector's back row, same geometry"
+description = "USB 3.2 Gen 1 lanes, 5 Gbps, the FX5 muxes them by plug orientation: 85 ohm pairs on F.Cu over In1.Cu, or B.Cu over In6.Cu for the connector's back row, same geometry"
 impedance = "85ohm"
 impedance_tolerance = "10%"
 diff_gap = "0.15mm"
@@ -170,7 +170,7 @@ via = "bga"
 
 [[netclasses]]
 name = "LVDS"
-description = "FPGA to FX20 LVDS receive link, 100 ohm pairs on In2.Cu between the In1 and In3 grounds, via in pad at both ends"
+description = "FPGA to FX5 LVDS receive link, 100 ohm pairs on In2.Cu between the In1 and In3 grounds, via in pad at both ends"
 impedance = "100ohm"
 impedance_tolerance = "10%"
 diff_gap = "0.125mm"

@@ -1,5 +1,5 @@
 name = "fpga"
-description = "XC7A50T: bank 35 at 2V5 for the AD9364 CMOS port and control, bank 34 at 2V5 for the FX20 LVDS, bank 14 at 3V3 for the FX20 LVCMOS port and the config flash, bank 15 at 3V3 for LEDs"
+description = "XC7A50T: bank 35 at 2V5 for the AD9364 CMOS port and control, bank 34 at 2V5 for the FX5 LVDS, bank 14 at 3V3 for the FX5 LVCMOS port and the config flash, bank 15 at 3V3 for LEDs"
 board = "sdr"
 no_connect = [
   "U1.K12", "U1.M15", "U1.L14", "U1.K13", "U1.L13", "U1.M12", "U1.N13", "U1.P14", "U1.N9", "U1.M6", "U1.N6",
