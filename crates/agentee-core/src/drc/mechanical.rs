@@ -50,7 +50,7 @@ pub static RULES: &[Rule] = &[
         category: Category::Assembly,
         severity: Severity::Info,
         summary: "a chip of 0603 or smaller closer to a part taller than 3 mm than that part's height",
-        when: "footprint heights over 3 mm",
+        when: "part heights over 3 mm",
         applies: with_tall_parts,
         check: tall_part_shadow,
     },
@@ -177,7 +177,7 @@ pub fn has_small_chips(parts: &[Placed]) -> bool {
 }
 
 pub fn has_tall_parts(parts: &[Placed]) -> bool {
-    parts.iter().any(|p| p.footprint.height.is_some_and(|h| h > TALL))
+    parts.iter().any(|p| crate::height::body_height(&p.footprint).is_some_and(|h| h > TALL))
 }
 
 struct StressHole {
@@ -548,7 +548,9 @@ fn tall_part_shadow(cx: &Ctx, r: &mut Report) {
         .iter()
         .enumerate()
         .filter_map(|(i, p)| {
-            p.footprint.height.filter(|h| *h > TALL).map(|h| (i, h, body_outlines(p).1))
+            crate::height::body_height(&p.footprint)
+                .filter(|h| *h > TALL)
+                .map(|h| (i, h, body_outlines(p).1))
         })
         .collect();
     for (pi, p) in cx.parts.iter().enumerate() {

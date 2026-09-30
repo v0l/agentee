@@ -8,6 +8,7 @@ pub mod font;
 pub mod footprint;
 pub mod geom;
 pub mod graphic;
+pub mod height;
 pub mod ibis;
 pub mod interface;
 pub mod layout;

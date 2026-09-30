@@ -796,4 +796,14 @@ fn small_chips_keep_a_tall_part_height_away() {
     );
     assert!(near(17.0, &tall).is_empty());
     assert!(near(13.3, &format!("{TWO_PADS}{FAB_BODY}")).is_empty());
+
+    let named = format!("{TWO_PADS}{FAB_BODY}");
+    let p = load(&Fixture {
+        footprints: &[("L_Big_h5.0mm", named.as_str()), ("R_0402_1005Metric", small.as_str())],
+        parts: &[("L1", "L_Big_h5.0mm", [10.0, 10.0]), ("R1", "R_0402_1005Metric", [13.3, 10.0])],
+        nets: &[],
+        ..Default::default()
+    });
+    let w = hits(&p, "tall-part-shadow");
+    assert!(w.len() == 1 && w[0].1.contains("from L1, which is 5mm tall"), "{w:?}");
 }
