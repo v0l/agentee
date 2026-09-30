@@ -1,0 +1,43 @@
+name = "PinHeader_1x05_P2.54mm_Vertical"
+description = "Through hole straight pin header, 1x05, 2.54mm pitch, single row"
+tags = ["pin", "header", "THT", "2.54mm"]
+mount = "tht"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.7, 1.7]
+drill = 1.0
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [0.0, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+count = 4
+pitch = [0.0, 2.54]
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.8, -1.8]
+end = [1.8, 11.96]
+width = 0.05
+
+[[graphics]]
+kind = "rect"
+layer = "F.SilkS"
+start = [-1.33, 1.27]
+end = [1.33, 11.49]
+width = 0.12
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.4]
+text = "${REFERENCE}"
+size = 1.0

@@ -108,6 +108,13 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                     "seconds": r.seconds,
                     "path": agentee_core::sim::result_path(&p.sims[i].path),
                 })),
+                "logic": s.logic_result.as_ref().map(|r| json!({
+                    "passed": r.passed,
+                    "failures": r.failures,
+                    "readings": r.readings,
+                    "vcd": r.vcd,
+                    "path": agentee_core::sim::result_path(&p.sims[i].path),
+                })),
                 "diagnostics": p.sims[i].diags,
             })
         }

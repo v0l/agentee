@@ -4,6 +4,7 @@ pub mod channel;
 pub mod checks;
 pub mod fdtd;
 pub mod gpu;
+pub mod logic;
 pub mod loss;
 pub mod nodal;
 pub mod pdn;

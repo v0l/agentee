@@ -12,6 +12,7 @@ pub mod plot;
 pub mod raster;
 pub mod sheet;
 pub mod simrun;
+pub mod wave;
 
 pub use app::run;
 pub use headless::{RenderOptions, render_png};

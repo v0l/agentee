@@ -1,0 +1,15 @@
+name = "Conn_01x05"
+reference = "J"
+description = "Single row connector, 5 pins"
+keywords = ["connector"]
+footprint = "PinHeader_1x05_P2.54mm_Vertical"
+
+[[bodies]]
+width = 5.08
+left = [
+  { number = "1", name = "1", type = "passive" },
+  { number = "2", name = "2", type = "passive" },
+  { number = "3", name = "3", type = "passive" },
+  { number = "4", name = "4", type = "passive" },
+  { number = "5", name = "5", type = "passive" },
+]

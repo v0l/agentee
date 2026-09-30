@@ -335,6 +335,18 @@ impl Project {
             sim_files.iter().map(|(_, f, _)| (f.name.clone(), f.layout.clone())).collect();
         for (f, file, mut hash) in sim_files {
             let mut d = Diags::new(&file.name);
+            if file.kind == Some(crate::sim::SimKind::Logic) {
+                match p.load_logic(&f, &file, hash, &mut d) {
+                    Some(item) => p.sims.push(Entry {
+                        name: item.name.clone(),
+                        diags: tag(d, &f),
+                        path: f,
+                        item,
+                    }),
+                    None => p.failures.extend(tag(d, &f)),
+                }
+                continue;
+            }
             let own = if cascade(&file) && file.layout.is_none() {
                 layouts_of
                     .iter()
@@ -439,6 +451,47 @@ impl Project {
         for (i, diags) in found {
             self.layouts[i].diags.extend(diags);
         }
+    }
+
+    fn load_logic(&self, path: &Path, file: &SimFile, src: u64, d: &mut Diags) -> Option<Sim> {
+        let tops: Vec<&Entry<Schematic>> =
+            self.schematics.iter().filter(|s| s.item.parent.is_none()).collect();
+        let sch = match &file.schematic {
+            Some(n) => self.schematics.iter().find(|s| &s.name == n),
+            None => match tops.as_slice() {
+                [one] => Some(*one),
+                _ => None,
+            },
+        };
+        let Some(sch) = sch else {
+            d.error("schematic", "name the schematic to simulate with `schematic`");
+            return None;
+        };
+        let mut item = file.resolve_logic(&sch.item, d);
+        let hash = crate::logic::logic_hash(
+            src,
+            item.logic.as_ref().map(|l| l.netlist_hash).unwrap_or_default(),
+        );
+        let text = std::fs::read_to_string(crate::sim::result_path(path)).ok();
+        let result =
+            text.as_deref().and_then(|t| serde_json::from_str::<crate::logic::LogicResult>(t).ok());
+        match &result {
+            Some(r) if r.spec_hash == hash => {
+                for f in &r.failures {
+                    d.error("result", f.clone());
+                }
+            }
+            Some(_) => {
+                d.info(
+                    "result",
+                    "the spec or the schematic changed since the last run, the result shown is stale",
+                );
+                item.stale = true;
+            }
+            None => d.info("result", "not run yet, `agentee sim` runs it"),
+        }
+        item.logic_result = result;
+        Some(item)
     }
 
     fn check_pdn(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {

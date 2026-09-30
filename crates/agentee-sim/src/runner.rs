@@ -108,6 +108,9 @@ pub fn run(
         return Err(format!("{} has errors, fix them first (agentee check)", entry.name));
     }
     let spec = &entry.item;
+    if spec.kind == agentee_core::sim::SimKind::Logic {
+        return run_logic(entry);
+    }
     let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
     let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
     let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
@@ -232,6 +235,37 @@ pub fn run(
         "result": json_path,
         "touchstone": touch,
         "summary": table,
+        "readings": result.readings,
+    }))
+}
+
+fn run_logic(
+    entry: &agentee_core::project::Entry<agentee_core::sim::Sim>,
+) -> Result<Value, String> {
+    let spec = &entry.item;
+    let logic = spec.logic.as_ref().ok_or("the logic spec has errors")?;
+    let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
+    let hash = agentee_core::logic::logic_hash(agentee_core::sim::hash(&src), logic.netlist_hash);
+    let json_path = agentee_core::sim::result_path(&entry.path);
+    let vcd_path = json_path.with_extension("").with_extension("vcd");
+    let vcd_name =
+        vcd_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let (result, vcd) = crate::logic::run(logic, &spec.name, hash, &vcd_name);
+    std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&vcd_path, vcd).map_err(|e| e.to_string())?;
+    Ok(json!({
+        "sim": spec.name,
+        "kind": spec.kind,
+        "schematic": logic.schematic,
+        "duration": agentee_core::logic::fmt_time(result.duration_ps),
+        "stopped_at": agentee_core::logic::fmt_time(result.end_ps),
+        "passed": result.passed,
+        "failures": result.failures,
+        "events": result.events,
+        "seconds": (result.seconds * 1000.0).round() / 1000.0,
+        "result": json_path,
+        "vcd": vcd_path,
         "readings": result.readings,
     }))
 }

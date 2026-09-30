@@ -1,0 +1,30 @@
+name = "74HC161"
+reference = "U"
+description = "Presettable synchronous 4-bit binary counter, asynchronous reset"
+keywords = ["counter", "74xx"]
+footprint = "SOIC-16_3.9x9.9mm_P1.27mm"
+
+[[bodies]]
+width = 12.7
+left = [
+  { number = "1", name = "~{MR}", type = "input" },
+  { number = "2", name = "CP", type = "input", shape = "clock" },
+  { number = "9", name = "~{PE}", type = "input" },
+  { number = "7", name = "CEP", type = "input" },
+  { number = "10", name = "CET", type = "input" },
+  { gap = 1 },
+  { number = "3", name = "D0", type = "input" },
+  { number = "4", name = "D1", type = "input" },
+  { number = "5", name = "D2", type = "input" },
+  { number = "6", name = "D3", type = "input" },
+]
+right = [
+  { number = "14", name = "Q0", type = "output" },
+  { number = "13", name = "Q1", type = "output" },
+  { number = "12", name = "Q2", type = "output" },
+  { number = "11", name = "Q3", type = "output" },
+  { gap = 1 },
+  { number = "15", name = "TC", type = "output" },
+]
+top = [ { number = "16", name = "VCC", type = "power_in" } ]
+bottom = [ { number = "8", name = "GND", type = "power_in" } ]

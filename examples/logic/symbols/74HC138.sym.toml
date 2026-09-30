@@ -1,0 +1,29 @@
+name = "74HC138"
+reference = "U"
+description = "3-to-8 line decoder, inverting outputs"
+keywords = ["decoder", "demux", "74xx"]
+footprint = "SOIC-16_3.9x9.9mm_P1.27mm"
+
+[[bodies]]
+width = 12.7
+left = [
+  { number = "1", name = "A0", type = "input" },
+  { number = "2", name = "A1", type = "input" },
+  { number = "3", name = "A2", type = "input" },
+  { gap = 1 },
+  { number = "4", name = "~{E1}", type = "input" },
+  { number = "5", name = "~{E2}", type = "input" },
+  { number = "6", name = "E3", type = "input" },
+]
+right = [
+  { number = "15", name = "~{Y0}", type = "output" },
+  { number = "14", name = "~{Y1}", type = "output" },
+  { number = "13", name = "~{Y2}", type = "output" },
+  { number = "12", name = "~{Y3}", type = "output" },
+  { number = "11", name = "~{Y4}", type = "output" },
+  { number = "10", name = "~{Y5}", type = "output" },
+  { number = "9", name = "~{Y6}", type = "output" },
+  { number = "7", name = "~{Y7}", type = "output" },
+]
+top = [ { number = "16", name = "VCC", type = "power_in" } ]
+bottom = [ { number = "8", name = "GND", type = "power_in" } ]

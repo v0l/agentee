@@ -154,7 +154,7 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         limit: usize,
     },
-    /// Run an FDTD simulation (*.sim.toml) on the GPU and save S-parameters
+    /// Run a simulation (*.sim.toml): FDTD, dc, thermal, cascade, channel, pdn or logic
     Sim {
         name: String,
         #[arg(short, long, default_value = ".")]

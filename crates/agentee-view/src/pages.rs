@@ -1046,6 +1046,10 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             crate::eye::canvas(ui, c, index, st, project.generation);
             return;
         }
+        if let Some(r) = &s.logic_result {
+            crate::wave::canvas(ui, r);
+            return;
+        }
         if let Some(r) = &s.result
             && s.kind == agentee_core::sim::SimKind::Pdn
         {
@@ -1144,7 +1148,8 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
 
 fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) {
     let s = &project.sims[index].item;
-    let has_result = s.result.is_some() || s.maps.is_some() || s.channel.is_some();
+    let has_result =
+        s.result.is_some() || s.maps.is_some() || s.channel.is_some() || s.logic_result.is_some();
     let starting = st.runs.starting(&s.name) && st.sim_progress.is_none();
     let running = st.sim_progress.is_some() || st.runs.starting(&s.name);
     ui.horizontal(|ui| {
@@ -1178,7 +1183,7 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
     let layout = project.layouts.iter().find(|l| l.name == s.layout).map(|l| &l.item);
     let rail = match (
         &st.sim_progress,
-        s.result.is_some() || s.maps.is_some() || s.channel.is_some(),
+        s.result.is_some() || s.maps.is_some() || s.channel.is_some() || s.logic_result.is_some(),
         s.stale,
     ) {
         (Some(_), _, _) => READOUT,
@@ -1191,6 +1196,10 @@ fn sim_props(ui: &mut Ui, project: &Project, s: &agentee_core::sim::Sim, st: &mu
     }
     if let Some(c) = &s.channel {
         crate::eye::props(ui, s, c, rail);
+        return;
+    }
+    if s.kind == agentee_core::sim::SimKind::Logic {
+        crate::wave::props(ui, s, rail);
         return;
     }
     let cascade = s.kind == agentee_core::sim::SimKind::Cascade;

@@ -1,0 +1,46 @@
+name = "counter"
+kind = "logic"
+description = "Count a 10 MHz clock out of reset and decode the low three bits"
+schematic = "counter"
+duration = "2us"
+ignore = ["J1", "J2"]
+record = ["CLK", "RST_N", "Q3", "Q2", "Q1", "Q0", "TC", "Y0_N", "Y1_N", "Y2_N", "Y3_N", "Y4_N", "Y5_N", "Y6_N", "Y7_N"]
+
+[[stimulus]]
+net = "CLK"
+clock = { period = "100ns", duty = 0.5, phase = "50ns" }
+
+[[stimulus]]
+net = "RST_N"
+steps = [["0ns", 0], ["120ns", 1]]
+
+[[expect]]
+nets = ["Q3", "Q2", "Q1", "Q0"]
+clock = "CLK"
+edge = "rising"
+sequence = [0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2]
+
+[[expect]]
+nets = ["Y7_N", "Y6_N", "Y5_N", "Y4_N", "Y3_N", "Y2_N", "Y1_N", "Y0_N"]
+at = "100ns"
+value = "11111110"
+
+[[expect]]
+nets = ["Y7_N", "Y6_N", "Y5_N", "Y4_N", "Y3_N", "Y2_N", "Y1_N", "Y0_N"]
+at = "600ns"
+value = "11011111"
+
+[[expect]]
+nets = ["Y7_N", "Y6_N", "Y5_N", "Y4_N", "Y3_N", "Y2_N", "Y1_N", "Y0_N"]
+at = "1100ns"
+value = 255
+
+[[expect]]
+net = "TC"
+at = "1600ns"
+value = 1
+
+[[expect]]
+net = "TC"
+at = "1700ns"
+value = 0

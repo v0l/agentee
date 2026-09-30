@@ -1,0 +1,121 @@
+name = "counter"
+description = "74HC161 4-bit counter driving a 74HC138 decoder, one output low per count 0 to 7"
+
+[[parts]]
+ref = "J2"
+symbol = "Conn_01x05"
+value = "CTRL"
+at = [25.4, 50.8]
+mirror = true
+
+[[parts]]
+ref = "U1"
+symbol = "74HC161"
+value = "74HC161"
+at = [63.5, 50.8]
+fields = { mpn = "Nexperia 74HC161D" }
+
+[[parts]]
+ref = "U2"
+symbol = "74HC138"
+value = "74HC138"
+at = [111.76, 50.8]
+fields = { mpn = "Nexperia 74HC138D" }
+
+[[parts]]
+ref = "J1"
+symbol = "Conn_01x08"
+value = "DECODED"
+at = [152.4, 50.8]
+
+[[parts]]
+ref = "R1"
+symbol = "R"
+value = "10k"
+at = [43.18, 30.48]
+
+[[parts]]
+ref = "C1"
+symbol = "C"
+value = "100n"
+at = [78.74, 25.4]
+
+[[parts]]
+ref = "C2"
+symbol = "C"
+value = "100n"
+at = [127.0, 25.4]
+
+[[nets]]
+name = "VCC"
+style = "power"
+pins = ["U1.16", "U2.16", "U1.7", "U1.10", "U2.6", "R1.1", "C1.1", "C2.1", "J2.1"]
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = ["U1.8", "U2.8", "U1.3", "U1.4", "U1.5", "U1.6", "U2.5", "C1.2", "C2.2", "J2.5"]
+
+[[nets]]
+name = "CLK"
+pins = ["J2.2", "U1.2"]
+
+[[nets]]
+name = "RST_N"
+pins = ["J2.3", "U1.1"]
+
+[[nets]]
+name = "TC"
+pins = ["U1.15", "J2.4"]
+
+[[nets]]
+name = "LOAD_N"
+pins = ["R1.2", "U1.9"]
+
+[[nets]]
+name = "Q0"
+pins = ["U1.14", "U2.1"]
+
+[[nets]]
+name = "Q1"
+pins = ["U1.13", "U2.2"]
+
+[[nets]]
+name = "Q2"
+pins = ["U1.12", "U2.3"]
+
+[[nets]]
+name = "Q3"
+pins = ["U1.11", "U2.4"]
+
+[[nets]]
+name = "Y0_N"
+pins = ["U2.15", "J1.1"]
+
+[[nets]]
+name = "Y1_N"
+pins = ["U2.14", "J1.2"]
+
+[[nets]]
+name = "Y2_N"
+pins = ["U2.13", "J1.3"]
+
+[[nets]]
+name = "Y3_N"
+pins = ["U2.12", "J1.4"]
+
+[[nets]]
+name = "Y4_N"
+pins = ["U2.11", "J1.5"]
+
+[[nets]]
+name = "Y5_N"
+pins = ["U2.10", "J1.6"]
+
+[[nets]]
+name = "Y6_N"
+pins = ["U2.9", "J1.7"]
+
+[[nets]]
+name = "Y7_N"
+pins = ["U2.7", "J1.8"]

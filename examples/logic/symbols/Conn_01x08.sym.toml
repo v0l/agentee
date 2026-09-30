@@ -1,0 +1,18 @@
+name = "Conn_01x08"
+reference = "J"
+description = "Single row connector, 8 pins"
+keywords = ["connector"]
+footprint = "PinHeader_1x08_P2.54mm_Vertical"
+
+[[bodies]]
+width = 5.08
+left = [
+  { number = "1", name = "1", type = "passive" },
+  { number = "2", name = "2", type = "passive" },
+  { number = "3", name = "3", type = "passive" },
+  { number = "4", name = "4", type = "passive" },
+  { number = "5", name = "5", type = "passive" },
+  { number = "6", name = "6", type = "passive" },
+  { number = "7", name = "7", type = "passive" },
+  { number = "8", name = "8", type = "passive" },
+]

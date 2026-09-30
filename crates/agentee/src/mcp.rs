@@ -115,7 +115,7 @@ fn tools() -> Value {
         },
         {
             "name": "run_sim",
-            "description": "Run an FDTD simulation (*.sim.toml) of a layout on the GPU: ports on pads, lumped models for passives, S-parameters saved as JSON and Touchstone next to the spec. Render the sim afterwards to see the plot.",
+            "description": "Run a simulation (*.sim.toml): an FDTD run of a layout on the GPU (ports on pads, lumped models for passives, S-parameters saved as JSON and Touchstone next to the spec), any other kind (dc, thermal, cascade, channel, pdn), or a logic sim of the schematic netlist (stimulus, assertions, setup and hold, a VCD next to the spec). Render the sim afterwards to see the plot or the waveforms.",
             "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
         },
         {

@@ -1,0 +1,58 @@
+name = "SOIC-16_3.9x9.9mm_P1.27mm"
+description = "SOIC, 16 pin, JEDEC MS-012AC"
+tags = ["SOIC", "SO"]
+mount = "smd"
+height = "1.75mm"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-2.475, -4.445]
+size = [1.95, 0.6]
+count = 8
+pitch = [0.0, 1.27]
+
+[[pads]]
+number = "9"
+kind = "smd"
+shape = "roundrect"
+at = [2.475, 4.445]
+size = [1.95, 0.6]
+count = 8
+pitch = [0.0, -1.27]
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-3.7, -5.2]
+end = [3.7, 5.2]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.95, -5.06]
+end = [1.95, -5.06]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.95, 5.06]
+end = [1.95, 5.06]
+width = 0.12
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-1.95, -4.95]
+end = [1.95, 4.95]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -5.9]
+text = "${REFERENCE}"
+size = 1.0

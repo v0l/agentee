@@ -2792,7 +2792,12 @@ mod tests {
     #[test]
     fn touching_pads_of_one_net_count_as_one_wide_pad() {
         let outline = square([3.0, 2.0], 3.0);
-        let necking = Necking { length: 0.6, min_width: 0.1, edge: 0.0, outline: &outline };
+        let necking = Necking {
+            length: 0.6,
+            min_width: 0.1,
+            edge: 0.0,
+            board: geom::BoardEdge::new(&outline, &[]),
+        };
         let opts = RouteOptions { margin: 10.0, ..Default::default() };
         let ctx = Ctx {
             drill_r: 0.1,

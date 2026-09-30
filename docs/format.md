@@ -1262,6 +1262,163 @@ pads = ["2"]                   # the pads the heat leaves through, default all
 Maps: temperature per copper layer. Readings: board peak, each source's pad and junction
 temperature.
 
+### Logic (`kind = "logic"`)
+
+An event-driven simulation of the digital parts of a schematic, straight from its netlist; no
+layout is needed. `agentee sim NAME` (MCP `run_sim`) writes `NAME.result.json` and a VCD
+waveform `NAME.vcd` next to the spec; the viewer draws a trace per recorded net against time.
+
+```toml
+name = "counter"
+kind = "logic"
+schematic = "counter"          # default: the only top-level schematic
+duration = "2us"
+ignore = ["J1", "J2"]           # parts with no logic model to leave out
+record = ["CLK", "Q3", "Q2", "Q1", "Q0"]   # default every net but the rails
+
+[[stimulus]]
+net = "CLK"
+clock = { period = "100ns", duty = 0.5, phase = "50ns" }
+
+[[stimulus]]
+net = "RST_N"
+steps = [["0ns", 0], ["120ns", 1]]   # [time, level] in time order; levels 0, 1, "x", "z"
+
+[[stimulus]]
+net = "MODE"
+constant = 1
+
+[[expect]]                      # a level at a time
+net = "TC"
+at = "1600ns"
+value = 1
+
+[[expect]]                      # a bus, MSB first: a number or a string of 0 1 x z and - (any)
+nets = ["Y7_N", "Y6_N", "Y5_N", "Y4_N", "Y3_N", "Y2_N", "Y1_N", "Y0_N"]
+at = "600ns"
+value = "11011111"
+
+[[expect]]                      # a sequence sampled on clock edges
+nets = ["Q3", "Q2", "Q1", "Q0"]
+clock = "CLK"
+edge = "rising"                 # or "falling"
+from = "0ns"                    # edges before this are skipped
+sequence = [0, 0, 1, 2, 3, "01--"]
+```
+
+A clock is low until `phase`, then high for `duty` of each `period`; with no phase it starts
+high at 0. A stimulus drives its net as a strong driver; on a supply net it replaces the rail.
+An `at` check reads the net once everything at that time has settled; a sequence reads the
+nets just before each clean edge (0 to 1, or 1 to 0) of the clock, so a registered output is
+seen as it was when the edge came. Nets are named as in the schematic, and a net joined to
+another through a 0 ohm link answers to either name.
+
+The netlist becomes cells as follows:
+
+- Nets with `style = "power"` and power symbols (a symbol with `power = true`) are constant
+  sources: a name with `GND`, or starting `VSS`, `VEE` or `0V`, is 0, any other is 1
+  (`PWR_FLAG` is skipped).
+- A resistor (`R`) of 0 ohm, a jumper (`JP`, `SJ`, pins 1 and 2) and a net tie (`NT`) join
+  their nets into one. Any other resistor between a rail and a net is a pull-up or pull-down, a
+  weak driver of the rail's level; between two signal nets it joins them; between two rails it
+  is left out.
+- Capacitors, inductors, beads, filters, diodes, LEDs, test points, holes, fiducials and
+  crystals (`C`, `L`, `FB`, `FL`, `D`, `LED`, `TP`, `H`, `MH`, `FID`, `Y`, `X`) are left out.
+- Parts whose value (or else symbol name) holds a 74 series number take the built-in model by
+  pin number: `74HC00`, `SN74LVC1G08DBVR` and `CD74HCT04E` all match. The library covers 00,
+  02, 04, 08, 10, 11, 14, 20, 21, 27, 32, 74, 86, 125, 126, 132, 138, 157, 161, 163, 164, 244
+  and 595, the single gates 1G00, 1G02, 1G04, 1G08, 1G14, 1G17, 1G32, 1G34, 1G74, 1G79, 1G80,
+  1G86, 1G125, 1G126 and 1G157, and the dual gates 2G00, 2G02, 2G04, 2G08, 2G14, 2G17, 2G32,
+  2G34, 2G74, 2G86, 2G125 and 2G126. A unit of a multi-unit symbol that is not placed is left
+  out; a placed pin with no net reads as floating (z).
+- Parts whose value or symbol is a primitive name (`AND`, `NAND3`, `OR`, `NOR`, `XOR`, `XNOR`,
+  `NOT`, `INV`, `BUF`, `TRIBUF`, `DFF`, `JKFF`, `SRLATCH`, `DLATCH`, `MUX2`) map their pins by
+  name: `D`, `CLK` (also `C`, `CP`, `CK`), `S` / `SET` / `PRE`, `R` / `RST` / `CLR`, `EN`, `OE`,
+  `Q`, `~{Q}`; a gate's output is its `output` pin (or `Y`, `Q`, `OUT`) and every other signal
+  pin is an input. An overbar (`~{R}`), a trailing `#` or `_N`, or an inverted pin shape makes
+  the pin active low.
+- Any other part is an error naming it, unless it is in `ignore` or has a `[[parts]]` model.
+
+Family timing, from the family letters after 74 (propagation delay, setup, hold):
+
+| Family | Delay | Setup | Hold |
+|---|---|---|---|
+| HC, HCT | 10 ns | 15 ns | 3 ns |
+| AHC, AHCT, VHC, VHCT | 6 ns | 5 ns | 1 ns |
+| AC, ACT | 6 ns | 4 ns | 1 ns |
+| LVC, ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns |
+| AUP, LV, LVX | 6 ns | 3 ns | 1 ns |
+| LS and plain 74 | 15 ns | 20 ns | 5 ns |
+| others | 10 ns | 10 ns | 2 ns |
+
+Primitives by name and generic symbols take 1 ns and no setup or hold.
+
+A custom part gets a model inline, matched by `ref` or by `value` (every part with that
+value). Several entries for one part add a cell each (one per gate of a quad, say). An entry
+with only timing keeps the built-in model and changes its timing.
+
+```toml
+[[parts]]
+ref = "U7"
+primitive = "nand"              # a primitive; pins map its pin keys to the part's pins
+pins = { A = "1", B = "2", Y = "3" }
+delay = "3ns"                   # every output; setup = "...", hold = "..." as well
+delays = { Y = "5ns" }          # or per output key
+
+[[parts]]
+value = "MYBUF8"
+primitive = "74HC244"           # borrow a library pinout
+
+[[parts]]
+ref = "U9"
+inputs = ["1", "2", "3"]         # pins by number or unique name
+outputs = ["4"]
+truth = ["000 1", "1-- 0", "01- z"]   # first matching row wins; no match (or an x input) gives x
+```
+
+Primitive pin keys (inputs, then outputs); append `_N` to a key for an active-low pin or an
+inverted output, and leave out an optional input to hold it inactive:
+
+| Primitive | Inputs | Outputs |
+|---|---|---|
+| `and`, `or`, `xor`, `nand`, `nor`, `xnor` | any keys but `Y` | `Y` |
+| `not`, `buf` | one key | `Y` |
+| `tri` | `A`, `OE` | `Y` (z when `OE` is low) |
+| `dff` | `D`, `CLK`, optional `S`, `R` | `Q`, `QN` |
+| `jk` | `J`, `K`, `CLK`, optional `S`, `R` | `Q`, `QN` |
+| `sr` | `S`, `R` | `Q`, `QN` |
+| `dlatch` | `D`, `EN`, optional `R` | `Q`, `QN` |
+| `mux2` | `I0`, `I1`, `S`, optional `EN` | `Y` |
+| `dec138` | `A0`, `A1`, `A2`, `E1`, `E2`, `E3` | `Y0` to `Y7` |
+| `counter161`, `counter163` | optional `R`, `CLK`, optional `D0` to `D3`, `CEP`, `LOAD`, `CET` | `Q0` to `Q3`, `TC` |
+| `shift164` | `A`, optional `B`, `CLK`, optional `R` | `Q0` to `Q7` |
+| `shift595` | `D`, `CLK`, `LATCH`, optional `R`, `OE` | `Q0` to `Q7`, `QS` |
+
+Flip-flops clock on the rising edge (key `CLK_N` for the falling one); `S` and `R` are
+asynchronous and both active give Q = QN = 1, as on a 74HC74. The 161 resets at once, the 163
+on the next edge. A 595 shifts on `CLK`, copies to its outputs on `LATCH` (the value from before
+a shift at the same instant), and floats them while `OE` is low.
+
+The engine keeps four levels, 0, 1, x (unknown) and z (floating). Each net resolves its
+drivers: strong drivers (outputs, rails, stimuli) that agree set the level, 0 against 1 gives x
+and a reported contention, and pull resistors count only when no strong driver is on. A z
+input reads as x. Gates only go to x when the unknown input matters (0 into an AND is 0), and a
+flip-flop clocked by an unsure edge (0 to x, or x to 1) goes to x unless it would keep its
+value. Every output has its own delay (transport, so pulses shorter than the delay pass);
+events run in time order, and changes with zero delay settle in delta cycles at the same
+instant. A zero-delay loop that is still changing after 1000 delta cycles stops the run and
+reports the nets, and so does a run past 50 million events.
+
+Flip-flops, counters and shift registers check setup and hold on their clocked inputs against
+the model's timing: a data input that changed less than `setup` before a rising clock edge, or
+less than `hold` after it, is a violation (not checked while an asynchronous reset or set is
+active). The sampled value is kept.
+
+Readings: assertions passed and failed, contentions, timing violations, cells and events. Check
+lists every failed assertion, contention, timing violation or stopped run as an error on the
+sim, while the result is current. The result goes stale when the spec or the schematic's
+netlist changes. `examples/logic` is a 74HC161 counting into a 74HC138.
+
 ## Graphics
 
 Shared by symbols and footprints. `kind` picks the shape and the fields it needs:
