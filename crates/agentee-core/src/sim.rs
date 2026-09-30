@@ -845,7 +845,7 @@ pub fn copper_hash(
             eat(f(v.at[1]));
             eat(f(v.drill));
             eat(f(v.diameter));
-            eat(v.layers.len() as u64);
+            v.layers.iter().flat_map(|l| l.bytes()).for_each(|b| eat(b as u64));
         }
     }
     for p in &layout.parts {
