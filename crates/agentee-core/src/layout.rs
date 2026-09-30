@@ -2391,7 +2391,7 @@ fn place_watermark(
             .collect(),
     };
     let Some(first) = layers.first() else {
-        let msg = "the board has no silk layer for the watermark".to_string();
+        let msg = "the board has no silk layer for the watermark: add a `[[stackup.layers]]` with `kind = \"silk\"` outside the mask at the top and bottom of the board's stackup".to_string();
         found.add("watermark", "watermark", &msg);
         return (None, Some(msg));
     };

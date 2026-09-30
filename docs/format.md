@@ -627,7 +627,8 @@ text and lines, artwork and part bodies, and stays `min_copper_to_edge` inside t
 viewer, render and assembly drawings show it, and `fab-notes.txt` names it. When no spot is clear,
 check reports a `watermark` error with the size to clear and the least crowded spot, and fab
 refuses; clear room there or set `[watermark] at` (plus `layer`, `rotation`) yourself. A
-`[watermark]` spot that is not clear is a `watermark` error naming what it hits.
+`[watermark]` spot that is not clear is a `watermark` error naming what it hits, and a stackup
+with no `kind = "silk"` layer is a `watermark` error asking for one.
 
 Test access: by default the nets that need a probe are power nets (a class with `current`, or a
 name like `3V3`, `1V8`, `+5V`, `VCC*`, `VDD*`, `VBUS*`, `VBAT*`, `VIN*`, `VSYS*`), ground (`GND`,

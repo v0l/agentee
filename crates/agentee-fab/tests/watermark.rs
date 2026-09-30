@@ -2,7 +2,13 @@ use agentee_core::Project;
 use agentee_core::font;
 use std::path::{Path, PathBuf};
 
+const PRESET: &str = "preset = \"jlcpcb-2l-1.6mm\"\n";
+
 fn project(size: [f64; 2], pcb: &str) -> (Project, PathBuf) {
+    project_with(size, PRESET, pcb)
+}
+
+fn project_with(size: [f64; 2], stackup: &str, pcb: &str) -> (Project, PathBuf) {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let k = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("agentee-fab-{}-{k}", std::process::id()));
@@ -16,7 +22,7 @@ fn project(size: [f64; 2], pcb: &str) -> (Project, PathBuf) {
     std::fs::write(
         dir.join("t.board.toml"),
         format!(
-            "name = \"t\"\nfab = \"jlcpcb\"\n[outline]\nsize = [{}, {}]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n[[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\n[[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
+            "name = \"t\"\nfab = \"jlcpcb\"\n[outline]\nsize = [{}, {}]\n[stackup]\n{stackup}[[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\n[[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
             size[0], size[1]
         ),
     )
@@ -49,6 +55,8 @@ fn the_watermark_is_stroked_into_the_bottom_silk_and_named_in_the_notes() {
     let (p, dir) = project([40.0, 20.0], "");
     let w = p.layouts[0].item.watermark.clone().expect("a clear spot");
     assert_eq!(w.layer, "B.SilkS");
+    let drawn = p.layouts[0].item.board_texts();
+    assert!(drawn.iter().any(|t| t.owner == "watermark" && t.text == w.text), "not drawn");
     assert_eq!(w.text, agentee_core::version::watermark());
     assert!(w.text.starts_with(&format!("agentee v{}-", env!("CARGO_PKG_VERSION"))));
     let out = dir.join("fab");
@@ -92,4 +100,21 @@ fn a_watermark_spot_on_a_pad_is_flagged() {
     let d: Vec<_> =
         p.layouts[0].diags.iter().filter(|d| d.rule.as_deref() == Some("watermark")).collect();
     assert!(d.iter().any(|d| d.message.contains("sits on pads R1.")), "{d:?}");
+}
+
+#[test]
+fn a_stackup_with_no_silk_fails_fab_naming_the_layer_to_add() {
+    let layer = |kind: &str, t: &str| format!("[[stackup.layers]]\nkind = \"{kind}\"\n{t}");
+    let stackup = [
+        layer("mask", "thickness = \"15um\"\n"),
+        layer("copper", "thickness = \"1oz\"\n"),
+        layer("core", "thickness = \"1.5mm\"\ner = 4.5\n"),
+        layer("copper", "thickness = \"1oz\"\n"),
+        layer("mask", "thickness = \"15um\"\n"),
+    ]
+    .concat();
+    let (p, dir) = project_with([40.0, 20.0], &stackup, "");
+    assert!(p.layouts[0].item.watermark.is_none());
+    let e = package(&p, &dir.join("fab")).err().unwrap();
+    assert!(e.contains("no silk layer") && e.contains("kind = \"silk\""), "{e}");
 }
