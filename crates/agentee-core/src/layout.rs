@@ -732,6 +732,7 @@ enum Owner {
     Seg(usize),
     Via(usize),
     Hole,
+    PadHole(usize, usize),
 }
 
 #[derive(Clone)]
@@ -1065,9 +1066,43 @@ impl LayoutFile {
         let smd_gap = board.rules.min_hole_to_smd_pad.to_mm();
         let npth_gap = board.rules.min_npth_to_copper.to_mm();
         let via_pour_gap = |v: &Via| (v.drill / 2.0 + hole_to_copper - v.diameter / 2.0).max(0.0);
+        let pth_gap = board.rules.min_pth_hole_to_copper.to_mm();
+        let inner_pth_gap = pth_gap.max(board.rules.min_inner_pth_hole_to_copper.to_mm());
+        let mut hole_layers: Vec<(f64, Vec<String>)> = Vec::new();
+        for (i, l) in copper.iter().enumerate() {
+            let gap = if i == 0 || i + 1 == copper.len() { pth_gap } else { inner_pth_gap };
+            match hole_layers.iter_mut().find(|(g, _)| *g == gap) {
+                Some((_, ls)) => ls.push(l.clone()),
+                None => hole_layers.push((gap, vec![l.clone()])),
+            }
+        }
         let mut items: Vec<Item> = Vec::new();
         for (pi, p) in parts.iter().enumerate() {
+            let t = p.transform();
             for (k, pad) in p.pads.iter().enumerate() {
+                if pad.kind != PadKind::Npth
+                    && let Some((c, size, _)) = pad.drill
+                {
+                    let rot = p.footprint.pads.get(k).map(|f| f.rotation).unwrap_or(0.0);
+                    let long = if size[0] >= size[1] { [1.0, 0.0] } else { [0.0, 1.0] };
+                    let u = t.direction(geom::rotate(long, rot));
+                    let half = (size[0] - size[1]).abs() / 2.0;
+                    let shape = Shape::Seg(
+                        [c[0] - u[0] * half, c[1] - u[1] * half],
+                        [c[0] + u[0] * half, c[1] + u[1] * half],
+                        size[0].min(size[1]) / 2.0,
+                    );
+                    for (gap, layers) in &hole_layers {
+                        items.push(Item {
+                            owner: Owner::PadHole(pi, k),
+                            net: pad.net,
+                            layers: layers.clone(),
+                            bounds: shape.bounds(),
+                            shape: shape.clone(),
+                            pour_gap: *gap,
+                        });
+                    }
+                }
                 if !pad.copper.is_empty() {
                     let shape = Shape::Poly(pad.outlines.clone());
                     items.push(Item {
@@ -1295,6 +1330,9 @@ impl LayoutFile {
                     vias[v].at[0], vias[v].at[1], nets[vias[v].net].name
                 ),
                 Owner::Hole => "hole".into(),
+                Owner::PadHole(pi, k) => {
+                    format!("{}.{} hole", parts[pi].reference, parts[pi].pads[k].number)
+                }
             }
         };
 
@@ -1319,6 +1357,9 @@ impl LayoutFile {
         for i in 0..items.len() {
             for j in i + 1..items.len() {
                 let (a, b) = (&items[i], &items[j]);
+                if matches!(a.owner, Owner::PadHole(..)) || matches!(b.owner, Owner::PadHole(..)) {
+                    continue;
+                }
                 if let (Owner::Pad(p1, _), Owner::Pad(p2, _)) = (a.owner, b.owner)
                     && p1 == p2
                 {
@@ -1402,6 +1443,7 @@ impl LayoutFile {
                 for (j, it) in items.iter().enumerate() {
                     let tied = it.net.is_some_and(|n| tie.contains(&n));
                     if matches!(it.owner, Owner::Pad(q, _) if q == pi)
+                        || matches!(it.owner, Owner::PadHole(..))
                         || !(tied || copper_rules)
                         || !near(it)
                     {
@@ -3100,7 +3142,7 @@ fn keep_connected(
     let own: Vec<usize> = (0..items.len())
         .filter(|&i| {
             items[i].net == Some(net)
-                && items[i].owner != Owner::Hole
+                && !matches!(items[i].owner, Owner::Hole | Owner::PadHole(..))
                 && items[i].layers.iter().any(|l| l == layer)
         })
         .collect();

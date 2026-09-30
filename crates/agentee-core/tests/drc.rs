@@ -369,6 +369,36 @@ fn a_via_on_a_pad_of_another_net_is_a_short() {
 }
 
 #[test]
+fn pours_keep_the_plated_hole_margin_from_pad_holes_of_other_nets() {
+    let via_pad = "name = \"ViaPad\"\n[[pads]]\nnumber = \"1\"\nkind = \"tht\"\nshape = \"circle\"\n\
+                   at = [0, 0]\nsize = [0.4, 0.4]\ndrill = 0.3\nlayers = [\"*.Cu\", \"*.Mask\"]\n";
+    let files = [("footprints/ViaPad.fp.toml", via_pad)];
+    let sch = "\n[[parts]]\nref = \"TH1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+               footprint = \"ViaPad\"\n\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\n\
+               at = [20.32, 20.32]\n\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n\
+               [[nets]]\nname = \"B\"\npins = [\"TH1.1\", \"R1.2\"]\n";
+    let pcb = "[[footprints]]\nref = \"TH1\"\nat = [15, 10]\n\n[[footprints]]\nref = \"R1\"\n\
+               at = [5, 5]\n\n[[zones]]\nnet = \"A\"\nlayers = [\"In1.Cu\", \"B.Cu\"]\n\n\
+               [[vias]]\nnet = \"A\"\nat = [25, 15]\n";
+    let p = project_with(&files, &[], sch, pcb);
+    let e = errors(&p);
+    assert!(!e.iter().any(|t| t.contains("holes closer")), "{e:?}");
+    let layout = &p.layouts[0].item;
+    let a = layout.nets.iter().position(|n| n.name == "A").unwrap();
+    for (layer, need) in [("In1.Cu", 0.3), ("B.Cu", 0.28)] {
+        let fill = layout.zones.iter().find(|z| z.layer == layer && z.net == a).unwrap();
+        let gap = fill
+            .rings
+            .iter()
+            .flat_map(|r| (0..r.len()).map(move |i| (r[i], r[(i + 1) % r.len()])))
+            .map(|(s, t)| agentee_core::geom::point_segment_distance([15.0, 10.0], s, t))
+            .fold(f64::MAX, f64::min)
+            - 0.15;
+        assert!(gap > need - 1e-3 && gap < need + 0.05, "{layer}: {gap}");
+    }
+}
+
+#[test]
 fn same_net_vias_on_the_same_spot_are_an_error() {
     let e =
         with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n");
