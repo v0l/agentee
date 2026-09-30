@@ -1021,8 +1021,8 @@ impl LayoutFile {
                 continue;
             }
             for n in &f.always {
-                if net_index(n).is_none() {
-                    d.error(&at, format!("net `{n}` is not in the schematic"));
+                if !nets.iter().any(|m| glob(n, &m.name)) {
+                    d.error(&at, format!("no net matches `{n}`"));
                 }
             }
             let mut placed = 0;
@@ -1061,7 +1061,7 @@ impl LayoutFile {
                         .min(c[1] - grid.min[1])
                         .min(grid.max[1] - c[1]);
                     let ring = (edge / pitch).round();
-                    if ring < rings && !f.always.contains(&nets[net].name) {
+                    if ring < rings && !f.always.iter().any(|g| glob(g, &nets[net].name)) {
                         continue;
                     }
                     let reach: Vec<&str> = pad.copper.iter().map(String::as_str).collect();

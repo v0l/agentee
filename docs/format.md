@@ -838,7 +838,7 @@ at = [7.2, 8.9]
 ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans out every plane pad
 # via = "bga"                  # or a list, the first reaching the pad layer; default the class vias
 # skip_rings = 2               # leave the two outer rings for escape on the outer layer
-# always = ["GND", "3V3"]      # nets that get a via even in those rings
+# always = ["GND", "LVDS_*"]   # nets that get a via even in those rings, globs allowed
 # skip = ["A1", "B7"]          # pads to leave alone
 # nets = ["GND", "3V3"]        # only pads on these nets, globs allowed
 # exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob; a glob never
