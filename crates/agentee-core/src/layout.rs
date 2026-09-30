@@ -1225,7 +1225,8 @@ impl LayoutFile {
                     z.min_island_area.unwrap_or(2.0),
                 );
                 if fill.islands_removed > 0 {
-                    d.info(
+                    found.add(
+                        "zone-islands",
                         &at,
                         format!(
                             "{} copper islands on {layer} reach nothing of {} and were removed",
@@ -1242,7 +1243,7 @@ impl LayoutFile {
                 uf.union(group[0], group[1]);
             }
         }
-        check_zones(&zones, &items, &nets, &clearance_of, d);
+        check_zones(&zones, &items, &nets, &clearance_of, &mut found);
 
         let mut ratsnest = Vec::new();
         let mut stats: Vec<(usize, f64)> = Vec::new();
@@ -2927,7 +2928,7 @@ fn check_zones(
     items: &[Item],
     nets: &[LayoutNet],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
-    d: &mut Diags,
+    d: &mut crate::drc::Findings,
 ) {
     const TOL: f64 = 3e-3;
     let bins: Vec<EdgeBins> = zones.iter().map(|z| EdgeBins::new(&z.rings, 1.0)).collect();
@@ -2951,7 +2952,8 @@ fn check_zones(
             }
         }
         if let Some(p) = tips.first() {
-            d.warn(
+            d.add(
+                "zone-tips",
                 at(a),
                 format!(
                     "{} sharp copper tips under 30 degrees, first at [{:.3}, {:.3}]; they etch unevenly and can lift, raise the zone's min_width",
@@ -2981,7 +2983,8 @@ fn check_zones(
                 .find(|p| inside_rings(&b.rings, **p))
                 .or_else(|| b.rings.iter().flatten().find(|p| inside_rings(&a.rings, **p)));
             if let Some(p) = over {
-                d.error(
+                d.add(
+                    "zone-overlap",
                     at(a),
                     format!(
                         "overlaps the {} zone at [{:.3}, {:.3}], a short",
@@ -3005,7 +3008,8 @@ fn check_zones(
                 }
             }
             if let Some((gap, p)) = worst {
-                d.error(
+                d.add(
+                    "zone-to-zone",
                     at(a),
                     format!(
                         "comes {gap:.3} mm from the {} zone at [{:.3}, {:.3}], needs {need} mm",
@@ -3050,7 +3054,8 @@ fn check_zones(
         if let Some((name, gap, p)) = first {
             let what =
                 if gap < 0.0 { "covers".to_string() } else { format!("comes {gap:.3} mm from") };
-            d.error(
+            d.add(
+                "zone-clearance",
                 at(a),
                 format!("{what} {name} copper at [{:.3}, {:.3}] ({hits} places), the fill must clear other nets", p[0], p[1]),
             );

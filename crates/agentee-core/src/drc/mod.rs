@@ -601,6 +601,7 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(drill::RULES)
         .chain(copper::RULES)
         .chain(track::RULES)
+        .chain(zone::RULES)
         .chain(assembly::RULES)
 }
 
@@ -683,3 +684,4 @@ mod copper;
 mod drill;
 mod track;
 mod via;
+mod zone;
