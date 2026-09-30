@@ -322,16 +322,25 @@ pub fn is_capacitor(reference: &str, fp_name: &str) -> bool {
     ref_prefix(reference) == "C" || n.starts_with("c_") || n.starts_with("cp_")
 }
 
-pub fn chip_length(fp_name: &str) -> Option<f64> {
-    fp_name.split(|c: char| !c.is_ascii_alphanumeric()).find_map(|t| {
-        let m = t.to_ascii_lowercase();
-        let digits = m.strip_suffix("metric")?;
-        if digits.len() == 4 && digits.chars().all(|c| c.is_ascii_digit()) {
-            digits[..2].parse::<f64>().ok().map(|x| x / 10.0)
-        } else {
-            None
-        }
-    })
+pub fn chip_length(fp_name: &str, fp: &Footprint) -> Option<f64> {
+    if let Some((_, length)) = crate::drc::case_of(fp_name) {
+        return Some(length);
+    }
+    let centres: Vec<P> = fp
+        .pads
+        .iter()
+        .filter(|q| q.is_copper())
+        .map(|q| {
+            let mut b = Bounds::EMPTY;
+            q.outlines().iter().flatten().for_each(|v| b.add(*v));
+            if b.is_empty() { q.at.to_mm() } else { b.center() }
+        })
+        .collect();
+    let d = match centres[..] {
+        [a, b] => geom::dist(a, b),
+        _ => return None,
+    };
+    (d > 1e-6).then_some(d)
 }
 
 pub fn courtyard_loops(fp: &Footprint, layer: &str) -> Vec<Vec<P>> {
@@ -1574,7 +1583,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         let mlcc_len = if fp.mlcc == Some(false) {
             None
         } else if mlcc || fp.mlcc == Some(true) {
-            chip_length(&fp_name).or(Some(1.0))
+            chip_length(&fp_name, fp).or(Some(1.0))
         } else {
             None
         };

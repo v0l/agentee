@@ -439,3 +439,18 @@ fn hot_parts_come_from_the_thermal_sims_of_the_layout() {
     let p = Project::load(&dir).unwrap();
     assert!(rule(&p, "placement-hot-parts-close").is_empty());
 }
+
+#[test]
+fn chip_length_reads_metric_and_imperial_cases_then_pads() {
+    let p = small_project("", &placed([20.0, 15.0], [24.0, 15.0], [3.0, 15.0], 180.0));
+    let fp = &p.footprints.iter().find(|f| f.name == "C_0402_1005Metric").unwrap().item;
+    let sot = &p.footprints.iter().find(|f| f.name == "SOT-89-3").unwrap().item;
+    assert_eq!(place::chip_length("C_0402_1005Metric", fp), Some(1.0));
+    assert_eq!(place::chip_length("C_0805", fp), Some(2.0));
+    assert_eq!(place::chip_length("R_0402", fp), Some(1.0));
+    assert_eq!(place::chip_length("0603", fp), Some(1.6));
+    assert_eq!(place::chip_length("C_1206_HandSolder", fp), Some(3.2));
+    let pitch = place::chip_length("C_custom", fp).unwrap();
+    assert!((pitch - 0.96).abs() < 0.05, "{pitch}");
+    assert_eq!(place::chip_length("SOT-89-3", sot), None);
+}
