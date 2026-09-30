@@ -162,15 +162,18 @@ the stack is a laser step). Check reports any other via type as an error, the `v
 rule reports the layout's vias of it, and the router leaves such a class via out; each lists the
 spans the lamination drills.
 
-Without `lamination` the sequence comes from the stackup. The build-up layers `i` are the
-prepreg-only dielectrics on the outside before the first core, the fewer of the two sides; the `N`
-layers between are the core sub-stack, pressed once from its cores and prepregs. The steps are:
+Without `lamination` the sequence comes from the stackup. The build-up layers on each side are the
+prepreg-only dielectrics on the outside before the first core, counted per side, so a build can be
+asymmetric (`1+4+2`); the `N` layers between are the core sub-stack, pressed once from its cores
+and prepregs. The steps are:
 
 1. each core of the sub-stack, drilled mechanically before its press (a buried via in one core);
 2. the sub-stack, mechanically, after its press;
-3. for each build-up layer, inside out: a laser step from each new outer layer to the layer under
-   it (and over two dielectrics, a skip via, from the second build-up layer on), then a mechanical
-   step through everything pressed so far; the last is the through drill;
+3. for each press of build-up layers, inside out: a laser step from each new outer layer to the
+   layer under it (and over two dielectrics, a skip via, from that side's second build-up layer
+   on), then a mechanical step through everything pressed so far; the last is the through drill.
+   The side with fewer build-up layers joins the later presses, so both outer foils go on in the
+   last press: on `1+4+2` the first press adds In5.Cu under B.Cu alone, the second F.Cu and B.Cu;
 4. controlled depth from F.Cu and from B.Cu to every inner layer, after the last press.
 
 On `hdi-6l-1n1` (1+4+1) that is In1.Cu-In2.Cu and In3.Cu-In4.Cu (cores), In1.Cu-In4.Cu (buried,

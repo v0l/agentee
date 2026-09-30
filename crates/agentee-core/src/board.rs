@@ -710,21 +710,21 @@ impl Stackup {
             .collect()
     }
 
-    pub fn build_up_layers(&self) -> usize {
+    pub fn build_up_layers(&self) -> (usize, usize) {
         let cores = self.core_gaps();
         if !cores.contains(&true) {
-            return 0;
+            return (0, 0);
         }
         let top = cores.iter().take_while(|c| !**c).count();
         let bottom = cores.iter().rev().take_while(|c| !**c).count();
-        top.min(bottom)
+        (top, bottom)
     }
 
     pub fn build_name(&self) -> String {
         let n = self.copper().count();
         match self.build_up_layers() {
-            0 => format!("{n} layer single lamination"),
-            i => format!("{i}+{}+{i}", n - 2 * i),
+            (0, 0) => format!("{n} layer single lamination"),
+            (t, b) => format!("{t}+{}+{b}", n - t - b),
         }
     }
 
@@ -734,7 +734,8 @@ impl Stackup {
             return Vec::new();
         }
         let last = cu.len() - 1;
-        let i = self.build_up_layers();
+        let (top, bottom) = self.build_up_layers();
+        let presses = top.max(bottom);
         let mut out: Vec<DrillStep> = Vec::new();
         let mut push = |a: usize, b: usize, drill_kind: DrillKind| {
             let s = DrillStep { from: cu[a].clone(), to: cu[b].clone(), drill_kind };
@@ -742,18 +743,26 @@ impl Stackup {
                 out.push(s);
             }
         };
-        for (g, core) in self.core_gaps().into_iter().enumerate().take(last - i).skip(i) {
+        for (g, core) in self.core_gaps().into_iter().enumerate().take(last - bottom).skip(top) {
             if core {
                 push(g, g + 1, DrillKind::Mechanical);
             }
         }
-        push(i, last - i, DrillKind::Mechanical);
-        for k in 1..=i {
-            let (t, b) = (i - k, last - i + k);
-            push(t, t + 1, DrillKind::Laser);
-            push(b - 1, b, DrillKind::Laser);
-            if k >= 2 {
+        push(top, last - bottom, DrillKind::Mechanical);
+        for k in 1..=presses {
+            let (on_top, on_bottom) =
+                (k.saturating_sub(presses - top), k.saturating_sub(presses - bottom));
+            let (t, b) = (top - on_top, last - bottom + on_bottom);
+            if on_top > 0 {
+                push(t, t + 1, DrillKind::Laser);
+            }
+            if on_bottom > 0 {
+                push(b - 1, b, DrillKind::Laser);
+            }
+            if on_top >= 2 {
                 push(t, t + 2, DrillKind::Laser);
+            }
+            if on_bottom >= 2 {
                 push(b - 2, b, DrillKind::Laser);
             }
             push(t, b, DrillKind::Mechanical);
@@ -2108,6 +2117,42 @@ severity = { "via-in-pad" = "error" }
         assert_eq!(b.stackup.build_name(), "1+2+1");
         let (b, _) = board("name = \"x\"\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n");
         assert_eq!(steps(&b.stackup), ["mechanical F.Cu-B.Cu"]);
+    }
+
+    fn layered(kinds: &[&str]) -> String {
+        let mut s = "name = \"x\"\nfab = \"hdi\"\n[stackup]\n".to_string();
+        for k in kinds {
+            s += &format!("[[stackup.layers]]\nkind = \"{k}\"\nthickness = \"0.1mm\"\n");
+        }
+        s
+    }
+
+    #[test]
+    fn an_asymmetric_build_counts_the_build_up_of_each_side() {
+        let (b, d) = board(&layered(&[
+            "copper", "prepreg", "copper", "core", "copper", "prepreg", "copper", "core", "copper",
+            "prepreg", "copper", "prepreg", "copper",
+        ]));
+        assert!(!d.has_errors(), "{:?}", d.list);
+        assert_eq!(b.stackup.build_up_layers(), (1, 2));
+        assert_eq!(b.stackup.build_name(), "1+4+2");
+        assert_eq!(
+            steps(&b.stackup),
+            [
+                "mechanical In1.Cu-In2.Cu",
+                "mechanical In3.Cu-In4.Cu",
+                "mechanical In1.Cu-In4.Cu",
+                "laser In4.Cu-In5.Cu",
+                "mechanical In1.Cu-In5.Cu",
+                "laser F.Cu-In1.Cu",
+                "laser In5.Cu-B.Cu",
+                "laser In4.Cu-B.Cu",
+                "mechanical F.Cu-B.Cu",
+            ]
+        );
+        let st = &b.stackup;
+        assert!(st.drillable("In4.Cu", "B.Cu", DrillKind::Laser, true).is_ok());
+        assert!(st.drillable("F.Cu", "In2.Cu", DrillKind::Laser, true).is_err());
     }
 
     #[test]
