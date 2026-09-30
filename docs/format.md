@@ -1079,13 +1079,22 @@ where that lowers the cost. A simulated annealing refinement follows (shifts, qu
 swaps of same-size parts, whole cluster moves, side flips with `--side both`; 1500 moves a part,
 then 500 more at a low temperature), scored by weighted HPWL, crossings of two-pin nets (4 per
 crossing), and the rules above as penalties. Eight starts (the eight reflections of the spectral
-layout) run on parallel threads and the cheapest is kept, so the result depends on the files and
-`--seed` only, not on the number of threads.
+layout) are legalised on parallel threads, and the three cheapest go on to the cluster moves and
+the annealing, so the result depends on the files and `--seed` only, not on the number of threads.
 
-On a copy of `examples/sdr` with the tracks and vias removed (168 parts, 65 x 45 mm), top only:
-the hand placement has 1898 mm of signal HPWL and 305 crossings; seeds 1 to 4 give 1860 to 1887 mm
-and 266 to 276 crossings, in about 3.5 s of solve on 8 threads (about 25 s of CPU) plus loading
-and the label pass. With `--side both` they give about 1210 to 1270 mm and 135 to 155 crossings.
+Parts keep off the board's own silk: `[[graphics]]` text and lines on a silk layer and silk
+`[[artwork]]` block the courtyards on their side (a part that fits nowhere else may still cover
+them). Each part's reference label needs room too: where the labels take at most a quarter of the
+free board area, a box the size of the reference text (0.2 mm around it, at the footprint's
+reference spot pushed clear of its own pads and silk) is kept clear like a courtyard, and place
+writes that spot as `label.at`; on a fuller board with room left the overlap of those boxes with
+other parts and labels is a small cost in the annealing instead, and on a full board labels are
+left to the label pass (`agentee silk --hide` for the ones with no spot).
+
+On a copy of `examples/sdr` with the tracks and vias removed (251 parts, 65 x 45 mm), top only,
+seeds 1 to 4 give 3276 to 3436 mm of signal HPWL and 261 to 293 crossings, in about 2 s of solve
+on 4 cores (about 6 s of CPU) plus loading and the label pass. With `--side both` they give about
+1955 to 2025 mm and 150 to 165 crossings.
 
 ### Autorouting
 

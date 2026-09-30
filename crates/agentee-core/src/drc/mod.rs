@@ -739,6 +739,8 @@ mod drill;
 mod mask;
 mod mechanical;
 mod placement;
+
+pub(crate) use mechanical::case_of;
 mod signal;
 mod silk;
 mod test;

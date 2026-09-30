@@ -191,6 +191,7 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
         spec: &spec,
         fast_nets: Vec::new(),
         heat: vec![("U1".into(), 0.45)],
+        silk: place::board_silk(layout),
     };
     place::place(&input, opts).unwrap()
 }
@@ -206,6 +207,9 @@ fn write_placements(dir: &Path, extra: &str, r: &place::PlaceResult) {
             pm.rotation,
             if pm.bottom { "side = \"bottom\"\n" } else { "" }
         );
+        if let Some((at, rotation)) = pm.label {
+            text += &format!("label = {{ at = [{}, {}], rotation = {rotation} }}\n", at[0], at[1]);
+        }
     }
     std::fs::write(dir.join("lna.pcb.toml"), text).unwrap();
 }
@@ -438,4 +442,92 @@ fn hot_parts_come_from_the_thermal_sims_of_the_layout() {
     .unwrap();
     let p = Project::load(&dir).unwrap();
     assert!(rule(&p, "placement-hot-parts-close").is_empty());
+}
+
+#[test]
+fn chip_length_reads_metric_and_imperial_cases_then_pads() {
+    let p = small_project("", &placed([20.0, 15.0], [24.0, 15.0], [3.0, 15.0], 180.0));
+    let fp = &p.footprints.iter().find(|f| f.name == "C_0402_1005Metric").unwrap().item;
+    let sot = &p.footprints.iter().find(|f| f.name == "SOT-89-3").unwrap().item;
+    assert_eq!(place::chip_length("C_0402_1005Metric", fp), Some(1.0));
+    assert_eq!(place::chip_length("C_0805", fp), Some(2.0));
+    assert_eq!(place::chip_length("R_0402", fp), Some(1.0));
+    assert_eq!(place::chip_length("0603", fp), Some(1.6));
+    assert_eq!(place::chip_length("C_1206_HandSolder", fp), Some(3.2));
+    let pitch = place::chip_length("C_custom", fp).unwrap();
+    assert!((pitch - 0.96).abs() < 0.05, "{pitch}");
+    assert_eq!(place::chip_length("SOT-89-3", sot), None);
+}
+
+fn board_art(text: &str) -> String {
+    let mut out = String::new();
+    let mut keep = false;
+    for line in text.lines() {
+        if line.starts_with('[') {
+            keep = line == "[[graphics]]" || line == "[[artwork]]";
+        }
+        if keep {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+#[test]
+fn parts_stay_off_board_silk_text() {
+    let dir = temp_dir("boardsilk");
+    copy_dir(&lna(), &dir, false);
+    let art = board_art(&std::fs::read_to_string(lna().join("lna.pcb.toml")).unwrap());
+    assert!(art.contains("RF OUT"));
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        format!("name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n{art}"),
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    write_placements(&dir, &art, &r);
+    let p = Project::load(&dir).unwrap();
+    let on_text: Vec<String> = p.layouts[0]
+        .diags
+        .iter()
+        .filter(|d| d.rule.as_deref() == Some("silk-text") && d.at.contains("board text"))
+        .filter(|d| {
+            ["sits on pads", "silk outline", "hides under"].iter().any(|w| d.message.contains(w))
+        })
+        .map(|d| d.to_string())
+        .collect();
+    assert!(on_text.is_empty(), "{on_text:#?}");
+}
+
+#[test]
+fn roomy_boards_reserve_clear_reference_labels() {
+    let dir = temp_dir("labelroom");
+    copy_dir(&lna(), &dir, false);
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions { sides: Sides::Both, ..Default::default() });
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert!(r.labels.reserved, "{:?}", r.labels);
+    let labelled: Vec<&str> =
+        r.placements.iter().filter(|q| q.label.is_some()).map(|q| q.reference.as_str()).collect();
+    assert!(labelled.len() >= 10, "{labelled:?}");
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let crowded: Vec<String> = rule(&p, "silk-text")
+        .into_iter()
+        .map(|(_, m)| m)
+        .filter(|m| labelled.iter().any(|r| m.starts_with(&format!("`{r}`"))))
+        .filter(|m| {
+            ["sits on pads", "silk outline", "runs off", "prints over"]
+                .iter()
+                .any(|w| m.contains(w))
+                || labelled.iter().any(|r| m.contains(&format!("crowds `{r}`")))
+        })
+        .collect();
+    assert!(crowded.is_empty(), "{crowded:#?}");
 }
