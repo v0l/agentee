@@ -1506,7 +1506,7 @@ a drag or a sideways scroll pans, a double click fits the whole run, and a click
 cursor, snapped to an edge of the row under it within a few pixels. `+` and `-` zoom about the
 cursor, the arrow keys pan, `F` or `Home` fits, `Escape` drops the cursor, and `N` and `P` jump
 the cursor to the next and previous marker. The column beside the names reads every row at the
-cursor (at the pointer with no cursor, else at the end of the run), and the hover tip gives the
+cursor (at the pointer with no cursor, else at the right edge of the view), and the hover tip gives the
 time from the cursor. Nets named `X[0]` to `X[n]`, or `X0` to `Xn` (also `X0_N` to `Xn_N`),
 fold into one bus row drawn in hex, MSB first, with a nibble of x for any unknown bit and z for
 a floating one; so does a `record` entry `{ name, nets }`. Click a bus name to open its bits.

@@ -375,7 +375,7 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
             area.left() + f as f32 * area.width()
         };
         let grid = Stroke::new(1.0, ETCH);
-        let step = tick_step(to - from);
+        let step = tick_step(to - from, (area.width() / 80.0).max(2.0) as u64);
         let mut t = from.div_ceil(step) * step;
         while t <= to {
             let gx = x(t);
@@ -395,7 +395,7 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
         );
         p.rect_filled(strip, 0.0, BAND);
         let hover = resp.hover_pos().filter(|h| area.contains(*h) || strip.contains(*h));
-        let readout_t = view.cursor.or(hover.map(|h| t_at(h.x, from, to))).unwrap_or(end);
+        let readout_t = view.cursor.or(hover.map(|h| t_at(h.x, from, to))).unwrap_or(to);
         let readout_colour = if view.cursor.is_some() { READOUT } else { LEGEND };
         p.text(
             Pos2::new(rect.left() + LABEL_W + VALUE_W - 6.0, strip.center().y),
@@ -584,11 +584,11 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
     });
 }
 
-fn tick_step(span: u64) -> u64 {
+fn tick_step(span: u64, most: u64) -> u64 {
     let mut step = 1u64;
     loop {
         for m in [1, 2, 5] {
-            if span / (step * m) <= 10 {
+            if span / (step * m) <= most {
                 return step * m;
             }
         }
@@ -746,6 +746,91 @@ mod tests {
         assert_eq!(v.window("c", 2_000_000), (100_000, 500_000));
         assert_eq!(v.cursor, Some(250_000));
         assert_eq!(v.open, vec!["Q[3:0]".to_string()]);
+    }
+
+    #[test]
+    fn mouse_wheel_drag_and_click_drive_the_view() {
+        use egui::{Event, Modifiers, MouseWheelUnit, RawInput, TouchPhase};
+        let ctx = egui::Context::default();
+        egui_bench::install(&ctx);
+        let r = LogicResult {
+            name: "w".into(),
+            kind: "logic".into(),
+            spec_hash: 0,
+            duration_ps: 1_000_000,
+            end_ps: 1_000_000,
+            traces: vec![trace("A", &[0, 500_000], "01")],
+            buses: Vec::new(),
+            marks: Vec::new(),
+            passed: 0,
+            failures: Vec::new(),
+            readings: Vec::new(),
+            events: 0,
+            seconds: 0.0,
+            vcd: String::new(),
+        };
+        let mut view = WaveView::default();
+        let mut time = 0.0;
+        let mut frame = |events: Vec<Event>, view: &mut WaveView| {
+            time += 1.0 / 60.0;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 400.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run_ui(input, |ui| canvas(ui, &r, view, true));
+        };
+        let at = Pos2::new(600.0, 100.0);
+        let button = |pos: Pos2, pressed: bool| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        frame(Vec::new(), &mut view);
+        assert_eq!((view.from, view.to), (0, 1_000_000));
+        frame(vec![Event::PointerMoved(at)], &mut view);
+        let wheel = Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, 120.0),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        };
+        frame(vec![wheel], &mut view);
+        for _ in 0..60 {
+            frame(Vec::new(), &mut view);
+        }
+        let span = view.to - view.from;
+        assert!(span < 900_000, "{view:?}");
+        assert!(view.from > 0 && view.to < 1_000_000, "{view:?}");
+        let before = view.from;
+        frame(vec![button(at, true)], &mut view);
+        frame(vec![Event::PointerMoved(Pos2::new(500.0, 100.0))], &mut view);
+        frame(vec![Event::PointerMoved(Pos2::new(400.0, 100.0))], &mut view);
+        frame(vec![button(Pos2::new(400.0, 100.0), false)], &mut view);
+        assert!(view.from > before, "{view:?}");
+        assert_eq!(view.to - view.from, span);
+        assert_eq!(view.cursor, None);
+        let spot = Pos2::new(700.0, 100.0);
+        frame(vec![Event::PointerMoved(spot)], &mut view);
+        frame(vec![button(spot, true)], &mut view);
+        frame(vec![button(spot, false)], &mut view);
+        let c = view.cursor.expect("a click sets the cursor");
+        assert!(c > view.from && c < view.to, "{view:?}");
+        let key = |key: Key| Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        frame(vec![key(Key::F)], &mut view);
+        assert_eq!((view.from, view.to), (0, 1_000_000));
+        frame(vec![key(Key::Equals)], &mut view);
+        assert_eq!(view.to - view.from, 500_000);
+        frame(vec![key(Key::Escape)], &mut view);
+        assert_eq!(view.cursor, None);
     }
 
     fn count(rgba: &[u8], c: Color32) -> usize {
