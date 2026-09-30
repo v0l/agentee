@@ -29,7 +29,7 @@ Run `agentee check` after every edit. Unknown keys are errors, so a typo is repo
 ```toml
 name = "sensor-node"
 description = "2 layer sensor board"
-fab = "jlcpcb"                 # rule preset: generic | jlcpcb
+fab = "jlcpcb"                 # rule preset: generic | jlcpcb | hdi
 
 [outline]                      # a rectangle...
 size = [50, 30]
@@ -56,14 +56,17 @@ min_track_width = "0.15mm"
 name = "std"
 drill = "0.3mm"
 diameter = "0.6mm"
+# type = "through"             # through | blind | buried | microvia, default from the span
 # from = "F.Cu"                # default: outermost copper on each side
 # to = "B.Cu"
+# fill = "filled_capped"       # IPC-4761 type, see Via types
+# cost = 1.0                   # router cost of this via, times --via-cost
 
 [[netclasses]]
 name = "Default"               # always define Default
 track_width = "0.2mm"
 clearance = "0.2mm"
-via = "std"
+via = "std"                    # or a list the router picks from: ["std", "uvia-top"]
 
 [[netclasses]]
 name = "Power"
@@ -107,6 +110,8 @@ thermal and DC models, where a cutout is air. A stored fill goes stale when a cu
 | `jlcpcb-2l-1.6mm` | 2 layer FR4, 1 oz outer |
 | `jlcpcb-4l-1.6mm-7628` | JLC04161H-7628, 7628 prepreg |
 | `jlcpcb-4l-1.6mm-3313` | JLC04161H-3313, 3313 prepreg |
+| `hdi-6l-1n1` | 6 layer 1+4+1, 0.8 mm: 1080 build-up prepreg (0.07 mm) over a core, 2116, core sub-stack |
+| `hdi-8l-2n2` | 8 layer 2+4+2, 1.0 mm: two 1080 build-up layers each side over the same sub-stack |
 
 Or list the layers yourself, top to bottom. Use either `preset` or `layers`, not both.
 
@@ -133,16 +138,110 @@ loss_tangent = 0.02
 Layer kinds: `silk`, `paste`, `mask`, `copper`, `core`, `prepreg`. Copper must alternate with
 dielectric; mask, paste and silk sit outside the outer copper.
 
+### Via types
+
+A board `[[vias]]` entry is a via type: its hole, pad, the copper layers it spans and how the fab
+builds it, as KiCad, Altium and HDI fabs name them.
+
+```toml
+[[vias]]
+name = "uvia-top"
+type = "microvia"              # laser drilled, one dielectric: F.Cu to In1.Cu
+from = "F.Cu"
+to = "In1.Cu"
+drill = "0.1mm"
+diameter = "0.25mm"
+fill = "filled_capped"         # copper filled and capped, for via-in-pad
+# stacked = true               # a stack of microvias, one per dielectric from..to
+# skip = true                  # one laser hole over two dielectrics
+
+[[vias]]
+name = "core"
+type = "buried"                # inner to inner, drilled in a laminated sub-stack
+from = "In1.Cu"
+to = "In4.Cu"
+drill = "0.2mm"
+diameter = "0.45mm"
+
+[[vias]]
+name = "bd"                    # a through via backdrilled from the bottom
+drill = "0.3mm"
+diameter = "0.6mm"
+backdrill = { from = "B.Cu", to = "In2.Cu", max_stub = "0.2mm" }
+# backdrill.diameter defaults to the drill + 0.2 mm
+```
+
+| type | span | drilled |
+|---|---|---|
+| `through` | first to last copper layer | mechanically, after the last lamination |
+| `blind` | one outer layer to an inner layer | mechanically, in a sub-stack or to a controlled depth |
+| `buried` | inner layer to inner layer | mechanically, in a laminated sub-stack |
+| `microvia` | one dielectric (`stacked`: several, `skip`: two) | by laser, in a build-up layer |
+
+Without `type` the span decides: first to last layer is `through`, one outer end is `blind`,
+two inner ends `buried`. Check holds the type to its span (a blind via must touch exactly one
+outer layer, a buried via none) and to the fab:
+
+- Any type but `through`, and any backdrill, needs sequential lamination: the `generic` and
+  `jlcpcb` presets build through vias only and report such a via as an error, the `hdi` preset or
+  `[rules] hdi = true` allows them.
+- A mechanically drilled span must match the lamination: a copper layer bonded to a core on the
+  outside of the span means the span splits a core, which no fab can drill. Every span start needs
+  prepreg (or the board surface) above it and every span end prepreg (or the surface) below it.
+  The error names the spans the stackup can drill. On `hdi-6l-1n1` these are the full board,
+  In1.Cu to In2.Cu and In3.Cu to In4.Cu (the cores), In1.Cu to In4.Cu (the sub-stack), and the
+  blind spans F.Cu to In2.Cu or In4.Cu and In1.Cu or In3.Cu to B.Cu.
+- A microvia spans one dielectric unless `stacked` (a stack of single microvias, which needs
+  `[rules] stacked_microvias = true` and copper filled microvias below) or `skip` (one laser hole
+  over two dielectrics). Its drill is between `min_microvia_drill` and `max_microvia_drill`, its
+  pad at least `min_microvia_diameter`, and its depth over the drill at most
+  `max_microvia_aspect_ratio`, for each dielectric of a stack. IPC-T-50 defines a microvia as a
+  blind structure of at most 1:1 aspect ratio and 0.25 mm depth; a deeper one is a warning.
+- Blind and buried vias drill at least `min_blind_via_drill` (and `min_via_drill`).
+- A backdrill runs `from` an outer layer the via reaches and stops before `to`, a layer strictly
+  inside the span, which stays connected. The via then has copper only from its far end to `to`,
+  and the stub left is at most `max_stub` (default 0.25 mm). Microvias and buried vias cannot be
+  backdrilled.
+
+`fill` is the IPC-4761 via protection type: `tented` (I), `tented_covered` (II), `plugged` (III),
+`plugged_covered` (IV), `filled` (V), `filled_covered` (VI), `filled_capped` (VII). Via-in-pad
+wants type VII; a via in a pad whose type sets any other fill is a `via-in-pad-fill` error, and a
+via in a pad with no `fill` is listed in the fab notes to fill and cap as before.
+
+A via occupies only the copper layers it spans (after a backdrill, the layers left). Everything
+that places or reads vias follows that: connectivity, shorts and clearance, zone fill (a pour on a
+layer the via does not reach keeps no antipad for it), stitching (the via's layers), fanout (the
+first class via that reaches the pad's layer), the unrouted and dangling-end checks, the
+interface via stubs (a blind via has no stub past its end layer, a backdrilled via keeps its
+`max_stub`), `hole-to-copper` and `aspect-ratio` over the hole's span, `hole-to-hole` only for
+holes whose spans share a dielectric, and `stacked-via`: two vias at one spot through the same
+dielectric are drilled twice, while vias meeting at one layer (a microvia on a buried via, or a
+stack of microvias) are stacked vias, allowed only with `stacked_microvias`. The DC, thermal
+and FDTD models run a barrel only between the via's first and last layer, the 2D viewer
+draws a via only when one of its layers is shown, rings it in its type's colour (through gold,
+blind teal, buried lavender, microvia cyan) with its two end layers' colours on the rim, and the 3D
+viewer drills the board face only on the sides a via reaches and ends its barrel at its span.
+
+A net class may list several vias, `via = ["std", "uvia-top", "uvia-bot"]`. A layout
+`[[vias]]` entry and `[[stitching]]` use the first unless they name one, `[[fanouts]]` the
+first that reaches the pad's layer, and the router picks, at each layer change, the cheapest
+listed via whose layers hold both ends (`cost` times `--via-cost`, ties go to the via
+that spans fewer layers), so with `["std", "uvia-top"]` a change from F.Cu to In1.Cu takes the
+microvia and a change to In2.Cu the through via.
+
 ### Rules
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
-`min_annular_ring` (vias), `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
+`min_annular_ring` (vias, microvias use `min_microvia_diameter`), `min_blind_via_drill`,
+`min_microvia_drill`, `max_microvia_drill`, `min_microvia_diameter`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
 `min_silk_text_height`, `min_mask_web` (0.1 mm), `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
 `min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
 `min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
 `max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`, `min_body_to_edge`,
 `flex_zone`; plus
-`max_aspect_ratio`, a plain number (board thickness over via drill). Footprints are checked against
+`max_aspect_ratio`, a plain number (hole depth over drill), `max_microvia_aspect_ratio` (dielectric
+depth over laser drill), and the switches `hdi` (the fab builds blind, buried and microvias and
+backdrills) and `stacked_microvias` (the fab stacks microvias). Footprints are checked against
 the rules of the board when the project has exactly one board, otherwise against `generic`.
 
 The fab preset is a table keyed by the copper layer count, the outer copper weight (from the
@@ -184,6 +283,28 @@ guides, which keep every component 1 mm from the board edge for depaneling and h
 `flex_zone` (5 mm) follows Knowles on MLCC flex cracking: the stress zone is typically within
 5 mm of the PCB edge or fixing points.
 
+The `generic` and `jlcpcb` presets build through vias only (`hdi = false`); their microvia and
+blind via limits (0.1 mm laser drill, 0.3 mm pad, 0.8:1, 0.2 mm blind drill) apply once
+`[rules] hdi = true` is set. The `hdi` preset is `generic` with an HDI fab's figures, for the
+IPC-2226 builds: type I (one microvia layer, 1+N+1), type II (type I with buried vias in the
+core) and type III (two or more microvia layers, 2+N+2), on the `hdi-6l-1n1` and `hdi-8l-2n2`
+stackups:
+
+| rule | `hdi` | why |
+|---|---|---|
+| `hdi`, `stacked_microvias` | true | sequential lamination, copper filled stacked microvias |
+| `min_microvia_drill`, `max_microvia_drill` | 0.1, 0.15 | laser drill; IPC-T-50 once bounded a microvia at 0.15 mm |
+| `min_microvia_diameter` | 0.25 | capture pad, 0.075 mm ring on the 0.1 mm drill |
+| `max_microvia_aspect_ratio` | 0.8 | under the 1:1 of IPC-T-50, room for plating to fill |
+| `min_via_drill`, `min_blind_via_drill` | 0.15 | mechanical drill |
+| `min_via_diameter`, `min_annular_ring` | 0.35, 0.1 | |
+| `min_track_width`, `min_clearance` | 0.075 | 3 mil lines for escape between 0.4 mm BGA balls |
+| `min_hole_to_hole` | 0.25 | |
+| `min_bga_pad`, `min_bga_pitch` | 0.2, 0.4 | |
+| `max_aspect_ratio` | 10 | |
+
+A 0.07 mm 1080 build-up layer under a 0.1 mm laser drill is 0.7:1, inside the 0.8:1.
+
 ### Design rule checks
 
 Layout checks run from a registry of rules, each with a stable id, a category (`copper`,
@@ -207,7 +328,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `via-cuts-pad` | error | always | a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad: solder wicks down the barrel and the pad edge is damaged. A via of another net touching a pad is reported as a `short` instead |
 | `via-annulus-past-pad` | warning | vias in pads | the drill sits in the pad but the via's annulus reaches past the pad edge under the mask |
 | `via-in-pad` | info | vias in pads | counts the vias in SMD pads of their own net (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
-| `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill` |
+| `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill`, or whose via type sets a `fill` other than `filled_capped` (IPC-4761 type VII) |
 | `hole-to-smd-pad` | warning | always | a via hole closer than `min_hole_to_smd_pad` to an SMD pad of its own net (or no net) that it does not touch; paste and solder can flow into it |
 | `drill-size` | error | always | pad holes under `min_drill` (plated) or `min_npth_drill` (non-plated), or over `max_drill` (larger holes are routed, draw them as cutouts). Via sizes are checked on the board's `[[vias]]` |
 | `slot-size` | error | slotted holes | slots narrower than `min_plated_slot_width` or `min_npth_slot_width`, or shorter than twice their width |
@@ -245,8 +366,8 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `stitching` | info | always | counts the vias each `[[stitching]]` entry placed |
 | `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
 | `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
-| `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair |
-| `stacked-via` | error | always | a via on the same spot as another via of its net |
+| `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair; only holes whose spans share a dielectric count, so a microvia beside a buried via is not a pair |
+| `stacked-via` | error | always | a via on the same spot as another via of its net through the same dielectric (drilled twice), or stacked on another via at one layer when `stacked_microvias` is off |
 | `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
 | `class-width` | error | always | a track narrower than its class width that is not a neck-down |
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
@@ -569,13 +690,13 @@ points = [[18.68, 10], [25.5, 10]]
 [[vias]]
 net = "GND"
 at = [7.2, 8.9]
-# via = "std"                  # a [[vias]] name from the board, default the class via
+# via = "std"                  # a [[vias]] name from the board, default the first class via
 # count = 6                    # a row, like pads
 # pitch = [1.2, 0]
 
 [[fanouts]]                    # a via in every connected pad of a BGA
 ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans out every plane pad
-# via = "bga"                  # default: each net's class via
+# via = "bga"                  # default: each net's first class via reaching the pad layer
 # skip_rings = 2               # leave the two outer rings for escape on the outer layer
 # always = ["GND", "3V3"]      # nets that get a via even in those rings
 # skip = ["A1", "B7"]          # pads to leave alone
@@ -585,7 +706,7 @@ ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans
 
 [[stitching]]                  # ground vias wherever they clear every other net
 net = "GND"
-# via = "std"                  # default the net's class via
+# via = "std"                  # default the net's first class via
 # pitch = "2.5mm"              # grid pitch, or the spacing along a fence (default 1mm)
 # outline = [[x, y], ...]      # default the board outline
 # margin = "0.6mm"             # extra distance from the board edge
@@ -747,8 +868,9 @@ the board edge, keeps new vias `min_hole_to_hole` from every drill and their hol
 `min_via_hole_to_copper` from other nets' pads, tracks and vias, keeps them off SMD pads of every
 net, its own too (the via copper may not touch one, `via-cuts-pad`, and the hole stays
 `min_hole_to_smd_pad` from it, `hole-to-smd-pad`, unless `--via-in-pad`, MCP `via_in_pad`, lets it sit
-wholly inside an SMD pad of its net with a drill of at most `max_filled_via_drill`), uses the class via to change
-layer (`--via` to override, `--via-cost` in mm of track, default 3), charges `--bend-cost` mm of track for
+wholly inside an SMD pad of its net with a drill of at most `max_filled_via_drill`), uses the class vias to change
+layer, the cheapest whose span holds both layers (`--via` to override with one, `--via-cost` in mm of
+track, default 3, times the via's `cost`), charges `--bend-cost` mm of track for
 each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
 it would cross, remembers the spot as congested, and those nets go back in the queue. The search
@@ -1488,11 +1610,13 @@ imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 p
 | `F_Paste.gbr`, `B_Paste.gbr` | paste on SMD pads |
 | `F_SilkS.gbr`, `B_SilkS.gbr` | silk lines, artwork and text in the Hershey stroke font, with the `agentee vX.Y.Z-HASH` watermark |
 | `Edge_Cuts.gbr` | the board outline and each board cutout as a closed profile; the fab routes cutouts from it, so they stay out of the drill files and `fab-notes.txt` counts them |
-| `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
+| `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85; the plated file holds the pad holes and the through vias, unchanged for a board with through vias only |
+| `drill-FROM-TO.drl` | one Excellon file per blind, buried or microvia span, as KiCad splits them, e.g. `drill-F.Cu-In1.Cu.drl`, with `TF.FileFunction,Plated,1,2,Blind` (`Buried` for inner spans, layers numbered from 1 at the top) and a `; span F.Cu to In1.Cu, microvia vias` comment |
+| `drill-backdrill-FROM-TO.drl` | the backdrill holes of each side and stop layer, non-plated, at the backdrill diameter, with the stop layer and `max_stub` in a comment |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, vias in pads to fill, edge pads to keep |
-| `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them; test point pads are end points with the probe side access code (`A01` top, `A02` bottom), vias are tented mid points unless `[test] vias = true` makes them probe side access |
+| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, each via type with its span, laser or mechanical drill, sizes, hole count, IPC-4761 fill and drill file, and each backdrill with its side, stop layer and stub, vias in pads to fill, edge pads to keep |
+| `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them; test point pads are end points with the probe side access code (`A01` top, `A02` bottom), vias are tented mid points unless `[test] vias = true` makes them probe side access; an unprobed via's access code follows its span: `A00` through, `A01` from the top, the bottom layer number from the bottom, the first layer's number for a buried via |
 | `testpoints.csv` | every test point pad for the fixture builder: ref, pad, net, X, Y (mm, Y up), side, pad diameter |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |
 | `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |
