@@ -1,6 +1,6 @@
 pub mod gerber;
 
-use agentee_core::board::{Board, LayerKind, ViaKind};
+use agentee_core::board::{Board, DrillKind, LayerKind, ViaKind};
 use agentee_core::font;
 use agentee_core::footprint::{PadKind, graphic_path};
 use agentee_core::geom::P;
@@ -248,7 +248,10 @@ fn drill_spans<'a>(hs: &'a [Hole], layout: &Layout) -> Vec<DrillSpan<'a>> {
                 .vias
                 .iter()
                 .filter(|v| v.span_of(cu) == Some((a, b)))
-                .map(|v| v.kind.name())
+                .map(|v| match v.drill_kind {
+                    DrillKind::ControlledDepth => "controlled depth blind",
+                    _ => v.kind.name(),
+                })
                 .fold(Vec::new(), |mut k, n| {
                     if !k.contains(&n) {
                         k.push(n);
@@ -554,8 +557,16 @@ fn drill_notes(layout: &Layout) -> String {
         } else {
             format!("drill-{}-{}.drl", cu[a], cu[b])
         };
-        let how =
-            if v.kind == ViaKind::Microvia { "laser drilled" } else { "mechanically drilled" };
+        let how = match v.drill_kind {
+            DrillKind::Laser => "laser drilled".to_string(),
+            DrillKind::Mechanical => "mechanically drilled".to_string(),
+            DrillKind::ControlledDepth => {
+                let (side, stop) = if a == 0 { (&cu[a], &cu[b]) } else { (&cu[b], &cu[a]) };
+                format!(
+                    "mechanically drilled from {side} to a controlled depth, stopping on {stop}"
+                )
+            }
+        };
         let fill = v
             .fill
             .map(|f| format!(", {} (type {})", f.describe(), f.ipc4761()))

@@ -443,6 +443,8 @@ pub struct Via {
     pub name: String,
     pub kind: crate::board::ViaKind,
     pub hole: Vec<String>,
+    pub drill_kind: crate::board::DrillKind,
+    pub stacked: bool,
     pub fill: Option<crate::board::ViaFill>,
     pub backdrill: Option<crate::board::Backdrill>,
 }
@@ -458,6 +460,8 @@ impl Via {
             name: spec.name.clone(),
             kind: spec.kind,
             hole: spec.hole_layers(copper),
+            drill_kind: spec.drill_kind,
+            stacked: spec.stacked,
             fill: spec.fill,
             backdrill: spec.backdrill.clone(),
         }

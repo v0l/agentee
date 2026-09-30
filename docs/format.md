@@ -60,6 +60,7 @@ diameter = "0.6mm"
 # from = "F.Cu"                # default: outermost copper on each side
 # to = "B.Cu"
 # fill = "filled_capped"       # IPC-4761 type, see Via types
+# drill_kind = "mechanical"    # mechanical | laser | controlled_depth, default from the type
 # cost = 1.0                   # router cost of this via, times --via-cost
 
 [[netclasses]]
@@ -152,6 +153,50 @@ loss_tangent = 0.02
 Layer kinds: `silk`, `paste`, `mask`, `copper`, `core`, `prepreg`. Copper must alternate with
 dielectric; mask, paste and silk sit outside the outer copper.
 
+### Lamination
+
+The lamination is the build-up sequence: the drill steps the fab runs between presses, in build
+order, each a copper span and a drill kind (`mechanical`, `laser` or `controlled_depth`). A via is
+drillable only when its span and drill kind match a step (a `stacked` microvia: when every hop of
+the stack is a laser step). Check reports any other via type as an error, the `via-lamination`
+rule reports the layout's vias of it, and the router leaves such a class via out; each lists the
+spans the lamination drills.
+
+Without `lamination` the sequence comes from the stackup. The build-up layers `i` are the
+prepreg-only dielectrics on the outside before the first core, the fewer of the two sides; the `N`
+layers between are the core sub-stack, pressed once from its cores and prepregs. The steps are:
+
+1. each core of the sub-stack, drilled mechanically before its press (a buried via in one core);
+2. the sub-stack, mechanically, after its press;
+3. for each build-up layer, inside out: a laser step from each new outer layer to the layer under
+   it (and over two dielectrics, a skip via, from the second build-up layer on), then a mechanical
+   step through everything pressed so far; the last is the through drill;
+4. controlled depth from F.Cu and from B.Cu to every inner layer, after the last press.
+
+On `hdi-6l-1n1` (1+4+1) that is In1.Cu-In2.Cu and In3.Cu-In4.Cu (cores), In1.Cu-In4.Cu (buried,
+the sub-stack), laser F.Cu-In1.Cu and In4.Cu-B.Cu, the through drill F.Cu-B.Cu, and the controlled
+depth spans. On `hdi-8l-2n2` (2+4+2) the first build-up adds laser In1.Cu-In2.Cu and
+In5.Cu-In6.Cu and a buried In1.Cu-In6.Cu, the second laser F.Cu-In1.Cu, In6.Cu-B.Cu and the skip
+vias F.Cu-In2.Cu and In5.Cu-B.Cu, so a stacked microvia F.Cu-In2.Cu is two laser steps, while
+F.Cu-In2.Cu on `hdi-6l-1n1` would cross its first core. A stackup with no core, or a core
+outermost, is one press: its sub-stack is the whole board. Whether the fab stacks microvias or
+wants them staggered stays `stacked_microvias`.
+
+`lamination` lists the steps instead, for a build the stackup does not show (a sub-stack pressed
+on one side first, a laser step into a core):
+
+```toml
+[stackup]
+preset = "hdi-6l-1n1"
+lamination = [
+  { from = "In1.Cu", to = "In4.Cu", drill_kind = "mechanical" },
+  { from = "F.Cu", to = "In4.Cu", drill_kind = "mechanical" },   # F.Cu to In4.Cu pressed first
+  { from = "F.Cu", to = "B.Cu", drill_kind = "mechanical" },
+]
+```
+
+`from` is above `to`, a controlled depth step runs from one outer layer to an inner layer.
+
 ### Via types
 
 A board `[[vias]]` entry is a via type: its hole, pad, the copper layers it spans and how the fab
@@ -188,7 +233,7 @@ backdrill = { from = "B.Cu", to = "In2.Cu", max_stub = "0.2mm" }
 | type | span | drilled |
 |---|---|---|
 | `through` | first to last copper layer | mechanically, after the last lamination |
-| `blind` | one outer layer to an inner layer | mechanically, in a sub-stack or to a controlled depth |
+| `blind` | one outer layer to an inner layer | mechanically, in a sub-stack, or to a controlled depth (`drill_kind = "controlled_depth"`) |
 | `buried` | inner layer to inner layer | mechanically, in a laminated sub-stack |
 | `microvia` | one dielectric (`stacked`: several, `skip`: two) | by laser, in a build-up layer |
 
@@ -199,12 +244,16 @@ outer layer, a buried via none) and to the fab:
 - Any type but `through`, and any backdrill, needs sequential lamination: the `generic` and
   `jlcpcb` presets build through vias only and report such a via as an error, the `hdi` preset or
   `[rules] hdi = true` allows them.
-- A mechanically drilled span must match the lamination: a copper layer bonded to a core on the
-  outside of the span means the span splits a core, which no fab can drill. Every span start needs
-  prepreg (or the board surface) above it and every span end prepreg (or the surface) below it.
-  The error names the spans the stackup can drill. On `hdi-6l-1n1` these are the full board,
-  In1.Cu to In2.Cu and In3.Cu to In4.Cu (the cores), In1.Cu to In4.Cu (the sub-stack), and the
-  blind spans F.Cu to In2.Cu or In4.Cu and In1.Cu or In3.Cu to B.Cu.
+- The span and drill kind must match a drill step of the lamination (see Lamination); the error
+  lists the spans it drills. `drill_kind` defaults to `laser` for a microvia and `mechanical`
+  otherwise; a microvia is always laser drilled and a laser drilled via is a microvia.
+- A controlled depth via (`drill_kind = "controlled_depth"`) is a blind via drilled mechanically
+  from its outer layer after the last press, stopping on its inner layer by depth. Its drill is at
+  least `min_controlled_depth_drill` (and `min_via_drill`), its depth (outer copper through the
+  target copper) over its drill at most `max_controlled_depth_aspect_ratio`, and nothing stacks on
+  or under it: the drill stops by depth on a plain pad, so `stacked-via` reports any via at its
+  spot. The fab gets it in the drill file of its span with the other blind vias, noted as drilled
+  to a controlled depth from its side.
 - A microvia spans one dielectric unless `stacked` (a stack of single microvias, which needs
   `[rules] stacked_microvias = true` and copper filled microvias below) or `skip` (one laser hole
   over two dielectrics). Its drill is between `min_microvia_drill` and `max_microvia_drill`, its
@@ -249,20 +298,25 @@ first that reaches the pad's layer, and the router picks, at each layer change, 
 listed via whose layers hold both ends (`cost` times `--via-cost`, ties go to the via
 that spans fewer layers), so with `["std", "uvia-top"]` a change from F.Cu to In1.Cu takes the
 microvia and a change to In2.Cu the through via. It changes layer twice at one spot (a microvia
-on a buried via) only with `stacked_microvias`, otherwise it staggers them.
+on a buried via) only with `stacked_microvias`, otherwise it staggers them, and never on or under a
+controlled depth via. Where it changes layer twice at one spot and a listed via spans both
+changes, it places that one via instead, when it keeps clear of the fixed copper and of the
+copper and via holes routed in the same pass. A class via the lamination cannot drill is left
+out; a class with none left fails with the spans the lamination drills.
 
 ### Rules
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
 `min_annular_ring` (vias, microvias use `min_microvia_diameter`), `min_blind_via_drill`,
-`min_microvia_drill`, `max_microvia_drill`, `min_microvia_diameter`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
+`min_controlled_depth_drill`, `min_microvia_drill`, `max_microvia_drill`, `min_microvia_diameter`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
 `min_silk_text_height`, `min_mask_web` (0.1 mm), `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
 `min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
 `min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
 `max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`, `min_body_to_edge`,
 `flex_zone`; plus
 `max_aspect_ratio`, a plain number (hole depth over drill), `max_microvia_aspect_ratio` (dielectric
-depth over laser drill), and the switches `hdi` (the fab builds blind, buried and microvias and
+depth over laser drill), `max_controlled_depth_aspect_ratio` (depth over drill of a controlled depth
+via), and the switches `hdi` (the fab builds blind, buried and microvias and
 backdrills) and `stacked_microvias` (the fab stacks microvias). Footprints are checked against
 the rules of the board when the project has exactly one board, otherwise against `generic`.
 
@@ -320,6 +374,7 @@ ratio, 4 mil green mask bridge), for the IPC-2226 builds: type I (one microvia l
 | `hdi`, `stacked_microvias` | true | PCBWay builds 1+N+1 to 6+N+6 by sequential lamination; stacked microvias are copper filled |
 | `min_microvia_drill`, `max_microvia_drill` | 0.1, 0.2 | PCBWay min laser drill 4 mil standard, max laser drill 8 mil |
 | `min_via_drill`, `min_drill`, `min_blind_via_drill` | 0.15 | PCBWay min mechanical drill 0.15 mm, min controlled depth PTH drill 0.15 mm |
+| `min_controlled_depth_drill` | 0.15 | PCBWay "Min. controlled depth drilling, PTH: 0.15mm" |
 | `min_track_width`, `min_clearance` | 0.065 | PCBWay min trace/spacing 0.065 mm |
 | `max_aspect_ratio` | 14 | PCBWay max 14:1 |
 | `min_mask_web` | 0.1 | PCBWay 4 mil green mask bridge (the `generic` value) |
@@ -330,6 +385,13 @@ ratio, 4 mil green mask bridge), for the IPC-2226 builds: type I (one microvia l
 | `min_bga_pad`, `min_bga_pitch` | 0.2, 0.4 | not in the table |
 
 A 0.07 mm 1080 build-up layer under a 0.1 mm laser drill is 0.7:1, inside the 0.8:1.
+
+`max_controlled_depth_aspect_ratio` is 1 in every preset, from Sanmina's fab note "Backdrilling and
+Blind/Buried Via Formation" (https://www.sanmina.com/pdf/solutions/bbf.pdf): blind via formation
+by controlled depth drilling "is limited by the throw of copper-plating baths to a maximum aspect
+ratio of 1:1". `min_controlled_depth_drill` is 0.2 mm in `generic` and `jlcpcb`, their blind via
+drill, and applies once `hdi = true`. On `hdi-6l-1n1` a 0.15 mm controlled depth drill reaches
+In1.Cu or In4.Cu (0.123 mm deep), not In2.Cu.
 
 ### Design rule checks
 
@@ -399,7 +461,8 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
 | `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
 | `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair; only holes whose spans share a dielectric count, so a microvia beside a buried via is not a pair |
-| `stacked-via` | error | always | a via on the same spot as another via of its net through the same dielectric (drilled twice), or stacked on another via at one layer when `stacked_microvias` is off |
+| `stacked-via` | error | always | a via on the same spot as another via of its net through the same dielectric (drilled twice), stacked on another via at one layer when `stacked_microvias` is off, or stacked with a controlled depth via at all |
+| `via-lamination` | error | always | vias whose span and drill kind match no drill step of the lamination (see Lamination), per via type and span; the message lists every span the lamination drills, by drill kind |
 | `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
 | `class-width` | error | always | a track narrower than its class width that is not a neck-down |
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
@@ -1042,7 +1105,8 @@ names instead, `--via-cost` in mm of
 track, default 3, times the via's `cost`), charges `--bend-cost` mm of track for
 each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
-it would cross, remembers the spot as congested, and those nets go back in the queue. The search
+it would cross or whose via holes it would bring within `min_hole_to_hole` of its own (holes whose
+spans share a dielectric), remembers the spot as congested, and those nets go back in the queue. The search
 steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
 45 degree bends; afterwards runs are pulled tight with two-segment 45 degree doglegs and any 90
 degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit

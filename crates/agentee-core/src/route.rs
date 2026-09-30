@@ -585,6 +585,15 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         if specs.is_empty() {
             return Err("the board defines no [[vias]]".into());
         }
+        let listed: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
+        specs.retain(|s| board.stackup.drills_via(s).is_ok());
+        if specs.is_empty() {
+            return Err(format!(
+                "class {class}: no via of {} matches a drill step of the lamination; {}",
+                listed.join(", "),
+                board.stackup.lamination_summary()
+            ));
+        }
         let options: Vec<ViaOption> = specs
             .iter()
             .map(|s| {
@@ -598,6 +607,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     cost: s.cost,
                     in_pad: opts.via_in_pad
                         && s.drill.to_mm() <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
+                    controlled_depth: s.drill_kind == crate::board::DrillKind::ControlledDepth,
                 }
             })
             .collect();
@@ -773,9 +783,11 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                             let conn = conn_found(&grid, &p, net, &ctx);
                             let mut hits: Vec<usize> = (0..routed.len())
                                 .filter(|&k| {
-                                    routed[k]
-                                        .as_ref()
-                                        .is_some_and(|r| r.net != net && conflicts(r, &conn, &ctx))
+                                    routed[k].as_ref().is_some_and(|r| {
+                                        r.net != net
+                                            && (conflicts(r, &conn, &ctx)
+                                                || holes_crowd(r, &conn, &ctx))
+                                    })
                                 })
                                 .collect();
                             let partners: Vec<usize> = hits
@@ -891,9 +903,21 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                 });
             }
         }
-        for conn in routed.into_iter().flatten() {
+        let mut done: Vec<Conn> = routed.into_iter().flatten().collect();
+        let mut placements: Vec<Vec<(P, usize)>> = Vec::new();
+        for i in 0..done.len() {
+            let others: Vec<&Conn> =
+                done.iter().enumerate().filter(|&(j, _)| j != i).map(|(_, c)| c).collect();
+            let placed = placed_vias(&grid, &done[i], &others, &ctx);
+            placements.push(placed.clone());
+            let c = &mut done[i];
+            c.vias = placed.iter().map(|p| p.0).collect();
+            c.options = placed.iter().map(|p| p.1).collect();
+        }
+        for (conn, placed) in done.into_iter().zip(placements) {
             out.routed += 1;
-            let placed = placed_vias(&grid, &conn, &ctx);
+            let placed: Vec<(P, &ViaOption)> =
+                placed.into_iter().map(|(at, k)| (at, &ctx.vias[k])).collect();
             let name = layout.nets[conn.net].name.clone();
             for (l, pts) in conn.tracks {
                 for w in pts.windows(2) {
@@ -948,6 +972,7 @@ struct ViaOption {
     drill_r: f64,
     cost: f64,
     in_pad: bool,
+    controlled_depth: bool,
 }
 
 impl ViaOption {
@@ -964,33 +989,70 @@ fn dielectrics(a: usize, b: usize) -> u32 {
     (a.min(b)..a.max(b)).filter(|&k| k < 32).fold(0, |m, k| m | 1 << k)
 }
 
-fn cheapest_fit(grid: &Grid, ctx: &Ctx, at: P, a: usize, b: usize, net: usize) -> Option<usize> {
+fn clear_of_routed(ctx: &Ctx, k: usize, at: P, net: usize, others: &[&Conn]) -> bool {
+    let probe = Conn {
+        net,
+        tracks: Vec::new(),
+        vias: vec![at],
+        options: vec![k],
+        hops: Vec::new(),
+        necks: Vec::new(),
+    };
+    let via = &ctx.vias[k];
+    others.iter().all(|r| {
+        (r.net == net || !conflicts(r, &probe, ctx))
+            && r.vias.iter().zip(&r.options).all(|(w, &j)| {
+                let other = &ctx.vias[j];
+                (r.net == net && geom::dist(*w, at) < 1e-6)
+                    || !via.shares_dielectric(other)
+                    || geom::dist(*w, at) >= via.drill_r + other.drill_r + ctx.hole_gap - 1e-6
+            })
+    })
+}
+
+fn cheapest_fit(
+    grid: &Grid,
+    ctx: &Ctx,
+    at: P,
+    a: usize,
+    b: usize,
+    net: usize,
+    others: &[&Conn],
+) -> Option<usize> {
     let (x, y) = grid.cell(at);
     let inside = x >= 0 && y >= 0 && (x as usize) < grid.w && (y as usize) < grid.h;
     (0..ctx.vias.len())
         .filter(|&k| ctx.vias[k].joins(a, b))
         .filter(|&k| inside && grid.via_ok(k, &ctx.vias[k], x as usize, y as usize, net, true).0)
+        .filter(|&k| clear_of_routed(ctx, k, at, net, others))
         .min_by(|&i, &j| {
             let (x, y) = (&ctx.vias[i], &ctx.vias[j]);
             x.cost.total_cmp(&y.cost).then(x.layers.len().cmp(&y.layers.len()))
         })
 }
 
-fn placed_vias<'o>(grid: &Grid, c: &Conn, ctx: &Ctx<'o>) -> Vec<(P, &'o ViaOption)> {
+fn placed_vias(grid: &Grid, c: &Conn, others: &[&Conn], ctx: &Ctx) -> Vec<(P, usize)> {
     let mut out: Vec<(P, usize, usize, usize)> = Vec::new();
     for (k, &at) in c.vias.iter().enumerate() {
         let (a, b) = c.hops.get(k).copied().unwrap_or((usize::MAX, usize::MAX));
         if let Some(last) = out.last_mut()
             && geom::dist(last.0, at) < 1e-6
-            && let Some(o) =
-                cheapest_fit(grid, ctx, at, last.2.min(a).min(b), last.3.max(a).max(b), c.net)
+            && let Some(o) = cheapest_fit(
+                grid,
+                ctx,
+                at,
+                last.2.min(a).min(b),
+                last.3.max(a).max(b),
+                c.net,
+                others,
+            )
         {
             *last = (at, o, last.2.min(a).min(b), last.3.max(a).max(b));
             continue;
         }
         out.push((at, c.options[k], a.min(b), a.max(b)));
     }
-    out.into_iter().map(|(at, o, _, _)| (at, &ctx.vias[o])).collect()
+    out.into_iter().map(|(at, o, _, _)| (at, o)).collect()
 }
 
 struct Ctx<'a> {
@@ -1049,12 +1111,21 @@ struct Found {
 fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize, ctx: &Ctx) -> Conn {
     let (tracks, vias) = geometry(grid, path, a, b, net);
     let hops = hops_of(grid, path);
-    let options =
-        vias.iter().zip(&hops).map(|(&at, &(l, nl))| via_at(grid, ctx, at, l, nl, net)).collect();
+    let stacked = |k: usize| {
+        [k.wrapping_sub(1), k + 1]
+            .iter()
+            .any(|&j| vias.get(j).is_some_and(|w| geom::dist(*w, vias[k]) < 1e-6))
+    };
+    let options = vias
+        .iter()
+        .zip(&hops)
+        .enumerate()
+        .map(|(k, (&at, &(l, nl)))| via_at(grid, ctx, at, l, nl, net, stacked(k)))
+        .collect();
     Conn { net, tracks, vias, options, hops, necks: Vec::new() }
 }
 
-fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize) -> usize {
+fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize, stacked: bool) -> usize {
     let (x, y) = grid.cell(at);
     let penalty = 20.0 * grid.g;
     (0..ctx.vias.len())
@@ -1062,7 +1133,7 @@ fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize) -> usi
         .map(|k| {
             let o = &ctx.vias[k];
             let (ok, clash) = grid.via_ok(k, o, x as usize, y as usize, net, true);
-            let misfit = if !ok {
+            let misfit = if !ok || (stacked && o.controlled_depth) {
                 1e9
             } else if clash {
                 penalty
@@ -1515,6 +1586,17 @@ fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
     false
 }
 
+fn holes_crowd(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
+    r.vias.iter().zip(&r.options).any(|(v, &k)| {
+        let via = &ctx.vias[k];
+        c.vias.iter().zip(&c.options).any(|(w, &j)| {
+            let other = &ctx.vias[j];
+            via.shares_dielectric(other)
+                && geom::dist(*v, *w) < via.drill_r + other.drill_r + ctx.hole_gap - 1e-6
+        })
+    })
+}
+
 fn attraction(
     grid: &Grid,
     geo: &[&Conn],
@@ -1875,11 +1957,11 @@ fn search_between(
     let (sources, goals) = (sources.as_slice(), goals.as_slice());
     let plane = grid.w * grid.h;
     let unpack = |i: usize| (i / plane, (i % plane) % grid.w, (i % plane) / grid.w);
-    let hop = |x: usize, y: usize, l: usize, ul: usize, clash: bool| -> Option<f64> {
+    let hop = |x: usize, y: usize, l: usize, ul: usize, clash: bool, stacking: bool| {
         ctx.vias
             .iter()
             .enumerate()
-            .filter(|(_, o)| o.joins(l, ul))
+            .filter(|(_, o)| o.joins(l, ul) && !(stacking && o.controlled_depth))
             .filter_map(|(k, o)| {
                 let (ok, via_clash) = grid.via_ok(k, o, x, y, net, soft);
                 ok.then_some(
@@ -1986,7 +2068,7 @@ fn search_between(
                 if !grid.ok(u, net, soft).0 {
                     continue;
                 }
-                let Some(cost) = hop(x, y, ul, l, clash) else { continue };
+                let Some(cost) = hop(x, y, ul, l, clash, false) else { continue };
                 let c = f + cost;
                 let ku = local(u).unwrap();
                 if (c as f32) < rest[ku] {
@@ -2046,8 +2128,14 @@ fn search_between(
                         heap.push(Node { f: c + h, i: j * 9 + d });
                     }
                 }
+                let below = states.from(k, NODIR);
+                let stacking = d0 == NODIR && below != usize::MAX;
                 if !via_layers.contains(&l)
-                    || (!ctx.stack_vias && d0 == NODIR && states.from(k, NODIR) != usize::MAX)
+                    || (stacking && !ctx.stack_vias)
+                    || (stacking && {
+                        let bl = unpack(below / 9).0;
+                        !ctx.vias.iter().any(|o| !o.controlled_depth && o.joins(bl, l))
+                    })
                 {
                     continue;
                 }
@@ -2059,7 +2147,7 @@ fn search_between(
                     if !ok || h == f32::MAX as f64 {
                         continue;
                     }
-                    let Some(cost) = hop(x, y, l, nl, clash) else { continue };
+                    let Some(cost) = hop(x, y, l, nl, clash, stacking) else { continue };
                     let c = here + cost;
                     if (c as f32) < states.cost(kj, NODIR) {
                         states.set(kj, NODIR, c as f32, state);
@@ -2600,6 +2688,7 @@ mod tests {
             drill_r: 0.1,
             cost: 1.0,
             in_pad,
+            controlled_depth: false,
         }
     }
 
@@ -2921,6 +3010,119 @@ mod tests {
     }
 
     #[test]
+    fn a_merged_stack_keeps_clear_of_copper_routed_in_the_same_pass() {
+        let option = |layers: &[usize], via_r: f64, cost: f64| ViaOption {
+            name: "v".into(),
+            layers: layers.to_vec(),
+            dielectrics: dielectrics(layers[0], layers[layers.len() - 1]),
+            via_r,
+            drill_r: 0.05,
+            cost,
+            in_pad: false,
+            controlled_depth: false,
+        };
+        let vias =
+            [option(&[0, 1], 0.1, 1.0), option(&[1, 2], 0.1, 1.0), option(&[0, 1, 2], 0.3, 0.5)];
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            smd: &[],
+            widths: vec![0.1; 3],
+            clearance: 0.1,
+            via_layers: &[0, 1, 2],
+            vias: &vias,
+            stack_vias: true,
+            routing: &[0, 1, 2],
+            opts: &opts,
+            necking: None,
+        };
+        let mut grid = open_grid(50, 50, 3);
+        grid.vias.push(ViaMap::new(3, 50, 50));
+        grid.vias.push(ViaMap::new(3, 50, 50));
+        let at = [2.05, 2.05];
+        let stack = Conn {
+            net: 0,
+            tracks: Vec::new(),
+            vias: vec![at, at],
+            options: vec![0, 1],
+            hops: vec![(0, 1), (1, 2)],
+            necks: Vec::new(),
+        };
+        assert_eq!(placed_vias(&grid, &stack, &[], &ctx), [(at, 2)]);
+        let beside = Conn {
+            net: 1,
+            tracks: vec![(2, vec![[2.4, 0.5], [2.4, 4.0]])],
+            vias: Vec::new(),
+            options: Vec::new(),
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
+        assert_eq!(placed_vias(&grid, &stack, &[&beside], &ctx), [(at, 0), (at, 1)]);
+        let copper = Conn {
+            net: 1,
+            tracks: Vec::new(),
+            vias: vec![[2.05, 2.37]],
+            options: vec![0],
+            hops: vec![(0, 1)],
+            necks: Vec::new(),
+        };
+        assert_eq!(placed_vias(&grid, &stack, &[&copper], &ctx), [(at, 0), (at, 1)]);
+        let hole = Conn {
+            net: 0,
+            tracks: Vec::new(),
+            vias: vec![[2.05, 2.33]],
+            options: vec![0],
+            hops: vec![(0, 1)],
+            necks: Vec::new(),
+        };
+        assert_eq!(placed_vias(&grid, &stack, &[&hole], &ctx), [(at, 0), (at, 1)]);
+    }
+
+    #[test]
+    fn rip_up_counts_holes_closer_than_the_hole_gap() {
+        let option = |layers: &[usize]| ViaOption {
+            name: "v".into(),
+            layers: layers.to_vec(),
+            dielectrics: dielectrics(layers[0], layers[layers.len() - 1]),
+            via_r: 0.1,
+            drill_r: 0.05,
+            cost: 1.0,
+            in_pad: false,
+            controlled_depth: false,
+        };
+        let vias = [option(&[0, 1]), option(&[2, 3])];
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            hole_gap: 0.3,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            smd: &[],
+            widths: vec![0.1; 4],
+            clearance: 0.1,
+            via_layers: &[0, 1, 2, 3],
+            vias: &vias,
+            stack_vias: true,
+            routing: &[0, 1, 2, 3],
+            opts: &opts,
+            necking: None,
+        };
+        let one = |net: usize, at: P, k: usize| Conn {
+            net,
+            tracks: Vec::new(),
+            vias: vec![at],
+            options: vec![k],
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
+        let (a, b) = (one(1, [1.0, 1.0], 0), one(0, [1.35, 1.0], 0));
+        assert!(!conflicts(&a, &b, &ctx) && holes_crowd(&a, &b, &ctx));
+        assert!(!holes_crowd(&a, &one(0, [1.45, 1.0], 0), &ctx));
+        assert!(!holes_crowd(&a, &one(0, [1.35, 1.0], 1), &ctx));
+    }
+
+    #[test]
     fn each_via_option_blocks_by_its_own_size_and_span() {
         let micro = ViaOption {
             name: "uv".into(),
@@ -2930,6 +3132,7 @@ mod tests {
             drill_r: 0.05,
             cost: 1.0,
             in_pad: false,
+            controlled_depth: false,
         };
         let through = ViaOption {
             name: "std".into(),
@@ -2939,6 +3142,7 @@ mod tests {
             drill_r: 0.1,
             cost: 3.0,
             in_pad: false,
+            controlled_depth: false,
         };
         let vias = [micro, through];
         let mut grid = open_grid(60, 40, 4);
