@@ -202,6 +202,19 @@ impl Grid {
         }
     }
 
+    fn block_silk(&mut self, silk: &[crate::layout::SilkBox], via_r: f64) {
+        let layers = self.via.len() / (self.w * self.h);
+        let reach = via_r + self.g / 2.0;
+        for b in silk.iter().filter(|b| b.outline.len() >= 3) {
+            for (x, y) in self.cells_near(&Shape::Poly(b.outline.clone()), reach) {
+                for l in 0..layers {
+                    let i = self.idx(l, x, y);
+                    self.via[i] = BLOCK;
+                }
+            }
+        }
+    }
+
     fn clear_routed(&mut self) {
         self.rt.iter_mut().for_each(|v| *v = FREE);
         self.rv.iter_mut().for_each(|v| *v = FREE);
@@ -566,6 +579,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             grid.add_drill(c, r + ctx.drill_r + ctx.hole_gap);
         }
         grid.block_smd(&ctx);
+        grid.block_silk(&layout.silk, via_r);
 
         let conns: Vec<(P, P, usize)> =
             layout.ratsnest.iter().filter(|(_, _, n)| nets.contains(n)).cloned().collect();
@@ -1429,7 +1443,10 @@ fn anchors(
     let own: Vec<&Obstacle> =
         obstacles.iter().chain(fresh).filter(|o| o.net == Some(net)).collect();
     let mut seen = vec![false; own.len()];
-    let mut stack: Vec<usize> = (0..own.len()).filter(|&i| own[i].shape.dist(p) < 1e-6).collect();
+    let at: Vec<usize> = (0..own.len()).filter(|&i| own[i].shape.dist(p) < 1e-6).collect();
+    let pads: Vec<usize> =
+        at.iter().copied().filter(|&i| matches!(own[i].shape, Shape::Poly(_))).collect();
+    let mut stack = if pads.is_empty() { at } else { pads };
     stack.iter().for_each(|&i| seen[i] = true);
     let mut group = Vec::new();
     while let Some(i) = stack.pop() {
