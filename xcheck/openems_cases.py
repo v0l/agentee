@@ -117,15 +117,34 @@ for c in cases:
             sub.SetDispersiveMaterialProperty(k, eps_delta=float(eps_delta[k]), eps_relax=float(eps_relax[k]))
     else:
         sub = csx.AddMaterial("sub", epsilon=c["er"])
-    sub.AddBox([0, y0, 0], [L, y1, h])
+    via = c.get("via")
+    top = 2 * h if via else h
+    sub.AddBox([0, y0, 0], [L, y1, top])
     if c["copper"] > 0:
         metal = csx.AddConductingSheet("cu", conductivity=5.8e7, thickness=c["copper"] * 1e-3)
     else:
         metal = csx.AddMetal("pec")
-    metal.AddBox([0.5, -w / 2, h], [L - 0.5, w / 2, h], priority=10)
-    metal.AddBox([0, y0, 0], [L, y1, 0], priority=10)
     xs = [0, 0.5, L - 0.5, L, 0.45, 0.55, L - 0.55, L - 0.45]
     ys = [y0, y1, -w / 2, w / 2]
+    port_z = [(0, h), (0, h)]
+    if via:
+        x = L / 2
+        r_drill, r_pad, r_anti = via["drill"] / 2, via["pad"] / 2, via["antipad"] / 2
+        ring = lambda r: [[x + r * np.cos(a) for a in np.linspace(0, 2 * np.pi, 64, endpoint=False)],
+                          [r * np.sin(a) for a in np.linspace(0, 2 * np.pi, 64, endpoint=False)]]
+        metal.AddBox([0.5, -w / 2, top], [x, w / 2, top], priority=10)
+        metal.AddBox([x, -w / 2, 0], [L - 0.5, w / 2, 0], priority=10)
+        metal.AddBox([0, y0, h], [L, y1, h], priority=10)
+        sub.AddCylinder([x, 0, h - 0.01], [x, 0, h + 0.01], r_anti, priority=20)
+        metal.AddCylinder([x, 0, 0], [x, 0, top], r_drill, priority=30)
+        for z in [0, top]:
+            metal.AddPolygon(ring(r_pad), "z", z, priority=30)
+        port_z = [(h, top), (h, 0)]
+        xs += [x - r_anti, x + r_anti, x - r_drill, x + r_drill, x]
+        ys += [-r_anti, r_anti, -r_drill, r_drill, 0]
+    else:
+        metal.AddBox([0.5, -w / 2, h], [L - 0.5, w / 2, h], priority=10)
+        metal.AddBox([0, y0, 0], [L, y1, 0], priority=10)
     if c.get("stub"):
         x = L / 2
         metal.AddBox([x - w / 2, 0, h], [x + w / 2, c["stub"], h], priority=10)
@@ -135,14 +154,14 @@ for c in cases:
     ports = []
     for i, x in enumerate([0.5, L - 0.5]):
         ports.append(
-            fdtd.AddLumpedPort(i + 1, 50, [x - 0.05, -w / 2, 0], [x + 0.05, w / 2, h], "z", excite=1 if i == 0 else 0, priority=5)
+            fdtd.AddLumpedPort(i + 1, 50, [x - 0.05, -w / 2, port_z[i][0]], [x + 0.05, w / 2, port_z[i][1]], "z", excite=1 if i == 0 else 0, priority=5)
         )
 
     air = 8.0
     third = cell / 3
     xs = sorted(set(xs + [-air, L + air]))
     ys = sorted(set(ys + [y0 - air, y1 + air, -w / 2 - third, -w / 2 + 2 * third, w / 2 + third, w / 2 - 2 * third]))
-    zs = list(np.linspace(0, h, 7)) + [-air, h + air]
+    zs = list(np.linspace(0, top, 7 if top == h else 13)) + [-air, top + air]
     mesh.AddLine("x", xs)
     mesh.AddLine("y", ys)
     mesh.AddLine("z", zs)
