@@ -62,6 +62,10 @@ fn throughput(n: usize, pml: usize, steps: &[usize], reps: usize) {
     }
 }
 
+fn strip(x0: f64, x1: f64, w: f64) -> Copper {
+    Copper::Poly(vec![[x0, -w / 2.0], [x1, -w / 2.0], [x1, w / 2.0], [x0, w / 2.0]])
+}
+
 fn through_via(m: &mut PcbModel, via: &Value, len: f64, w: f64, h: f64, copper: f64) {
     let d = |k: &str| via[k].as_f64().unwrap();
     let (drill, pad, antipad) = (d("drill"), d("pad"), d("antipad"));
@@ -86,10 +90,10 @@ fn through_via(m: &mut PcbModel, via: &Value, len: f64, w: f64, h: f64, copper: 
         Dielectric { z0: -2.0 * h, z1: -h, er, tan, pinned: true },
     ];
     m.copper = vec![
-        (0, Copper::Seg([0.5, 0.0], at, w)),
+        (0, strip(0.5, at[0], w)),
         (0, Copper::Circle(at, pad / 2.0)),
         (1, Copper::Rings(Rings::new(vec![m.outline.clone(), circle(antipad / 2.0)]))),
-        (2, Copper::Seg(at, [len - 0.5, 0.0], w)),
+        (2, strip(at[0], len - 0.5, w)),
         (2, Copper::Circle(at, pad / 2.0)),
     ];
     m.vias = vec![(at, drill / 2.0, 0, 2)];
@@ -131,10 +135,7 @@ fn main() {
                 [x - 0.05, w / 2.0],
             ]
         };
-        let mut cu = vec![
-            (0, Copper::Seg([0.5, 0.0], [len - 0.5, 0.0], w)),
-            (1, Copper::Poly(board.clone())),
-        ];
+        let mut cu = vec![(0, strip(0.5, len - 0.5, w)), (1, Copper::Poly(board.clone()))];
         let mut features_x = vec![];
         let mut features_y_extra: Vec<f64> = vec![];
         if let Some(stub) = c["stub"].as_f64() {
