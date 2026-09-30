@@ -100,8 +100,8 @@ fn is_marker(p: &Placed) -> bool {
 }
 
 fn part_to_edge(cx: &Ctx, r: &mut Report) {
-    let n = cx.outline.len();
-    if n < 3 {
+    let edge = cx.edge();
+    if !edge.is_closed() {
         return;
     }
     let need = cx.board.rules.min_part_to_edge.to_mm();
@@ -111,19 +111,10 @@ fn part_to_edge(cx: &Ctx, r: &mut Report) {
         }
         let mut worst: Option<(f64, &str)> = None;
         for q in p.pads.iter().filter(|q| is_smd(q)) {
-            if q.outlines.iter().flatten().any(|c| !geom::point_in_polygon(*c, cx.outline)) {
+            if q.outlines.iter().flatten().any(|c| !edge.contains(*c)) {
                 continue;
             }
-            let gap = q
-                .outlines
-                .iter()
-                .flatten()
-                .flat_map(|c| {
-                    (0..n).map(move |j| {
-                        geom::point_segment_distance(*c, cx.outline[j], cx.outline[(j + 1) % n])
-                    })
-                })
-                .fold(f64::MAX, f64::min);
+            let gap = q.outlines.iter().map(|o| edge.polygon_distance(o)).fold(f64::MAX, f64::min);
             if gap + 1e-6 < need && worst.is_none_or(|w| gap < w.0) {
                 worst = Some((gap, &q.number));
             }
@@ -141,27 +132,18 @@ fn part_to_edge(cx: &Ctx, r: &mut Report) {
     }
 }
 
-fn ring_edge_gap(ring: &[P], outline: &[P]) -> Option<f64> {
-    if ring.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
+fn ring_edge_gap(ring: &[P], edge: geom::BoardEdge) -> Option<f64> {
+    if ring.iter().any(|c| !edge.contains(*c))
+        || edge.cutouts.iter().any(|c| geom::polygon_distance(ring, c) <= 0.0)
+    {
         return None;
     }
-    let (n, m) = (ring.len(), outline.len());
-    let mut best = f64::MAX;
-    for i in 0..n {
-        for j in 0..m {
-            best = best.min(geom::segment_segment_distance(
-                ring[i],
-                ring[(i + 1) % n],
-                outline[j],
-                outline[(j + 1) % m],
-            ));
-        }
-    }
-    Some(best)
+    Some(edge.polygon_distance(ring))
 }
 
 fn part_body_to_edge(cx: &Ctx, r: &mut Report) {
-    if cx.outline.len() < 3 {
+    let edge = cx.edge();
+    if !edge.is_closed() {
         return;
     }
     let need = cx.board.rules.min_body_to_edge.to_mm();
@@ -170,7 +152,7 @@ fn part_body_to_edge(cx: &Ctx, r: &mut Report) {
             continue;
         }
         let (from, rings) = body_outlines(p);
-        let gaps: Vec<Option<f64>> = rings.iter().map(|o| ring_edge_gap(o, cx.outline)).collect();
+        let gaps: Vec<Option<f64>> = rings.iter().map(|o| ring_edge_gap(o, edge)).collect();
         let at = format!("part {}", p.reference);
         if from != BodyFrom::Pads && gaps.iter().any(Option::is_none) {
             r.emit(

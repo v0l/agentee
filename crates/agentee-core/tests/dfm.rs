@@ -764,3 +764,115 @@ fn small_chips_keep_a_tall_part_height_away() {
     assert!(near(17.0, &tall).is_empty());
     assert!(near(13.3, &format!("{TWO_PADS}{FAB_BODY}")).is_empty());
 }
+
+const SLOT: &str = "[[outline.cutouts]]\norigin = [14, 8]\nsize = [2, 4]\n";
+
+#[test]
+fn a_board_cutout_is_board_edge_for_copper_pads_and_holes() {
+    let pcb = format!(
+        "{}{}",
+        track("A", "F.Cu", "[[10.0, 10.0], [13.8, 10.0]]"),
+        track("B", "B.Cu", "[[12.0, 13.0], [12.0, 7.0], [18.0, 7.0], [18.0, 11.0], [13.0, 11.0]]")
+    );
+    let p = load(&Fixture {
+        board: SLOT,
+        parts: &[("R1", "TWO", [17.6, 13.0]), ("R2", "TWO", [15.0, 9.0])],
+        nets: &[("A", &["R1.1"]), ("B", &["R1.2"])],
+        pcb: &pcb,
+        ..Default::default()
+    });
+    let e = hits(&p, "copper-to-edge");
+    assert!(
+        e.len() == 2
+            && e[0].1.contains("track 0 (A) is 0.1mm from the board edge, needs 0.3mm")
+            && e[1].1.contains("track 1 (B) leaves the board"),
+        "{e:?}"
+    );
+    let e = hits(&p, "pad-off-board");
+    assert!(e.len() == 1 && e[0].1.contains("pads 1, 2 hang off the board"), "{e:?}");
+    let p =
+        load(&Fixture { board: SLOT, parts: &[("R1", "TWO", [17.6, 10.0])], ..Default::default() });
+    let e = hits(&p, "pad-to-edge");
+    assert!(e.len() == 1 && e[0].1.contains("pad R1.1 is 0.1mm from the board edge"), "{e:?}");
+    let e = hits(&p, "part-to-edge");
+    assert!(e.len() == 1 && e[0].1.contains("pad 1 is 0.1mm from the board edge"), "{e:?}");
+    let e = hits(&p, "part-body-to-edge");
+    assert!(e.len() == 1 && e[0].1.contains("its pad copper is 0.1mm"), "{e:?}");
+    let p = load(&Fixture {
+        board: SLOT,
+        footprints: &[("NPTH", NPTH)],
+        parts: &[("R1", "NPTH", [16.7, 10.0])],
+        ..Default::default()
+    });
+    let e = hits(&p, "hole-to-edge");
+    assert!(e.len() == 1 && e[0].1.contains("is 0.2mm from the board edge, needs 0.3mm"), "{e:?}");
+    let p = load(&Fixture {
+        board: "[[outline.cutouts]]\norigin = [25, 8]\nsize = [8, 4]\n",
+        ..Default::default()
+    });
+    let e: Vec<_> =
+        p.layouts[0].diags.iter().filter(|d| d.at.contains("outline.cutouts[0]")).collect();
+    assert!(e.len() == 1 && e[0].message.contains("runs past the board outline"), "{e:?}");
+}
+
+#[test]
+fn part_bodies_keep_off_a_board_cutout() {
+    let fab = format!("{TWO_PADS}{FAB_BODY}");
+    let p = load(&Fixture {
+        board: SLOT,
+        footprints: &[("TWO", fab.as_str())],
+        parts: &[("R1", "TWO", [18.6, 10.0])],
+        ..Default::default()
+    });
+    let b = hits(&p, "part-body-to-edge");
+    assert!(b.len() == 1 && b[0].1.contains("its fab outline is 0.6mm"), "{b:?}");
+    let p = load(&Fixture {
+        board: SLOT,
+        footprints: &[("TWO", fab.as_str())],
+        parts: &[("R1", "TWO", [15.0, 10.0])],
+        ..Default::default()
+    });
+    let b = hits(&p, "part-body-to-edge");
+    assert!(b.len() == 1 && b[0].1.contains("reaches past the board edge"), "{b:?}");
+}
+
+#[test]
+fn ceramic_caps_near_a_board_cutout_are_in_the_flex_zone() {
+    let big = chip([1.9, 0.0], [1.0, 1.45]);
+    let p = load(&Fixture {
+        board: SLOT,
+        footprints: &[("C_0805_2012Metric", big.as_str())],
+        parts: &[("C1", "C_0805_2012Metric", [18.0, 10.0])],
+        nets: &[],
+        ..Default::default()
+    });
+    let e = hits(&p, "mlcc-flex-zone-case");
+    assert!(
+        e.len() == 1 && e[0].1.contains("from the edge of board cutout 0 at [16.000, 10.000]"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn a_pour_clears_a_board_cutout_and_its_stored_fill_goes_stale() {
+    let zone = format!(
+        "{}\n[[zones]]\nnet = \"A\"\nlayers = [\"B.Cu\"]\nmin_island_area = 0.0\n",
+        via("A", [5.0, 15.0])
+    );
+    let pour = |board: &str| {
+        let p = load(&Fixture { board, pcb: &zone, ..Default::default() });
+        let l = &p.layouts[0].item;
+        (l.fill_keys[0].hash, l.zones[0].clone(), l.board_cutouts.clone(), l.outline.clone())
+    };
+    let (plain, fill, ..) = pour("");
+    assert!(fill.filled([15.0, 10.0]));
+    let (slotted, fill, cutouts, outline) = pour(SLOT);
+    assert_ne!(plain, slotted);
+    assert!(!fill.filled([15.0, 10.0]) && !fill.filled([16.2, 10.0]) && fill.filled([16.5, 10.0]));
+    let edge = agentee_core::geom::BoardEdge::new(&outline, &cutouts);
+    let closest = fill.rings.iter().flatten().map(|p| edge.distance(*p)).fold(f64::MAX, f64::min);
+    assert!(closest > 0.3 - 1e-6, "fill {closest} from the edge");
+    let (moved, ..) = pour(&SLOT.replace("[14, 8]", "[14, 9]"));
+    assert_ne!(moved, slotted);
+    assert_eq!(pour("").0, plain);
+}

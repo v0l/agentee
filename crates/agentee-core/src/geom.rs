@@ -90,6 +90,52 @@ fn edges(poly: &[P]) -> impl Iterator<Item = (P, P)> + '_ {
     (0..poly.len()).map(move |i| (poly[i], poly[(i + 1) % poly.len()]))
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BoardEdge<'a> {
+    pub outline: &'a [P],
+    pub cutouts: &'a [Vec<P>],
+}
+
+impl<'a> BoardEdge<'a> {
+    pub fn new(outline: &'a [P], cutouts: &'a [Vec<P>]) -> BoardEdge<'a> {
+        BoardEdge { outline, cutouts }
+    }
+
+    pub fn is_closed(self) -> bool {
+        self.outline.len() >= 3
+    }
+
+    pub fn rings(self) -> impl Iterator<Item = &'a [P]> {
+        std::iter::once(self.outline)
+            .chain(self.cutouts.iter().map(Vec::as_slice))
+            .filter(|r| r.len() >= 3)
+    }
+
+    pub fn segments(self) -> impl Iterator<Item = (P, P)> + 'a {
+        self.rings().flat_map(edges)
+    }
+
+    pub fn in_cutout(self, p: P) -> bool {
+        self.cutouts.iter().any(|c| c.len() >= 3 && point_in_polygon(p, c))
+    }
+
+    pub fn contains(self, p: P) -> bool {
+        point_in_polygon(p, self.outline) && !self.in_cutout(p)
+    }
+
+    pub fn distance(self, p: P) -> f64 {
+        self.segments().map(|(a, b)| point_segment_distance(p, a, b)).fold(f64::MAX, f64::min)
+    }
+
+    pub fn segment_distance(self, a: P, b: P) -> f64 {
+        self.segments().map(|(c, d)| segment_segment_distance(a, b, c, d)).fold(f64::MAX, f64::min)
+    }
+
+    pub fn polygon_distance(self, poly: &[P]) -> f64 {
+        edges(poly).map(|(a, b)| self.segment_distance(a, b)).fold(f64::MAX, f64::min)
+    }
+}
+
 pub fn polygon_distance(a: &[P], b: &[P]) -> f64 {
     if a.is_empty() || b.is_empty() {
         return f64::MAX;
@@ -245,6 +291,19 @@ mod tests {
         assert_eq!(tris.len(), 4);
         let area: f64 = tris.iter().map(|t| signed_area(&[l[t[0]], l[t[1]], l[t[2]]]).abs()).sum();
         assert!((area - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn board_edge_measures_to_the_nearest_cutout() {
+        let outline = rounded_rect(20.0, 20.0, 0.0, 0);
+        let cutouts = vec![rounded_rect(2.0, 2.0, 0.0, 0)];
+        let edge = BoardEdge::new(&outline, &cutouts);
+        assert!(!edge.contains([0.0, 0.0]));
+        assert!(edge.contains([5.0, 0.0]));
+        assert!((edge.distance([3.0, 0.0]) - 2.0).abs() < 1e-9);
+        assert!((edge.distance([9.0, 0.0]) - 1.0).abs() < 1e-9);
+        assert_eq!(edge.segments().count(), 8);
+        assert_eq!(edge.segment_distance([-3.0, 0.0], [3.0, 0.0]), 0.0);
     }
 
     #[test]

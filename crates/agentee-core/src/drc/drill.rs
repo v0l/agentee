@@ -361,24 +361,14 @@ fn npth_to_copper(cx: &Ctx, r: &mut Report) {
 }
 
 fn hole_to_edge(cx: &Ctx, r: &mut Report) {
-    if cx.outline.len() < 3 {
+    let edge = cx.edge();
+    if !edge.is_closed() {
         return;
     }
     let need = cx.board.rules.min_copper_to_edge.to_mm();
     for h in cx.holes().into_iter().filter(|h| !h.plated) {
-        let inside = crate::geom::point_in_polygon(h.a, cx.outline)
-            && crate::geom::point_in_polygon(h.b, cx.outline);
-        let gap = (0..cx.outline.len())
-            .map(|i| {
-                crate::geom::segment_segment_distance(
-                    h.a,
-                    h.b,
-                    cx.outline[i],
-                    cx.outline[(i + 1) % cx.outline.len()],
-                )
-            })
-            .fold(f64::MAX, f64::min)
-            - h.r;
+        let inside = edge.contains(h.a) && edge.contains(h.b);
+        let gap = edge.segment_distance(h.a, h.b) - h.r;
         if !inside || gap + 1e-6 < need {
             let how = if !inside || gap < 0.0 {
                 "breaks through the board edge".to_string()

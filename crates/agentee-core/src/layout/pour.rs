@@ -98,7 +98,7 @@ pub(super) struct FillSpec<'a> {
     pub net_name: &'a str,
     pub layer: &'a str,
     pub poly: &'a [P],
-    pub board: &'a [P],
+    pub board: crate::geom::BoardEdge<'a>,
     pub edge_clear: f64,
     pub clearance: f64,
     pub cutouts: &'a [&'a Vec<P>],
@@ -124,7 +124,11 @@ impl FillSpec<'_> {
         h.str(self.net_name);
         h.str(self.layer);
         h.points(self.poly);
-        h.points(self.board);
+        h.points(self.board.outline);
+        if !self.board.cutouts.is_empty() {
+            h.str("board cutouts");
+            self.board.cutouts.iter().for_each(|c| h.points(c));
+        }
         for v in [self.edge_clear, self.clearance, self.min_width, self.min_island_area] {
             h.f64(v);
         }
@@ -260,6 +264,7 @@ pub struct FillCase {
     pub(super) layer: String,
     pub(super) poly: Vec<P>,
     pub(super) board: Vec<P>,
+    pub(super) board_cutouts: Vec<Vec<P>>,
     pub(super) edge_clear: f64,
     pub(super) clearance: f64,
     pub(super) items: Vec<Item>,
@@ -291,7 +296,7 @@ impl FillCase {
             self.net,
             &self.layer,
             &self.poly,
-            &self.board,
+            crate::geom::BoardEdge::new(&self.board, &self.board_cutouts),
             self.edge_clear,
             self.clearance,
             &self.items,
@@ -310,7 +315,7 @@ impl FillCase {
         vector_fill(
             raster,
             &self.poly,
-            &self.board,
+            crate::geom::BoardEdge::new(&self.board, &self.board_cutouts),
             self.edge_clear,
             self.clearance,
             &self.items,
@@ -328,7 +333,7 @@ impl FillCase {
             &self.layer,
             self.net,
             &self.poly,
-            &self.board,
+            crate::geom::BoardEdge::new(&self.board, &self.board_cutouts),
             self.edge_clear,
             self.clearance,
             &self.items,

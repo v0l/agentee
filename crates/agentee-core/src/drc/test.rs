@@ -96,9 +96,9 @@ fn test_pad_geometry(cx: &Ctx, r: &mut Report) {
             if q.drill.is_none() && !q.copper.contains(&cu) {
                 issues.push(format!("is not on the probe side {}", spec.side));
             }
-            if cx.outline.len() >= 3 {
-                let gap = if geom::point_in_polygon(c, cx.outline) {
-                    super::edge_distance(cx.outline, c) - dia / 2.0
+            if cx.edge().is_closed() {
+                let gap = if cx.edge().contains(c) {
+                    cx.edge().distance(c) - dia / 2.0
                 } else {
                     -dia / 2.0
                 };
