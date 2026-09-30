@@ -467,7 +467,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             )?))]))
         }
         "models" => {
-            let p = ops::load(root)?;
+            let p = ops::load_footprints(root)?;
             Ok(ok(vec![text(pretty(&ops::fetch_models(&p)?))]))
         }
         "fab" => {

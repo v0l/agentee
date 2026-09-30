@@ -9,6 +9,10 @@ pub fn load(path: &Path) -> Result<Project, String> {
     Project::load(path).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+pub fn load_footprints(path: &Path) -> Result<Project, String> {
+    Project::load_footprints(path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 pub fn load_checked(path: &Path) -> Result<Project, String> {
     let mut p = load(path)?;
     agentee_sim::checks::apply(&mut p);

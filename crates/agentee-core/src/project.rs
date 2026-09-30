@@ -187,6 +187,14 @@ fn tag(mut d: Diags, path: &Path) -> Vec<Diagnostic> {
 
 impl Project {
     pub fn load(path: &Path) -> std::io::Result<Project> {
+        Self::load_kinds(path, |_| true)
+    }
+
+    pub fn load_footprints(path: &Path) -> std::io::Result<Project> {
+        Self::load_kinds(path, |k| matches!(k, Kind::Board | Kind::Footprint))
+    }
+
+    fn load_kinds(path: &Path, keep: fn(Kind) -> bool) -> std::io::Result<Project> {
         let (root, files) = if path.is_dir() {
             let mut v = Vec::new();
             walk(path, &mut v)?;
@@ -210,7 +218,7 @@ impl Project {
         let mut sch_files = Vec::new();
         let mut pcb_files = Vec::new();
         let mut sim_files = Vec::new();
-        for f in files {
+        for f in files.into_iter().filter(|f| Kind::of(f).is_some_and(keep)) {
             let src = match std::fs::read_to_string(&f) {
                 Ok(s) => s,
                 Err(e) => {

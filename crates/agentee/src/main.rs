@@ -569,7 +569,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             Ok(true)
         }
         Cmd::Models { path } => {
-            let p = ops::load(&path)?;
+            let p = ops::load_footprints(&path)?;
             print_json(&ops::fetch_models(&p)?);
             Ok(true)
         }
