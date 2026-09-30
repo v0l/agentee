@@ -402,8 +402,12 @@ A 0.07 mm 1080 build-up layer under a 0.1 mm laser drill is 0.7:1, inside the 0.
 `max_controlled_depth_aspect_ratio` is 1 in every preset, from Sanmina's fab note "Backdrilling and
 Blind/Buried Via Formation" (https://www.sanmina.com/pdf/solutions/bbf.pdf): blind via formation
 by controlled depth drilling "is limited by the throw of copper-plating baths to a maximum aspect
-ratio of 1:1". `min_controlled_depth_drill` is 0.2 mm in `generic` and `jlcpcb`, their blind via
-drill, and applies once `hdi = true`. On `hdi-6l-1n1` a 0.15 mm controlled depth drill reaches
+ratio of 1:1". No published source gives a controlled depth drill for `generic` or `jlcpcb`:
+JLCPCB's capabilities page lists laser blind vias (0.075 to 0.15 mm), mechanical buried vias and
+backdrilling but no controlled depth drilling. So both presets reject a controlled depth via like
+any other via but `through` (`hdi = false`), and `min_controlled_depth_drill` there is not a number
+of its own but their blind via drill (`min_blind_via_drill`, 0.2 mm), applied once `hdi = true`;
+set `min_controlled_depth_drill` in `[rules]` from your fab's figure. On `hdi-6l-1n1` a 0.15 mm controlled depth drill reaches
 In1.Cu or In4.Cu (0.123 mm deep), not In2.Cu.
 
 ### Design rule checks

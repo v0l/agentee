@@ -432,6 +432,8 @@ rules! {
 
 pub const FAB_PRESETS: &[&str] = &["generic", "jlcpcb", "hdi"];
 
+const BLIND_VIA_DRILL: f64 = 0.2;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FabSetup {
     pub layers: usize,
@@ -484,8 +486,8 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             min_via_drill: mm(0.3),
             min_via_diameter: mm(0.6),
             min_annular_ring: mm(0.15),
-            min_blind_via_drill: mm(0.2),
-            min_controlled_depth_drill: mm(0.2),
+            min_blind_via_drill: mm(BLIND_VIA_DRILL),
+            min_controlled_depth_drill: mm(BLIND_VIA_DRILL),
             min_microvia_drill: mm(0.1),
             max_microvia_drill: mm(0.15),
             min_microvia_diameter: mm(0.3),
@@ -540,8 +542,8 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
                 min_via_drill: mm(if single { 0.3 } else { 0.15 }),
                 min_via_diameter: mm(if single { 0.5 } else { 0.25 }),
                 min_annular_ring: mm(0.05),
-                min_blind_via_drill: mm(0.2),
-                min_controlled_depth_drill: mm(0.2),
+                min_blind_via_drill: mm(BLIND_VIA_DRILL),
+                min_controlled_depth_drill: mm(BLIND_VIA_DRILL),
                 min_microvia_drill: mm(0.1),
                 max_microvia_drill: mm(0.15),
                 min_microvia_diameter: mm(0.3),
@@ -2092,6 +2094,18 @@ severity = { "via-in-pad" = "error" }
         );
         let (_, d) = board(&format!("{src}[rules]\nhdi = true\n"));
         assert!(errors(&d).is_empty(), "{:?}", d.list);
+        let (_, d) = board(&src.replace("jlcpcb", "generic"));
+        assert!(
+            errors(&d)
+                .iter()
+                .any(|m| m.contains("controlled depth, which fab `generic` does not build")),
+            "{:?}",
+            d.list
+        );
+        for fab in ["generic", "jlcpcb"] {
+            let r = fab_rules(fab).unwrap();
+            assert!(!r.hdi && r.min_controlled_depth_drill == r.min_blind_via_drill);
+        }
     }
 
     #[test]
