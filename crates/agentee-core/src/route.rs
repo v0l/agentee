@@ -12,6 +12,7 @@ pub struct RouteOptions {
     pub grid: f64,
     pub via: Option<String>,
     pub via_cost: f64,
+    pub bend_cost: f64,
     pub margin: f64,
     pub pairs: bool,
 }
@@ -24,6 +25,7 @@ impl Default for RouteOptions {
             grid: 0.05,
             via: None,
             via_cost: 1.0,
+            bend_cost: 0.1,
             margin: 5.0,
             pairs: false,
         }
@@ -898,9 +900,9 @@ fn search_between(
                 .then(|| (rl * wh + (y - wy0)) * ww + (x - wx0))
         };
         let n = routing.len() * ww * wh;
-        let mut cost = vec![f32::MAX; n];
-        let mut from = vec![usize::MAX; n];
-        let mut dir = vec![8u8; n];
+        const NODIR: usize = 8;
+        let mut cost = vec![f32::MAX; n * 9];
+        let mut from = vec![usize::MAX; n * 9];
         let mut goal = vec![false; n];
         for &gi in goals {
             if let Some(k) = local(gi) {
@@ -915,24 +917,40 @@ fn search_between(
             let (dx, dy) = ((x as f64 - gx).abs(), (y as f64 - gy).abs());
             (dx.max(dy) + (std::f64::consts::SQRT_2 - 1.0) * dx.min(dy)) * grid.g
         };
+        let bend = |d0: usize, d1: usize| -> Option<f64> {
+            if d0 == NODIR {
+                return Some(0.0);
+            }
+            match (d0 as i64 - d1 as i64).rem_euclid(8).min((d1 as i64 - d0 as i64).rem_euclid(8)) {
+                0 => Some(0.0),
+                1 => Some(opts.bend_cost),
+                2 => Some(3.0 * opts.bend_cost),
+                _ => None,
+            }
+        };
         let mut heap = BinaryHeap::new();
         for &s in sources {
             if let Some(k) = local(s) {
-                cost[k] = 0.0;
+                cost[k * 9 + NODIR] = 0.0;
                 let (_, x, y) = unpack(s);
-                heap.push(Node { f: heur(x, y), i: s });
+                heap.push(Node { f: heur(x, y), i: s * 9 + NODIR });
             }
         }
         let mut hit = None;
-        while let Some(Node { i, .. }) = heap.pop() {
+        while let Some(Node { i: state, f }) = heap.pop() {
+            let (i, d0) = (state / 9, state % 9);
             let k = local(i).unwrap();
+            let here = cost[k * 9 + d0] as f64;
+            let (l, x, y) = unpack(i);
+            if f > here + heur(x, y) + 1e-6 {
+                continue;
+            }
             if goal[k] {
-                hit = Some(i);
+                hit = Some(state);
                 break;
             }
-            let (l, x, y) = unpack(i);
-            let here = cost[k] as f64;
             for (d, (dx, dy)) in DIRS.iter().enumerate() {
+                let Some(turn) = bend(d0, d) else { continue };
                 let (nx, ny) = (x as i64 + dx, y as i64 + dy);
                 if nx < wx0 as i64 || ny < wy0 as i64 || nx > wx1 as i64 || ny > wy1 as i64 {
                     continue;
@@ -950,19 +968,18 @@ fn search_between(
                     continue;
                 }
                 let step = if dx.abs() + dy.abs() == 2 { std::f64::consts::SQRT_2 } else { 1.0 };
-                let turn = if dir[k] != 8 && dir[k] as usize != d { 0.5 } else { 0.0 };
                 let pull = if attract.is_some_and(|a| a.contains(&j)) { 0.5 } else { 1.0 };
                 let push = if repel.is_some_and(|r| r.contains(&j)) { 8.0 } else { 0.0 };
                 let c = here
-                    + (step * pull + turn + push) * grid.g
+                    + (step * pull + push) * grid.g
+                    + turn
                     + grid.hist[j] as f64
                     + if clash { penalty } else { 0.0 };
-                let kj = local(j).unwrap();
+                let kj = local(j).unwrap() * 9 + d;
                 if (c as f32) < cost[kj] {
                     cost[kj] = c as f32;
-                    from[kj] = i;
-                    dir[kj] = d as u8;
-                    heap.push(Node { f: c + heur(nx, ny), i: j });
+                    from[kj] = state;
+                    heap.push(Node { f: c + heur(nx, ny), i: j * 9 + d });
                 }
             }
             let via_checks: Vec<(bool, bool)> =
@@ -975,29 +992,30 @@ fn search_between(
                     if !ok {
                         continue;
                     }
-                    let kj = local(j).unwrap();
+                    let kj = local(j).unwrap() * 9 + NODIR;
                     let c = here + opts.via_cost + if clash || via_clash { penalty } else { 0.0 };
                     if (c as f32) < cost[kj] {
                         cost[kj] = c as f32;
-                        from[kj] = i;
-                        dir[kj] = 8;
-                        heap.push(Node { f: c + heur(x, y), i: j });
+                        from[kj] = state;
+                        heap.push(Node { f: c + heur(x, y), i: j * 9 + NODIR });
                     }
                 }
             }
         }
         if let Some(end) = hit {
-            let mut path = vec![end];
+            let mut path = vec![end / 9];
             let mut cur = end;
-            while let Some(k) = local(cur) {
+            loop {
+                let k = local(cur / 9).unwrap() * 9 + cur % 9;
                 let p = from[k];
                 if p == usize::MAX {
                     break;
                 }
-                path.push(p);
+                path.push(p / 9);
                 cur = p;
             }
             path.reverse();
+            path.dedup();
             return Ok(path);
         }
         let whole = wx0 == 0 && wy0 == 0 && wx1 == grid.w - 1 && wy1 == grid.h - 1;
@@ -1038,7 +1056,9 @@ fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
     tracks.push((layer, run));
     let tracks = tracks
         .into_iter()
-        .map(|(l, pts)| (l, simplify(&pull_tight(grid, l, &simplify(&pts), net))))
+        .map(|(l, pts)| {
+            (l, simplify(&chamfer(grid, l, &octilinear(grid, l, &simplify(&pts), net), net)))
+        })
         .filter(|(_, pts)| pts.len() >= 2)
         .collect();
     (tracks, vias)
@@ -1057,20 +1077,103 @@ fn clear_line(grid: &Grid, l: usize, p: P, q: P, net: usize) -> bool {
     })
 }
 
-fn pull_tight(grid: &Grid, l: usize, pts: &[P], net: usize) -> Vec<P> {
+fn dogleg(p: P, q: P, diagonal_first: bool) -> Vec<P> {
+    let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
+    let d = dx.abs().min(dy.abs());
+    if d < 1e-9 || (dx.abs() - dy.abs()).abs() < 1e-9 {
+        return vec![p, q];
+    }
+    let diag = [d * dx.signum(), d * dy.signum()];
+    let m = if diagonal_first {
+        [p[0] + diag[0], p[1] + diag[1]]
+    } else {
+        [q[0] - diag[0], q[1] - diag[1]]
+    };
+    vec![p, m, q]
+}
+
+fn heading(a: P, b: P) -> Option<P> {
+    let l = geom::dist(a, b);
+    (l > 1e-9).then(|| [(b[0] - a[0]) / l, (b[1] - a[1]) / l])
+}
+
+fn octilinear(grid: &Grid, l: usize, pts: &[P], net: usize) -> Vec<P> {
+    if pts.len() < 3 {
+        return pts.to_vec();
+    }
+    let n = pts.len();
+    let mut out = vec![pts[0]];
+    let mut i = 0;
+    while i < n - 1 {
+        let before =
+            (out.len() >= 2).then(|| heading(out[out.len() - 2], out[out.len() - 1])).flatten();
+        let mut found = None;
+        for j in (i + 1..n.min(i + 120)).rev() {
+            let mut variants = [dogleg(pts[i], pts[j], true), dogleg(pts[i], pts[j], false)];
+            if let Some(h) = before {
+                let keeps = |v: &Vec<P>| {
+                    heading(v[0], v[1]).is_some_and(|g| (g[0] * h[0] + g[1] * h[1]) > 0.99)
+                };
+                if keeps(&variants[1]) && !keeps(&variants[0]) {
+                    variants.swap(0, 1);
+                }
+            }
+            if let Some(v) = variants
+                .into_iter()
+                .find(|v| v.windows(2).all(|w| clear_line(grid, l, w[0], w[1], net)))
+            {
+                found = Some((j, v));
+                break;
+            }
+        }
+        match found {
+            Some((j, v)) => {
+                out.extend_from_slice(&v[1..]);
+                i = j;
+            }
+            None => {
+                out.push(pts[i + 1]);
+                i += 1;
+            }
+        }
+    }
+    simplify(&out)
+}
+
+fn chamfer(grid: &Grid, l: usize, pts: &[P], net: usize) -> Vec<P> {
     if pts.len() < 3 {
         return pts.to_vec();
     }
     let mut out = vec![pts[0]];
-    let mut i = 0;
-    while i < pts.len() - 1 {
-        let mut j = (i + 60).min(pts.len() - 1);
-        while j > i + 1 && !clear_line(grid, l, pts[i], pts[j], net) {
-            j -= 1;
+    for k in 1..pts.len() - 1 {
+        let (a, b, c) = (*out.last().unwrap(), pts[k], pts[k + 1]);
+        let (Some(u), Some(v)) = (heading(a, b), heading(b, c)) else {
+            out.push(b);
+            continue;
+        };
+        if (u[0] * v[0] + u[1] * v[1]).abs() > 1e-6 {
+            out.push(b);
+            continue;
         }
-        out.push(pts[j]);
-        i = j;
+        let reach = (geom::dist(a, b).min(geom::dist(b, c)) * 0.5).min(1.0);
+        let mut done = false;
+        let mut cut = reach;
+        while cut >= grid.g {
+            let p = [b[0] - u[0] * cut, b[1] - u[1] * cut];
+            let q = [b[0] + v[0] * cut, b[1] + v[1] * cut];
+            if clear_line(grid, l, p, q, net) {
+                out.push(p);
+                out.push(q);
+                done = true;
+                break;
+            }
+            cut *= 0.5;
+        }
+        if !done {
+            out.push(b);
+        }
     }
+    out.push(*pts.last().unwrap());
     out
 }
 
