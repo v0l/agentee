@@ -37,6 +37,12 @@ origin = [0, 0]                # top-left corner, default [0, 0]
 corner_radius = 1
 # points = [[0,0], [50,0], [50,30], [0,30]]   # ...or a polygon
 
+[[outline.cutouts]]            # a window, slot or large hole routed through the whole board
+origin = [20, 12]              # a rectangle, same keys as the outline
+size = [6, 2]
+corner_radius = 1              # half the width makes a slot
+# points = [[x, y], ...]       # ...or a polygon
+
 [stackup]
 preset = "jlcpcb-4l-1.6mm-7628"
 finish = "ENIG"
@@ -83,6 +89,16 @@ coplanar_gap = "0.2mm"         # grounded coplanar: pour this far either side, p
 layers = ["F.Cu"]              # outer layers only
 solver = "field"               # check with the GPU field solver (mask, thickness) instead of formulas
 ```
+
+Board cutouts sit with the outline in the board file because they are part of the board's shape:
+the outline is the outer edge and each cutout is an inner edge, both milled from the same
+Edge.Cuts profile. The layout's `[[cutouts]]` only keep zone copper off an area on some layers and
+leave the board whole. A cutout must lie inside the outline. Everything that uses the outline treats
+a cutout edge as board edge: the edge rules (`copper-to-edge`, `pad-to-edge`, `pad-off-board`,
+`part-to-edge`, `part-body-to-edge`, `hole-to-edge`, `edge-pad-reach`, the `mlcc-flex-zone` rules,
+which name the cutout), silk and the watermark, pours (kept `min_copper_to_edge` off), stitching
+vias, test points, the router and tuner, the fab Edge_Cuts profile, the viewers and the FDTD,
+thermal and DC models, where a cutout is air. A stored fill goes stale when a cutout changes.
 
 ### Stackup presets
 
@@ -197,20 +213,20 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `hole-to-copper` | error | always | a via or plated pad hole wall closer than `min_via_hole_to_copper` or `min_pth_hole_to_copper` to copper of another net on a layer the hole passes: tracks, pads, vias, pours |
 | `inner-hole-to-copper` | error | 4+ copper layers | a plated pad hole wall closer than `min_inner_pth_hole_to_copper` to another net's copper on an inner layer |
 | `npth-to-copper` | error | non-plated holes | a non-plated hole wall closer than `min_npth_to_copper` to any copper, its own net's pour included |
-| `hole-to-edge` | error | non-plated holes | a non-plated hole wall closer than `min_copper_to_edge` to the board outline, or through it |
+| `hole-to-edge` | error | non-plated holes | a non-plated hole wall closer than `min_copper_to_edge` to the board outline or a board cutout, or through it |
 | `smd-pad-gap` | error | always | SMD pads of different nets closer than `min_smd_pad_gap`, one line per pair of parts with the closest pads |
-| `pad-to-edge` | error | always | pad copper closer than `min_copper_to_edge` to the board outline; pads marked `edge = true` are exempt |
+| `pad-to-edge` | error | always | pad copper closer than `min_copper_to_edge` to the board outline or a board cutout; pads marked `edge = true` are exempt |
 | `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
 | `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
-| `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
-| `part-body-to-edge` | info | parts | a part body closer than `min_body_to_edge` to the outline, or past it (assembly DFM guides: no component within 1 mm of the edge). The body is the fab outline, else the courtyard, else the pad copper, and the message names which; skips fiducials, mounting holes, parts with `edge` pads and footprints with `overhang = true` |
+| `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline or a board cutout, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
+| `part-body-to-edge` | info | parts | a part body closer than `min_body_to_edge` to the outline or a board cutout, or past it (over a cutout counts as past) (assembly DFM guides: no component within 1 mm of the edge). The body is the fab outline, else the courtyard, else the pad copper, and the message names which; skips fiducials, mounting holes, parts with `edge` pads and footprints with `overhang = true` |
 | `fiducials` | info | parts | no footprint named like `Fiducial` on the board |
 | `tooling-holes` | info | parts | no non-plated hole of 1.5 mm or more |
 | `bga-pad` | error | a BGA | BGA pads (16 or more round SMD pads) smaller than `min_bga_pad` |
 | `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
 | `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
 | `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
-| `mlcc-flex-zone-case` | info | ceramic capacitors | a ceramic capacitor of case 0805 (2012 metric) or larger within `flex_zone` of the outline, a board corner, a mounting hole (a `MountingHole*` footprint) or a non-plated hole of 2 mm or more (Knowles: the stress zone is typically within 5 mm of the PCB edge or fixing points); the longer the chip, the more strain its ends see |
+| `mlcc-flex-zone-case` | info | ceramic capacitors | a ceramic capacitor of case 0805 (2012 metric) or larger within `flex_zone` of the outline, a board corner, a board cutout, a mounting hole (a `MountingHole*` footprint) or a non-plated hole of 2 mm or more (Knowles: the stress zone is typically within 5 mm of the PCB edge or fixing points); the longer the chip, the more strain its ends see |
 | `mlcc-flex-zone` | info | ceramic capacitors | a smaller ceramic capacitor within `flex_zone` whose long axis points at the nearest edge, corner or hole (Murata FAQ: orient the chip horizontal to the stress direction, so its long axis runs along the edge) |
 | `mlcc-flex-zone-info` | info | ceramic capacitors | counts the smaller ceramic capacitors within `flex_zone` that already lie along the edge |
 | `tombstone-risk` | info | chips of 0603 or smaller | a two-pad SMD part of 0603 (1608 metric) or smaller whose pads differ in size or shape, that has a via in one pad and not the other, or whose copper within 0.3 mm of one pad on its layer (tracks, vias, pours of its net) is over three times that of the other; the end that heats first wets first and stands the part up (EMS DFM guides: symmetric lands and balanced copper on both ends) |
@@ -222,8 +238,8 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
 | `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
 | `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
-| `copper-to-edge` | error | always | a track or via closer than `min_copper_to_edge` to the board outline, or off the board |
-| `pad-off-board` | error | always | pads outside the outline; pads marked `edge = true` are exempt |
+| `copper-to-edge` | error | always | a track or via closer than `min_copper_to_edge` to the board outline or a board cutout, or off the board (a track across a cutout leaves the board) |
+| `pad-off-board` | error | always | pads outside the outline or in a board cutout; pads marked `edge = true` are exempt |
 | `stitching` | info | always | counts the vias each `[[stitching]]` entry placed |
 | `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
 | `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
@@ -580,7 +596,8 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
 # min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
 
-[[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin
+[[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin;
+                               # a hole through the board is [[outline.cutouts]] in the board file
 layers = ["In1.Cu"]
 points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
 
@@ -1254,7 +1271,7 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 
 | file | from |
 |---|---|
-| `NAME.board.toml` | the Edge.Cuts outline (inner loops become cutouts), the stackup with thickness, er and loss tangent, the copper finish and mask colour, the design rules and net classes from `NAME.kicad_pro` |
+| `NAME.board.toml` | the Edge.Cuts outline (closed loops inside it become `[[outline.cutouts]]`, loops outside it are left out and reported), the stackup with thickness, er and loss tangent, the copper finish and mask colour, the design rules and net classes from `NAME.kicad_pro` |
 | `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones, with agentee's zone fills stored, and the silk and fab text and lines drawn on the board, with `${TITLE}`, `${DATE}` and the project's text variables filled in |
 | `NAME.sch.toml` | every part with its value, and each net as a list of pins, drawn with net labels |
 | `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept |
@@ -1276,7 +1293,7 @@ imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 p
 | `F_Mask.gbr`, `B_Mask.gbr` | mask openings at the pad outlines, vias tented |
 | `F_Paste.gbr`, `B_Paste.gbr` | paste on SMD pads |
 | `F_SilkS.gbr`, `B_SilkS.gbr` | silk lines, artwork and text in the Hershey stroke font, with the `agentee vX.Y.Z-HASH` watermark |
-| `Edge_Cuts.gbr` | the board outline |
+| `Edge_Cuts.gbr` | the board outline and each board cutout as a closed profile; the fab routes cutouts from it, so they stay out of the drill files and `fab-notes.txt` counts them |
 | `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
