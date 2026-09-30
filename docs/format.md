@@ -578,7 +578,10 @@ Zones on the same layer fill in order of `priority`, then smallest first, and ea
 clearance from the fills already placed, so a small switch-node or supply pour inside a
 board-wide ground pour is poured around rather than shorted to it.
 
-Stitching vias go only where the via clears every other net's copper on each layer it spans,
+Pours keep `min_via_hole_to_copper` from other nets' via holes and `min_npth_to_copper` from
+non-plated holes as well as the clearance, with arcs drawn outside the true circle so the gap is
+never short. Stitching vias go only where the via clears every other net's copper on each layer it spans,
+keeps its hole `min_via_hole_to_copper` from that copper and `min_hole_to_smd_pad` from SMD pads of any net,
 keeps `min_hole_to_hole` from every drill and the edge rule from the outline, and lands inside a
 zone of its net; check reports how many it placed. They are drilled and plotted like any via.
 
