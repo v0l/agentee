@@ -220,6 +220,36 @@ fn shape_points(n: &Node) -> Option<Vec<P>> {
     })
 }
 
+fn outer_layers(stack: &mut Vec<Value>) -> Vec<String> {
+    let mut added = Vec::new();
+    for side in ["F", "B"] {
+        let mut outer = Vec::new();
+        for (kind, suffix) in [("silk", "SilkS"), ("paste", "Paste"), ("mask", "Mask")] {
+            let name = format!("{side}.{suffix}");
+            if stack.iter().any(|l| l["name"] == name.as_str()) {
+                continue;
+            }
+            let layer = match stack.iter().find(|l| l["kind"] == kind) {
+                Some(other) => {
+                    let mut l = other.clone();
+                    l["name"] = json!(name);
+                    l
+                }
+                None if kind == "mask" => json!({ "kind": kind, "name": name, "thickness": 0.01 }),
+                None => json!({ "kind": kind, "name": name }),
+            };
+            outer.push(layer);
+            added.push(name);
+        }
+        if side == "F" {
+            stack.splice(0..0, outer);
+        } else {
+            stack.extend(outer.into_iter().rev());
+        }
+    }
+    added
+}
+
 fn kind_of(t: &str) -> Option<&'static str> {
     let t = t.to_lowercase();
     Some(if t == "copper" {
@@ -434,6 +464,12 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
             .and_then(|f| f.arg(0))
             .filter(|f| *f != "None")
             .map(str::to_string);
+    }
+    if !stack.is_empty() {
+        let added = outer_layers(&mut stack);
+        if !added.is_empty() {
+            notes.push(format!("the stackup gained {}", added.join(", ")));
+        }
     }
     let mut stackup = serde_json::Map::new();
     if stack.is_empty() {
@@ -1076,6 +1112,25 @@ mod tests {
         let sig = b.schematic.nets.iter().find(|n| n.name == "SIG").unwrap();
         assert_eq!(sig.pins, vec!["Q1.1".to_string(), "R1.1".to_string()]);
         assert_eq!(b.layout.tracks.len(), 1);
+    }
+
+    #[test]
+    fn a_stackup_without_silk_gains_silk_paste_and_mask_on_both_sides() {
+        let text = BOARD.replacen(
+            "  (net 0",
+            "  (setup (stackup (layer \"F.SilkS\" (type \"Top Silk Screen\")) (layer \"F.Mask\" (type \"Top Solder Mask\") (thickness 0.02)) (layer \"F.Cu\" (type \"copper\") (thickness 0.035)) (layer \"dielectric 1\" (type \"core\") (thickness 1.5)) (layer \"B.Cu\" (type \"copper\") (thickness 0.035))))\n  (net 0",
+            1,
+        );
+        let b = import_board(&text, None, "t").unwrap();
+        let names: Vec<String> =
+            b.board.stackup.layers.iter().map(|l| l.name.clone().unwrap_or_default()).collect();
+        assert_eq!(
+            names,
+            ["F.SilkS", "F.Paste", "F.Mask", "F.Cu", "", "B.Cu", "B.Mask", "B.Paste", "B.SilkS"]
+        );
+        let b_mask = &b.board.stackup.layers[6];
+        assert_eq!(b_mask.thickness, Some(agentee_core::units::Length::mm(0.02)));
+        assert!(b.notes.iter().any(|n| n.contains("B.SilkS")), "{:?}", b.notes);
     }
 
     #[test]
