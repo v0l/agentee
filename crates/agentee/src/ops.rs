@@ -1209,6 +1209,29 @@ pub fn impedance(q: &ImpedanceQuery) -> Result<Value, String> {
     Ok(v)
 }
 
+pub fn unroute(p: &Project, name: &str, nets: &[String]) -> Result<usize, String> {
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let path = &p.layouts[i].path;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    let mut removed = 0;
+    for key in ["tracks", "vias"] {
+        if let Some(arr) = doc.get_mut(key).and_then(|v| v.as_array_of_tables_mut()) {
+            let before = arr.len();
+            arr.retain(|t| {
+                let net = t.get("net").and_then(|v| v.as_str()).unwrap_or("");
+                !nets.iter().any(|g| agentee_core::layout::glob(g, net))
+            });
+            removed += before - arr.len();
+        }
+    }
+    std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
+    Ok(removed)
+}
+
 pub fn route(
     p: &Project,
     name: &str,

@@ -142,8 +142,14 @@ pub struct NetclassFile {
     pub coplanar_gap: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_skew: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_uncoupled: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub neckdown: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub widths: std::collections::BTreeMap<String, Length>,
 }
 
 macro_rules! rules {
@@ -401,10 +407,17 @@ pub struct Netclass {
     pub diff_gap: Option<Length>,
     pub coplanar_gap: Option<Length>,
     pub max_skew: Option<Length>,
+    pub max_uncoupled: Option<Length>,
+    pub neckdown: Option<Length>,
     pub layers: Vec<String>,
+    pub widths: std::collections::BTreeMap<String, Length>,
 }
 
 impl Netclass {
+    pub fn width_on(&self, layer: &str) -> Length {
+        self.widths.get(layer).copied().unwrap_or(self.track_width)
+    }
+
     pub fn line(&self) -> Line {
         Line {
             diff_gap_mm: self.diff_gap.map(Length::to_mm),
@@ -507,7 +520,10 @@ impl BoardFile {
                     diff_gap: n.diff_gap,
                     coplanar_gap: n.coplanar_gap,
                     max_skew: n.max_skew,
+                    max_uncoupled: n.max_uncoupled,
+                    neckdown: n.neckdown,
                     layers,
+                    widths: n.widths.clone(),
                 }
             })
             .collect();
@@ -613,7 +629,8 @@ impl Board {
             for layer in &n.layers {
                 let Some(g) = self.stackup.geometry(layer) else { continue };
                 let gap = n.line();
-                let z = g.impedance(n.track_width.to_mm(), gap);
+                let width = n.width_on(layer);
+                let z = g.impedance(width.to_mm(), gap);
                 let (impedance_ok, width_for_impedance) = match n.impedance {
                     Some(target) => {
                         let tol = target.0 * n.impedance_tolerance.0 / 100.0;
@@ -634,12 +651,7 @@ impl Board {
                     impedance: z,
                     impedance_ok,
                     width_for_impedance,
-                    current_capacity: Amps(calc::ipc2221_current(
-                        n.track_width.to_mm(),
-                        rise,
-                        cu,
-                        ext,
-                    )),
+                    current_capacity: Amps(calc::ipc2221_current(width.to_mm(), rise, cu, ext)),
                     width_for_current: n
                         .current
                         .map(|a| Length::mm(calc::ipc2221_width(a.0, rise, cu, ext))),
@@ -720,6 +732,23 @@ impl Board {
             if self.netclasses.iter().filter(|o| o.name == n.name).count() > 1 {
                 d.error(&at, format!("netclass name `{}` is used twice", n.name));
             }
+            for (layer, w) in &n.widths {
+                if *w < r.min_track_width {
+                    d.error(
+                        format!("netclass {}", n.name),
+                        format!(
+                            "width {w} on {layer} is under the fab minimum {}",
+                            r.min_track_width
+                        ),
+                    );
+                }
+                if !n.layers.contains(layer) {
+                    d.warn(
+                        format!("netclass {}", n.name),
+                        format!("`widths` names {layer}, which is not in the class `layers`"),
+                    );
+                }
+            }
             if n.track_width < r.min_track_width {
                 d.error(
                     &at,
@@ -791,8 +820,13 @@ impl Board {
             let n = n_of(&self.netclasses, &a.netclass);
             if a.impedance_ok == Some(false) && n.solver != Solver::Field {
                 let target = n.impedance.unwrap();
+                let key = if n.widths.contains_key(&a.layer) {
+                    format!("widths.\"{}\"", a.layer)
+                } else {
+                    "track_width".to_string()
+                };
                 let hint = match a.width_for_impedance {
-                    Some(w) => format!(", use track_width = \"{w}\""),
+                    Some(w) => format!(", use {key} = \"{w}\""),
                     None => ", no width on this layer reaches it".into(),
                 };
                 d.error(
@@ -804,13 +838,16 @@ impl Board {
                 );
             }
             if let (Some(need), Some(i)) = (a.width_for_current, n.current)
-                && need > n.track_width
+                && need > n.width_on(&a.layer)
             {
                 d.error(
                     at,
                     format!(
                         "{} carries only {} for a {} rise, {} needs {need} (IPC-2221)",
-                        n.track_width, a.current_capacity, n.max_temp_rise, i
+                        n.width_on(&a.layer),
+                        a.current_capacity,
+                        n.max_temp_rise,
+                        i
                     ),
                 );
             }

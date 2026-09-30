@@ -201,6 +201,12 @@ enum Cmd {
         /// Cost of a via in mm of track
         #[arg(long, default_value_t = 1.0)]
         via_cost: f64,
+        /// Route differential pairs as coupled pairs where they fit
+        #[arg(long)]
+        pairs: bool,
+        /// Remove the existing tracks and vias of these nets first and route them again
+        #[arg(long)]
+        reroute: bool,
         /// Report without writing the file
         #[arg(long)]
         dry_run: bool,
@@ -516,7 +522,22 @@ fn run(cli: Cli) -> Result<bool, String> {
             print_json(&ops::fab(&p, &name, &out)?);
             Ok(true)
         }
-        Cmd::Route { name, project, nets, layers, grid, via, via_cost, dry_run } => {
+        Cmd::Route {
+            name,
+            project,
+            nets,
+            layers,
+            grid,
+            via,
+            via_cost,
+            pairs,
+            reroute,
+            dry_run,
+        } => {
+            if reroute && !dry_run {
+                let p = ops::load(&project)?;
+                ops::unroute(&p, &name, &nets)?;
+            }
             let p = ops::load(&project)?;
             let opts = agentee_core::route::RouteOptions {
                 nets,
@@ -524,6 +545,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                 grid,
                 via,
                 via_cost,
+                pairs,
                 ..Default::default()
             };
             let r = ops::route(&p, &name, &opts, !dry_run)?;

@@ -44,7 +44,7 @@ pub fn board(board: &Board) -> Vec<(Severity, String, String)> {
         for layer in &n.layers {
             let at = format!("netclass {} on {layer}", n.name);
             let trace = Trace {
-                width: n.track_width.to_mm(),
+                width: n.width_on(layer).to_mm(),
                 diff_gap: n.diff_gap.map(Length::to_mm),
                 coplanar_gap: n.coplanar_gap.map(Length::to_mm),
             };
@@ -69,7 +69,12 @@ pub fn board(board: &Board) -> Vec<(Severity, String, String)> {
             }
             let hint = match width_for(board, layer, &trace, target.0, true) {
                 Ok((w, fine)) => {
-                    format!(", use track_width = \"{}\" ({:.1} ohm)", Length::mm(w), fine.z0)
+                    let key = if n.widths.contains_key(layer) {
+                        format!("widths.\"{layer}\"")
+                    } else {
+                        "track_width".to_string()
+                    };
+                    format!(", use {key} = \"{}\" ({:.1} ohm)", Length::mm(w), fine.z0)
                 }
                 Err(_) => String::new(),
             };

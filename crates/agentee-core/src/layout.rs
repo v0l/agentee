@@ -170,6 +170,10 @@ pub struct FanoutFile {
     pub always: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skip: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nets: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -682,18 +686,23 @@ impl LayoutFile {
                 d.error(&at, "a track needs at least two points");
                 continue;
             }
-            let class_w = nets[net].width;
+            let class_w = class_of(board, &nets[net].class)
+                .map(|c| c.width_on(&t.layer).to_mm())
+                .unwrap_or(nets[net].width);
             let width = t.width.map(Length::to_mm).unwrap_or(class_w);
             let length: f64 =
                 t.points.windows(2).map(|w| geom::dist(w[0].to_mm(), w[1].to_mm())).sum();
+            let neck_limit = class_of(board, &nets[net].class)
+                .and_then(|c| c.neckdown.map(Length::to_mm))
+                .unwrap_or(NECKDOWN);
             let neckdown = width + 1e-6 < class_w
-                && length <= NECKDOWN
+                && length <= neck_limit
                 && width + 1e-6 >= board.rules.min_track_width.to_mm();
             if neckdown {
                 d.info(
                     &at,
                     format!(
-                        "{:.3} mm neck-down to {}, allowed on runs up to {NECKDOWN} mm into a pad",
+                        "{:.3} mm neck-down to {}, allowed on runs up to {neck_limit} mm into a pad",
                         length,
                         Length::mm(width)
                     ),
@@ -774,8 +783,11 @@ impl LayoutFile {
 
         for (i, f) in self.fanouts.iter().enumerate() {
             let at = format!("fanouts[{i}] {}", f.reference);
-            let matched: Vec<&Placed> =
-                parts.iter().filter(|p| glob(&f.reference, &p.reference)).collect();
+            let matched: Vec<&Placed> = parts
+                .iter()
+                .filter(|p| glob(&f.reference, &p.reference))
+                .filter(|p| !f.exclude.iter().any(|x| glob(x, &p.reference)))
+                .collect();
             if matched.is_empty() {
                 d.error(&at, format!("no placed part matches `{}`", f.reference));
                 continue;
@@ -808,6 +820,12 @@ impl LayoutFile {
                 for (pad, c) in &pads {
                     let Some(net) = pad.net else { continue };
                     if f.skip.contains(&pad.number) {
+                        continue;
+                    }
+                    if !f.nets.is_empty() && !f.nets.iter().any(|g| glob(g, &nets[net].name)) {
+                        continue;
+                    }
+                    if vias.iter().any(|v: &Via| geom::dist(v.at, *c) < 1e-6) {
                         continue;
                     }
                     let edge = (c[0] - grid.min[0])
@@ -982,6 +1000,43 @@ impl LayoutFile {
         }
         for s in &tight {
             d.error("clearance", s.clone());
+        }
+
+        let mut drills: Vec<(P, f64, String, Option<usize>)> = vias
+            .iter()
+            .map(|v| {
+                (v.at, v.drill / 2.0, format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]), None)
+            })
+            .collect();
+        for (pi, p) in parts.iter().enumerate() {
+            for pad in &p.pads {
+                if let Some((c, s, _)) = pad.drill {
+                    let name = format!("{}.{}", p.reference, pad.number);
+                    drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi)));
+                }
+            }
+        }
+        let hole_gap = board.rules.min_hole_to_hole.to_mm();
+        let mut close = 0;
+        let mut first = None;
+        for i in 0..drills.len() {
+            for j in i + 1..drills.len() {
+                let (a, b) = (&drills[i], &drills[j]);
+                if a.3.is_some() && a.3 == b.3 {
+                    continue;
+                }
+                let gap = geom::dist(a.0, b.0) - a.1 - b.1;
+                if gap + 1e-6 < hole_gap && geom::dist(a.0, b.0) > 1e-6 {
+                    close += 1;
+                    first.get_or_insert(format!("{} is {} from {}", a.2, Length::mm(gap), b.2));
+                }
+            }
+        }
+        if let Some(f) = first {
+            d.error(
+                "drills",
+                format!("{close} drill pairs closer than {}, first: {f}", Length::mm(hole_gap)),
+            );
         }
 
         let edge_clear = board.rules.min_copper_to_edge.to_mm();
@@ -1350,6 +1405,8 @@ impl LayoutFile {
             }
             let mut coupled = 0.0;
             let mut wrong: Option<(f64, f64)> = None;
+            let mut uncoupled = 0.0;
+            let budget = class.and_then(|c| c.max_uncoupled.map(Length::to_mm)).unwrap_or(0.0);
             if let Some(g) = gap {
                 for ta in tracks.iter().filter(|t| t.net == a) {
                     for tb in tracks.iter().filter(|t| t.net == b && t.layer == ta.layer) {
@@ -1362,6 +1419,7 @@ impl LayoutFile {
                                     if (sep - want).abs() <= 0.1 * g + 0.005 {
                                         coupled += overlap;
                                     } else if sep < want + 2.0 * g && overlap > 0.05 {
+                                        uncoupled += overlap;
                                         wrong = Some((sep - (ta.width + tb.width) / 2.0, overlap));
                                     }
                                 }
@@ -1369,7 +1427,7 @@ impl LayoutFile {
                         }
                     }
                 }
-                if let Some((got, len)) = wrong {
+                if let Some((got, len)) = wrong.filter(|_| uncoupled > budget) {
                     d.error(
                         &at,
                         format!("runs {len:.2} mm at a {got:.3} mm gap, the class wants {g} mm"),

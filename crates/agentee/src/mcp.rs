@@ -122,6 +122,21 @@ fn tools() -> Value {
             }), &["from", "to", "add"]),
         },
         {
+            "name": "route",
+            "description": "Autoroute the ratsnest of the named nets of a layout on a grid, keeping each class's width, clearance, layers and via, and append the tracks and vias to the layout file. Existing copper is never moved unless reroute is set.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "nets": { "type": "string", "description": "comma separated, * and ? globs" },
+                "layers": { "type": "string", "description": "comma separated copper layers, default all" },
+                "grid": { "type": "number", "default": 0.05 },
+                "via": { "type": "string" },
+                "via_cost": { "type": "number", "default": 1.0 },
+                "pairs": { "type": "boolean" },
+                "reroute": { "type": "boolean", "description": "remove these nets' tracks and vias first" },
+                "dry_run": { "type": "boolean" },
+            }), &["name", "nets"]),
+        },
+        {
             "name": "sparam",
             "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
             "inputSchema": s(json!({
@@ -349,6 +364,34 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             arg(a, "amplitude").unwrap_or("0.6mm"),
             arg(a, "pitch").unwrap_or("0.4mm"),
         )?))])),
+        "route" => {
+            let name = arg(a, "name").ok_or("name is required")?;
+            let split = |k: &str| -> Vec<String> {
+                arg(a, k)
+                    .map(|v| {
+                        v.split(',')
+                            .map(|x| x.trim().to_string())
+                            .filter(|x| !x.is_empty())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            let nets = split("nets");
+            let dry_run = flag(a, "dry_run");
+            if flag(a, "reroute") && !dry_run {
+                ops::unroute(&ops::load(root)?, name, &nets)?;
+            }
+            let opts = agentee_core::route::RouteOptions {
+                nets,
+                layers: split("layers"),
+                grid: a.get("grid").and_then(Value::as_f64).unwrap_or(0.05),
+                via: arg(a, "via").map(str::to_string),
+                via_cost: a.get("via_cost").and_then(Value::as_f64).unwrap_or(1.0),
+                pairs: flag(a, "pairs"),
+                ..Default::default()
+            };
+            Ok(ok(vec![text(pretty(&ops::route(&ops::load(root)?, name, &opts, !dry_run)?))]))
+        }
         "sparam" => {
             let p = ops::load(root)?;
             let q = ops::SparamQuery {

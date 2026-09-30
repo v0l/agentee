@@ -72,6 +72,9 @@ impedance_tolerance = "10%"    # default 10%
 diff_gap = "0.15mm"            # makes it a differential pair
 layers = ["F.Cu"]              # default: every copper layer
 # track_width omitted: solved for the target on the first layer
+# widths = { "B.Cu" = "0.16mm" } # per layer width where one width does not fit every layer
+# max_uncoupled = "1.5mm"      # total run allowed off the pair gap, default 20% of the length
+# neckdown = "1.5mm"           # how far a track may run below class width into a pad, default 0.5mm
 
 [[netclasses]]
 name = "RF"
@@ -376,11 +379,13 @@ at = [7.2, 8.9]
 # pitch = [1.2, 0]
 
 [[fanouts]]                    # a via in every connected pad of a BGA
-ref = "U3"
+ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans out every plane pad
 # via = "bga"                  # default: each net's class via
 # skip_rings = 2               # leave the two outer rings for escape on the outer layer
 # always = ["GND", "3V3"]      # nets that get a via even in those rings
 # skip = ["A1", "B7"]          # pads to leave alone
+# nets = ["GND", "3V3"]        # only pads on these nets, globs allowed
+# exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob
 
 [[zones]]
 net = "GND"
@@ -418,11 +423,28 @@ narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fa
 
 A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
-where it meets a small pad.
+(the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
+keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
 artwork get the same checks as reference labels: overlap, pads, silk outlines, board edge.
+
+### Autorouting
+
+`agentee route NAME --nets 'FX_D*,SPI_*' --layers F.Cu,In2.Cu,B.Cu` (MCP `route`) routes the
+ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the tracks and vias
+to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
+It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
+the board edge, keeps new vias `min_hole_to_hole` from every drill, uses the class via to change
+layer (`--via` to override, `--via-cost` in mm of track), and never moves what is already there
+unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
+it would cross, remembers the spot as congested, and those nets go back in the queue. Paths are
+pulled tight into straight runs afterwards. The second net of a pair is drawn toward its
+partner at the pair gap; `--pairs` tries to route both halves together as one coupled track
+first. When a few connections fail, route them again together with the nets around them and
+`--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
+first, then let the router fill in the rest, a class at a time.
 
 Pairs and length rules live in the layout too:
 
