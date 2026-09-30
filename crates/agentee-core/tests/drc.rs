@@ -151,6 +151,44 @@ fn a_courtyard_over_a_mounting_hole_is_an_error_on_either_side() {
     assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
 }
 
+fn frame_footprint() -> String {
+    let mut f = String::from("name = \"Frame\"\n");
+    for (n, x) in [("1", -5.5), ("2", 5.5)] {
+        f += &format!(
+            "[[pads]]\nnumber = \"{n}\"\nkind = \"smd\"\nshape = \"rect\"\nat = [{x}, 0]\nsize = [0.5, 0.5]\n"
+        );
+    }
+    for h in [6.0, 5.0] {
+        let c = [[-h, -h], [h, -h], [h, h], [-h, h]];
+        for k in 0..4 {
+            let (a, b) = (c[k], c[(k + 1) % 4]);
+            f += &format!(
+                "[[graphics]]\nkind = \"line\"\nlayer = \"F.CrtYd\"\nstart = [{}, {}]\nend = [{}, {}]\n",
+                a[0], a[1], b[0], b[1]
+            );
+        }
+    }
+    f
+}
+
+#[test]
+fn a_ring_courtyard_leaves_its_inside_free_for_other_parts() {
+    let frame = frame_footprint();
+    let files = [("footprints/Frame.fp.toml", frame.as_str())];
+    let sch = "\n[[parts]]\nref = \"J1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+               footprint = \"Frame\"\n\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\n\
+               at = [20.32, 20.32]\n";
+    let pcb = |x: f64| {
+        format!(
+            "[[footprints]]\nref = \"J1\"\nat = [15, 10]\n\n[[footprints]]\nref = \"R1\"\nat = [{x}, 10]\n"
+        )
+    };
+    let e = errors(&project_with(&files, &[], sch, &pcb(15.0)));
+    assert!(!e.iter().any(|t| t.contains("courtyard overlaps")), "{e:?}");
+    let e = errors(&project_with(&files, &[], sch, &pcb(19.5)));
+    assert!(e.iter().any(|t| t.contains("courtyard overlaps")), "{e:?}");
+}
+
 const TIGHT: &str = r#"name = "Tight2"
 [[pads]]
 number = "1"
