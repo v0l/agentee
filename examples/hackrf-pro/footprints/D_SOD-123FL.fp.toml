@@ -1,0 +1,157 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "D_SOD-123FL"
+description = "D_SOD-123FL"
+tags = ["D_SOD-123FL"]
+mount = "smd"
+model = "${KICAD6_3DMODEL_DIR}/Diode_SMD.3dshapes/D_SOD-123F.wrl"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.45, 0.0]
+size = [1.0, 1.5]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [1.45, 0.0]
+size = [1.0, 1.5]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, -1.0]
+end = [-2.2, 1.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, -1.0]
+end = [1.65, -1.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, 1.0]
+end = [1.65, 1.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.2, -1.15]
+end = [-2.2, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.2, -1.15]
+end = [2.2, -1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.2, -1.15]
+end = [2.2, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.2, 1.15]
+end = [-2.2, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.4, -0.9]
+end = [1.4, -0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.4, 0.9]
+end = [-1.4, -0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.75, 0.0]
+end = [-0.35, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, 0.0]
+end = [-0.35, -0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, 0.0]
+end = [-0.35, 0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, 0.0]
+end = [0.25, -0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.25, -0.4]
+end = [0.25, 0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.25, 0.0]
+end = [0.75, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.25, 0.4]
+end = [-0.35, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.4, -0.9]
+end = [1.4, 0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.4, 0.9]
+end = [-1.4, 0.9]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [2.0, 1.85]
+text = "${REFERENCE}"
+size = 1.0

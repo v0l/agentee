@@ -1,0 +1,102 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "R_0402_1005Metric_v5"
+description = "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf), generated with kicad-footprint-generator"
+tags = ["resistor"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0402_1005Metric.wrl"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.51, 0.0]
+size = [0.54, 0.64]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.51, 0.0]
+size = [0.54, 0.64]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.153641, -0.38]
+end = [0.153641, -0.38]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.153641, 0.38]
+end = [0.153641, 0.38]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.93, -0.47]
+end = [0.93, 0.47]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.93, -0.47]
+end = [0.93, -0.47]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.93, 0.47]
+end = [-0.93, 0.47]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.93, 0.47]
+end = [-0.93, -0.47]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.525, -0.27]
+end = [0.525, 0.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.525, -0.27]
+end = [0.525, -0.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.525, 0.27]
+end = [-0.525, 0.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.525, 0.27]
+end = [-0.525, -0.27]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.26
+rotation = 90.0

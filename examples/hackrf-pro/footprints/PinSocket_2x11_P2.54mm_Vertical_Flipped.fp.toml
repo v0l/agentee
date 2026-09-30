@@ -1,0 +1,332 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "PinSocket_2x11_P2.54mm_Vertical_Flipped"
+description = "Through hole straight socket strip, 2x11, 2.54mm pitch, double cols (from Kicad 4.0.7), script generated"
+tags = ["Through", "hole", "socket", "strip", "THT", "2x11", "2.54mm", "double", "row"]
+mount = "tht"
+model = "${KICAD9_3DMODEL_DIR}/Connector_PinSocket_2.54mm.3dshapes/PinSocket_2x11_P2.54mm_Vertical.step"
+model_offset = [2.54, 0.0, 0.0]
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [2.54, 0.0]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "3"
+kind = "tht"
+shape = "circle"
+at = [0.0, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "4"
+kind = "tht"
+shape = "circle"
+at = [2.54, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "5"
+kind = "tht"
+shape = "circle"
+at = [0.0, 5.08]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "6"
+kind = "tht"
+shape = "circle"
+at = [2.54, 5.08]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "7"
+kind = "tht"
+shape = "circle"
+at = [0.0, 7.62]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "8"
+kind = "tht"
+shape = "circle"
+at = [2.54, 7.62]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "9"
+kind = "tht"
+shape = "circle"
+at = [0.0, 10.16]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "10"
+kind = "tht"
+shape = "circle"
+at = [2.54, 10.16]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "11"
+kind = "tht"
+shape = "circle"
+at = [0.0, 12.7]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "12"
+kind = "tht"
+shape = "circle"
+at = [2.54, 12.7]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "13"
+kind = "tht"
+shape = "circle"
+at = [0.0, 15.24]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "14"
+kind = "tht"
+shape = "circle"
+at = [2.54, 15.24]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "15"
+kind = "tht"
+shape = "circle"
+at = [0.0, 17.78]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "16"
+kind = "tht"
+shape = "circle"
+at = [2.54, 17.78]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "17"
+kind = "tht"
+shape = "circle"
+at = [0.0, 20.32]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "18"
+kind = "tht"
+shape = "circle"
+at = [2.54, 20.32]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "19"
+kind = "tht"
+shape = "circle"
+at = [0.0, 22.86]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "20"
+kind = "tht"
+shape = "circle"
+at = [2.54, 22.86]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "21"
+kind = "tht"
+shape = "circle"
+at = [0.0, 25.4]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "22"
+kind = "tht"
+shape = "circle"
+at = [2.54, 25.4]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.87, 26.73]
+end = [-1.33, 26.73]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.87, -1.33]
+end = [3.87, 26.73]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.87, -1.33]
+end = [1.27, -1.33]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.27, 1.27]
+end = [-1.33, 1.27]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.27, -1.33]
+end = [1.27, 1.27]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -1.33]
+end = [-1.33, -1.33]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.33, 1.27]
+end = [-1.33, 26.73]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.33, -1.33]
+end = [-1.33, 0.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.34, 27.15]
+end = [4.34, -1.8]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.34, -1.8]
+end = [-1.76, -1.8]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.76, 27.15]
+end = [4.34, 27.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.76, -1.8]
+end = [-1.76, 27.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.81, 26.67]
+end = [3.81, -1.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.81, -1.27]
+end = [-0.27, -1.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.27, -1.27]
+end = [-1.27, -0.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.27, 26.67]
+end = [3.81, 26.67]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.27, -0.27]
+end = [-1.27, 26.67]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [1.27, 12.7]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 270.0

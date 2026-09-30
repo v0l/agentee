@@ -1,0 +1,33 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "TestPoint_Pad_D1.0mm"
+description = "SMD pad as test Point, diameter 1.0mm"
+tags = ["test", "point", "SMD", "pad"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "circle"
+at = [0.0, 0.0]
+size = [1.0, 1.0]
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [0.0, 0.0]
+radius = 0.7
+width = 0.12
+
+[[graphics]]
+kind = "circle"
+layer = "F.CrtYd"
+center = [0.0, 0.0]
+radius = 1.0
+width = 0.05
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.45]
+text = "${REFERENCE}"
+size = 1.0

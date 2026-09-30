@@ -1,0 +1,114 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "TSLP-2-19_v4"
+description = "https://www.infineon.com/cms/en/product/packages/PG-TSLP/PG-TSLP-2-19/"
+tags = ["PG-TSLP-2-19"]
+mount = "smd"
+model = "${KICAD6_3DMODEL_DIR}/Diode_SMD.3dshapes/D_SMA.step"
+model_scale = [0.19, 0.24, 0.126]
+
+[[pads]]
+kind = "smd"
+shape = "rect"
+at = [-0.33, 0.0]
+size = [0.45, 0.28]
+rotation = 90.0
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "rect"
+at = [0.33, 0.0]
+size = [0.45, 0.28]
+rotation = 90.0
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.325, 0.0]
+size = [0.6, 0.35]
+rotation = 90.0
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.325, 0.0]
+size = [0.6, 0.35]
+rotation = 90.0
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.65, 0.45]
+end = [-0.25, 0.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.65, -0.45]
+end = [-0.25, -0.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.65, -0.45]
+end = [-0.65, 0.425]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-0.65, 0.45]
+end = [0.65, -0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, 0.3]
+end = [-0.5, 0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, -0.3]
+end = [0.5, 0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, 0.3]
+end = [-0.5, -0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, -0.3]
+end = [0.5, -0.3]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-0.5, -0.3]
+end = [-0.15, 0.3]
+width = 0.1
+fill = "solid"
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -0.6]
+text = "${REFERENCE}"
+size = 0.25

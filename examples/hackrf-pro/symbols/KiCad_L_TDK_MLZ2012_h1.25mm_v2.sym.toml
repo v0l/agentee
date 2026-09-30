@@ -1,0 +1,12 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_L_TDK_MLZ2012_h1.25mm_v2"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.right]]
+number = "2"

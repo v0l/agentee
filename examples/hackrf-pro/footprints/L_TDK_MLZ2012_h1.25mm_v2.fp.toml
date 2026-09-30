@@ -1,0 +1,102 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "L_TDK_MLZ2012_h1.25mm_v2"
+description = "Inductor, TDK, MLZ2012_h1.25mm, 2.0x1.25x1.25mm (https://product.tdk.com/en/system/files/dam/doc/product/inductor/inductor/smd/catalog/inductor_commercial_decoupling_mlz2012_en.pdf)"
+tags = ["Inductor", "MLZ", "2012"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Inductor_SMD.3dshapes/L_0805_2012Metric.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.9, 0.0]
+size = [0.8, 1.2]
+roundrect_ratio = 0.2
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.9, 0.0]
+size = [0.8, 1.2]
+roundrect_ratio = 0.2
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.35, -0.7]
+end = [0.35, -0.7]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.35, 0.7]
+end = [0.35, 0.7]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.55, -0.85]
+end = [-1.55, -0.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.55, -0.85]
+end = [-1.55, 0.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.55, 0.85]
+end = [1.55, -0.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.55, 0.85]
+end = [1.55, 0.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.0, -0.625]
+end = [-1.0, -0.625]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, -0.625]
+end = [-1.0, 0.625]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.0, 0.625]
+end = [1.0, -0.625]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, 0.625]
+end = [1.0, 0.625]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

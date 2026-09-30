@@ -1,0 +1,147 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "R_Array_Convex_4x0402"
+description = "Chip Resistor Network, ROHM MNR04 (see mnr_g.pdf)"
+tags = ["resistor", "array"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_Array_Convex_4x0402.wrl"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-0.5, -0.75]
+size = [0.5, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [-0.5, -0.25]
+size = [0.5, 0.3]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "rect"
+at = [-0.5, 0.25]
+size = [0.5, 0.3]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "rect"
+at = [-0.5, 0.75]
+size = [0.5, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "rect"
+at = [0.5, 0.75]
+size = [0.5, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "6"
+kind = "smd"
+shape = "rect"
+at = [0.5, 0.25]
+size = [0.5, 0.3]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [0.5, -0.25]
+size = [0.5, 0.3]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "8"
+kind = "smd"
+shape = "rect"
+at = [0.5, -0.75]
+size = [0.5, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.25, 1.18]
+end = [-0.25, 1.18]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.25, -1.18]
+end = [-0.25, -1.18]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.0, 1.25]
+end = [-1.0, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.0, 1.25]
+end = [1.0, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.0, -1.25]
+end = [-1.0, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.0, -1.25]
+end = [1.0, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, 1.0]
+end = [-0.5, -1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, 1.0]
+end = [-0.5, 1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, -1.0]
+end = [0.5, -1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, -1.0]
+end = [0.5, 1.0]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5

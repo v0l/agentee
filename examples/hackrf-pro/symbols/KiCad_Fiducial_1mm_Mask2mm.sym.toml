@@ -1,0 +1,4 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_Fiducial_1mm_Mask2mm"
+reference = "U"
+description = "pins of an imported KiCad footprint"

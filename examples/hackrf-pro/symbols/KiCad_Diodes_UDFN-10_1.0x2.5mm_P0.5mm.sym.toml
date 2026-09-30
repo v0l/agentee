@@ -1,0 +1,36 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_Diodes_UDFN-10_1.0x2.5mm_P0.5mm"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.left]]
+number = "10"
+
+[[bodies.left]]
+number = "2"
+
+[[bodies.left]]
+number = "3"
+
+[[bodies.left]]
+number = "4"
+
+[[bodies.right]]
+number = "5"
+
+[[bodies.right]]
+number = "6"
+
+[[bodies.right]]
+number = "7"
+
+[[bodies.right]]
+number = "8"
+
+[[bodies.right]]
+number = "9"

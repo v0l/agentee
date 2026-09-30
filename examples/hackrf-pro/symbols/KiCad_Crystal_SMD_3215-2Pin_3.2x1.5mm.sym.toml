@@ -1,0 +1,12 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_Crystal_SMD_3215-2Pin_3.2x1.5mm"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.right]]
+number = "2"

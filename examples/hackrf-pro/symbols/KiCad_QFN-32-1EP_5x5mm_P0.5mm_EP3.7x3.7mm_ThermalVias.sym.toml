@@ -1,0 +1,105 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_QFN-32-1EP_5x5mm_P0.5mm_EP3.7x3.7mm_ThermalVias"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.left]]
+number = "10"
+
+[[bodies.left]]
+number = "11"
+
+[[bodies.left]]
+number = "12"
+
+[[bodies.left]]
+number = "13"
+
+[[bodies.left]]
+number = "14"
+
+[[bodies.left]]
+number = "15"
+
+[[bodies.left]]
+number = "16"
+
+[[bodies.left]]
+number = "17"
+
+[[bodies.left]]
+number = "18"
+
+[[bodies.left]]
+number = "19"
+
+[[bodies.left]]
+number = "2"
+
+[[bodies.left]]
+number = "20"
+
+[[bodies.left]]
+number = "21"
+
+[[bodies.left]]
+number = "22"
+
+[[bodies.left]]
+number = "23"
+
+[[bodies.left]]
+number = "24"
+
+[[bodies.right]]
+number = "25"
+
+[[bodies.right]]
+number = "26"
+
+[[bodies.right]]
+number = "27"
+
+[[bodies.right]]
+number = "28"
+
+[[bodies.right]]
+number = "29"
+
+[[bodies.right]]
+number = "3"
+
+[[bodies.right]]
+number = "30"
+
+[[bodies.right]]
+number = "31"
+
+[[bodies.right]]
+number = "32"
+
+[[bodies.right]]
+number = "33"
+
+[[bodies.right]]
+number = "4"
+
+[[bodies.right]]
+number = "5"
+
+[[bodies.right]]
+number = "6"
+
+[[bodies.right]]
+number = "7"
+
+[[bodies.right]]
+number = "8"
+
+[[bodies.right]]
+number = "9"

@@ -1,0 +1,88 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "Crystal_SMD_3225-4Pin_3.2x2.5mm"
+description = "SMD3225/4, Crystal, 3.2x2.5mm package, SMD, generated with kicad-footprint-generator make_crystal.py, http://www.txccrystal.com/images/pdf/7m-accuracy.pdf"
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Crystal.3dshapes/Crystal_SMD_3225-4Pin_3.2x2.5mm.step"
+model_rotate = [-0.0, -0.0, -90.0]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.85, -1.1]
+size = [1.4, 1.2]
+rotation = -90.0
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [-0.85, 1.1]
+size = [1.4, 1.2]
+rotation = -90.0
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "roundrect"
+at = [0.85, 1.1]
+size = [1.4, 1.2]
+rotation = -90.0
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.85, -1.1]
+size = [1.4, 1.2]
+rotation = -90.0
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.4, 0.25]
+end = [-1.4, -0.25]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.4, 0.25]
+end = [1.4, -0.25]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.65, -1.6], [-1.84799, -1.40201], [-1.84799, -1.79799], [-1.65, -1.6]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.75, -2.1]
+end = [1.75, 2.1]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[1.25, -1.6], [-0.625, -1.6], [-1.25, -0.975001], [-1.25, 1.6], [1.25, 1.6]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.8
+rotation = 180.0

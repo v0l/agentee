@@ -24,7 +24,8 @@ the KiCad libraries so an agent rarely draws a part by hand.
 The full reference is [docs/format.md](docs/format.md), also printed by `agentee docs` and served
 over MCP as `format_reference`. `examples/demo` is a small project that passes `check`, and
 `examples/lna` is a worked design: a bias-tee powered SPF5189Z LNA with its circuit and layout
-notes in `DESIGN.md`.
+notes in `DESIGN.md`. `examples/hackrf-pro` is Great Scott Gadgets' HackRF Pro board imported from
+KiCad, a large real layout to check and benchmark against.
 
 ## Use
 
@@ -42,6 +43,7 @@ agentee calc trace-width --current 2A
 agentee view                                   # live window, reloads on save
 agentee view --3d                              # layouts open in the 3D view
 agentee models                                 # fetch the KiCad 3D models the footprints name
+agentee fill sensor-node                       # fill the zones and store the copper in the layout
 ```
 
 `check` exits 1 when there are errors, so it fits in a loop or CI.
@@ -59,6 +61,17 @@ Both solvers run through wgpu (Vulkan, Metal or DX12) and fall back to the CPU o
   update kernels come from [antenna-toolbox](https://github.com/v0l/antenna-toolbox). On a 50 ohm
   microstrip it gives return loss under -25 dB and phase velocity within 1.2% of
   Kirschning-Jansen.
+
+## Benchmarks
+
+`crates/agentee-core/benches/fill.rs` times each stage of the zone fill (`clip`, `overlay`,
+`min_width`, `probe`, `keep_connected`, `rasterize`, `fill_zone`) for every zone of the examples,
+plus `check_zones` and a whole project load. Filter to the stage you are working on:
+
+```sh
+cargo bench -p agentee-core --bench fill -- --quick 'fill/hackrf-pro/overlay'
+cargo bench -p agentee-core --bench fill -- 'load/'
+```
 
 ## MCP
 

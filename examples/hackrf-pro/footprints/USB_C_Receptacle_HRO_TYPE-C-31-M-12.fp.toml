@@ -1,0 +1,295 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "USB_C_Receptacle_HRO_TYPE-C-31-M-12"
+description = "USB Type-C receptacle for USB 2.0 and PD, http://www.krhro.com/uploads/soft/180320/1-1P320120243.pdf"
+tags = ["USB_C", "female", "connector", "receptacle", "type-c", "usb-2.0", "usb", "pd"]
+mount = "smd"
+model = "3dmodels/USB_C_Receptacle_HRO_TYPE-C-31-M-12.step"
+model_offset = [-4.5, -3.6, 0.0]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [-2.89, -2.6]
+size = [0.65, 0.65]
+drill = 0.65
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [2.89, -2.6]
+size = [0.65, 0.65]
+drill = 0.65
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "A1"
+kind = "smd"
+shape = "roundrect"
+at = [-3.25, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A4"
+kind = "smd"
+shape = "roundrect"
+at = [-2.45, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A5"
+kind = "smd"
+shape = "roundrect"
+at = [-1.25, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A6"
+kind = "smd"
+shape = "roundrect"
+at = [-0.25, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A7"
+kind = "smd"
+shape = "roundrect"
+at = [0.25, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A8"
+kind = "smd"
+shape = "roundrect"
+at = [1.25, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A9"
+kind = "smd"
+shape = "roundrect"
+at = [2.45, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "A12"
+kind = "smd"
+shape = "roundrect"
+at = [3.25, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B1"
+kind = "smd"
+shape = "roundrect"
+at = [3.25, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B4"
+kind = "smd"
+shape = "roundrect"
+at = [2.45, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B5"
+kind = "smd"
+shape = "roundrect"
+at = [1.75, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B6"
+kind = "smd"
+shape = "roundrect"
+at = [0.75, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B7"
+kind = "smd"
+shape = "roundrect"
+at = [-0.75, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B8"
+kind = "smd"
+shape = "roundrect"
+at = [-1.75, -4.045]
+size = [0.3, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B9"
+kind = "smd"
+shape = "roundrect"
+at = [-2.45, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "B12"
+kind = "smd"
+shape = "roundrect"
+at = [-3.25, -4.045]
+size = [0.6, 1.45]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "S1"
+kind = "tht"
+shape = "oval"
+at = [-4.32, -3.13]
+size = [1.0, 2.1]
+drill = [0.6, 1.7]
+layers = ["*.Cu", "*.Mask", "F.Paste"]
+
+[[pads]]
+number = "S1"
+kind = "tht"
+shape = "oval"
+at = [-4.32, 1.05]
+size = [1.0, 1.6]
+drill = [0.6, 1.2]
+layers = ["*.Cu", "*.Mask", "F.Paste"]
+
+[[pads]]
+number = "S1"
+kind = "tht"
+shape = "oval"
+at = [4.32, -3.13]
+size = [1.0, 2.1]
+drill = [0.6, 1.7]
+layers = ["*.Cu", "*.Mask", "F.Paste"]
+
+[[pads]]
+number = "S1"
+kind = "tht"
+shape = "oval"
+at = [4.32, 1.05]
+size = [1.0, 1.6]
+drill = [0.6, 1.2]
+layers = ["*.Cu", "*.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.7, -1.9]
+end = [4.7, 0.1]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.7, -1.9]
+end = [-4.7, 0.1]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.7, 2.0]
+end = [4.7, 2.45]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.7, 2.0]
+end = [-4.7, 2.45]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.32, -5.27]
+end = [5.32, 4.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.32, -5.27]
+end = [5.32, -5.27]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.32, -5.27]
+end = [-5.32, 4.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.32, 4.15]
+end = [5.32, 4.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.47, -3.65]
+end = [4.47, 3.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.47, -3.65]
+end = [4.47, -3.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.47, -3.65]
+end = [-4.47, 3.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.47, 3.65]
+end = [4.47, 3.65]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 90.0

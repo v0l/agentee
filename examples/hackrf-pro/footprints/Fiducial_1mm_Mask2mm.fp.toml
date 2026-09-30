@@ -1,0 +1,33 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "Fiducial_1mm_Mask2mm"
+description = "Circular Fiducial, 1mm bare copper, 2mm soldermask opening (Level A)"
+tags = ["fiducial"]
+mount = "smd"
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [0.0, 0.0]
+size = [1.0, 1.0]
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "circle"
+layer = "F.CrtYd"
+center = [0.0, 0.0]
+radius = 1.25
+width = 0.05
+
+[[graphics]]
+kind = "circle"
+layer = "F.Fab"
+center = [0.0, 0.0]
+radius = 1.0
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5

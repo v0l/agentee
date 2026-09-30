@@ -1,0 +1,12 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_SMA_MyAntenna_A-SMA-KE-16.5A_EdgeMount_v2"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.right]]
+number = "2"

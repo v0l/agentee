@@ -1,0 +1,57 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_USB_C_Receptacle_HRO_TYPE-C-31-M-12"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "A1"
+
+[[bodies.left]]
+number = "A12"
+
+[[bodies.left]]
+number = "A4"
+
+[[bodies.left]]
+number = "A5"
+
+[[bodies.left]]
+number = "A6"
+
+[[bodies.left]]
+number = "A7"
+
+[[bodies.left]]
+number = "A8"
+
+[[bodies.left]]
+number = "A9"
+
+[[bodies.left]]
+number = "B1"
+
+[[bodies.right]]
+number = "B12"
+
+[[bodies.right]]
+number = "B4"
+
+[[bodies.right]]
+number = "B5"
+
+[[bodies.right]]
+number = "B6"
+
+[[bodies.right]]
+number = "B7"
+
+[[bodies.right]]
+number = "B8"
+
+[[bodies.right]]
+number = "B9"
+
+[[bodies.right]]
+number = "S1"

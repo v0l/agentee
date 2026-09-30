@@ -1,0 +1,127 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "SOT-353_SC-70-5"
+description = "SOT-353, SC-70-5"
+tags = ["SOT-353", "SC-70-5"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-353_SC-70-5.wrl"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.95, -0.65]
+size = [0.65, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, 0.65]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.95, 0.65]
+size = [0.65, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "roundrect"
+at = [0.95, -0.65]
+size = [0.65, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.7, 1.16]
+end = [0.7, 1.16]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.71, -1.16]
+end = [0.7, -1.16]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.08, -1.11], [-1.32, -1.44], [-0.84, -1.44], [-1.08, -1.11]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.6, 1.4]
+end = [1.6, -1.4]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, 1.4]
+end = [1.6, 1.4]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, -1.4]
+end = [1.6, -1.4]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, -1.4]
+end = [-1.6, 1.4]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.675, 1.1]
+end = [-0.675, 1.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.675, -1.1]
+end = [0.675, 1.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.675, -1.1]
+end = [-0.175, -1.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.175, -1.1]
+end = [-0.675, -0.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.675, -0.6]
+end = [-0.675, 1.1]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

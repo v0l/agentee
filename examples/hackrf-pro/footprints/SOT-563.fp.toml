@@ -1,0 +1,161 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "SOT-563"
+description = "SOT, 6 Pin (https://www.jedec.org/system/files/docs/MO-293B.pdf), generated with kicad-footprint-generator ipc_gullwing_generator.py"
+tags = ["SOT", "TO_SOT_SMD", "JEDEC-MO-293-UAAD", "Texas-DRL-6"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-563.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.7125, -0.5]
+size = [0.675, 0.35]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, 0.5]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.7125, 0.5]
+size = [0.675, 0.35]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, -0.5]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -0.935]
+end = [-0.6, -0.935]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -0.935]
+end = [0.6, -0.935]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, 0.935]
+end = [-0.6, 0.935]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, 0.935]
+end = [0.6, 0.935]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.31, -0.5], [-1.64, -0.26], [-1.64, -0.74]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.2, -0.83]
+end = [-0.75, -0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.2, 0.83]
+end = [-1.2, -0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.75, -0.95]
+end = [0.75, -0.95]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.75, -0.83]
+end = [-0.75, -0.95]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.75, 0.83]
+end = [-1.2, 0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.75, 0.95]
+end = [-0.75, 0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.75, -0.95]
+end = [0.75, -0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.75, -0.83]
+end = [1.2, -0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.75, 0.83]
+end = [0.75, 0.95]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.75, 0.95]
+end = [-0.75, 0.95]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.2, -0.83]
+end = [1.2, 0.83]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.2, 0.83]
+end = [0.75, 0.83]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[-0.6, -0.5], [-0.6, 0.8], [0.6, 0.8], [0.6, -0.8], [-0.3, -0.8]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.4
+rotation = 90.0

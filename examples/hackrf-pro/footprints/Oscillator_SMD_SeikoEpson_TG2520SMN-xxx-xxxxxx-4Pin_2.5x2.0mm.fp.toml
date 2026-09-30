@@ -1,0 +1,135 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "Oscillator_SMD_SeikoEpson_TG2520SMN-xxx-xxxxxx-4Pin_2.5x2.0mm"
+description = "Miniature Crystal Clock Oscillator TG2520 series, https://support.epson.biz/td/api/doc_check.php?dl=app_TG2520SMN&lang=en"
+tags = ["Miniature", "Crystal", "Clock", "Oscillator", "TG2520", "series", "SMD", "SMT"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Crystal.3dshapes/Crystal_SMD_2520-4Pin_2.5x2.0mm.step"
+model_rotate = [-0.0, -0.0, -90.0]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.7, -1.05]
+size = [1.0, 0.8]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [-0.7, 1.05]
+size = [1.0, 0.8]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "roundrect"
+at = [0.7, 1.05]
+size = [1.0, 0.8]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.7, -1.05]
+size = [1.0, 0.8]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.11, 0.32]
+end = [1.11, -0.32]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.11, 0.32]
+end = [-1.11, -0.32]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.4, -1.05], [-1.59799, -0.85201], [-1.59799, -1.24799], [-1.4, -1.05]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.45, -1.7]
+end = [1.45, 1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.45, -1.7]
+end = [1.45, -1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.45, -1.7]
+end = [-1.45, 1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.45, 1.7]
+end = [1.45, 1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.0, -1.25]
+end = [1.0, 1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, -1.25]
+end = [1.0, -1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, -0.75]
+end = [-0.5, -1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, -0.75]
+end = [-1.0, 1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, 1.25]
+end = [1.0, 1.25]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 180.0

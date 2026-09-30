@@ -1,0 +1,15 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_SW_Tactile_SPST_Angled_PTS645Vx58-2LFS"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.left]]
+number = "2"
+
+[[bodies.right]]
+number = "SH"

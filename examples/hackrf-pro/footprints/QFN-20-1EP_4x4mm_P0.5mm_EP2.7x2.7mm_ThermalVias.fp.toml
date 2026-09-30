@@ -1,0 +1,268 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "QFN-20-1EP_4x4mm_P0.5mm_EP2.7x2.7mm_ThermalVias"
+description = "QFN, 20 Pin (https://www.silabs.com/documents/public/data-sheets/Si5351-B.pdf), generated with kicad-footprint-generator ipc_noLead_generator.py"
+tags = ["QFN", "NoLead"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/Package_DFN_QFN.3dshapes/QFN-20-1EP_4x4mm_P0.5mm_EP2.5x2.5mm.step"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.675, -0.675]
+size = [1.17, 1.17]
+roundrect_ratio = 0.213675
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.675, 0.675]
+size = [1.17, 1.17]
+roundrect_ratio = 0.213675
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.675, -0.675]
+size = [1.17, 1.17]
+roundrect_ratio = 0.213675
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.675, 0.675]
+size = [1.17, 1.17]
+roundrect_ratio = 0.213675
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.95, -1.0]
+size = [0.8, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.0, 0.5]
+
+[[pads]]
+number = "6"
+kind = "smd"
+shape = "roundrect"
+at = [-1.0, 1.95]
+size = [0.25, 0.8]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.5, 0.0]
+
+[[pads]]
+number = "11"
+kind = "smd"
+shape = "roundrect"
+at = [1.95, 1.0]
+size = [0.8, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.0, -0.5]
+
+[[pads]]
+number = "16"
+kind = "smd"
+shape = "roundrect"
+at = [1.0, -1.95]
+size = [0.25, 0.8]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [-0.5, 0.0]
+
+[[pads]]
+number = "21"
+kind = "tht"
+shape = "circle"
+at = [-1.1, -1.1]
+size = [0.5, 0.5]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "21"
+kind = "tht"
+shape = "circle"
+at = [-1.1, 1.1]
+size = [0.5, 0.5]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "21"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [2.7, 2.7]
+layers = ["F.Cu", "F.Mask"]
+
+[[pads]]
+number = "21"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [2.7, 2.7]
+layers = ["B.Cu"]
+
+[[pads]]
+number = "21"
+kind = "tht"
+shape = "circle"
+at = [1.1, -1.1]
+size = [0.5, 0.5]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "21"
+kind = "tht"
+shape = "circle"
+at = [1.1, 1.1]
+size = [0.5, 0.5]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.11, -2.11]
+end = [2.11, -1.385]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.385, -2.11]
+end = [2.11, -2.11]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.385, -2.11]
+end = [-1.81, -2.11]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.11, -1.385]
+end = [-2.11, -1.87]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.11, 2.11]
+end = [2.11, 1.385]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.385, 2.11]
+end = [2.11, 2.11]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.385, 2.11]
+end = [-2.11, 2.11]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.11, 2.11]
+end = [-2.11, 1.385]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-2.11, -2.11], [-2.35, -2.44], [-1.87, -2.44], [-2.11, -2.11]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.6, -2.6]
+end = [-2.6, -2.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.6, -2.6]
+end = [-2.6, 2.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.6, 2.6]
+end = [2.6, -2.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.6, 2.6]
+end = [2.6, 2.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.0, -2.0]
+end = [2.0, 2.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, -2.0]
+end = [2.0, -2.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.0, -1.0]
+end = [-1.0, -2.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.0, 2.0]
+end = [-2.0, 2.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.0, 2.0]
+end = [-2.0, -1.0]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 180.0

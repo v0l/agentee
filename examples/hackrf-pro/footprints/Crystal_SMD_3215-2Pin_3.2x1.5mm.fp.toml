@@ -1,0 +1,100 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "Crystal_SMD_3215-2Pin_3.2x1.5mm"
+description = "SMD Crystal FC-135 https://support.epson.biz/td/api/doc_check.php?dl=brief_FC-135R_en.pdf"
+tags = ["SMD", "SMT", "Crystal"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Crystal.3dshapes/Crystal_SMD_3215-2Pin_3.2x1.5mm.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-1.25, 0.0]
+size = [1.0, 1.8]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [1.25, 0.0]
+size = [1.0, 1.8]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.6, 0.875]
+end = [0.6, 0.875]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.6, -0.875]
+end = [0.6, -0.875]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.0, 1.15]
+end = [2.0, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.0, -1.15]
+end = [-2.0, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.0, -1.15]
+end = [2.0, -1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.0, -1.15]
+end = [2.0, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.6, 0.75]
+end = [1.6, 0.75]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.6, -0.75]
+end = [-1.6, 0.75]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.6, -0.75]
+end = [1.6, -0.75]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.6, -0.75]
+end = [1.6, 0.75]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.8
+rotation = 90.0

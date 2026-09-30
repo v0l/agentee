@@ -1,0 +1,112 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "TSLP-6-4_1.1x0.7mm_P0.4mm_v2"
+description = "TSLP, 6-Pin, 1.1x0.7mm (https://www.infineon.com/cms/en/product/packages/PG-TSLP/PG-TSLP-6-4/)"
+tags = ["TSLP", "NoLead"]
+mount = "smd"
+model = "${KICAD6_3DMODEL_DIR}/Package_DFN_QFN.3dshapes/WQFN-14-1EP_2.5x2.5mm_P0.5mm_EP1.45x1.45mm.wrl"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.2, -0.4]
+size = [0.25, 0.25]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, 0.4]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.2, 0.4]
+size = [0.25, 0.25]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, -0.4]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.45, -0.65]
+end = [-0.1, -0.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.45, -0.25]
+end = [-0.45, 0.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.45, 0.65]
+end = [0.45, -0.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.45, 0.65]
+end = [0.45, 0.65]
+width = 0.1
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-0.45, -0.65], [-0.73, -0.65], [-0.45, -0.93], [-0.45, -0.65]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-0.5, -0.7]
+end = [0.5, 0.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.35, -0.55]
+end = [-0.1, -0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.35, -0.55]
+end = [0.35, 0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.1, -0.55]
+end = [-0.35, -0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.35, 0.55]
+end = [-0.35, 0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, 0.55]
+end = [-0.35, -0.3]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.4

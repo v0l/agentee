@@ -1,0 +1,24 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_TSLP-6-4_1.1x0.7mm_P0.4mm_v2"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.left]]
+number = "2"
+
+[[bodies.left]]
+number = "3"
+
+[[bodies.right]]
+number = "4"
+
+[[bodies.right]]
+number = "5"
+
+[[bodies.right]]
+number = "6"

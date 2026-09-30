@@ -1,0 +1,249 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "TSLP-7-1_v2"
+description = "https://www.infineon.com/cms/en/product/packages/PG-TSLP/PG-TSLP-7-1/"
+mount = "smd"
+model = "3dmodels/Infineon-STP_PG-TSLP-7-1-P-v01_00-EN.stp"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.5, 0.925]
+size = [0.3, 0.35]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.5, 0.0]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.5, -0.925]
+size = [0.3, 0.35]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [-0.5, 0.0]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "roundrect"
+at = [-0.45, -0.4]
+size = [0.3, 0.3]
+roundrect_ratio = 0.3666666667
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [-0.45, 0.0]
+size = [0.3, 0.3]
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "roundrect"
+at = [-0.45, 0.4]
+size = [0.3, 0.3]
+roundrect_ratio = 0.3666666667
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "tht"
+shape = "circle"
+at = [-0.35, -0.3]
+size = [0.4, 0.4]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "7"
+kind = "tht"
+shape = "circle"
+at = [-0.35, 0.3]
+size = [0.4, 0.4]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [0.0, -0.4]
+size = [0.3, 0.3]
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [0.3, 0.3]
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [1.2, 1.1]
+roundrect_ratio = 0.1
+layers = ["F.Cu", "F.Mask"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [1.2, 1.1]
+roundrect_ratio = 0.1
+layers = ["B.Cu"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.4]
+size = [0.3, 0.3]
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "tht"
+shape = "circle"
+at = [0.35, -0.3]
+size = [0.4, 0.4]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "7"
+kind = "tht"
+shape = "circle"
+at = [0.35, 0.3]
+size = [0.4, 0.4]
+drill = 0.3
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "roundrect"
+at = [0.45, -0.4]
+size = [0.3, 0.3]
+roundrect_ratio = 0.3666666667
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [0.45, 0.0]
+size = [0.3, 0.3]
+layers = ["F.Cu", "F.Paste"]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "roundrect"
+at = [0.45, 0.4]
+size = [0.3, 0.3]
+roundrect_ratio = 0.3666666667
+layers = ["F.Cu", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.8, -1.0]
+end = [0.8, 1.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.8, -1.0]
+end = [-0.8, 0.675]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-0.68, 1.2], [-0.68, 1.48], [-0.96, 1.2], [-0.68, 1.2]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.8, 1.25]
+end = [-0.8, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.8, -1.25]
+end = [0.8, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.8, 1.25]
+end = [-0.8, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.8, -1.25]
+end = [0.8, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.65, 1.0]
+end = [-0.35, 1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.65, -1.0]
+end = [0.65, 1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, 1.0]
+end = [-0.65, 0.7]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.65, 0.7]
+end = [-0.65, -1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.65, -1.0]
+end = [0.65, -1.0]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

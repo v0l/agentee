@@ -1,0 +1,103 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "L_Taiyo-Yuden_A251818"
+description = "Inductor, Taiyo Yuden, Type A251818, 2.5mmx1.8mm (https://ds.yuden.co.jp/TYCOMPAS/ut/download?pn=LSQEA251818T470M&fileType=ED)"
+tags = ["inductor", "taiyo-yuden", "smd", "2518"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Inductor_SMD.3dshapes/L_1008_2520Metric.step"
+model_scale = [1.0, 0.9, 1.0]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.05, 0.0]
+size = [0.6, 2.0]
+roundrect_ratio = 0.2
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [1.05, 0.0]
+size = [0.6, 2.0]
+roundrect_ratio = 0.2
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.55, -1.0]
+end = [0.55, -1.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.55, 1.0]
+end = [0.55, 1.0]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.6, -1.25]
+end = [1.6, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, -1.25]
+end = [1.6, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.6, 1.25]
+end = [-1.6, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, 1.25]
+end = [-1.6, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.25, -0.9]
+end = [1.25, 0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.25, -0.9]
+end = [1.25, -0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.25, 0.9]
+end = [-1.25, 0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.25, 0.9]
+end = [-1.25, -0.9]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.62
+rotation = 90.0

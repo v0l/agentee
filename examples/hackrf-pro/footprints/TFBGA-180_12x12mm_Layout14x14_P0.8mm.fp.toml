@@ -1,0 +1,811 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "TFBGA-180_12x12mm_Layout14x14_P0.8mm"
+description = "thin fine-pitch ball grid array package, 180 balls, https://www.nxp.com/docs/en/package-information/SOT570-3.pdf"
+tags = ["TFBGA180", "SOT570-3", "BGA"]
+mount = "smd"
+
+[[pads]]
+number = "A1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -5.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 14
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "B1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -4.4]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 14
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "C1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "C4"
+kind = "smd"
+shape = "circle"
+at = [-2.8, -3.599999]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C5"
+kind = "smd"
+shape = "circle"
+at = [-2.0, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C6"
+kind = "smd"
+shape = "circle"
+at = [-1.200001, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C7"
+kind = "smd"
+shape = "circle"
+at = [-0.4, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C8"
+kind = "smd"
+shape = "circle"
+at = [0.4, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C9"
+kind = "smd"
+shape = "circle"
+at = [1.200001, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C10"
+kind = "smd"
+shape = "circle"
+at = [2.0, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C11"
+kind = "smd"
+shape = "circle"
+at = [2.8, -3.599999]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "C12"
+kind = "smd"
+shape = "circle"
+at = [3.6, -3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "D1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "D2"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "D3"
+kind = "smd"
+shape = "circle"
+at = [-3.599999, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.799999, 0.0]
+
+[[pads]]
+number = "D6"
+kind = "smd"
+shape = "circle"
+at = [-1.2, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "D10"
+kind = "smd"
+shape = "circle"
+at = [2.000001, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.799999, 0.0]
+
+[[pads]]
+number = "D13"
+kind = "smd"
+shape = "circle"
+at = [4.4, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "D14"
+kind = "smd"
+shape = "circle"
+at = [5.2, -2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "E4"
+kind = "smd"
+shape = "circle"
+at = [-2.8, -2.000001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E5"
+kind = "smd"
+shape = "circle"
+at = [-2.0, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E6"
+kind = "smd"
+shape = "circle"
+at = [-1.200001, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E7"
+kind = "smd"
+shape = "circle"
+at = [-0.4, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E8"
+kind = "smd"
+shape = "circle"
+at = [0.4, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E9"
+kind = "smd"
+shape = "circle"
+at = [1.200001, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E10"
+kind = "smd"
+shape = "circle"
+at = [2.0, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E11"
+kind = "smd"
+shape = "circle"
+at = [2.8, -2.000001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "E12"
+kind = "smd"
+shape = "circle"
+at = [3.6, -2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "F1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F2"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F3"
+kind = "smd"
+shape = "circle"
+at = [-3.6, -1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F4"
+kind = "smd"
+shape = "circle"
+at = [-2.8, -1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F5"
+kind = "smd"
+shape = "circle"
+at = [-2.0, -1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F10"
+kind = "smd"
+shape = "circle"
+at = [2.0, -1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F11"
+kind = "smd"
+shape = "circle"
+at = [2.8, -1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F12"
+kind = "smd"
+shape = "circle"
+at = [3.6, -1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F13"
+kind = "smd"
+shape = "circle"
+at = [4.4, -1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "F14"
+kind = "smd"
+shape = "circle"
+at = [5.2, -1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "G1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, -0.4]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "G10"
+kind = "smd"
+shape = "circle"
+at = [2.0, -0.4]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "H1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 0.4]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "H10"
+kind = "smd"
+shape = "circle"
+at = [2.0, 0.4]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "J1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J2"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J3"
+kind = "smd"
+shape = "circle"
+at = [-3.6, 1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J4"
+kind = "smd"
+shape = "circle"
+at = [-2.8, 1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J5"
+kind = "smd"
+shape = "circle"
+at = [-2.0, 1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J10"
+kind = "smd"
+shape = "circle"
+at = [2.0, 1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J11"
+kind = "smd"
+shape = "circle"
+at = [2.8, 1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J12"
+kind = "smd"
+shape = "circle"
+at = [3.6, 1.200001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J13"
+kind = "smd"
+shape = "circle"
+at = [4.4, 1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "J14"
+kind = "smd"
+shape = "circle"
+at = [5.2, 1.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "K4"
+kind = "smd"
+shape = "circle"
+at = [-2.8, 2.000001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K5"
+kind = "smd"
+shape = "circle"
+at = [-2.0, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K6"
+kind = "smd"
+shape = "circle"
+at = [-1.200001, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K7"
+kind = "smd"
+shape = "circle"
+at = [-0.4, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K8"
+kind = "smd"
+shape = "circle"
+at = [0.4, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K9"
+kind = "smd"
+shape = "circle"
+at = [1.200001, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K10"
+kind = "smd"
+shape = "circle"
+at = [2.0, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K11"
+kind = "smd"
+shape = "circle"
+at = [2.8, 2.000001]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "K12"
+kind = "smd"
+shape = "circle"
+at = [3.6, 2.0]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "L1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "L2"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "L3"
+kind = "smd"
+shape = "circle"
+at = [-3.599999, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.799999, 0.0]
+
+[[pads]]
+number = "L6"
+kind = "smd"
+shape = "circle"
+at = [-1.2, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "L10"
+kind = "smd"
+shape = "circle"
+at = [2.000001, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.799999, 0.0]
+
+[[pads]]
+number = "L13"
+kind = "smd"
+shape = "circle"
+at = [4.4, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "L14"
+kind = "smd"
+shape = "circle"
+at = [5.2, 2.8]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "M4"
+kind = "smd"
+shape = "circle"
+at = [-2.8, 3.599999]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M5"
+kind = "smd"
+shape = "circle"
+at = [-2.0, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M6"
+kind = "smd"
+shape = "circle"
+at = [-1.200001, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M7"
+kind = "smd"
+shape = "circle"
+at = [-0.4, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M8"
+kind = "smd"
+shape = "circle"
+at = [0.4, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M9"
+kind = "smd"
+shape = "circle"
+at = [1.200001, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M10"
+kind = "smd"
+shape = "circle"
+at = [2.0, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M11"
+kind = "smd"
+shape = "circle"
+at = [2.8, 3.599999]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "M12"
+kind = "smd"
+shape = "circle"
+at = [3.6, 3.6]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "N1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 4.4]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 14
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "P1"
+kind = "smd"
+shape = "circle"
+at = [-5.2, 5.2]
+size = [0.4, 0.4]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 14
+pitch = [0.8, 0.0]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.12, 6.12]
+end = [-6.12, 6.12]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.12, 6.12]
+end = [6.12, -6.12]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-6.12, -4.999999]
+end = [-6.12, 6.12]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.12, -6.12]
+end = [-4.999999, -6.12]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-6.0, -6.0], [-6.5, -6.0], [-6.0, -6.5], [-6.0, -6.0]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-7.0, 7.0]
+end = [-7.0, -7.0]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [7.0, 7.0]
+end = [-7.0, 7.0]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-7.0, -7.0]
+end = [7.0, -7.0]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [7.0, -7.0]
+end = [7.0, 7.0]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-6.0, 6.0]
+end = [6.0, 6.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [6.0, 6.0]
+end = [6.0, -6.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-6.0, -5.0]
+end = [-6.0, 6.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-5.0, -6.0]
+end = [-6.0, -5.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [6.0, -6.0]
+end = [-5.0, -6.0]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 180.0

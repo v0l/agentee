@@ -1,0 +1,189 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "SOIC-8_5.3x5.3mm_P1.27mm"
+description = "SOIC, 8 Pin (JEITA/EIAJ ED-7311-19 variation 08-001-BBA and Atmel/Microchip, 208 mils width, https://www.jeita.or.jp/japanese/standard/book/ED-7311-19/#target/page_no=21, https://ww1.microchip.com/downloads/en/DeviceDoc/20005045C.pdf#page=23, https://ww1.microchip.com/downloads/en/DeviceDoc/doc2535.pdf#page=162), generated with kicad-footprint-generator ipc_gullwing_generator.py"
+tags = ["SOIC", "SO", "P-SOP", "SOP", "SOP-8", "SO", "SO-8", "8S2", "S2AE/F", "K04-056", "CASE-751BE", "SO8W", "8-Pin-SOIC", "PSA", "W8-2", "W8-4", "W8MS-1", "FPT-8P-M08"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_5.3x5.3mm_P1.27mm.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-3.5875, -1.905]
+size = [1.625, 0.65]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.0, 1.27]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "roundrect"
+at = [3.5875, 1.905]
+size = [1.625, 0.65]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.0, -1.27]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.76, 2.76]
+end = [2.76, 2.49]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.76, -2.76]
+end = [2.76, -2.49]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, 2.76]
+end = [2.76, 2.76]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, 2.76]
+end = [-2.76, 2.76]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -2.76]
+end = [2.76, -2.76]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -2.76]
+end = [-2.76, -2.76]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.76, 2.76]
+end = [-2.76, 2.49]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.76, -2.76]
+end = [-2.76, -2.49]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-3.525, -2.49], [-3.765, -2.82], [-3.285, -2.82]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.65, 2.48]
+end = [2.9, 2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.65, -2.48]
+end = [4.65, 2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.9, 2.9]
+end = [-2.9, 2.9]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.9, 2.48]
+end = [2.9, 2.9]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.9, -2.48]
+end = [4.65, -2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.9, -2.9]
+end = [2.9, -2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.9, 2.9]
+end = [-2.9, 2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.9, 2.48]
+end = [-4.65, 2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.9, -2.48]
+end = [-2.9, -2.9]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.9, -2.9]
+end = [2.9, -2.9]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-4.65, 2.48]
+end = [-4.65, -2.48]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-4.65, -2.48]
+end = [-2.9, -2.48]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[-2.65, -1.65], [-2.65, 2.65], [2.65, 2.65], [2.65, -2.65], [-1.65, -2.65]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 180.0

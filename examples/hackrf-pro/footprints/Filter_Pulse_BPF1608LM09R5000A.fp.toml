@@ -1,0 +1,297 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "Filter_Pulse_BPF1608LM09R5000A"
+description = "RF filter SMD 0603"
+tags = ["RF", "filter", "SMD", "0603"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/Filter.3dshapes/Filter_Mini-Circuits_FV1206.step"
+model_scale = [0.5, 0.5, 0.6]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.8625, 0.0]
+size = [0.425, 0.4]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.6, 0.8]
+layers = ["B.Cu"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.0, 0.4625]
+size = [0.6, 0.425]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "roundrect"
+at = [0.8625, 0.0]
+size = [0.425, 0.4]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.0, -0.4625]
+size = [0.6, 0.425]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.9, -0.5]
+end = [0.45, -0.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.9, -0.5]
+end = [0.9, -0.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.9, -0.5]
+end = [-0.45, -0.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.9, -0.5]
+end = [-0.9, -0.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.9, 0.5]
+end = [0.9, 0.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.9, 0.5]
+end = [0.45, 0.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.9, 0.5]
+end = [-0.9, 0.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.9, 0.5]
+end = [-0.45, 0.5]
+width = 0.1
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.05, 0.65], [-1.05, 0.93], [-1.33, 0.65], [-1.05, 0.65]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.56, -0.93]
+end = [0.56, -0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.56, -0.93]
+end = [0.56, -0.93]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.56, -0.93]
+end = [-0.56, -0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.05, -0.65]
+end = [1.05, -0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.56, -0.65]
+end = [1.05, -0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.05, -0.65]
+end = [-0.56, -0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.05, -0.65]
+end = [-1.05, -0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.33, -0.45]
+end = [1.33, 0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.05, -0.45]
+end = [1.33, -0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.33, -0.45]
+end = [-1.05, -0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.33, -0.45]
+end = [-1.33, 0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.05, 0.45]
+end = [1.33, 0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.05, 0.45]
+end = [1.05, 0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.05, 0.45]
+end = [-1.33, 0.45]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.05, 0.45]
+end = [-1.05, 0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.56, 0.65]
+end = [1.05, 0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.56, 0.65]
+end = [0.56, 0.93]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.56, 0.65]
+end = [-0.56, 0.93]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.05, 0.65]
+end = [-0.56, 0.65]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.56, 0.93]
+end = [0.56, 0.93]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.8, -0.4]
+end = [0.8, 0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.8, -0.4]
+end = [0.8, -0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.8, 0.0]
+end = [-0.8, -0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.8, 0.4]
+end = [-0.4, 0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.4, 0.4]
+end = [-0.8, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -0.9]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

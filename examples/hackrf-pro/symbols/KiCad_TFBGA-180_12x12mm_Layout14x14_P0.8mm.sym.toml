@@ -1,0 +1,546 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_TFBGA-180_12x12mm_Layout14x14_P0.8mm"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "A1"
+
+[[bodies.left]]
+number = "A10"
+
+[[bodies.left]]
+number = "A11"
+
+[[bodies.left]]
+number = "A12"
+
+[[bodies.left]]
+number = "A13"
+
+[[bodies.left]]
+number = "A14"
+
+[[bodies.left]]
+number = "A2"
+
+[[bodies.left]]
+number = "A3"
+
+[[bodies.left]]
+number = "A4"
+
+[[bodies.left]]
+number = "A5"
+
+[[bodies.left]]
+number = "A6"
+
+[[bodies.left]]
+number = "A7"
+
+[[bodies.left]]
+number = "A8"
+
+[[bodies.left]]
+number = "A9"
+
+[[bodies.left]]
+number = "B1"
+
+[[bodies.left]]
+number = "B10"
+
+[[bodies.left]]
+number = "B11"
+
+[[bodies.left]]
+number = "B12"
+
+[[bodies.left]]
+number = "B13"
+
+[[bodies.left]]
+number = "B14"
+
+[[bodies.left]]
+number = "B2"
+
+[[bodies.left]]
+number = "B3"
+
+[[bodies.left]]
+number = "B4"
+
+[[bodies.left]]
+number = "B5"
+
+[[bodies.left]]
+number = "B6"
+
+[[bodies.left]]
+number = "B7"
+
+[[bodies.left]]
+number = "B8"
+
+[[bodies.left]]
+number = "B9"
+
+[[bodies.left]]
+number = "C1"
+
+[[bodies.left]]
+number = "C10"
+
+[[bodies.left]]
+number = "C11"
+
+[[bodies.left]]
+number = "C12"
+
+[[bodies.left]]
+number = "C13"
+
+[[bodies.left]]
+number = "C14"
+
+[[bodies.left]]
+number = "C2"
+
+[[bodies.left]]
+number = "C3"
+
+[[bodies.left]]
+number = "C4"
+
+[[bodies.left]]
+number = "C5"
+
+[[bodies.left]]
+number = "C6"
+
+[[bodies.left]]
+number = "C7"
+
+[[bodies.left]]
+number = "C8"
+
+[[bodies.left]]
+number = "C9"
+
+[[bodies.left]]
+number = "D1"
+
+[[bodies.left]]
+number = "D10"
+
+[[bodies.left]]
+number = "D11"
+
+[[bodies.left]]
+number = "D12"
+
+[[bodies.left]]
+number = "D13"
+
+[[bodies.left]]
+number = "D14"
+
+[[bodies.left]]
+number = "D2"
+
+[[bodies.left]]
+number = "D3"
+
+[[bodies.left]]
+number = "D4"
+
+[[bodies.left]]
+number = "D5"
+
+[[bodies.left]]
+number = "D6"
+
+[[bodies.left]]
+number = "D7"
+
+[[bodies.left]]
+number = "D8"
+
+[[bodies.left]]
+number = "D9"
+
+[[bodies.left]]
+number = "E1"
+
+[[bodies.left]]
+number = "E10"
+
+[[bodies.left]]
+number = "E11"
+
+[[bodies.left]]
+number = "E12"
+
+[[bodies.left]]
+number = "E13"
+
+[[bodies.left]]
+number = "E14"
+
+[[bodies.left]]
+number = "E2"
+
+[[bodies.left]]
+number = "E3"
+
+[[bodies.left]]
+number = "E4"
+
+[[bodies.left]]
+number = "E5"
+
+[[bodies.left]]
+number = "E6"
+
+[[bodies.left]]
+number = "E7"
+
+[[bodies.left]]
+number = "E8"
+
+[[bodies.left]]
+number = "E9"
+
+[[bodies.left]]
+number = "F1"
+
+[[bodies.left]]
+number = "F10"
+
+[[bodies.left]]
+number = "F11"
+
+[[bodies.left]]
+number = "F12"
+
+[[bodies.left]]
+number = "F13"
+
+[[bodies.left]]
+number = "F14"
+
+[[bodies.left]]
+number = "F2"
+
+[[bodies.left]]
+number = "F3"
+
+[[bodies.left]]
+number = "F4"
+
+[[bodies.left]]
+number = "F5"
+
+[[bodies.left]]
+number = "G1"
+
+[[bodies.left]]
+number = "G10"
+
+[[bodies.left]]
+number = "G11"
+
+[[bodies.left]]
+number = "G12"
+
+[[bodies.left]]
+number = "G13"
+
+[[bodies.left]]
+number = "G14"
+
+[[bodies.left]]
+number = "G2"
+
+[[bodies.left]]
+number = "G3"
+
+[[bodies.left]]
+number = "G4"
+
+[[bodies.left]]
+number = "G5"
+
+[[bodies.right]]
+number = "H1"
+
+[[bodies.right]]
+number = "H10"
+
+[[bodies.right]]
+number = "H11"
+
+[[bodies.right]]
+number = "H12"
+
+[[bodies.right]]
+number = "H13"
+
+[[bodies.right]]
+number = "H14"
+
+[[bodies.right]]
+number = "H2"
+
+[[bodies.right]]
+number = "H3"
+
+[[bodies.right]]
+number = "H4"
+
+[[bodies.right]]
+number = "H5"
+
+[[bodies.right]]
+number = "J1"
+
+[[bodies.right]]
+number = "J10"
+
+[[bodies.right]]
+number = "J11"
+
+[[bodies.right]]
+number = "J12"
+
+[[bodies.right]]
+number = "J13"
+
+[[bodies.right]]
+number = "J14"
+
+[[bodies.right]]
+number = "J2"
+
+[[bodies.right]]
+number = "J3"
+
+[[bodies.right]]
+number = "J4"
+
+[[bodies.right]]
+number = "J5"
+
+[[bodies.right]]
+number = "K1"
+
+[[bodies.right]]
+number = "K10"
+
+[[bodies.right]]
+number = "K11"
+
+[[bodies.right]]
+number = "K12"
+
+[[bodies.right]]
+number = "K13"
+
+[[bodies.right]]
+number = "K14"
+
+[[bodies.right]]
+number = "K2"
+
+[[bodies.right]]
+number = "K3"
+
+[[bodies.right]]
+number = "K4"
+
+[[bodies.right]]
+number = "K5"
+
+[[bodies.right]]
+number = "K6"
+
+[[bodies.right]]
+number = "K7"
+
+[[bodies.right]]
+number = "K8"
+
+[[bodies.right]]
+number = "K9"
+
+[[bodies.right]]
+number = "L1"
+
+[[bodies.right]]
+number = "L10"
+
+[[bodies.right]]
+number = "L11"
+
+[[bodies.right]]
+number = "L12"
+
+[[bodies.right]]
+number = "L13"
+
+[[bodies.right]]
+number = "L14"
+
+[[bodies.right]]
+number = "L2"
+
+[[bodies.right]]
+number = "L3"
+
+[[bodies.right]]
+number = "L4"
+
+[[bodies.right]]
+number = "L5"
+
+[[bodies.right]]
+number = "L6"
+
+[[bodies.right]]
+number = "L7"
+
+[[bodies.right]]
+number = "L8"
+
+[[bodies.right]]
+number = "L9"
+
+[[bodies.right]]
+number = "M1"
+
+[[bodies.right]]
+number = "M10"
+
+[[bodies.right]]
+number = "M11"
+
+[[bodies.right]]
+number = "M12"
+
+[[bodies.right]]
+number = "M13"
+
+[[bodies.right]]
+number = "M14"
+
+[[bodies.right]]
+number = "M2"
+
+[[bodies.right]]
+number = "M3"
+
+[[bodies.right]]
+number = "M4"
+
+[[bodies.right]]
+number = "M5"
+
+[[bodies.right]]
+number = "M6"
+
+[[bodies.right]]
+number = "M7"
+
+[[bodies.right]]
+number = "M8"
+
+[[bodies.right]]
+number = "M9"
+
+[[bodies.right]]
+number = "N1"
+
+[[bodies.right]]
+number = "N10"
+
+[[bodies.right]]
+number = "N11"
+
+[[bodies.right]]
+number = "N12"
+
+[[bodies.right]]
+number = "N13"
+
+[[bodies.right]]
+number = "N14"
+
+[[bodies.right]]
+number = "N2"
+
+[[bodies.right]]
+number = "N3"
+
+[[bodies.right]]
+number = "N4"
+
+[[bodies.right]]
+number = "N5"
+
+[[bodies.right]]
+number = "N6"
+
+[[bodies.right]]
+number = "N7"
+
+[[bodies.right]]
+number = "N8"
+
+[[bodies.right]]
+number = "N9"
+
+[[bodies.right]]
+number = "P1"
+
+[[bodies.right]]
+number = "P10"
+
+[[bodies.right]]
+number = "P11"
+
+[[bodies.right]]
+number = "P12"
+
+[[bodies.right]]
+number = "P13"
+
+[[bodies.right]]
+number = "P14"
+
+[[bodies.right]]
+number = "P2"
+
+[[bodies.right]]
+number = "P3"
+
+[[bodies.right]]
+number = "P4"
+
+[[bodies.right]]
+number = "P5"
+
+[[bodies.right]]
+number = "P6"
+
+[[bodies.right]]
+number = "P7"
+
+[[bodies.right]]
+number = "P8"
+
+[[bodies.right]]
+number = "P9"

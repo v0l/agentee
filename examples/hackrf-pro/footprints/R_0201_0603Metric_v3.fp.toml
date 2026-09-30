@@ -1,0 +1,104 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "R_0201_0603Metric_v3"
+description = "Resistor SMD 0201 (0603 Metric), square (rectangular) end terminal, IPC_7351 nominal, (Body size source: https://www.vishay.com/docs/20052/crcw0201e3.pdf), generated with kicad-footprint-generator"
+tags = ["resistor"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0201_0603Metric.wrl"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.345, 0.0]
+size = [0.318, 0.36]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.345, 0.0]
+size = [0.318, 0.36]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.32, 0.0]
+size = [0.46, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.32, 0.0]
+size = [0.46, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.7, -0.35]
+end = [0.7, 0.35]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.7, -0.35]
+end = [0.7, -0.35]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.7, 0.35]
+end = [-0.7, 0.35]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.7, 0.35]
+end = [-0.7, -0.35]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.3, -0.15]
+end = [0.3, 0.15]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.3, -0.15]
+end = [0.3, -0.15]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.3, 0.15]
+end = [-0.3, 0.15]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.3, 0.15]
+end = [-0.3, -0.15]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [1.0, 0.0]
+text = "${REFERENCE}"
+size = 0.25
+rotation = 90.0

@@ -1,0 +1,148 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "LED_Single_Xinglight_XL-3210_Horizontal"
+description = "LED, right-angle, clear, http://www.xinglight.cn/uploadfile/202212/7a7994c6a7a4fd8.pdf"
+tags = ["LED", "right-angle"]
+mount = "smd"
+model = "${KICAD8_3DMODEL_DIR}/LED_SMD.3dshapes/LED_RGB_Everlight_EASV3015RGBA0_Horizontal.wrl"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.0, 0.55]
+size = [0.9, 0.44]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.525, 0.33]
+size = [0.85, 0.88]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [1.525, 0.33]
+size = [0.85, 0.88]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.15, 0.0]
+end = [-2.15, 0.97]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.15, 0.97]
+end = [-1.15, 0.97]
+width = 0.12
+
+[[graphics]]
+kind = "arc"
+layer = "F.SilkS"
+start = [-1.153073, -0.286775]
+mid = [-0.000484, -1.13]
+end = [1.152779, -0.287697]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.27, -0.36]
+end = [2.2, -0.36]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.2, -0.36]
+end = [-1.27, -0.36]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.2, 1.02]
+end = [2.2, -0.36]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.2, 1.02]
+end = [-2.2, -0.36]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.2, 1.02]
+end = [2.2, 1.02]
+width = 0.05
+
+[[graphics]]
+kind = "arc"
+layer = "F.CrtYd"
+start = [-1.27, -0.36]
+mid = [0.0, -1.27]
+end = [1.27, -0.36]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.6, 0.0]
+end = [-1.6, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.6, 0.0]
+end = [-1.6, 0.48]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.6, 0.13]
+end = [-1.25, 0.48]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.6, 0.48]
+end = [1.6, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.6, 0.48]
+end = [1.6, 0.48]
+width = 0.1
+
+[[graphics]]
+kind = "arc"
+layer = "F.Fab"
+start = [-1.102904, 0.0]
+mid = [-0.000105, -1.025802]
+end = [1.102889, -0.000209]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -0.35]
+text = "${REFERENCE}"
+size = 0.4
+rotation = 90.0

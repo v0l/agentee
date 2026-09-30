@@ -1,0 +1,134 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "L_CommonModeChoke_Murata_DLM0NS"
+description = "Chip Common Mode Choke Coil, https://www.murata.com/en-global/products/productdata/8799424610334/EFLD0009.pdf"
+tags = ["surface", "mount", "common", "mode", "bead", "filter"]
+mount = "smd"
+model = "${KICAD6_3DMODEL_DIR}/Inductor_SMD.3dshapes/L_CommonModeChoke_Coilcraft_0805USB.wrl"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.3, -0.25]
+size = [0.3, 0.3]
+roundrect_ratio = 0.05
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.3, -0.25]
+size = [0.3, 0.3]
+roundrect_ratio = 0.05
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "roundrect"
+at = [-0.3, 0.25]
+size = [0.3, 0.3]
+roundrect_ratio = 0.05
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.3, 0.25]
+size = [0.3, 0.3]
+roundrect_ratio = 0.05
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.325, -0.525]
+end = [-0.325, -0.525]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.325, 0.525]
+end = [-0.325, 0.525]
+width = 0.12
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-0.65, -0.35], [-0.84799, -0.15201], [-0.84799, -0.54799], [-0.65, -0.35]]
+width = 0.12
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.6, -0.6]
+end = [0.6, -0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.6, 0.6]
+end = [-0.6, -0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.6, 0.6]
+end = [0.6, 0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.6, 0.6]
+end = [0.6, -0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.325, -0.225]
+end = [-0.325, 0.425]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.325, -0.225]
+end = [-0.125, -0.425]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.325, -0.425]
+end = [-0.125, -0.425]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.325, -0.425]
+end = [0.325, 0.425]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.325, 0.425]
+end = [-0.325, 0.425]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [-0.8, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

@@ -1,0 +1,33 @@
+# imported from KiCad /tmp/hackrf-pro/praline.kicad_pcb
+name = "KiCad_MXD8638C_v2"
+reference = "U"
+description = "pins of an imported KiCad footprint"
+
+[[bodies]]
+
+[[bodies.left]]
+number = "1"
+
+[[bodies.left]]
+number = "2"
+
+[[bodies.left]]
+number = "3"
+
+[[bodies.left]]
+number = "4"
+
+[[bodies.left]]
+number = "5"
+
+[[bodies.right]]
+number = "6"
+
+[[bodies.right]]
+number = "7"
+
+[[bodies.right]]
+number = "8"
+
+[[bodies.right]]
+number = "9"
