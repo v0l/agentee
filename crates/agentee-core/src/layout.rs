@@ -1986,8 +1986,26 @@ fn silk_issues(
     outline: &[P],
 ) -> Vec<(bool, String)> {
     let mut out = Vec::new();
+    let mut bb = Bounds::EMPTY;
+    bx.iter().for_each(|p| bb.add(*p));
+    let near = |o: &Bounds, reach: f64| {
+        !o.is_empty()
+            && o.min[0] - reach <= bb.max[0] + 1e-9
+            && bb.min[0] - reach <= o.max[0] + 1e-9
+            && o.min[1] - reach <= bb.max[1] + 1e-9
+            && bb.min[1] - reach <= o.max[1] + 1e-9
+    };
+    let ring_near = |ring: &[P], reach: f64| {
+        let mut o = Bounds::EMPTY;
+        ring.iter().for_each(|p| o.add(*p));
+        near(&o, reach)
+    };
     for (j, u) in texts.iter().enumerate() {
-        if j != me && u.layer == t.layer && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP {
+        if j != me
+            && u.layer == t.layer
+            && ring_near(&boxes[j], SILK_GAP)
+            && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP
+        {
             out.push((true, format!("crowds `{}` of {}", u.text, u.owner)));
         }
     }
@@ -1998,7 +2016,9 @@ fn silk_issues(
         .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
         .filter(|(_, q)| {
             (q.copper.contains(&cu) || q.drill.is_some())
-                && q.outlines.iter().any(|o| geom::polygon_distance(o, bx) <= 0.0)
+                && q.outlines
+                    .iter()
+                    .any(|o| ring_near(o, 0.0) && geom::polygon_distance(o, bx) <= 0.0)
         })
         .map(|(p, q)| format!("{}.{}", p.reference, q.number))
         .collect();
@@ -2008,8 +2028,11 @@ fn silk_issues(
     let on_vias = vias
         .iter()
         .filter(|v| {
-            geom::point_in_polygon(v.at, bx)
-                || geom::polyline_polygon_distance(&[v.at, v.at], bx) < v.diameter / 2.0
+            let mut o = Bounds::EMPTY;
+            o.add_circle(v.at, v.diameter / 2.0);
+            near(&o, 0.0)
+                && (geom::point_in_polygon(v.at, bx)
+                    || geom::polyline_polygon_distance(&[v.at, v.at], bx) < v.diameter / 2.0)
         })
         .count();
     if on_vias > 0 {
@@ -2030,9 +2053,10 @@ fn silk_issues(
                             .into_iter()
                             .map(|q| tf.apply(q))
                             .collect();
+                        let reach = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
                         path.len() >= 2
-                            && geom::polyline_polygon_distance(&path, bx)
-                                < g.width.to_mm() / 2.0 + SILK_GAP / 2.0
+                            && ring_near(&path, reach)
+                            && geom::polyline_polygon_distance(&path, bx) < reach
                     }
             })
         })
@@ -2049,7 +2073,9 @@ fn silk_issues(
         .iter()
         .enumerate()
         .filter(|(k, p)| {
-            *k != t.part && body_box(p, side).is_some_and(|b| geom::polygon_distance(&b, bx) <= 0.0)
+            *k != t.part
+                && body_box(p, side)
+                    .is_some_and(|b| ring_near(&b, 0.0) && geom::polygon_distance(&b, bx) <= 0.0)
         })
         .map(|(_, p)| p.reference.as_str())
         .collect();
