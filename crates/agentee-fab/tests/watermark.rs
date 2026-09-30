@@ -73,6 +73,14 @@ fn the_watermark_is_stroked_into_the_bottom_silk_and_named_in_the_notes() {
 }
 
 #[test]
+fn routing_does_not_steer_around_the_watermark() {
+    let (p, _) = project([40.0, 20.0], "");
+    let l = &p.layouts[0].item;
+    let w = l.watermark.clone().expect("a clear spot");
+    assert!(!l.silk.iter().any(|b| b.text == w.text), "the build id would move routes");
+}
+
+#[test]
 fn the_watermark_follows_the_layout_field() {
     let (p, dir) =
         project([40.0, 20.0], "[watermark]\nat = [20, 15]\nlayer = \"F.SilkS\"\nrotation = 0\n");

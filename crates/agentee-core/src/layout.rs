@@ -1777,12 +1777,6 @@ impl LayoutFile {
             geom::BoardEdge::new(&outline, &board_cutouts),
             &mut found,
         );
-        let mut silk = silk;
-        silk.extend(watermark.iter().map(|t| SilkBox {
-            outline: t.outline(),
-            text: t.text.clone(),
-            layer: t.layer.clone(),
-        }));
 
         let mut nets = nets;
         for (n, (unrouted, length)) in nets.iter_mut().zip(stats) {
