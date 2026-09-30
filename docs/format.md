@@ -425,7 +425,9 @@ height = 0.8                   # mm, the width follows the aspect ratio
 
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
 vias and other parts' bodies, and stay on the board. When a reference label fails, check names a
-spot that passes every rule, as a `label = { at = [...] }` line to paste.
+spot that passes every rule, as a `label = { at = [...] }` line to paste. `agentee silk NAME`
+(MCP `silk`) pastes them all for you and repeats until the labels settle; `--hide` hides the
+references that have no clear spot, typically small passives under a BGA.
 
 Stitching vias go only where the via clears every other net's copper on each layer it spans,
 keeps `min_hole_to_hole` from every drill and the edge rule from the outline, and lands inside a

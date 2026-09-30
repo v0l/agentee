@@ -1332,3 +1332,78 @@ pub fn tune(
         "tracks_changed": result.edits.len(),
     }))
 }
+
+pub fn silk(root: &std::path::Path, name: &str, hide: bool, write: bool) -> Result<Value, String> {
+    let mut moved: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut hidden: Vec<String> = Vec::new();
+    let mut left: Vec<String> = Vec::new();
+    for pass in 0..8 {
+        let p = load(root)?;
+        let r = find(&p, &format!("pcb:{name}")).or_else(|_| find(&p, name))?;
+        let ItemRef::Layout(i) = r else {
+            return Err(format!("`{name}` is not a layout"));
+        };
+        let entry = &p.layouts[i];
+        let fixes = &entry.item.label_fixes;
+        left = fixes.iter().map(|f| f.reference.clone()).collect();
+        if fixes.is_empty() || !write {
+            if !write {
+                return Ok(json!({ "layout": entry.name, "written": false, "fixes": fixes }));
+            }
+            break;
+        }
+        let path = &entry.path;
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+        let parts = doc
+            .get_mut("footprints")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .ok_or("the layout has no [[footprints]]")?;
+        let mut changed = 0;
+        for f in fixes {
+            let Some(t) = parts
+                .iter_mut()
+                .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(f.reference.as_str()))
+            else {
+                continue;
+            };
+            let tries = moved.entry(f.reference.clone()).or_default();
+            *tries += 1;
+            let mut label =
+                t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
+            match f.at {
+                Some(at) if *tries <= 3 => {
+                    let mut pt = toml_edit::Array::new();
+                    pt.push((at[0] * 100.0).round() / 100.0);
+                    pt.push((at[1] * 100.0).round() / 100.0);
+                    label.insert("at", pt.into());
+                    if f.rotation != 0.0 {
+                        label.insert("rotation", f.rotation.into());
+                    } else {
+                        label.remove("rotation");
+                    }
+                }
+                _ if hide => {
+                    label.insert("hide", true.into());
+                    hidden.push(f.reference.clone());
+                }
+                _ => continue,
+            }
+            t["label"] = toml_edit::value(label);
+            changed += 1;
+        }
+        std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
+        if changed == 0 || pass == 7 {
+            break;
+        }
+    }
+    hidden.sort();
+    hidden.dedup();
+    Ok(json!({
+        "layout": name,
+        "written": true,
+        "moved": moved.keys().filter(|k| !hidden.contains(k)).collect::<Vec<_>>(),
+        "hidden": hidden,
+        "still_failing": left,
+    }))
+}

@@ -411,6 +411,15 @@ pub struct Layout {
     pub pairs: Vec<Pair>,
     pub match_groups: Vec<MatchGroup>,
     pub silk: Vec<SilkBox>,
+    #[serde(skip)]
+    pub label_fixes: Vec<LabelFix>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct LabelFix {
+    pub reference: String,
+    pub at: Option<P>,
+    pub rotation: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1479,7 +1488,7 @@ impl LayoutFile {
             .chain(board_texts(&graphics))
             .map(|t| SilkBox { outline: t.outline(), text: t.text, layer: t.layer })
             .collect();
-        check_silk(
+        let label_fixes = check_silk(
             &parts,
             &vias,
             &tracks,
@@ -1525,6 +1534,7 @@ impl LayoutFile {
             pairs,
             match_groups,
             silk,
+            label_fixes,
         }
     }
 
@@ -1854,7 +1864,8 @@ fn check_silk(
     outline: &[P],
     min_height: f64,
     d: &mut Diags,
-) {
+) -> Vec<LabelFix> {
+    let mut fixes = Vec::new();
     let mut texts: Vec<SilkText> =
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
     texts.extend(board_texts(graphics));
@@ -1916,18 +1927,23 @@ fn check_silk(
         }
         let hint = match (t.part != usize::MAX).then(|| parts.get(t.part)).flatten() {
             Some(p) if t.text == p.reference => {
-                free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, outline)
-                    .map(|(at, rot)| {
-                        let r =
-                            if rot != 0.0 { format!(", rotation = {rot}") } else { String::new() };
-                        format!("; label = {{ at = [{:.2}, {:.2}]{r} }} is clear", at[0], at[1])
-                    })
-                    .unwrap_or_default()
+                let spot = free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, outline);
+                fixes.push(LabelFix {
+                    reference: p.reference.clone(),
+                    at: spot.map(|s| s.0),
+                    rotation: spot.map(|s| s.1).unwrap_or(0.0),
+                });
+                spot.map(|(at, rot)| {
+                    let r = if rot != 0.0 { format!(", rotation = {rot}") } else { String::new() };
+                    format!("; label = {{ at = [{:.2}, {:.2}]{r} }} is clear", at[0], at[1])
+                })
+                .unwrap_or_default()
             }
             _ => String::new(),
         };
         d.warn(&at, format!("`{}` {}{hint}", t.text, found.join(", ")));
     }
+    fixes
 }
 
 const SILK_GAP: f64 = 0.4;
@@ -2077,14 +2093,19 @@ fn free_spot(
     let w = crate::font::ink_width(&t.text, t.size) + pen;
     let h = t.size + pen;
     let mut candidates: Vec<(P, f64)> = Vec::new();
+    let slides: Vec<f64> = std::iter::once(0.0)
+        .chain((1..=8).flat_map(|k| [k as f64 * 0.25, -(k as f64) * 0.25]))
+        .collect();
     for step in 0..6 {
         let gap = SILK_GAP + step as f64 * 0.35;
-        candidates.push(([c[0], b.min[1] - gap - h / 2.0], 0.0));
-        candidates.push(([c[0], b.max[1] + gap + h / 2.0], 0.0));
-        candidates.push(([b.max[0] + gap + w / 2.0, c[1]], 0.0));
-        candidates.push(([b.min[0] - gap - w / 2.0, c[1]], 0.0));
-        candidates.push(([b.max[0] + gap + h / 2.0, c[1]], 90.0));
-        candidates.push(([b.min[0] - gap - h / 2.0, c[1]], 90.0));
+        for &o in &slides {
+            candidates.push(([c[0] + o, b.min[1] - gap - h / 2.0], 0.0));
+            candidates.push(([c[0] + o, b.max[1] + gap + h / 2.0], 0.0));
+            candidates.push(([b.max[0] + gap + w / 2.0, c[1] + o], 0.0));
+            candidates.push(([b.min[0] - gap - w / 2.0, c[1] + o], 0.0));
+            candidates.push(([b.max[0] + gap + h / 2.0, c[1] + o], 90.0));
+            candidates.push(([b.min[0] - gap - h / 2.0, c[1] + o], 90.0));
+        }
         for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
             candidates.push((
                 [c[0] + sx * (half[0] + gap + w / 2.0), c[1] + sy * (half[1] + gap + h / 2.0)],

@@ -230,6 +230,19 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Move every failing silk reference to the clear spot check suggests, again until they
+    /// settle, and hide the ones with nowhere to go when asked
+    Silk {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Hide references that have no clear spot
+        #[arg(long)]
+        hide: bool,
+        /// List the fixes without writing the file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Trace calculators
     Calc {
         #[command(subcommand)]
@@ -577,6 +590,12 @@ fn run(cli: Cli) -> Result<bool, String> {
             let opts = agentee_core::tune::TuneOptions { nets, amplitude, pitch };
             let r = ops::tune(&p, &name, &opts, !dry_run)?;
             let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
+        }
+        Cmd::Silk { name, project, hide, dry_run } => {
+            let r = ops::silk(&project, &name, hide, !dry_run)?;
+            let ok = r["still_failing"].as_array().is_none_or(|f| f.is_empty());
             print_json(&r);
             Ok(ok)
         }

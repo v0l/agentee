@@ -148,6 +148,15 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "silk",
+            "description": "Move every silk reference that check flags to the clear spot it suggests, repeating until the labels settle, and optionally hide the ones that have nowhere to go. Writes label = { at, rotation } or hide = true into the footprints.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "hide": { "type": "boolean" },
+                "dry_run": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "sparam",
             "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
             "inputSchema": s(json!({
@@ -403,6 +412,12 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             };
             Ok(ok(vec![text(pretty(&ops::route(&ops::load(root)?, name, &opts, !dry_run)?))]))
         }
+        "silk" => Ok(ok(vec![text(pretty(&ops::silk(
+            root,
+            arg(a, "name").ok_or("name is required")?,
+            flag(a, "hide"),
+            !flag(a, "dry_run"),
+        )?))])),
         "tune" => {
             let nets: Vec<String> = arg(a, "nets")
                 .map(|v| {
