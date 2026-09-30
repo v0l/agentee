@@ -155,6 +155,26 @@ pub struct LayoutFile {
     pub artwork: Vec<ArtworkFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fanouts: Vec<FanoutFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stitching: Vec<StitchFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StitchFile {
+    pub net: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pitch: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<Vec<Point>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin: Option<Length>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Length>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -509,6 +529,10 @@ pub struct Context<'a> {
     pub board: &'a Board,
     pub schematic: &'a Schematic,
     pub footprints: HashMap<&'a str, &'a Footprint>,
+}
+
+fn max_clear_of(nets: &[LayoutNet], default: f64) -> f64 {
+    nets.iter().map(|n| n.clearance).fold(default, f64::max)
 }
 
 fn class_of<'a>(board: &'a Board, name: &str) -> Option<&'a Netclass> {
@@ -924,6 +948,157 @@ impl LayoutFile {
                 bounds: shape.bounds(),
                 shape,
             });
+        }
+
+        for (i, st) in self.stitching.iter().enumerate() {
+            let at = format!("stitching[{i}] {}", st.net);
+            let Some(net) = net_index(&st.net) else {
+                d.error(&at, format!("net `{}` is not in the schematic", st.net));
+                continue;
+            };
+            let kind = st
+                .via
+                .clone()
+                .or_else(|| class_of(board, &nets[net].class).and_then(|c| c.via.clone()));
+            let Some(spec) = kind
+                .as_ref()
+                .and_then(|k| board.vias.iter().find(|x| &x.name == k))
+                .or(board.vias.first())
+            else {
+                d.error(&at, "the board defines no [[vias]]");
+                continue;
+            };
+            let (la, lb) = (
+                copper.iter().position(|c| *c == spec.from).unwrap_or(0),
+                copper.iter().position(|c| *c == spec.to).unwrap_or(copper.len().saturating_sub(1)),
+            );
+            let layers = copper[la..=lb].to_vec();
+            let (r, drill) = (spec.diameter.to_mm() / 2.0, spec.drill.to_mm());
+            let mut candidates: Vec<P> = Vec::new();
+            if st.fence.is_empty() {
+                let pitch = st.pitch.map(Length::to_mm).unwrap_or(2.5);
+                let area: Vec<P> = st
+                    .outline
+                    .as_ref()
+                    .map(|o| o.iter().map(|p| p.to_mm()).collect())
+                    .unwrap_or_else(|| outline.clone());
+                let mut b = Bounds::EMPTY;
+                area.iter().for_each(|q| b.add(*q));
+                let mut y = (b.min[1] / pitch).ceil() * pitch;
+                while y <= b.max[1] {
+                    let mut x = (b.min[0] / pitch).ceil() * pitch;
+                    while x <= b.max[0] {
+                        if geom::point_in_polygon([x, y], &area) {
+                            candidates.push([x, y]);
+                        }
+                        x += pitch;
+                    }
+                    y += pitch;
+                }
+            } else {
+                let pitch = st.pitch.map(Length::to_mm).unwrap_or(1.0);
+                for t in
+                    tracks.iter().filter(|t| st.fence.iter().any(|g| glob(g, &nets[t.net].name)))
+                {
+                    let gap = class_of(board, &nets[t.net].class)
+                        .and_then(|c| c.coplanar_gap.map(Length::to_mm))
+                        .unwrap_or(nets[t.net].clearance);
+                    let off =
+                        st.offset.map(Length::to_mm).unwrap_or(t.width / 2.0 + gap + r + 0.05);
+                    let mut carry = 0.0;
+                    for w in t.points.windows(2) {
+                        let l = geom::dist(w[0], w[1]);
+                        if l < 1e-9 {
+                            continue;
+                        }
+                        let u = [(w[1][0] - w[0][0]) / l, (w[1][1] - w[0][1]) / l];
+                        let n = [-u[1], u[0]];
+                        let mut s = carry;
+                        while s <= l {
+                            for side in [1.0, -1.0] {
+                                candidates.push([
+                                    w[0][0] + u[0] * s + n[0] * off * side,
+                                    w[0][1] + u[1] * s + n[1] * off * side,
+                                ]);
+                            }
+                            s += pitch;
+                        }
+                        carry = s - l;
+                    }
+                }
+            }
+            let margin = st.margin.map(Length::to_mm).unwrap_or(0.0);
+            let edge = board.rules.min_copper_to_edge.to_mm().max(margin) + r;
+            let hole_gap = board.rules.min_hole_to_hole.to_mm();
+            let mut drills: Vec<(P, f64)> = vias.iter().map(|v| (v.at, v.drill / 2.0)).collect();
+            for p in &parts {
+                for pad in &p.pads {
+                    if let Some((c, sz, _)) = pad.drill {
+                        drills.push((c, sz[0].max(sz[1]) / 2.0));
+                    }
+                }
+            }
+            let zoned: Vec<Vec<P>> = self
+                .zones
+                .iter()
+                .filter(|z| z.net == st.net && z.layers.iter().any(|l| layers.contains(l)))
+                .map(|z| {
+                    z.outline
+                        .as_ref()
+                        .map(|o| o.iter().map(|p| p.to_mm()).collect())
+                        .unwrap_or_else(|| outline.clone())
+                })
+                .collect();
+            let own = nets[net].clearance;
+            let mut placed = 0;
+            for c in candidates {
+                if !geom::point_in_polygon(c, &outline)
+                    || (0..outline.len()).any(|k| {
+                        geom::point_segment_distance(
+                            c,
+                            outline[k],
+                            outline[(k + 1) % outline.len()],
+                        ) < edge - 1e-9
+                    })
+                    || !zoned.iter().any(|z| geom::point_in_polygon(c, z))
+                    || drills
+                        .iter()
+                        .any(|(q, dr)| geom::dist(c, *q) - dr - drill / 2.0 < hole_gap - 1e-9)
+                {
+                    continue;
+                }
+                let probe = Shape::Circle(c, r);
+                let reach = r + max_clear_of(&nets, default_clearance);
+                let blocked = items.iter().any(|it| {
+                    it.net != Some(net)
+                        && it.layers.iter().any(|l| layers.contains(l))
+                        && it.bounds.min[0] <= c[0] + reach
+                        && it.bounds.max[0] >= c[0] - reach
+                        && it.bounds.min[1] <= c[1] + reach
+                        && it.bounds.max[1] >= c[1] - reach
+                        && it.shape.distance(&probe)
+                            < own
+                                .max(it.net.map(|n| nets[n].clearance).unwrap_or(default_clearance))
+                                - 1e-9
+                });
+                if blocked {
+                    continue;
+                }
+                vias.push(Via { net, at: c, drill, diameter: 2.0 * r, layers: layers.clone() });
+                items.push(Item {
+                    owner: Owner::Via(vias.len() - 1),
+                    net: Some(net),
+                    layers: layers.clone(),
+                    bounds: probe.bounds(),
+                    shape: probe,
+                });
+                drills.push((c, drill / 2.0));
+                placed += 1;
+            }
+            d.info(&at, format!("{placed} stitching vias"));
+            if placed == 0 {
+                d.warn(&at, "placed no vias: every spot is blocked, or outside a zone of the net");
+            }
         }
 
         let clearance_of =

@@ -387,6 +387,16 @@ ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans
 # nets = ["GND", "3V3"]        # only pads on these nets, globs allowed
 # exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob
 
+[[stitching]]                  # ground vias wherever they clear every other net
+net = "GND"
+# via = "std"                  # default the net's class via
+# pitch = "2.5mm"              # grid pitch, or the spacing along a fence (default 1mm)
+# outline = [[x, y], ...]      # default the board outline
+# margin = "0.6mm"             # extra distance from the board edge
+# fence = ["RF_*"]             # instead of a grid: a row either side of these nets' tracks
+# offset = "0.5mm"             # fence row distance from the track centre, default just past
+                               # the class coplanar gap
+
 [[zones]]
 net = "GND"
 layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
@@ -416,6 +426,10 @@ height = 0.8                   # mm, the width follows the aspect ratio
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
 vias and other parts' bodies, and stay on the board. When a reference label fails, check names a
 spot that passes every rule, as a `label = { at = [...] }` line to paste.
+
+Stitching vias go only where the via clears every other net's copper on each layer it spans,
+keeps `min_hole_to_hole` from every drill and the edge rule from the outline, and lands inside a
+zone of its net; check reports how many it placed. They are drilled and plotted like any via.
 
 Zone fills are exact polygons: the zone outline less every other net's copper grown by its
 clearance, with round corners, so pours render and plot without stair steps. Necks and slivers
