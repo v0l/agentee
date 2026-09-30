@@ -14,10 +14,14 @@ const HOT_GAP: f64 = 10.0;
 const QUIET_GAP: f64 = 8.0;
 const HOT_WATTS: f64 = 0.25;
 const EPS: f64 = 1e-6;
-const STARTS: u64 = 4;
+const STARTS: u64 = 8;
 const CENTRE_PULL: f64 = 2.0;
 const CENTRE_BLEND: f64 = 0.5;
-const MOVES_PER_PART: f64 = 600.0;
+const MOVES_PER_PART: f64 = 1500.0;
+const ANNEAL_HEAT: f64 = 1.0 / 3.0;
+const QUENCH_PER_PART: f64 = 500.0;
+const QUENCH_HEAT: f64 = 0.03;
+const CROSSING_WEIGHT: f64 = 4.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -397,6 +401,8 @@ fn dot(a: P, b: P) -> f64 {
     a[0] * b[0] + a[1] * b[1]
 }
 
+type Trial = (f64, Vec<(usize, St)>);
+
 type Start<'a> = (f64, Placer<'a>, Vec<String>, BTreeMap<String, Edge>, usize);
 
 struct Rng(u64);
@@ -549,9 +555,142 @@ struct Placer<'a> {
     link_stamp: Vec<u32>,
     stamp: u32,
     holes: Vec<P>,
+    cross_w: f64,
 }
 
 const CELL: f64 = 2.0;
+
+const FREE_CELL: f64 = 0.5;
+const MACRO_ROOM: f64 = 1.3;
+const CLUSTER_NUDGE: f64 = 0.35;
+const SPREAD_ROUNDS: usize = 24;
+const SPREAD_GROWTH: f64 = 1.3;
+const SOLVE_SWEEPS: usize = 12;
+const SPECTRAL_ROUNDS: usize = 60;
+const GLOBAL_CROSSING: f64 = 0.02;
+
+#[derive(Clone, Copy)]
+struct MacroEdge {
+    to: usize,
+    w: f64,
+    pin: Option<usize>,
+    far: Option<usize>,
+}
+
+struct MacroGraph {
+    adj: Vec<Vec<MacroEdge>>,
+    pairs: Vec<(usize, Option<usize>, usize, Option<usize>)>,
+    fixed: Vec<Vec<(f64, P, Option<usize>)>>,
+}
+
+struct FreeGrid {
+    origin: P,
+    nx: usize,
+    ny: usize,
+    sum: Vec<f64>,
+}
+
+impl FreeGrid {
+    fn index(&self, v: f64, axis: usize) -> usize {
+        let n = if axis == 0 { self.nx } else { self.ny };
+        (((v - self.origin[axis]) / FREE_CELL).round().max(0.0) as usize).min(n)
+    }
+
+    fn free(&self, r: &Bounds) -> f64 {
+        let (x0, x1) = (self.index(r.min[0], 0), self.index(r.max[0], 0));
+        let (y0, y1) = (self.index(r.min[1], 1), self.index(r.max[1], 1));
+        if x1 <= x0 || y1 <= y0 {
+            return 0.0;
+        }
+        let w = self.nx + 1;
+        (self.sum[y1 * w + x1] - self.sum[y0 * w + x1] - self.sum[y1 * w + x0]
+            + self.sum[y0 * w + x0])
+            * FREE_CELL
+            * FREE_CELL
+    }
+}
+
+fn spectral(adj: &[Vec<MacroEdge>], variant: u64, wide: bool) -> Vec<P> {
+    let m = adj.len();
+    let mut comp = vec![usize::MAX; m];
+    let mut best: Vec<usize> = Vec::new();
+    for s in 0..m {
+        if comp[s] != usize::MAX {
+            continue;
+        }
+        let mut members = vec![s];
+        comp[s] = s;
+        let mut k = 0;
+        while k < members.len() {
+            for e in &adj[members[k]] {
+                if comp[e.to] == usize::MAX {
+                    comp[e.to] = s;
+                    members.push(e.to);
+                }
+            }
+            k += 1;
+        }
+        if members.len() > best.len() {
+            best = members;
+        }
+    }
+    let mut out = vec![[0.0, 0.0]; m];
+    if best.len() < 3 {
+        return out;
+    }
+    best.sort_unstable();
+    let local: HashMap<usize, usize> = best.iter().enumerate().map(|(x, a)| (*a, x)).collect();
+    let c = best.len();
+    let deg: Vec<f64> = best.iter().map(|a| adj[*a].iter().map(|e| e.w).sum()).collect();
+    let eps = 1e-3 * deg.iter().sum::<f64>() / c as f64;
+    let mut rng = Rng(0x5eed);
+    let mut v: Vec<Vec<f64>> = (0..2).map(|_| (0..c).map(|_| rng.unit() - 0.5).collect()).collect();
+    let tidy = |v: &mut Vec<Vec<f64>>| {
+        for k in 0..2 {
+            let mean = v[k].iter().sum::<f64>() / c as f64;
+            v[k].iter_mut().for_each(|x| *x -= mean);
+            if k == 1 {
+                let (first, rest) = v.split_at_mut(1);
+                let d: f64 = first[0].iter().zip(&rest[0]).map(|(p, q)| p * q).sum();
+                rest[0].iter_mut().zip(&first[0]).for_each(|(q, p)| *q -= d * p);
+            }
+            let norm = v[k].iter().map(|x| x * x).sum::<f64>().sqrt().max(1e-12);
+            v[k].iter_mut().for_each(|x| *x /= norm);
+        }
+    };
+    tidy(&mut v);
+    for _ in 0..SPECTRAL_ROUNDS {
+        for vk in v.iter_mut() {
+            let b = vk.clone();
+            for _ in 0..4 {
+                for x in 0..c {
+                    let s: f64 = adj[best[x]].iter().map(|e| e.w * vk[local[&e.to]]).sum();
+                    vk[x] = (b[x] + s) / (deg[x] + eps);
+                }
+            }
+        }
+        tidy(&mut v);
+    }
+    let rank = |v: &[f64]| -> Vec<f64> {
+        let mut order: Vec<usize> = (0..c).collect();
+        order.sort_by(|a, b| v[*a].total_cmp(&v[*b]).then(a.cmp(b)));
+        let mut r = vec![0.0; c];
+        for (k, x) in order.into_iter().enumerate() {
+            r[x] = 2.0 * k as f64 / (c - 1) as f64 - 1.0;
+        }
+        r
+    };
+    let (r0, r1) = (rank(&v[0]), rank(&v[1]));
+    let flip =
+        [if variant & 1 == 1 { -1.0 } else { 1.0 }, if variant & 2 == 2 { -1.0 } else { 1.0 }];
+    let swap = (variant & 4 == 4) == wide;
+    for (x, a) in best.iter().enumerate() {
+        let (p, q) = (r0[x], r1[x]);
+        let (px, py) = if swap { (q, p) } else { (p, q) };
+        out[*a] = [px * flip[0], py * flip[1]];
+    }
+    out
+}
 
 impl<'a> Placer<'a> {
     fn shapes(&self, i: usize, st: St) -> Vec<WShape> {
@@ -916,7 +1055,7 @@ impl<'a> Placer<'a> {
                 }
                 cost += net.weight * self.net_hpwl(n);
                 if self.is_two_pin[n] {
-                    cost += self.crossings_of(n) as f64;
+                    cost += self.cross_w * self.crossings_of(n) as f64;
                 }
             }
             for k in 0..self.part_links[i].len() {
@@ -1366,6 +1505,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         link_stamp: Vec::new(),
         stamp: 0,
         holes: Vec::new(),
+        cross_w: CROSSING_WEIGHT,
     };
 
     pl.build_clusters();
@@ -1393,23 +1533,38 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         .map(|i| pl.centre(i))
         .collect();
 
-    let mut best: Option<Start> = None;
-    for start in 0..STARTS {
+    let run = |start: u64| -> Start {
         let mut cand = pl.clone();
         let mut rng = Rng(opts.seed.wrapping_mul(0x9e37_79b9).wrapping_add(start));
         let mut failed = Vec::new();
         cand.place_corners(&mut failed);
-        let pos = cand.global(&mut rng);
-        let edges = cand.place_connectors(&pos, &mut failed);
+        let rough = cand.global(start, None);
+        let edges = cand.place_connectors(&rough, &mut failed);
+        let pos = cand.global(start, Some(&rough));
         cand.legalise(&pos, &mut failed);
-        let moves = cand.refine(&mut rng);
+        cand.rearrange_clusters();
+        let mut moves = cand.refine(&mut rng, MOVES_PER_PART, ANNEAL_HEAT);
         cand.share_rotation();
+        moves += cand.refine(&mut rng, QUENCH_PER_PART, QUENCH_HEAT);
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
-        if best.as_ref().is_none_or(|b| score < b.0) {
-            best = Some((score, cand, failed, edges, moves));
-        }
-    }
+        (score, cand, failed, edges, moves)
+    };
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let threads = threads.clamp(1, STARTS as usize);
+    let runs: Vec<(u64, Start)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads as u64)
+            .map(|t| {
+                let run = &run;
+                scope.spawn(move || {
+                    (t..STARTS).step_by(threads).map(|s| (s, run(s))).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    });
+    let best =
+        runs.into_iter().min_by(|a, b| a.1.0.total_cmp(&b.1.0).then(a.0.cmp(&b.0))).map(|r| r.1);
     let Some((_, mut pl, failed, edges, moves)) = best else {
         return Err("no placement".into());
     };
@@ -1790,42 +1945,26 @@ impl<'a> Placer<'a> {
         (macros, of)
     }
 
-    fn global(&mut self, rng: &mut Rng) -> Vec<P> {
-        let n = self.parts.len();
-        let (macros, of) = self.macro_of();
+    fn macro_graph(&self, macros: &[Vec<usize>], of: &[Option<usize>]) -> MacroGraph {
         let m = macros.len();
-        let bb = self.b.bounds;
-        let centre = self.b.centre;
-        let mut pos: Vec<P> = (0..m)
-            .map(|_| {
-                [
-                    centre[0] + (rng.unit() - 0.5) * bb.size()[0] * 0.5,
-                    centre[1] + (rng.unit() - 0.5) * bb.size()[1] * 0.5,
-                ]
-            })
-            .collect();
-        let radius: Vec<f64> = macros
-            .iter()
-            .map(|v| {
-                let a: f64 = v.iter().map(|i| self.parts[*i].area.max(0.5)).sum();
-                (a * 1.3 / std::f64::consts::PI).sqrt()
-            })
-            .collect();
-        let large: Vec<bool> = macros.iter().map(|v| self.parts[v[0]].large).collect();
-        let conn: Vec<bool> =
-            macros.iter().map(|v| self.parts[v[0]].role == Role::Connector).collect();
-        let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); m];
-        let mut fixed_pull: Vec<(f64, P)> = vec![(0.0, [0.0, 0.0]); m];
+        let mut g =
+            MacroGraph { adj: vec![Vec::new(); m], pairs: Vec::new(), fixed: vec![Vec::new(); m] };
         for net in &self.nets {
             if net.power || net.weight == 0.0 {
                 continue;
             }
-            let mut ms: Vec<usize> = Vec::new();
+            let mut ms: Vec<(usize, Option<usize>)> = Vec::new();
             let mut fixed_pts: Vec<P> = Vec::new();
             for &(i, k) in &net.pins {
                 if let Some(x) = of[i] {
-                    if !ms.contains(&x) {
-                        ms.push(x);
+                    let pin = (macros[x][0] == i).then_some(k);
+                    match ms.iter_mut().find(|e| e.0 == x) {
+                        Some(e) => {
+                            if e.1.is_none() {
+                                e.1 = pin;
+                            }
+                        }
+                        None => ms.push((x, pin)),
                     }
                 } else if self.parts[i].placed {
                     fixed_pts.push(self.pad_pos(i, k));
@@ -1835,116 +1974,316 @@ impl<'a> Placer<'a> {
             if k < 2 {
                 continue;
             }
+            if net.pins.len() == 2 && ms.len() == 2 {
+                g.pairs.push((ms[0].0, ms[0].1, ms[1].0, ms[1].1));
+            }
             let w = net.weight / (k - 1) as f64;
-            for (x, &a) in ms.iter().enumerate() {
-                for &b in &ms[x + 1..] {
-                    adj[a].push((b, w));
-                    adj[b].push((a, w));
+            for (x, &(a, ka)) in ms.iter().enumerate() {
+                for &(b, kb) in &ms[x + 1..] {
+                    g.adj[a].push(MacroEdge { to: b, w, pin: ka, far: kb });
+                    g.adj[b].push(MacroEdge { to: a, w, pin: kb, far: ka });
                 }
                 for p in &fixed_pts {
-                    fixed_pull[a].0 += w;
-                    fixed_pull[a].1[0] += w * p[0];
-                    fixed_pull[a].1[1] += w * p[1];
+                    g.fixed[a].push((w, *p, ka));
                 }
             }
         }
-        let mut repel: Vec<(usize, usize, f64)> = Vec::new();
-        for l in &self.links {
-            if let LinkKind::Repel { thr, .. } = l.kind {
-                let (a, b) = (Self::end_part(l.a), Self::end_part(l.b));
-                if let (Some(x), Some(y)) = (of[a], of[b])
-                    && x != y
-                {
-                    repel.push((x, y, thr));
-                }
+        g
+    }
+
+    fn free_grid(&self) -> FreeGrid {
+        let bb = self.b.bounds;
+        let nx = ((bb.size()[0] / FREE_CELL).ceil() as usize).max(1);
+        let ny = ((bb.size()[1] / FREE_CELL).ceil() as usize).max(1);
+        let mut free = vec![false; nx * ny];
+        let edge = self.board_edge();
+        let centre = |x: usize, y: usize| {
+            [bb.min[0] + (x as f64 + 0.5) * FREE_CELL, bb.min[1] + (y as f64 + 0.5) * FREE_CELL]
+        };
+        for y in 0..ny {
+            for x in 0..nx {
+                let q = centre(x, y);
+                free[y * nx + x] = edge.contains(q)
+                    && edge.distance(q) >= self.b.body_edge
+                    && !self.b.keepouts.iter().any(|k| geom::point_in_polygon(q, k));
             }
         }
-        let mut obstacles: Vec<(P, f64)> = Vec::new();
-        for i in 0..n {
-            if self.parts[i].placed {
-                let s = self.parts[i].local.size();
-                obstacles.push((self.centre(i), (s[0].hypot(s[1])) / 2.0));
-            }
-        }
-        let iterations = 300;
-        for it in 0..iterations {
-            let spread = (it as f64 / iterations as f64).min(1.0);
-            let mut next = pos.clone();
-            for a in 0..m {
-                let (mut sw, mut sx, mut sy) =
-                    (fixed_pull[a].0, fixed_pull[a].1[0], fixed_pull[a].1[1]);
-                for &(b, w) in &adj[a] {
-                    sw += w;
-                    sx += w * pos[b][0];
-                    sy += w * pos[b][1];
-                }
-                let g = if large[a] { CENTRE_PULL * sw.max(1.0) } else { 0.05 * sw.max(0.2) };
-                let g = if conn[a] { 0.0 } else { g };
-                sw += g;
-                sx += g * centre[0];
-                sy += g * centre[1];
-                if sw > 0.0 {
-                    next[a] = [0.5 * pos[a][0] + 0.5 * sx / sw, 0.5 * pos[a][1] + 0.5 * sy / sw];
-                }
-            }
-            for a in 0..m {
-                for b in a + 1..m {
-                    let mut need = (radius[a] + radius[b]) * spread;
-                    if conn[a] && conn[b] {
-                        need = need.max(bb.size()[0].min(bb.size()[1]) * 0.5 * spread);
-                    }
-                    let (dx, dy) = (next[b][0] - next[a][0], next[b][1] - next[a][1]);
-                    let d = dx.hypot(dy);
-                    if d < need {
-                        let (ux, uy) = if d < 1e-9 {
-                            let t = (a * 7 + b * 13) as f64;
-                            (t.cos(), t.sin())
-                        } else {
-                            (dx / d, dy / d)
-                        };
-                        let push = (need - d) / 2.0 * 0.5;
-                        next[a][0] -= ux * push;
-                        next[a][1] -= uy * push;
-                        next[b][0] += ux * push;
-                        next[b][1] += uy * push;
-                    }
-                }
-                for (c, r) in &obstacles {
-                    let need = (radius[a] + r) * spread;
-                    let (dx, dy) = (next[a][0] - c[0], next[a][1] - c[1]);
-                    let d = dx.hypot(dy);
-                    if d < need && d > 1e-9 {
-                        next[a][0] += dx / d * (need - d) * 0.5;
-                        next[a][1] += dy / d * (need - d) * 0.5;
+        for i in (0..self.parts.len()).filter(|i| self.parts[*i].placed) {
+            for s in &self.cache[i] {
+                let lo = |v: f64, o: f64| ((v - o) / FREE_CELL - 0.5).ceil().max(0.0) as usize;
+                let hi = |v: f64, o: f64, n: usize| {
+                    (((v - o) / FREE_CELL - 0.5).floor() + 1.0).clamp(0.0, n as f64) as usize
+                };
+                for y in lo(s.b.min[1], bb.min[1])..hi(s.b.max[1], bb.min[1], ny) {
+                    for x in lo(s.b.min[0], bb.min[0])..hi(s.b.max[0], bb.min[0], nx) {
+                        free[y * nx + x] = false;
                     }
                 }
             }
-            for &(a, b, thr) in &repel {
-                let (dx, dy) = (next[b][0] - next[a][0], next[b][1] - next[a][1]);
-                let d = dx.hypot(dy);
-                if d < thr * spread && d > 1e-9 {
-                    let push = (thr * spread - d) / 4.0;
-                    next[a][0] -= dx / d * push;
-                    next[a][1] -= dy / d * push;
-                    next[b][0] += dx / d * push;
-                    next[b][1] += dy / d * push;
+        }
+        let mut sum = vec![0.0; (nx + 1) * (ny + 1)];
+        for y in 0..ny {
+            for x in 0..nx {
+                let v = if free[y * nx + x] { 1.0 } else { 0.0 };
+                sum[(y + 1) * (nx + 1) + x + 1] =
+                    v + sum[y * (nx + 1) + x + 1] + sum[(y + 1) * (nx + 1) + x]
+                        - sum[y * (nx + 1) + x];
+            }
+        }
+        FreeGrid { origin: bb.min, nx, ny, sum }
+    }
+
+    fn global(&mut self, variant: u64, init: Option<&[P]>) -> Vec<P> {
+        let n = self.parts.len();
+        let (macros, of) = self.macro_of();
+        let m = macros.len();
+        let bb = self.b.bounds;
+        let centre = self.b.centre;
+        let mut out = init.map(|v| v.to_vec()).unwrap_or_else(|| vec![centre; n]);
+        if m == 0 {
+            return out;
+        }
+        let both = self.sides == Sides::Both;
+        let area: Vec<f64> = macros
+            .iter()
+            .map(|v| {
+                let a: f64 = v
+                    .iter()
+                    .map(|i| {
+                        let a = self.parts[*i].area.max(0.5);
+                        if both && *i != v[0] { 0.5 * a } else { a }
+                    })
+                    .sum();
+                a * MACRO_ROOM
+            })
+            .collect();
+        let large: Vec<bool> = macros.iter().map(|v| self.parts[v[0]].large).collect();
+        let conn: Vec<Option<Option<Edge>>> = macros
+            .iter()
+            .map(|v| {
+                let p = &self.parts[v[0]];
+                (p.role == Role::Connector).then_some(p.pin_edge)
+            })
+            .collect();
+        let graph = self.macro_graph(&macros, &of);
+        let bottom = self.sides == Sides::Bottom;
+        let turnable: Vec<bool> = macros
+            .iter()
+            .map(|v| self.parts[v[0]].role == Role::Chip && self.parts[v[0]].pins >= 8)
+            .collect();
+        let mut rot: Vec<f64> = macros.iter().map(|v| self.parts[v[0]].st.rot).collect();
+        let offset = |x: usize, r: f64, k: Option<usize>| -> P {
+            let Some(k) = k else { return [0.0, 0.0] };
+            let p = &self.parts[macros[x][0]];
+            let t = Transform { at: [0.0, 0.0], rotation: r, mirror: bottom };
+            let (q, c) = (t.apply(p.pads[k].c), t.apply(p.local.center()));
+            [q[0] - c[0], q[1] - c[1]]
+        };
+        let half = [bb.size()[0] / 2.0, bb.size()[1] / 2.0];
+        let mut pos: Vec<P> = match init {
+            Some(p) => macros.iter().map(|v| p[v[0]]).collect(),
+            None => spectral(&graph.adj, variant, bb.size()[0] >= bb.size()[1])
+                .into_iter()
+                .map(|v| [centre[0] + v[0] * half[0] * 0.8, centre[1] + v[1] * half[1] * 0.8])
+                .collect(),
+        };
+        let reserve = self
+            .parts
+            .iter()
+            .filter(|p| p.role == Role::Hole)
+            .map(|p| p.local.size()[0].max(p.local.size()[1]) + 0.5)
+            .fold(1.0, f64::max);
+        let project = |p: P, pinned: Option<Edge>| -> P {
+            let gaps = [
+                (p[0] - bb.min[0], Edge::Left),
+                (bb.max[0] - p[0], Edge::Right),
+                (p[1] - bb.min[1], Edge::Top),
+                (bb.max[1] - p[1], Edge::Bottom),
+            ];
+            let e = pinned.unwrap_or_else(|| {
+                gaps.iter().min_by(|a, b| a.0.total_cmp(&b.0)).map(|g| g.1).unwrap_or(Edge::Left)
+            });
+            let x = p[0].clamp(bb.min[0] + reserve, (bb.max[0] - reserve).max(bb.min[0] + reserve));
+            let y = p[1].clamp(bb.min[1] + reserve, (bb.max[1] - reserve).max(bb.min[1] + reserve));
+            match e {
+                Edge::Left => [bb.min[0], y],
+                Edge::Right => [bb.max[0], y],
+                Edge::Top => [x, bb.min[1]],
+                Edge::Bottom => [x, bb.max[1]],
+            }
+        };
+        let grid = self.free_grid();
+        let inner: Vec<usize> = (0..m).filter(|a| conn[*a].is_none()).collect();
+        let limit = [half[0] * OFF_CENTRE, half[1] * OFF_CENTRE];
+        let mut target = pos.clone();
+        for round in 0..SPREAD_ROUNDS {
+            self.spread(&grid, &pos, &area, inner.clone(), bb, &mut target);
+            let alpha = if init.is_some() { 0.3 } else { 0.03 } * SPREAD_GROWTH.powi(round as i32);
+            for a in (0..m).filter(|a| turnable[*a]) {
+                let cost = |r: f64| -> f64 {
+                    let mut c = 0.0;
+                    for e in &graph.adj[a] {
+                        let (o, f) = (offset(a, r, e.pin), offset(e.to, rot[e.to], e.far));
+                        let d = [
+                            pos[a][0] + o[0] - pos[e.to][0] - f[0],
+                            pos[a][1] + o[1] - pos[e.to][1] - f[1],
+                        ];
+                        c += e.w * (d[0] * d[0] + d[1] * d[1]);
+                    }
+                    for (w, q, k) in &graph.fixed[a] {
+                        let o = offset(a, r, *k);
+                        let d = [pos[a][0] + o[0] - q[0], pos[a][1] + o[1] - q[1]];
+                        c += w * (d[0] * d[0] + d[1] * d[1]);
+                    }
+                    c
+                };
+                let late = round * 2 >= SPREAD_ROUNDS;
+                let crossings = |r: f64| -> f64 {
+                    if !late {
+                        return 0.0;
+                    }
+                    let end = |x: usize, k: Option<usize>| {
+                        let o = offset(x, if x == a { r } else { rot[x] }, k);
+                        [pos[x][0] + o[0], pos[x][1] + o[1]]
+                    };
+                    let segs: Vec<(P, P, bool)> = graph
+                        .pairs
+                        .iter()
+                        .map(|&(x, kx, y, ky)| (end(x, kx), end(y, ky), x == a || y == a))
+                        .collect();
+                    let mut c = 0;
+                    for s in segs.iter().filter(|s| s.2) {
+                        c += segs
+                            .iter()
+                            .filter(|t| geom::segments_intersect(s.0, s.1, t.0, t.1))
+                            .count();
+                    }
+                    c as f64
+                };
+                let costs: Vec<(f64, f64)> =
+                    [0.0, 90.0, 180.0, 270.0].iter().map(|r| (cost(*r), crossings(*r))).collect();
+                let low = costs.iter().map(|c| c.0).fold(f64::MAX, f64::min).max(1e-9);
+                let mut best = (f64::MAX, rot[a]);
+                for (k, r) in [0.0, 90.0, 180.0, 270.0].iter().enumerate() {
+                    let c = costs[k].0 / low + GLOBAL_CROSSING * costs[k].1;
+                    let c = if *r == rot[a] { c - 1e-9 } else { c };
+                    if c < best.0 {
+                        best = (c, *r);
+                    }
+                }
+                rot[a] = best.1;
+            }
+            for _ in 0..SOLVE_SWEEPS {
+                for a in 0..m {
+                    let (mut sw, mut sx, mut sy) = (0.0, 0.0, 0.0);
+                    for e in &graph.adj[a] {
+                        let (o, f) = (offset(a, rot[a], e.pin), offset(e.to, rot[e.to], e.far));
+                        sw += e.w;
+                        sx += e.w * (pos[e.to][0] + f[0] - o[0]);
+                        sy += e.w * (pos[e.to][1] + f[1] - o[1]);
+                    }
+                    for (w, q, k) in &graph.fixed[a] {
+                        let o = offset(a, rot[a], *k);
+                        sw += w;
+                        sx += w * (q[0] - o[0]);
+                        sy += w * (q[1] - o[1]);
+                    }
+                    let base = sw.max(0.2);
+                    let (t, tw, g) = match conn[a] {
+                        Some(pinned) => (project(pos[a], pinned), 2.0 * base, 0.0),
+                        None => {
+                            let g = if large[a] { CENTRE_PULL * base } else { 0.02 * base };
+                            (target[a], alpha * base, g)
+                        }
+                    };
+                    let den = sw + tw + g;
+                    pos[a] = [
+                        (sx + tw * t[0] + g * centre[0]) / den,
+                        (sy + tw * t[1] + g * centre[1]) / den,
+                    ];
+                    if large[a] {
+                        pos[a] = [
+                            pos[a][0].clamp(centre[0] - limit[0], centre[0] + limit[0]),
+                            pos[a][1].clamp(centre[1] - limit[1], centre[1] + limit[1]),
+                        ];
+                    }
                 }
             }
-            for a in 0..m {
-                let r =
-                    if conn[a] { 0.0 } else { radius[a].min(bb.size()[0].min(bb.size()[1]) / 2.0) };
-                next[a][0] = next[a][0].clamp(bb.min[0] + r, bb.max[0] - r);
-                next[a][1] = next[a][1].clamp(bb.min[1] + r, bb.max[1] - r);
-            }
-            pos = next;
         }
-        let mut out = vec![centre; n];
+        self.spread(&grid, &pos, &area, inner, bb, &mut target);
         for (x, v) in macros.iter().enumerate() {
+            let p = if conn[x].is_some() { pos[x] } else { target[x] };
             for &i in v {
-                out[i] = pos[x];
+                out[i] = p;
+                let r = if i == v[0] { rot[x] } else { self.parts[i].st.rot };
+                let lc = Transform { at: [0.0, 0.0], rotation: r, mirror: bottom }
+                    .apply(self.parts[i].local.center());
+                self.parts[i].st = St { at: [p[0] - lc[0], p[1] - lc[1]], rot: r, bottom };
             }
         }
         out
+    }
+
+    #[allow(clippy::only_used_in_recursion)]
+    fn spread(
+        &self,
+        grid: &FreeGrid,
+        pos: &[P],
+        area: &[f64],
+        mut items: Vec<usize>,
+        region: Bounds,
+        out: &mut [P],
+    ) {
+        if items.is_empty() {
+            return;
+        }
+        if items.len() == 1 {
+            let a = items[0];
+            let h = area[a].sqrt() / 2.0;
+            let fit = |v: f64, lo: f64, hi: f64| {
+                if hi - lo < 2.0 * h { (lo + hi) / 2.0 } else { v.clamp(lo + h, hi - h) }
+            };
+            out[a] = [
+                fit(pos[a][0], region.min[0], region.max[0]),
+                fit(pos[a][1], region.min[1], region.max[1]),
+            ];
+            return;
+        }
+        let s = region.size();
+        let axis = if s[0] >= s[1] { 0 } else { 1 };
+        items.sort_by(|a, b| pos[*a][axis].total_cmp(&pos[*b][axis]).then(a.cmp(b)));
+        let total: f64 = items.iter().map(|i| area[*i]).sum();
+        let mut k = 1;
+        let mut acc = area[items[0]];
+        while k < items.len() - 1 && acc + area[items[k]] / 2.0 < total / 2.0 {
+            acc += area[items[k]];
+            k += 1;
+        }
+        let f = acc / total;
+        let free = grid.free(&region);
+        let (lo, hi) = (region.min[axis], region.max[axis]);
+        let cut = if free <= 0.0 {
+            lo + (hi - lo) * f
+        } else {
+            let (mut a, mut b) = (lo, hi);
+            for _ in 0..30 {
+                let mid = (a + b) / 2.0;
+                let mut r = region;
+                r.max[axis] = mid;
+                if grid.free(&r) < f * free {
+                    a = mid;
+                } else {
+                    b = mid;
+                }
+            }
+            (a + b) / 2.0
+        };
+        let (mut ra, mut rb) = (region, region);
+        ra.max[axis] = cut;
+        rb.min[axis] = cut;
+        let right = items.split_off(k);
+        self.spread(grid, pos, area, items, ra, out);
+        self.spread(grid, pos, area, right, rb, out);
     }
 
     fn place_connectors(&mut self, pos: &[P], failed: &mut Vec<String>) -> BTreeMap<String, Edge> {
@@ -2296,8 +2635,8 @@ impl<'a> Placer<'a> {
         });
         let mut todo_members: Vec<usize> = Vec::new();
         for &a in &anchors {
+            let own = self.cluster_of[a].filter(|c| self.clusters[*c].anchor == a);
             if !self.parts[a].placed {
-                let bottom = self.sides == Sides::Bottom;
                 let c = self.b.centre;
                 let target = if self.parts[a].large {
                     [
@@ -2307,19 +2646,17 @@ impl<'a> Placer<'a> {
                 } else {
                     pos[a]
                 };
-                let lc = Transform { at: [0.0, 0.0], rotation: 0.0, mirror: bottom }
-                    .apply(self.parts[a].local.center());
-                let target = [target[0] - lc[0], target[1] - lc[1]];
-                let rot = self.best_rotation(a, target, bottom, &est);
-                if !self.try_place(a, target, rot, false) {
+                let Some((at, rot)) = self.cluster_spot(a, own, target, &est) else {
+                    failed.push(self.parts[a].reference.clone());
+                    continue;
+                };
+                if !self.try_place(a, at, rot, false) {
                     failed.push(self.parts[a].reference.clone());
                     continue;
                 }
                 est[a] = self.centre(a);
             }
-            if let Some(c) = self.cluster_of[a]
-                && self.clusters[c].anchor == a
-            {
+            if let Some(c) = own {
                 todo_members.push(c);
                 self.place_members(c, &mut est, failed);
             }
@@ -2371,6 +2708,125 @@ impl<'a> Placer<'a> {
                 failed.push(self.parts[i].reference.clone());
             }
         }
+    }
+
+    fn est_cost(&self, set: &[usize]) -> f64 {
+        let mut nets: Vec<usize> =
+            set.iter().flat_map(|i| self.part_nets[*i].iter().copied()).collect();
+        nets.sort_unstable();
+        nets.dedup();
+        let mut cost = 0.0;
+        for n in nets {
+            let net = &self.nets[n];
+            if net.power || net.weight == 0.0 {
+                continue;
+            }
+            let mut b = Bounds::EMPTY;
+            let mut count = 0;
+            for &(i, k) in &net.pins {
+                if !self.parts[i].placed && !self.parts[i].active {
+                    continue;
+                }
+                let p = self.pad_pos(i, k);
+                b.add(p);
+                count += 1;
+            }
+            if count >= 2 {
+                cost += net.weight * (b.size()[0] + b.size()[1]);
+            }
+            if self.is_two_pin[n] {
+                cost += self.cross_w * self.est_crossings(n) as f64;
+            }
+        }
+        let mut links: Vec<usize> =
+            set.iter().flat_map(|i| self.part_links[*i].iter().copied()).collect();
+        links.sort_unstable();
+        links.dedup();
+        for l in links {
+            cost += self.link_cost(&self.links[l]);
+        }
+        cost + set.iter().map(|i| self.unary(*i)).sum::<f64>()
+    }
+
+    fn est_segment(&self, n: usize) -> Option<(P, P)> {
+        let pins = &self.nets[n].pins;
+        let end = |(i, k): (usize, usize)| {
+            (self.parts[i].placed || self.parts[i].active).then(|| self.pad_pos(i, k))
+        };
+        Some((end(pins[0])?, end(pins[1])?))
+    }
+
+    fn est_crossings(&self, n: usize) -> usize {
+        let Some((a, b)) = self.est_segment(n) else { return 0 };
+        self.two_pin
+            .iter()
+            .filter(|m| **m != n)
+            .filter_map(|m| self.est_segment(*m))
+            .filter(|(c, d)| geom::segments_intersect(a, b, *c, *d))
+            .count()
+    }
+
+    fn cluster_spot(
+        &mut self,
+        a: usize,
+        own: Option<usize>,
+        target: P,
+        est: &[P],
+    ) -> Option<(P, f64)> {
+        let bottom = self.sides == Sides::Bottom;
+        let lc = |r: f64, s: &Self| {
+            Transform { at: [0.0, 0.0], rotation: r, mirror: bottom }
+                .apply(s.parts[a].local.center())
+        };
+        let first = {
+            let l = lc(0.0, self);
+            self.best_rotation(a, [target[0] - l[0], target[1] - l[1]], bottom, est)
+        };
+        let Some(c) = own else {
+            let l = lc(first, self);
+            return Some(([target[0] - l[0], target[1] - l[1]], first));
+        };
+        let members: Vec<usize> = self.clusters[c]
+            .members
+            .iter()
+            .copied()
+            .filter(|m| self.parts[*m].active && !self.parts[*m].placed)
+            .collect();
+        let mut set = vec![a];
+        set.extend(members.iter().copied());
+        let area: f64 = set.iter().map(|i| self.parts[*i].area).sum::<f64>() * MACRO_ROOM;
+        let step = area.sqrt() * CLUSTER_NUDGE;
+        let turns: Vec<f64> = if self.parts[a].role == Role::Chip {
+            (0..4).map(|k| (first + 90.0 * k as f64).rem_euclid(360.0)).collect()
+        } else {
+            vec![first]
+        };
+        let offs = [[0.0, 0.0], [step, 0.0], [-step, 0.0], [0.0, step], [0.0, -step]];
+        let mut best: Option<(f64, P, f64)> = None;
+        for &rot in &turns {
+            for off in offs {
+                let l = lc(rot, self);
+                let at = [target[0] + off[0] - l[0], target[1] + off[1] - l[1]];
+                let mut lost = Vec::new();
+                let mut trial = est.to_vec();
+                if self.try_place(a, at, rot, false) {
+                    trial[a] = self.centre(a);
+                    self.place_members(c, &mut trial, &mut lost);
+                } else {
+                    continue;
+                }
+                let cost = self.est_cost(&set) + 1e4 * lost.len() as f64;
+                for &i in &set {
+                    if self.parts[i].placed {
+                        self.remove(i);
+                    }
+                }
+                if best.as_ref().is_none_or(|b| cost < b.0 - 1e-9) {
+                    best = Some((cost, at, rot));
+                }
+            }
+        }
+        best.map(|b| (b.1, b.2))
     }
 
     fn place_members(&mut self, c: usize, est: &mut [P], failed: &mut Vec<String>) {
@@ -2452,17 +2908,157 @@ impl<'a> Placer<'a> {
         }
     }
 
+    fn cluster_set(&self, c: usize) -> Vec<usize> {
+        let a = self.clusters[c].anchor;
+        let mut set = vec![a];
+        set.extend(self.clusters[c].members.iter().copied().filter(|m| self.movable(*m)));
+        set
+    }
+
+    fn try_clusters(&mut self, jobs: &[(usize, P, Option<f64>)], reach: f64) -> Option<Trial> {
+        let sets: Vec<Vec<usize>> = jobs.iter().map(|j| self.cluster_set(j.0)).collect();
+        let all: Vec<usize> = sets.iter().flatten().copied().collect();
+        let old: Vec<St> = all.iter().map(|i| self.parts[*i].st).collect();
+        for &i in &all {
+            self.remove(i);
+        }
+        let mut est: Vec<P> = (0..self.parts.len()).map(|i| self.centre(i)).collect();
+        let mut ok = true;
+        for &(c, centre, rot) in jobs {
+            let a = self.clusters[c].anchor;
+            let bottom = self.parts[a].st.bottom;
+            let rot = rot.unwrap_or_else(|| self.best_rotation(a, centre, bottom, &est));
+            let lc = Transform { at: [0.0, 0.0], rotation: rot, mirror: bottom }
+                .apply(self.parts[a].local.center());
+            let at = snap_p([centre[0] - lc[0], centre[1] - lc[1]]);
+            match self.nearest(a, at, rot, bottom, reach, &|_| 0.0) {
+                Some(st) => {
+                    self.parts[a].st = st;
+                    self.insert(a);
+                    est[a] = self.centre(a);
+                }
+                None => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if ok {
+            for &(c, _, _) in jobs {
+                let mut lost = Vec::new();
+                self.place_members(c, &mut est, &mut lost);
+                ok &= lost.is_empty();
+            }
+        }
+        let out = (ok && all.iter().all(|i| self.parts[*i].placed)).then(|| {
+            let cost = self.local_cost(&all);
+            (cost, all.iter().map(|i| (*i, self.parts[*i].st)).collect())
+        });
+        for &i in &all {
+            if self.parts[i].placed {
+                self.remove(i);
+            }
+        }
+        for (x, &i) in all.iter().enumerate() {
+            self.parts[i].st = old[x];
+            self.insert(i);
+        }
+        out
+    }
+
+    fn adopt(&mut self, states: &[(usize, St)]) {
+        for (i, _) in states {
+            self.remove(*i);
+        }
+        for (i, st) in states {
+            self.parts[*i].st = *st;
+            self.insert(*i);
+        }
+    }
+
+    fn cluster_area(&self, c: usize) -> f64 {
+        self.cluster_set(c).iter().map(|i| self.parts[*i].area).sum::<f64>() * MACRO_ROOM
+    }
+
+    fn turn_clusters(&mut self, order: &[usize]) {
+        for &c in order {
+            let a = self.clusters[c].anchor;
+            let set = self.cluster_set(c);
+            let before = self.local_cost(&set);
+            let centre = self.centre(a);
+            let rot0 = self.parts[a].st.rot;
+            let step = self.cluster_area(c).sqrt() * CLUSTER_NUDGE;
+            let mut best: Option<Trial> = None;
+            for turn in [0.0, 90.0, 180.0, 270.0] {
+                for off in [[0.0, 0.0], [step, 0.0], [-step, 0.0], [0.0, step], [0.0, -step]] {
+                    if turn == 0.0 && off == [0.0, 0.0] {
+                        continue;
+                    }
+                    let at = [centre[0] + off[0], centre[1] + off[1]];
+                    let rot = Some((rot0 + turn).rem_euclid(360.0));
+                    if let Some(t) = self.try_clusters(&[(c, at, rot)], 2.0 * step + 1.0)
+                        && t.0 < before - 1e-6
+                        && best.as_ref().is_none_or(|b| t.0 < b.0)
+                    {
+                        best = Some(t);
+                    }
+                }
+            }
+            if let Some((_, states)) = best {
+                self.adopt(&states);
+            }
+        }
+    }
+
+    fn swap_clusters(&mut self, order: &[usize]) {
+        for (x, &c) in order.iter().enumerate() {
+            for &d in &order[x + 1..] {
+                let (ac, ad) = (self.cluster_area(c), self.cluster_area(d));
+                if ac > 2.0 * ad || ad > 2.0 * ac {
+                    continue;
+                }
+                let (a, b) = (self.clusters[c].anchor, self.clusters[d].anchor);
+                let mut set = self.cluster_set(c);
+                set.extend(self.cluster_set(d));
+                let before = self.local_cost(&set);
+                let (pa, pb) = (self.centre(a), self.centre(b));
+                let reach = (ac.max(ad)).sqrt();
+                if let Some(t) = self.try_clusters(&[(c, pb, None), (d, pa, None)], reach)
+                    && t.0 < before - 1e-6
+                {
+                    self.adopt(&t.1);
+                }
+            }
+        }
+    }
+
+    fn rearrange_clusters(&mut self) {
+        let mut order: Vec<usize> = (0..self.clusters.len())
+            .filter(|c| {
+                let a = self.clusters[*c].anchor;
+                self.movable(a) && self.parts[a].role == Role::Chip
+            })
+            .collect();
+        order.sort_by(|x, y| {
+            let (a, b) = (self.clusters[*x].anchor, self.clusters[*y].anchor);
+            self.parts[b].area.total_cmp(&self.parts[a].area).then(x.cmp(y))
+        });
+        self.turn_clusters(&order);
+        self.swap_clusters(&order);
+        self.turn_clusters(&order);
+    }
+
     fn movable(&self, i: usize) -> bool {
         let p = &self.parts[i];
         p.active && p.placed && !matches!(p.role, Role::Connector | Role::Hole | Role::Fiducial)
     }
 
-    fn refine(&mut self, rng: &mut Rng) -> usize {
+    fn refine(&mut self, rng: &mut Rng, per_part: f64, heat: f64) -> usize {
         let movable: Vec<usize> = (0..self.parts.len()).filter(|i| self.movable(*i)).collect();
         if movable.is_empty() {
             return 0;
         }
-        let total = (movable.len() as f64 * MOVES_PER_PART) as usize;
+        let total = (movable.len() as f64 * per_part) as usize;
         let size = self.b.bounds.size();
         let r0 = (size[0].min(size[1]) / 4.0).clamp(1.0, 8.0);
         let mut samples = Vec::new();
@@ -2477,7 +3073,7 @@ impl<'a> Placer<'a> {
                 } else {
                     samples.iter().sum::<f64>() / samples.len() as f64
                 };
-                temp = (mean / 3.0).max(1e-3);
+                temp = (mean * heat).max(1e-3);
             }
             let cur_t = temp * (0.002f64).powf(t);
             let range = (r0 * (1.0 - t)).max(0.25);
