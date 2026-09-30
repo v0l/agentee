@@ -159,6 +159,7 @@ pub struct ModelElement {
 #[derive(Clone, Debug, Default)]
 pub struct PcbModel {
     pub outline: Vec<P>,
+    pub board_cutouts: Vec<Vec<P>>,
     pub sheets: Vec<Sheet>,
     pub dielectrics: Vec<Dielectric>,
     pub copper: Vec<(usize, Copper)>,
@@ -366,6 +367,7 @@ impl PcbModel {
         let sheet = |name: &str| sheets.iter().position(|s| s.name == name);
         let mut m = PcbModel {
             outline: layout.outline.clone(),
+            board_cutouts: layout.board_cutouts.clone(),
             sheets: sheets.clone(),
             dielectrics,
             roughness: crate::loss::Roughness {
@@ -446,6 +448,11 @@ impl PcbModel {
             }
         }
         m
+    }
+
+    pub fn has_dielectric(&self, p: P) -> bool {
+        self.outline.len() < 3
+            || geom::BoardEdge::new(&self.outline, &self.board_cutouts).contains(p)
     }
 
     fn bounds(&self) -> Bounds {
@@ -664,7 +671,7 @@ impl PcbModel {
             let xc = 0.5 * (grid.x[i] + grid.x[i + 1]);
             for j in 0..n[1] - 1 {
                 let yc = 0.5 * (grid.y[j] + grid.y[j + 1]);
-                if self.outline.len() >= 3 && !geom::point_in_polygon([xc, yc], &self.outline) {
+                if !self.has_dielectric([xc, yc]) {
                     continue;
                 }
                 for k in 0..n[2] - 1 {

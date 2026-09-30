@@ -182,6 +182,7 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                 "board": l.board,
                 "schematic": l.schematic,
                 "outline": l.outline,
+                "board_cutouts": l.board_cutouts,
                 "copper_layers": l.copper,
                 "parts": parts,
                 "nets": l.nets,

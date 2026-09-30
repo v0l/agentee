@@ -258,7 +258,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                                 floor,
                                 edge,
                                 &obstacles,
-                                &layout.outline,
+                                layout.edge(),
                             )
                     })
                 }) else {
@@ -547,23 +547,17 @@ fn legal(
     floor: f64,
     edge: f64,
     obstacles: &[Obstacle],
-    outline: &[P],
+    board: geom::BoardEdge,
 ) -> bool {
     let half = width / 2.0;
     let (lo, hi) = line.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| {
         ([lo[0].min(q[0]), lo[1].min(q[1])], [hi[0].max(q[0]), hi[1].max(q[1])])
     });
-    if !line.iter().all(|p| geom::point_in_polygon(*p, outline)) {
+    if !line.iter().all(|p| board.contains(*p)) {
         return false;
     }
-    let n = outline.len();
-    for i in 0..n {
-        let (p, q) = (outline[i], outline[(i + 1) % n]);
-        for w in line.windows(2) {
-            if geom::segment_segment_distance(w[0], w[1], p, q) < edge + half - 1e-9 {
-                return false;
-            }
-        }
+    if line.windows(2).any(|w| board.segment_distance(w[0], w[1]) < edge + half - 1e-9) {
+        return false;
     }
     let reach = half + clearance.max(floor) + 1.0;
     for o in obstacles {
@@ -717,14 +711,23 @@ mod tests {
         };
         let obstacles = vec![wall(0.8), wall(-0.8)];
         let outline = vec![[-1.0, -5.0], [11.0, -5.0], [11.0, 5.0], [-1.0, 5.0]];
-        let ok = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles, &outline);
+        let board = geom::BoardEdge::new(&outline, &[]);
+        let ok = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles, board);
         let (pts, added) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, ok).unwrap();
         let len: f64 = pts.windows(2).map(|w| geom::dist(w[0], w[1])).sum();
         assert!((added - 1.5).abs() < 1e-9 && (len - 11.5).abs() < 1e-9, "{added} {len}");
         assert!(pts.iter().all(|p| p[1].abs() <= 0.55 + 1e-9));
         assert!(fit([0.0, 0.0], [0.8, 0.0], 1.5, 0.3, None, ok).is_none());
-        let tight = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[..1], &outline);
+        let tight = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[..1], board);
         let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, tight).unwrap();
         assert!(pts.iter().all(|p| p[1] <= 1e-9), "meanders away from the wall");
+        let slot = vec![vec![[0.0, 0.5], [10.0, 0.5], [10.0, 1.2], [0.0, 1.2]]];
+        let open = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[1..], board);
+        let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, open).unwrap();
+        assert!(pts.iter().any(|p| p[1] > 0.1));
+        let cut = geom::BoardEdge::new(&outline, &slot);
+        let beside_slot = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[1..], cut);
+        let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, beside_slot).unwrap();
+        assert!(pts.iter().all(|p| p[1] <= 1e-9), "meanders away from the board cutout");
     }
 }

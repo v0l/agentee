@@ -35,6 +35,43 @@ pub struct OutlineFile {
     pub corner_radius: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<Point>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cutouts: Vec<BoardCutoutFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoardCutoutFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Point>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Point>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corner_radius: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub points: Option<Vec<Point>>,
+}
+
+fn outline_shape(
+    points: &Option<Vec<Point>>,
+    size: Option<Point>,
+    origin: Option<Point>,
+    corner_radius: Option<Length>,
+    at: &str,
+    d: &mut Diags,
+) -> Option<Outline> {
+    match (points, size) {
+        (Some(p), None) => Some(Outline::Polygon { points: p.clone() }),
+        (None, Some(size)) => Some(Outline::Rect {
+            origin: origin.unwrap_or(Point::ZERO),
+            size,
+            corner_radius: corner_radius.unwrap_or(Length::ZERO),
+        }),
+        _ => {
+            d.error(at, "give either `size` (a rectangle) or `points` (a polygon)");
+            None
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -535,6 +572,45 @@ pub enum Outline {
     Polygon { points: Vec<Point> },
 }
 
+impl Outline {
+    pub fn points(&self) -> Vec<crate::geom::P> {
+        match self {
+            Outline::Rect { origin, size, corner_radius } => {
+                let [w, h] = size.to_mm();
+                let [x0, y0] = origin.to_mm();
+                crate::geom::rounded_rect(w, h, corner_radius.to_mm(), 8)
+                    .into_iter()
+                    .map(|q| [q[0] + x0 + w / 2.0, q[1] + y0 + h / 2.0])
+                    .collect()
+            }
+            Outline::Polygon { points } => points.iter().map(|p| p.to_mm()).collect(),
+        }
+    }
+
+    fn check(&self, at: &str, what: &str, d: &mut Diags) {
+        match self {
+            Outline::Polygon { points } if points.len() < 3 => {
+                d.error(
+                    format!("{at}.points"),
+                    format!("a polygon {what} needs at least three points"),
+                );
+            }
+            Outline::Rect { size, corner_radius, .. } => {
+                if !size.0.is_positive() || !size.1.is_positive() {
+                    d.error(format!("{at}.size"), format!("{what} size must be positive"));
+                }
+                if *corner_radius * 2.0 > size.0.min(size.1) {
+                    d.error(
+                        format!("{at}.corner_radius"),
+                        format!("corner radius is more than half the {what}"),
+                    );
+                }
+            }
+            Outline::Polygon { .. } => {}
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Via {
     pub name: String,
@@ -590,6 +666,7 @@ pub struct Board {
     pub description: String,
     pub fab: String,
     pub outline: Option<Outline>,
+    pub cutouts: Vec<Outline>,
     pub stackup: Stackup,
     pub rules: Rules,
     pub vias: Vec<Via>,
@@ -688,24 +765,25 @@ impl BoardFile {
             })
             .collect();
 
-        let outline = self.outline.as_ref().and_then(|o| match (&o.points, o.size) {
-            (Some(p), None) => Some(Outline::Polygon { points: p.clone() }),
-            (None, Some(size)) => Some(Outline::Rect {
-                origin: o.origin.unwrap_or(Point::ZERO),
-                size,
-                corner_radius: o.corner_radius.unwrap_or(Length::ZERO),
-            }),
-            _ => {
-                d.error("outline", "give either `size` (a rectangle) or `points` (a polygon)");
-                None
-            }
+        let outline = self.outline.as_ref().and_then(|o| {
+            outline_shape(&o.points, o.size, o.origin, o.corner_radius, "outline", d)
         });
+        let cutouts = self
+            .outline
+            .iter()
+            .flat_map(|o| o.cutouts.iter().enumerate())
+            .filter_map(|(i, c)| {
+                let at = format!("outline.cutouts[{i}]");
+                outline_shape(&c.points, c.size, c.origin, c.corner_radius, &at, d)
+            })
+            .collect();
 
         Board {
             name: self.name.clone(),
             description: self.description.clone(),
             fab,
             outline,
+            cutouts,
             stackup,
             rules,
             vias,
@@ -830,18 +908,11 @@ impl Board {
         if self.outline.is_none() {
             d.warn("outline", "no board outline yet");
         }
-        if let Some(Outline::Polygon { points }) = &self.outline
-            && points.len() < 3
-        {
-            d.error("outline.points", "a polygon outline needs at least three points");
+        if let Some(o) = &self.outline {
+            o.check("outline", "board", d);
         }
-        if let Some(Outline::Rect { size, corner_radius, .. }) = &self.outline {
-            if !size.0.is_positive() || !size.1.is_positive() {
-                d.error("outline.size", "board size must be positive");
-            }
-            if *corner_radius * 2.0 > size.0.min(size.1) {
-                d.error("outline.corner_radius", "corner radius is more than half the board");
-            }
+        for (i, c) in self.cutouts.iter().enumerate() {
+            c.check(&format!("outline.cutouts[{i}]"), "cutout", d);
         }
 
         let copper = self.stackup.copper_names();

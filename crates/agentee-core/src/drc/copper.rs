@@ -191,22 +191,8 @@ fn smd_pad_gap(cx: &Ctx, r: &mut Report) {
 }
 
 fn edge_gap(cx: &Ctx, q: &crate::layout::PlacedPad) -> f64 {
-    let n = cx.outline.len();
-    q.outlines
-        .iter()
-        .flat_map(|o| {
-            (0..o.len()).flat_map(move |i| {
-                (0..n).map(move |j| {
-                    geom::segment_segment_distance(
-                        o[i],
-                        o[(i + 1) % o.len()],
-                        cx.outline[j],
-                        cx.outline[(j + 1) % n],
-                    )
-                })
-            })
-        })
-        .fold(f64::MAX, f64::min)
+    let edge = cx.edge();
+    q.outlines.iter().map(|o| edge.polygon_distance(o)).fold(f64::MAX, f64::min)
 }
 
 fn edge_pads(cx: &Ctx, marked: bool) -> Vec<(usize, usize, f64, bool)> {
@@ -219,7 +205,7 @@ fn edge_pads(cx: &Ctx, marked: bool) -> Vec<(usize, usize, f64, bool)> {
             if q.copper.is_empty() || f.edge != marked {
                 continue;
             }
-            let off = q.outlines.iter().flatten().any(|c| !geom::point_in_polygon(*c, cx.outline));
+            let off = q.outlines.iter().flatten().any(|c| !cx.edge().contains(*c));
             out.push((pi, k, edge_gap(cx, q), off));
         }
     }
@@ -434,26 +420,18 @@ fn track_grazes_pad(cx: &Ctx, r: &mut Report) {
 }
 
 fn copper_to_edge(cx: &Ctx, r: &mut Report) {
-    let outline = cx.outline;
-    if outline.len() < 3 {
+    let edge = cx.edge();
+    if !edge.is_closed() {
         return;
     }
     let need = cx.board.rules.min_copper_to_edge.to_mm();
-    let edges = || (0..outline.len()).map(|i| (outline[i], outline[(i + 1) % outline.len()]));
     for c in cx.copper_items() {
         let (inside, to_edge) = match c.shape {
-            CuShape::Seg(a, b, hw) => (
-                geom::point_in_polygon(a, outline) && geom::point_in_polygon(b, outline),
-                edges()
-                    .map(|(p, q)| geom::segment_segment_distance(a, b, p, q) - hw)
-                    .fold(f64::MAX, f64::min),
-            ),
-            CuShape::Circle(o, ro) => (
-                geom::point_in_polygon(o, outline),
-                edges()
-                    .map(|(p, q)| geom::point_segment_distance(o, p, q) - ro)
-                    .fold(f64::MAX, f64::min),
-            ),
+            CuShape::Seg(a, b, hw) => {
+                let centre = edge.segment_distance(a, b);
+                (edge.contains(a) && edge.contains(b) && centre > 0.0, centre - hw)
+            }
+            CuShape::Circle(o, ro) => (edge.contains(o), edge.distance(o) - ro),
             CuShape::Poly(_) => continue,
         };
         if !inside {
@@ -473,8 +451,8 @@ fn copper_to_edge(cx: &Ctx, r: &mut Report) {
 }
 
 fn pad_off_board(cx: &Ctx, r: &mut Report) {
-    let outline = cx.outline;
-    if outline.len() < 3 {
+    let edge = cx.edge();
+    if !edge.is_closed() {
         return;
     }
     for p in cx.parts {
@@ -485,16 +463,7 @@ fn pad_off_board(cx: &Ctx, r: &mut Report) {
             .filter(|(_, f)| !f.edge)
             .map(|(q, _)| q)
             .filter(|q| {
-                q.outlines.iter().flatten().any(|c| {
-                    !geom::point_in_polygon(*c, outline)
-                        && (0..outline.len()).all(|i| {
-                            geom::point_segment_distance(
-                                *c,
-                                outline[i],
-                                outline[(i + 1) % outline.len()],
-                            ) > 1e-3
-                        })
-                })
+                q.outlines.iter().flatten().any(|c| !edge.contains(*c) && edge.distance(*c) > 1e-3)
             })
             .map(|q| q.number.as_str())
             .collect();

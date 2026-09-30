@@ -106,6 +106,7 @@ pub struct Ctx<'a> {
     pub board: &'a Board,
     pub copper: &'a [String],
     pub outline: &'a [P],
+    pub board_cutouts: &'a [Vec<P>],
     pub parts: &'a [Placed],
     pub tracks: &'a [Track],
     pub vias: &'a [Via],
@@ -186,6 +187,7 @@ impl<'a> Ctx<'a> {
         board: &'a Board,
         copper: &'a [String],
         outline: &'a [P],
+        board_cutouts: &'a [Vec<P>],
         parts: &'a [Placed],
         tracks: &'a [Track],
         vias: &'a [Via],
@@ -196,6 +198,7 @@ impl<'a> Ctx<'a> {
             board,
             copper,
             outline,
+            board_cutouts,
             parts,
             tracks,
             vias,
@@ -214,9 +217,23 @@ impl<'a> Ctx<'a> {
     }
 
     pub fn of_layout(board: &'a Board, l: &'a Layout) -> Ctx<'a> {
-        Ctx::new(board, &l.copper, &l.outline, &l.parts, &l.tracks, &l.vias, &l.zones, &l.nets)
-            .with_signals(&l.graphics, &l.pairs, &l.match_groups, &l.interfaces)
-            .with_test(&l.test)
+        Ctx::new(
+            board,
+            &l.copper,
+            &l.outline,
+            &l.board_cutouts,
+            &l.parts,
+            &l.tracks,
+            &l.vias,
+            &l.zones,
+            &l.nets,
+        )
+        .with_signals(&l.graphics, &l.pairs, &l.match_groups, &l.interfaces)
+        .with_test(&l.test)
+    }
+
+    pub fn edge(&self) -> geom::BoardEdge<'a> {
+        geom::BoardEdge::new(self.outline, self.board_cutouts)
     }
 
     pub fn with_test(mut self, test: &'a crate::testpoint::TestSpec) -> Ctx<'a> {

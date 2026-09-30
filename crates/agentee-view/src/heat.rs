@@ -162,9 +162,8 @@ pub fn canvas(
 
 fn overlay(p: &egui::Painter, xf: &Xf, l: &Layout, layer: &str) {
     let edge = Stroke::new(1.2, paint::EDGE.gamma_multiply(0.8));
-    let pts: Vec<Pos2> = l.outline.iter().map(|q| xf.world(*q)).collect();
-    if pts.len() >= 3 {
-        p.add(PathShape::closed_line(pts, edge));
+    for ring in l.edge().rings() {
+        p.add(PathShape::closed_line(ring.iter().map(|q| xf.world(*q)).collect(), edge));
     }
     let thin = Stroke::new(1.0, Color32::from_white_alpha(70));
     for part in &l.parts {

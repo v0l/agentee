@@ -178,11 +178,13 @@ fn silk(layout: &Layout, board: &Board, layer: &str, function: &str) -> Gerber {
 
 fn edge(layout: &Layout) -> Gerber {
     let mut g = Gerber::new("Profile,NP");
-    let mut ring = layout.outline.clone();
-    if let Some(f) = ring.first().copied() {
-        ring.push(f);
+    for r in std::iter::once(&layout.outline).chain(&layout.board_cutouts) {
+        let mut ring = r.clone();
+        if let Some(f) = ring.first().copied() {
+            ring.push(f);
+        }
+        g.stroke(&ring, 0.1);
     }
-    g.stroke(&ring, 0.1);
     g
 }
 
@@ -356,6 +358,13 @@ fn notes(layout: &Layout, board: &Board) -> String {
     if !b.is_empty() {
         let [w, h] = b.size();
         let _ = writeln!(out, "Outline {w:.2} x {h:.2} mm");
+    }
+    if !layout.board_cutouts.is_empty() {
+        let _ = writeln!(
+            out,
+            "Internal cutouts {}, routed through the board along Edge_Cuts",
+            layout.board_cutouts.len()
+        );
     }
     let _ = writeln!(out, "Finished thickness {:.2} mm", st.thickness().to_mm());
     let _ = writeln!(out, "Finish {}, mask {}, silk {}", st.finish, st.mask_color, st.silk_color);

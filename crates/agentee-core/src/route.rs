@@ -539,7 +539,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             length: nc.and_then(|c| c.neckdown).map(Length::to_mm).unwrap_or(NECKDOWN),
             min_width: board.rules.min_track_width.to_mm(),
             edge,
-            outline: &layout.outline,
+            board: layout.edge(),
         };
         let ctx = Ctx {
             drill_r: spec.drill.to_mm() / 2.0,
@@ -865,7 +865,7 @@ struct Necking<'a> {
     length: f64,
     min_width: f64,
     edge: f64,
-    outline: &'a [P],
+    board: geom::BoardEdge<'a>,
 }
 
 impl Ctx<'_> {
@@ -1374,16 +1374,15 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
         rv: vec![FREE; layers * w * h],
         hist: vec![0.0; layers * w * h],
     };
-    let outline = &layout.outline;
-    let n = outline.len();
+    let board = layout.edge();
+    let edges: Vec<(P, P)> =
+        if board.is_closed() { board.segments().collect() } else { Vec::new() };
     for y in 0..h {
         let cy = grid.center(0, y)[1];
-        let mut xs: Vec<f64> = (0..n)
-            .filter_map(|i| {
-                let (a, b) = (outline[i], outline[(i + 1) % n]);
-                ((a[1] <= cy) != (b[1] <= cy))
-                    .then(|| a[0] + (cy - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
-            })
+        let mut xs: Vec<f64> = edges
+            .iter()
+            .filter(|(a, b)| (a[1] <= cy) != (b[1] <= cy))
+            .map(|&(a, b)| a[0] + (cy - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
             .collect();
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
         for x in 0..w {
@@ -1398,8 +1397,8 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
             }
         }
     }
-    for i in 0..n {
-        let seg = Shape::Seg(outline[i], outline[(i + 1) % n], 0.0);
+    for &(a, b) in &edges {
+        let seg = Shape::Seg(a, b, 0.0);
         let widest = halves.iter().cloned().fold(0.0, f64::max);
         for (reach, via) in [(edge + widest, false), (edge + via_r, true)] {
             for (x, y) in grid.cells_near(&seg, reach) {
@@ -1608,8 +1607,7 @@ fn stubs(
         })
         .map(|o| (&o.shape, o.clearance.max(ctx.clearance)))
         .collect();
-    let n = nk.outline.len();
-    let edges: Vec<(P, P)> = (0..n).map(|i| (nk.outline[i], nk.outline[(i + 1) % n])).collect();
+    let edges: Vec<(P, P)> = nk.board.segments().collect();
     let cell = |q: P| {
         let (x, y) = grid.cell(q);
         (x >= 0 && y >= 0 && (x as usize) < grid.w && (y as usize) < grid.h)
@@ -2766,7 +2764,12 @@ mod tests {
     #[test]
     fn a_wide_track_necks_down_into_a_small_pad() {
         let outline = square([3.0, 2.0], 3.0);
-        let necking = Necking { length: 0.6, min_width: 0.1, edge: 0.0, outline: &outline };
+        let necking = Necking {
+            length: 0.6,
+            min_width: 0.1,
+            edge: 0.0,
+            board: geom::BoardEdge::new(&outline, &[]),
+        };
         assert!(necked_route(0.5, None).is_err());
         let (found, conn) = necked_route(0.5, Some(&necking)).unwrap();
         assert_eq!(found.necks.len(), 1);

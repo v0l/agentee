@@ -247,34 +247,42 @@ fn turn_at(outline: &[P], i: usize) -> f64 {
 fn flex_zone_hits(cx: &Ctx) -> Vec<Flex> {
     let zone = cx.board.rules.flex_zone.to_mm();
     let holes = stress_holes(cx);
-    let outline = cx.outline;
-    let n = outline.len();
+    let edge = cx.edge();
     let mut out = Vec::new();
     for c in mlcc_chips(cx.parts) {
         let p = &cx.parts[c.part];
         let rings: Vec<&Vec<P>> = c.pads.iter().flat_map(|&k| p.pads[k].outlines.iter()).collect();
         let mut best: Option<(f64, P, String)> = None;
-        if n >= 3 {
-            for j in 0..n {
-                let (a, b) = (outline[j], outline[(j + 1) % n]);
-                let gap = rings
-                    .iter()
-                    .flat_map(|o| (0..o.len()).map(move |i| (o[i], o[(i + 1) % o.len()])))
-                    .map(|(s, e)| geom::segment_segment_distance(s, e, a, b))
-                    .fold(f64::MAX, f64::min);
-                if best.as_ref().is_none_or(|b| gap < b.0) {
-                    let at = closest_on(c.centre, a, b);
-                    let corner = [j, (j + 1) % n]
-                        .into_iter()
-                        .find(|&v| geom::dist(at, outline[v]) < 1e-6 && turn_at(outline, v) > 30.0);
-                    let what = match corner {
-                        Some(v) => format!(
-                            "the board corner at [{:.3}, {:.3}]",
-                            outline[v][0], outline[v][1]
-                        ),
-                        None => format!("the board edge at [{:.3}, {:.3}]", at[0], at[1]),
-                    };
-                    best = Some((gap, at, what));
+        if edge.is_closed() {
+            for (k, ring) in edge.rings().enumerate() {
+                let n = ring.len();
+                let (corner_of, edge_of) = match k {
+                    0 => ("the board corner".to_string(), "the board edge".to_string()),
+                    k => (
+                        format!("a corner of board cutout {}", k - 1),
+                        format!("the edge of board cutout {}", k - 1),
+                    ),
+                };
+                for j in 0..n {
+                    let (a, b) = (ring[j], ring[(j + 1) % n]);
+                    let gap = rings
+                        .iter()
+                        .flat_map(|o| (0..o.len()).map(move |i| (o[i], o[(i + 1) % o.len()])))
+                        .map(|(s, e)| geom::segment_segment_distance(s, e, a, b))
+                        .fold(f64::MAX, f64::min);
+                    if best.as_ref().is_none_or(|b| gap < b.0) {
+                        let at = closest_on(c.centre, a, b);
+                        let corner = [j, (j + 1) % n]
+                            .into_iter()
+                            .find(|&v| geom::dist(at, ring[v]) < 1e-6 && turn_at(ring, v) > 30.0);
+                        let what = match corner {
+                            Some(v) => {
+                                format!("{corner_of} at [{:.3}, {:.3}]", ring[v][0], ring[v][1])
+                            }
+                            None => format!("{edge_of} at [{:.3}, {:.3}]", at[0], at[1]),
+                        };
+                        best = Some((gap, at, what));
+                    }
                 }
             }
         }

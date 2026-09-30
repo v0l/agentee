@@ -510,12 +510,12 @@ fn board_props(ui: &mut Ui, b: &Board) {
         section(ui, "outline", "Edge.Cuts", |ui| {
             let (rect, _) =
                 ui.allocate_exact_size(Vec2::new(ui.available_width(), 180.0), Sense::hover());
-            outline_preview(ui, rect, o);
+            outline_preview(ui, rect, o, &b.cutouts);
         });
     }
 }
 
-fn outline_preview(ui: &Ui, rect: Rect, o: &Outline) {
+fn outline_preview(ui: &Ui, rect: Rect, o: &Outline, cutouts: &[Outline]) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, WELL);
     let mut v = View::default();
@@ -524,6 +524,10 @@ fn outline_preview(ui: &Ui, rect: Rect, o: &Outline) {
     let xf = v.xf(rect);
     let pts: Vec<Pos2> = paint::outline_points(o).into_iter().map(|q| xf.pos(q)).collect();
     p.add(egui::epaint::PathShape::closed_line(pts, Stroke::new(1.5, paint::EDGE)));
+    for c in cutouts {
+        let pts: Vec<Pos2> = paint::outline_points(c).into_iter().map(|q| xf.pos(q)).collect();
+        p.add(egui::epaint::PathShape::closed_line(pts, Stroke::new(1.5, paint::EDGE)));
+    }
     let s = b.size();
     p.text(
         Pos2::new(xf.pos([(b.min[0] + b.max[0]) / 2.0, b.max[1]]).x, rect.bottom() - 4.0),

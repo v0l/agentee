@@ -435,6 +435,7 @@ pub struct Layout {
     pub board: String,
     pub schematic: String,
     pub outline: Vec<P>,
+    pub board_cutouts: Vec<Vec<P>>,
     pub copper: Vec<String>,
     pub parts: Vec<Placed>,
     pub tracks: Vec<Track>,
@@ -485,6 +486,10 @@ impl Layout {
             p.pads.iter().flat_map(|q| q.outlines.iter().flatten()).for_each(|q| b.add(*q));
         }
         b
+    }
+
+    pub fn edge(&self) -> geom::BoardEdge<'_> {
+        geom::BoardEdge::new(&self.outline, &self.board_cutouts)
     }
 
     pub fn unrouted(&self) -> usize {
@@ -607,19 +612,20 @@ pub(crate) fn class_of<'a>(board: &'a Board, name: &str) -> Option<&'a Netclass>
 }
 
 fn outline_of(board: &Board) -> Vec<P> {
-    use crate::board::Outline;
-    match &board.outline {
-        Some(Outline::Rect { origin, size, corner_radius }) => {
-            let [w, h] = size.to_mm();
-            let [x0, y0] = origin.to_mm();
-            geom::rounded_rect(w, h, corner_radius.to_mm(), 8)
-                .into_iter()
-                .map(|q| [q[0] + x0 + w / 2.0, q[1] + y0 + h / 2.0])
-                .collect()
+    board.outline.as_ref().map(|o| o.points()).unwrap_or_default()
+}
+
+fn board_cutouts_of(board: &Board, outline: &[P], d: &mut Diags) -> Vec<Vec<P>> {
+    let cutouts: Vec<Vec<P>> = board.cutouts.iter().map(|c| c.points()).collect();
+    for (i, c) in cutouts.iter().enumerate() {
+        if outline.len() >= 3 && c.iter().any(|p| !geom::point_in_polygon(*p, outline)) {
+            d.error(
+                format!("outline.cutouts[{i}]"),
+                "the cutout runs past the board outline, draw it as part of the outline",
+            );
         }
-        Some(Outline::Polygon { points }) => points.iter().map(|p| p.to_mm()).collect(),
-        None => Vec::new(),
     }
+    cutouts
 }
 
 fn edges(poly: &[P]) -> impl Iterator<Item = (P, P)> + '_ {
@@ -635,6 +641,7 @@ impl LayoutFile {
         if outline.is_empty() {
             d.error("board", format!("board `{}` has no outline to place parts in", board.name));
         }
+        let board_cutouts = board_cutouts_of(board, &outline, d);
         let nets: Vec<LayoutNet> = sch
             .nets
             .iter()
@@ -1089,14 +1096,9 @@ impl LayoutFile {
             let own = nets[net].clearance;
             let mut placed = 0;
             for c in candidates {
-                if !geom::point_in_polygon(c, &outline)
-                    || (0..outline.len()).any(|k| {
-                        geom::point_segment_distance(
-                            c,
-                            outline[k],
-                            outline[(k + 1) % outline.len()],
-                        ) < edge - 1e-9
-                    })
+                let board_edge = geom::BoardEdge::new(&outline, &board_cutouts);
+                if !board_edge.contains(c)
+                    || board_edge.distance(c) < edge - 1e-9
                     || !zoned.iter().any(|z| geom::point_in_polygon(c, z))
                     || drills
                         .iter()
@@ -1294,7 +1296,7 @@ impl LayoutFile {
                     net_name: &z.net,
                     layer,
                     poly: &poly,
-                    board: &outline,
+                    board: geom::BoardEdge::new(&outline, &board_cutouts),
                     edge_clear,
                     clearance,
                     cutouts: &layer_cutouts,
@@ -1311,6 +1313,7 @@ impl LayoutFile {
                         layer: layer.clone(),
                         poly: poly.clone(),
                         board: outline.clone(),
+                        board_cutouts: board_cutouts.clone(),
                         edge_clear,
                         clearance,
                         items: items
@@ -1334,7 +1337,7 @@ impl LayoutFile {
                         net,
                         layer,
                         &poly,
-                        &outline,
+                        geom::BoardEdge::new(&outline, &board_cutouts),
                         edge_clear,
                         clearance,
                         &items,
@@ -1459,7 +1462,7 @@ impl LayoutFile {
             &tracks,
             &graphics,
             &artwork,
-            &outline,
+            geom::BoardEdge::new(&outline, &board_cutouts),
             board.rules.min_silk_text_height.to_mm(),
             &mut found,
         );
@@ -1471,7 +1474,7 @@ impl LayoutFile {
             &vias,
             &graphics,
             &artwork,
-            &outline,
+            geom::BoardEdge::new(&outline, &board_cutouts),
             &mut found,
         );
         let mut silk = silk;
@@ -1515,10 +1518,20 @@ impl LayoutFile {
         );
         let test = self.test.clone().unwrap_or_default().resolve(d);
         crate::drc::run(
-            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets)
-                .with_signals(&graphics, &pairs, &match_groups, &interfaces)
-                .with_test(&test)
-                .with_found(&found),
+            &crate::drc::Ctx::new(
+                board,
+                &copper,
+                &outline,
+                &board_cutouts,
+                &parts,
+                &tracks,
+                &vias,
+                &zones,
+                &nets,
+            )
+            .with_signals(&graphics, &pairs, &match_groups, &interfaces)
+            .with_test(&test)
+            .with_found(&found),
             d,
         );
         Layout {
@@ -1526,6 +1539,7 @@ impl LayoutFile {
             board: board.name.clone(),
             schematic: sch.name.clone(),
             outline,
+            board_cutouts,
             copper,
             parts,
             tracks,
@@ -1885,7 +1899,7 @@ fn check_silk(
     tracks: &[Track],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
     min_height: f64,
     d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
@@ -1926,9 +1940,7 @@ fn check_silk(
         if !hit.is_empty() {
             d.add("silk-artwork", &at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
         }
-        if outline.len() >= 3
-            && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
-        {
+        if board_edge.is_closed() && a.polygons.iter().any(|r| !board_edge.holds(r)) {
             d.add("silk-artwork", &at, format!("`{}` runs off the board", a.name));
         }
     }
@@ -1947,13 +1959,13 @@ fn check_silk(
                 ),
             );
         }
-        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, outline);
+        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, board_edge);
         if found.is_empty() {
             continue;
         }
         let hint = match (t.part != usize::MAX).then(|| parts.get(t.part)).flatten() {
             Some(p) if t.text == p.reference => {
-                let spot = free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, outline);
+                let spot = free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, board_edge);
                 fixes.push(LabelFix {
                     reference: p.reference.clone(),
                     at: spot.map(|s| s.0),
@@ -1987,7 +1999,7 @@ fn silk_issues(
     boxes: &[Vec<P>],
     parts: &[Placed],
     vias: &[Via],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
 ) -> Vec<(bool, String)> {
     let mut out = Vec::new();
     let reach = ring_bounds(std::slice::from_ref(&bx.to_vec()));
@@ -2064,7 +2076,7 @@ fn silk_issues(
     if !crossed.is_empty() {
         out.push((true, format!("crosses the silk outline of {}", crossed.join(", "))));
     }
-    if outline.len() >= 3 && bx.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
+    if board_edge.is_closed() && !board_edge.holds(bx) {
         out.push((true, "runs off the board".into()));
     }
     let side = if t.layer.starts_with("B.") { "B" } else { "F" };
@@ -2119,7 +2131,7 @@ fn free_spot(
     parts: &[Placed],
     vias: &[Via],
     tracks: &[Track],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
 ) -> Option<(P, f64)> {
     let mut b = Bounds::EMPTY;
     for q in &part.pads {
@@ -2177,7 +2189,7 @@ fn free_spot(
             ..t.clone()
         };
         let bx = trial.outline();
-        silk_issues(&trial, &bx, me, texts, boxes, parts, vias, outline).is_empty()
+        silk_issues(&trial, &bx, me, texts, boxes, parts, vias, board_edge).is_empty()
             && !tracks.iter().any(|tr| {
                 tr.layer == cu
                     && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
@@ -2274,18 +2286,16 @@ fn watermark_occupancy(
     boxes: &[Vec<P>],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
     margin: f64,
 ) -> Occupancy {
     let mut ob = Bounds::EMPTY;
-    outline.iter().for_each(|p| ob.add(*p));
+    board_edge.outline.iter().for_each(|p| ob.add(*p));
     let mut occ = Occupancy::new(&ob);
     for j in 0..occ.h {
         for i in 0..occ.w {
             let c = occ.center(i, j);
-            if !geom::point_in_polygon(c, outline)
-                || crate::drc::edge_distance(outline, c) < margin + WATERMARK_CELL
-            {
+            if !board_edge.contains(c) || board_edge.distance(c) < margin + WATERMARK_CELL {
                 occ.blocked[j * occ.w + i] = true;
             }
         }
@@ -2354,7 +2364,7 @@ fn place_watermark(
     vias: &[Via],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
     found: &mut crate::drc::Findings,
 ) -> (Option<SilkText>, Option<String>) {
     let text = crate::version::watermark();
@@ -2409,7 +2419,7 @@ fn place_watermark(
     let problems = |t: &SilkText| -> Vec<String> {
         let bx = t.outline();
         let mut out: Vec<String> =
-            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, vias, outline)
+            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, vias, board_edge)
                 .into_iter()
                 .map(|(_, s)| s)
                 .collect();
@@ -2430,9 +2440,9 @@ fn place_watermark(
         }) {
             out.push("overlaps silk artwork".into());
         }
-        if outline.len() >= 3
-            && bx.iter().all(|c| geom::point_in_polygon(*c, outline))
-            && bx.iter().any(|c| crate::drc::edge_distance(outline, *c) < margin)
+        if board_edge.is_closed()
+            && board_edge.holds(&bx)
+            && bx.iter().any(|c| board_edge.distance(*c) < margin)
         {
             out.push(format!("sits closer than {} to the board edge", Length::mm(margin)));
         }
@@ -2463,13 +2473,13 @@ fn place_watermark(
         None => vec![0.0, 90.0],
     };
     let mut ob = Bounds::EMPTY;
-    outline.iter().for_each(|p| ob.add(*p));
+    board_edge.outline.iter().for_each(|p| ob.add(*p));
     let corner = [ob.min[0], ob.max[1]];
     let round = |v: f64| (v * 100.0).round() / 100.0;
     let mut least: Option<(u32, SilkText)> = None;
     for layer in &layers {
         let occ = watermark_occupancy(
-            layer, parts, vias, &texts, &boxes, graphics, artwork, outline, margin,
+            layer, parts, vias, &texts, &boxes, graphics, artwork, board_edge, margin,
         );
         for &rot in &rotations {
             let (sin, cos) = rot.to_radians().sin_cos();
@@ -2581,7 +2591,7 @@ fn fill_zone(
     net: usize,
     layer: &str,
     poly: &[P],
-    board: &[P],
+    board: geom::BoardEdge,
     edge_clear: f64,
     clearance: f64,
     items: &[Item],
@@ -2614,8 +2624,8 @@ fn fill_zone(
             }
         }
     };
-    if board.len() >= 3 {
-        for (a, c) in edges(board) {
+    if board.is_closed() {
+        for (a, c) in board.segments() {
             let mut bb = Bounds::EMPTY;
             bb.add(a);
             bb.add(c);
@@ -2624,9 +2634,14 @@ fn fill_zone(
             });
         }
         let mut on_board = vec![0u8; w * h];
-        scan_spans(board, origin, cell, w, h, |y, x0, x1| {
+        scan_spans(board.outline, origin, cell, w, h, |y, x0, x1| {
             on_board[y * w + x0..=y * w + x1].fill(1)
         });
+        for c in board.cutouts.iter().filter(|c| c.len() >= 3) {
+            scan_spans(c, origin, cell, w, h, |y, x0, x1| {
+                on_board[y * w + x0..=y * w + x1].fill(0)
+            });
+        }
         mask.iter_mut().zip(&on_board).for_each(|(m, b)| *m &= b);
     }
     for c in cutouts {
@@ -3010,7 +3025,7 @@ fn fill_clip(
     layer: &str,
     net: usize,
     poly: &[P],
-    board: &[P],
+    board: geom::BoardEdge,
     edge_clear: f64,
     clearance: f64,
     items: &[Item],
@@ -3022,9 +3037,9 @@ fn fill_clip(
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
     use i_overlay::float::single::SingleFloatOverlay;
-    let subject: Vec<Vec<P>> = if board.len() >= 3 && poly.len() >= 3 {
+    let subject: Vec<Vec<P>> = if board.is_closed() && poly.len() >= 3 {
         poly.to_vec()
-            .overlay(&board.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
+            .overlay(&board.outline.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
             .into_iter()
             .flatten()
             .collect()
@@ -3045,9 +3060,16 @@ fn fill_clip(
         near(bb, grow)
     };
     let mut clip: Vec<Vec<P>> = Vec::new();
-    if board.len() >= 3 && edge_clear > 0.0 {
-        for (a, b) in edges(board).filter(|(a, b)| edge_near(*a, *b, edge_clear)) {
+    if board.is_closed() && edge_clear > 0.0 {
+        for (a, b) in board.segments().filter(|(a, b)| edge_near(*a, *b, edge_clear)) {
             clip.push(capsule(a, b, edge_clear));
+        }
+    }
+    if board.is_closed() {
+        for c in board.cutouts.iter().filter(|c| c.len() >= 3) {
+            if near(ring_bounds(std::slice::from_ref(c)), 0.0) {
+                clip.push(c.to_vec());
+            }
         }
     }
     for c in cutouts.iter().filter(|c| near(ring_bounds(std::slice::from_ref(*c)), 0.0)) {
@@ -3067,15 +3089,18 @@ fn fill_clip(
     if min_width > 0.0 {
         clip.extend(gap_bridges(&keepouts, min_width));
         let mut walls: Vec<Wall> = Vec::new();
-        if board.len() >= 3 && edge_clear > 0.0 {
-            walls.extend(
-                edges(board).filter(|(a, b)| edge_near(*a, *b, edge_clear)).map(|(a, b)| Wall {
-                    a,
-                    b,
-                    gap: edge_clear,
-                    group: 0,
-                }),
-            );
+        if board.is_closed() && edge_clear > 0.0 {
+            for (k, ring) in board.rings().enumerate() {
+                let group = if k == 0 { 0 } else { cutouts.len() + k };
+                walls.extend(
+                    edges(ring).filter(|(a, b)| edge_near(*a, *b, edge_clear)).map(|(a, b)| Wall {
+                        a,
+                        b,
+                        gap: edge_clear,
+                        group,
+                    }),
+                );
+            }
         }
         for (k, c) in cutouts.iter().enumerate() {
             walls.extend(edges(c).filter(|(a, b)| edge_near(*a, *b, 0.0)).map(|(a, b)| Wall {
@@ -3088,7 +3113,7 @@ fn fill_clip(
         for z in blockers {
             let gap = clearance.max(clearance_of(Some(z.net)));
             for r in &z.rings {
-                let group = 1 + cutouts.len() + walls.len();
+                let group = 1 + cutouts.len() + board.cutouts.len() + walls.len();
                 walls.extend(edges(r).filter(|(a, b)| edge_near(*a, *b, gap)).map(|(a, b)| Wall {
                     a,
                     b,
@@ -3112,7 +3137,7 @@ fn fill_clip(
 fn vector_fill(
     raster: &ZoneFill,
     poly: &[P],
-    board: &[P],
+    board: geom::BoardEdge,
     edge_clear: f64,
     clearance: f64,
     items: &[Item],
@@ -3711,8 +3736,20 @@ mod pair_tests {
     fn a_pour_leaves_no_stubs_between_antipads_closer_than_min_width() {
         let items = [via(1, [-0.375, -0.075]), via(1, [0.375, 0.075]), via(0, [1.5, 1.5])];
         let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
-        let (fill, _) =
-            fill_zone(0, "In6.Cu", &square, &[], 0.0, 0.1, &items, &|_| 0.1, &[], &[], 0.25, 0.0);
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            geom::BoardEdge::default(),
+            0.0,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[],
+            &[],
+            0.25,
+            0.0,
+        );
         let copper =
             |p: P| fill.rings.iter().filter(|r| geom::point_in_polygon(p, r)).count() % 2 == 1;
         let across = [-0.196, 0.981];
@@ -3745,7 +3782,7 @@ mod pair_tests {
             0,
             "In6.Cu",
             &square,
-            &square,
+            geom::BoardEdge::new(&square, &[]),
             0.2,
             0.1,
             &items,
@@ -3767,7 +3804,7 @@ mod pair_tests {
             0,
             "In6.Cu",
             &square,
-            &[],
+            geom::BoardEdge::default(),
             0.0,
             0.1,
             &items,
@@ -3778,6 +3815,39 @@ mod pair_tests {
             0.0,
         );
         gap_is_cut(&fill, (1.575 + 1.8) / 2.0);
+    }
+
+    #[test]
+    fn a_pour_clears_a_board_cutout_by_the_edge_clearance() {
+        let items = [via(0, [-1.5, -1.5])];
+        let square = vec![[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let slot = vec![vec![[-0.5, -0.25], [0.5, -0.25], [0.5, 0.25], [-0.5, 0.25]]];
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            geom::BoardEdge::new(&square, &slot),
+            0.3,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[],
+            &[],
+            0.25,
+            0.0,
+        );
+        let copper =
+            |p: P| fill.rings.iter().filter(|r| geom::point_in_polygon(p, r)).count() % 2 == 1;
+        for p in [[0.0, 0.0], [0.0, 0.5], [0.75, 0.0], [-0.75, 0.0], [0.0, -0.5]] {
+            assert!(!copper(p), "copper at {p:?}");
+        }
+        for p in [[0.0, 0.6], [0.85, 0.0], [0.0, -1.0]] {
+            assert!(copper(p), "no copper at {p:?}");
+        }
+        let edge = geom::BoardEdge::new(&square, &slot);
+        let closest =
+            fill.rings.iter().flatten().map(|p| edge.distance(*p)).fold(f64::MAX, f64::min);
+        assert!(closest > 0.3 - 1e-6, "fill {closest} from the edge");
     }
 
     #[test]
@@ -3801,7 +3871,7 @@ mod pair_tests {
             0,
             "In6.Cu",
             &square,
-            &[],
+            geom::BoardEdge::default(),
             0.0,
             0.1,
             &items,

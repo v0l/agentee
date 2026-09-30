@@ -853,6 +853,14 @@ pub fn copper_hash(
             }
         }
     }
+    for c in &layout.board_cutouts {
+        if near(&mut c.iter().copied()) {
+            c.iter().for_each(|p| {
+                eat(f(p[0]));
+                eat(f(p[1]))
+            });
+        }
+    }
     h
 }
 

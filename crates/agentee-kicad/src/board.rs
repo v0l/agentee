@@ -770,11 +770,20 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
     if keepouts > 0 {
         notes.push(format!("{keepouts} keepout areas were left out"));
     }
-    let cutouts: Vec<Value> = loops
+    let (inner, stray): (Vec<&Vec<P>>, Vec<&Vec<P>>) = loops
         .iter()
         .skip(1)
-        .map(|l| json!({ "layers": copper, "points": l.iter().map(|p| pt(shift(*p))).collect::<Vec<_>>() }))
+        .partition(|l| l.iter().all(|p| agentee_core::geom::point_in_polygon(*p, &outline)));
+    let board_cutouts: Vec<Value> = inner
+        .iter()
+        .map(|l| json!({ "points": l.iter().map(|p| pt(shift(*p))).collect::<Vec<_>>() }))
         .collect();
+    if !stray.is_empty() {
+        notes.push(format!(
+            "{} Edge.Cuts loops outside the board outline were left out",
+            stray.len()
+        ));
+    }
 
     let class_of = |net: &str| -> Option<String> {
         assign
@@ -840,7 +849,10 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
     let board: BoardFile = serde_json::from_value(json!({
         "name": name,
         "description": format!("imported from KiCad"),
-        "outline": { "points": outline.iter().map(|p| pt(shift(*p))).collect::<Vec<_>>() },
+        "outline": {
+            "points": outline.iter().map(|p| pt(shift(*p))).collect::<Vec<_>>(),
+            "cutouts": board_cutouts,
+        },
         "stackup": Value::Object(stackup),
         "vias": board_vias,
         "rules": Value::Object(rules),
@@ -855,7 +867,6 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         "tracks": tracks,
         "vias": vias,
         "zones": zones,
-        "cutouts": cutouts,
     }))
     .map_err(|e| format!("layout: {e}"))?;
     let vars = text_variables(&root, &pro);
@@ -966,6 +977,23 @@ mod tests {
         let sig = b.schematic.nets.iter().find(|n| n.name == "SIG").unwrap();
         assert_eq!(sig.pins, vec!["Q1.1".to_string(), "R1.1".to_string()]);
         assert_eq!(b.layout.tracks.len(), 1);
+    }
+
+    #[test]
+    fn inner_edge_cuts_loops_become_board_cutouts() {
+        let src = BOARD.replace(
+            "(gr_rect (start 0 0) (end 20 20) (layer \"Edge.Cuts\"))",
+            "(gr_rect (start 0 0) (end 20 20) (layer \"Edge.Cuts\")) (gr_rect (start 12 2) (end 16 4) (layer \"Edge.Cuts\")) (gr_circle (center 15 15) (end 16 15) (layer \"Edge.Cuts\")) (gr_rect (start 30 0) (end 32 2) (layer \"Edge.Cuts\"))",
+        );
+        let b = import_board(&src, None, "t").unwrap();
+        let cutouts = &b.board.outline.as_ref().unwrap().cutouts;
+        assert_eq!(cutouts.len(), 2);
+        let slot: Vec<[f64; 2]> =
+            cutouts[0].points.as_ref().unwrap().iter().map(|p| p.to_mm()).collect();
+        assert!(slot.contains(&[12.0, 2.0]) && slot.contains(&[16.0, 4.0]), "{slot:?}");
+        assert_eq!(cutouts[1].points.as_ref().unwrap().len(), 48);
+        assert!(b.layout.cutouts.is_empty());
+        assert!(b.notes.iter().any(|n| n.contains("1 Edge.Cuts loops outside")), "{:?}", b.notes);
     }
 
     #[test]
