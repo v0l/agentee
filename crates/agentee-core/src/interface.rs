@@ -441,6 +441,7 @@ pub struct Measured<'a> {
     pub untracked: bool,
     pub fdtd: Option<&'a crate::sim::SimResult>,
     pub channel: Option<&'a crate::sim::ChannelResult>,
+    pub logic: Option<&'a crate::logic::LogicResult>,
 }
 
 pub fn measure(iface: &Interface, sims: &[Measured], d: &mut Diags) {
@@ -450,12 +451,16 @@ pub fn measure(iface: &Interface, sims: &[Measured], d: &mut Diags) {
             d.error(&at, format!("no sim named `{}`", m.sim));
             continue;
         };
-        if sim.fdtd.is_none() && sim.channel.is_none() {
+        if sim.fdtd.is_none() && sim.channel.is_none() && sim.logic.is_none() {
             d.error(&at, format!("`{}` has not run, `agentee sim {}` runs it", m.sim, m.sim));
             continue;
         }
         if sim.stale {
             d.error(&at, format!("the result of `{}` is stale, run it again", m.sim));
+            continue;
+        }
+        if let Some(r) = sim.logic {
+            logic(m, r, &at, d);
             continue;
         }
         if sim.untracked {
@@ -474,6 +479,31 @@ pub fn measure(iface: &Interface, sims: &[Measured], d: &mut Diags) {
         if let Some(c) = sim.channel {
             eye(m, c, &at, d);
         }
+    }
+}
+
+fn logic(m: &MeasureFile, r: &crate::logic::LogicResult, at: &str, d: &mut Diags) {
+    let limits = m.pair.is_some()
+        || m.through.is_some()
+        || m.up_to.is_some()
+        || m.max_loss.is_some()
+        || m.min_return_loss.is_some()
+        || m.max_mode_conversion.is_some()
+        || m.min_eye_height.is_some()
+        || m.min_eye_width.is_some();
+    if limits {
+        d.error(at, format!("`{}` is a logic sim: a measure on it takes no limits, it passes when the sim passes", m.sim));
+    }
+    if let Some(first) = r.failures.first() {
+        d.error(
+            at,
+            format!(
+                "{}: the logic sim fails, {} passed and {} failure(s), first: {first}",
+                m.sim,
+                r.passed,
+                r.failures.len()
+            ),
+        );
     }
 }
 
@@ -813,6 +843,66 @@ fn unreferenced(side: &[usize], spec: &Spec, cx: &Ctx) -> (f64, Option<(P, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_measure_on_a_logic_sim_passes_when_the_sim_does() {
+        let result = |failures: Vec<String>| crate::logic::LogicResult {
+            name: "bus".into(),
+            kind: "logic".into(),
+            spec_hash: 0,
+            duration_ps: 1,
+            end_ps: 1,
+            traces: Vec::new(),
+            buses: Vec::new(),
+            marks: Vec::new(),
+            passed: 3,
+            failures,
+            readings: Vec::new(),
+            events: 0,
+            seconds: 0.0,
+            vcd: String::new(),
+        };
+        let iface = |m: MeasureFile| Interface {
+            name: "i2c".into(),
+            preset: None,
+            spec: Spec::default(),
+            lanes: Vec::new(),
+            pairs: Vec::new(),
+            timing: Vec::new(),
+            max_bus_skew_ps: None,
+            clock_window_ps: None,
+            measure: vec![m],
+        };
+        let only = MeasureFile { sim: "bus".into(), ..Default::default() };
+        let run = |r: Option<&crate::logic::LogicResult>, stale: bool, m: MeasureFile| {
+            let sims = [Measured {
+                name: "bus",
+                stale,
+                untracked: true,
+                fdtd: None,
+                channel: None,
+                logic: r,
+            }];
+            let mut d = Diags::new("t");
+            measure(&iface(m), &sims, &mut d);
+            d.list.iter().map(|x| x.message.clone()).collect::<Vec<_>>()
+        };
+        let pass = result(Vec::new());
+        assert_eq!(run(Some(&pass), false, only.clone()), Vec::<String>::new());
+        let fail = result(vec!["expect[0] SDA: expected 0 at 5us, got 1".into()]);
+        let msgs = run(Some(&fail), false, only.clone());
+        assert_eq!(msgs.len(), 1);
+        assert!(
+            msgs[0].starts_with(
+                "bus: the logic sim fails, 3 passed and 1 failure(s), first: expect[0]"
+            ),
+            "{msgs:?}"
+        );
+        assert!(run(Some(&pass), true, only.clone())[0].contains("is stale"));
+        assert!(run(None, false, only.clone())[0].contains("has not run"));
+        let limited = MeasureFile { max_loss: Some(1.0), ..only };
+        assert!(run(Some(&pass), false, limited)[0].contains("takes no limits"));
+    }
 
     #[test]
     fn limits_read_as_length_or_time() {

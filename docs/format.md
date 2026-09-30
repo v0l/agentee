@@ -1081,7 +1081,15 @@ max_mode_conversion = -30.0    # dB, worst Scd21
 sim = "sdr-usb-eye"            # a channel sim
 min_eye_height = "70mV"
 min_eye_width = "0.47UI"       # or ps
+
+[[interfaces.measure]]
+sim = "i2c-bus"                # a logic sim: no limits, it passes when the sim passes
 ```
+
+A measure on a logic sim fails while the sim has any failure (an assertion, contention, a
+timing violation or a stopped run), naming the count and the first; it is stale when the sim's
+spec or schematic netlist changed, as the sim itself reports, not when the copper did, since a
+logic sim never sees the layout.
 
 | preset | impedance | skew | vias | stub | other |
 |---|---|---|---|---|---|
