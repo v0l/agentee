@@ -39,6 +39,8 @@ for tag in tags:
     renorm = v.copy()
     renorm.renormalize(np.full((len(f), 2), z0[k15]))
     alone = IEEEP370_SE_NZC_2xThru(dummy_2xthru=thru, name=tag, verbose=False).deembed(v)
+    w = 2 * np.pi * f
+    series, shunt = alone.a[:, 0, 1].imag / w * 1e12, alone.a[:, 1, 0].imag / w * 1e15
     alone.renormalize(np.stack([z0, z0], -1))
     row = lambda x, p=1: " / ".join(f"{x[k]:.{p}f}" for k in ks)
     ghz = " / ".join(f"{f[k] / 1e9:g}" for k in ks)
@@ -47,3 +49,4 @@ for tag in tags:
     print(f"  S11 renormalised to the line Z0: {row(db(renorm.s[:, 0, 0]))} dB")
     print(f"  via alone (P370 NZC with {short} as the 2x-thru, line Z0 at each frequency): S11 {row(db(alone.s[:, 0, 0]))} dB, "
           f"|S11| {row(np.abs(alone.s[:, 0, 0]) * 1e3)} m, {row(np.degrees(np.angle(alone.s[:, 0, 0])), 0)} deg")
+    print(f"  via alone ABCD: series L {row(series, 0)} pH, shunt C {row(shunt, 0)} fF")
