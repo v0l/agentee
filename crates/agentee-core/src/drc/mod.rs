@@ -64,7 +64,6 @@ pub struct Setup {
 impl Setup {
     pub fn of_board(board: &Board) -> Setup {
         let copper = board.stackup.copper_names();
-        let (first, last) = (copper.first(), copper.last());
         let inner: Vec<f64> =
             board.stackup.copper().map(|(_, l)| l.thickness.to_mm() / 0.035).skip(1).collect();
         Setup {
@@ -74,7 +73,7 @@ impl Setup {
             finish: board.stackup.finish.clone(),
             outer_oz: board.stackup.outer_oz(),
             inner_oz: inner.split_last().and_then(|(_, v)| v.iter().copied().reduce(f64::max)),
-            blind_buried: board.vias.iter().any(|v| Some(&v.from) != first || Some(&v.to) != last),
+            blind_buried: board.vias.iter().any(|v| v.kind != crate::board::ViaKind::Through),
             impedance: board.netclasses.iter().any(|n| n.impedance.is_some()),
             ..Setup::default()
         }
@@ -360,7 +359,7 @@ impl<'a> Ctx<'a> {
                 size: [v.drill, v.drill],
                 plated: true,
                 net: Some(v.net),
-                layers: v.layers.clone(),
+                layers: v.hole.clone(),
             })
             .collect();
         for (pi, p) in self.parts.iter().enumerate() {

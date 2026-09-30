@@ -37,7 +37,7 @@ pub static RULES: &[Rule] = &[
         id: "via-in-pad-fill",
         category: Category::Drill,
         severity: Severity::Error,
-        summary: "a via in a pad drilled larger than the fab fills and caps (max_filled_via_drill)",
+        summary: "a via in a pad drilled larger than the fab fills and caps (max_filled_via_drill), or whose via type sets a `fill` other than filled_capped",
         when: "vias in SMD pads",
         applies: with_via_in_pad,
         check: via_in_pad_fill,
@@ -156,12 +156,23 @@ fn via_in_pad(cx: &Ctx, r: &mut Report) {
     }
     let mut pads: Vec<String> = found.iter().map(|&(_, p, k)| cx.pad_name(p, k)).collect();
     pads.dedup();
+    let mut kinds: Vec<String> = found
+        .iter()
+        .map(|&(vi, _, _)| {
+            let v = &cx.vias[vi];
+            let fill = v.fill.map(|f| f.describe()).unwrap_or("filled and capped");
+            format!("{} {fill}", v.kind.name())
+        })
+        .collect();
+    kinds.sort();
+    kinds.dedup();
     r.emit(
         "vias",
         format!(
-            "{} vias sit in SMD pads ({}): the fab notes ask to fill and cap them (IPC-4761 type VII)",
+            "{} vias sit in SMD pads ({}): the fab notes ask to fill and cap them (IPC-4761 type VII); {}",
             found.len(),
-            super::list(&pads)
+            super::list(&pads),
+            kinds.join(", ")
         ),
     );
 }
@@ -175,6 +186,22 @@ fn via_in_pad_fill(cx: &Ctx, r: &mut Report) {
             let e = big.entry(format!("{}", Length::mm(v.drill))).or_insert((0, cx.pad_name(p, k)));
             e.0 += 1;
         }
+    }
+    let mut open: BTreeMap<String, (usize, String)> = BTreeMap::new();
+    for (vi, p, k) in super::vias_in_pads(cx.parts, cx.vias) {
+        let v = &cx.vias[vi];
+        if let Some(f) = v.fill.filter(|f| *f != crate::board::ViaFill::FilledCapped) {
+            let key = format!("`{}` is {} (IPC-4761 type {})", v.name, f.describe(), f.ipc4761());
+            open.entry(key).or_insert((0, cx.pad_name(p, k))).0 += 1;
+        }
+    }
+    for (what, (n, first)) in open {
+        r.emit(
+            "vias",
+            format!(
+                "{n} vias sit in pads (first {first}) but via {what}: solder wicks into the hole or the pad is not flat; use fill = \"filled_capped\" (type VII) for via-in-pad"
+            ),
+        );
     }
     for (drill, (n, first)) in big {
         r.emit(

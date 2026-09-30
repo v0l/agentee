@@ -242,11 +242,33 @@ fn body_height(name: &str) -> (f32, Color32) {
 struct Hole {
     ring: Vec<P>,
     plated: bool,
+    z: (f32, f32),
 }
 
-fn holes(l: &Layout) -> Vec<Hole> {
-    let mut out: Vec<Hole> =
-        l.vias.iter().map(|v| Hole { ring: disc(v.at, v.drill / 2.0, 12), plated: true }).collect();
+impl Hole {
+    fn opens(&self, z: f32) -> bool {
+        z <= self.z.0 + 1e-4 && z >= self.z.1 - 1e-4
+    }
+}
+
+fn via_z(v: &agentee_core::layout::Via, l: &Layout, board: &Board, z: (f32, f32)) -> (f32, f32) {
+    let Some((a, b)) = v.span_of(&l.copper) else { return z };
+    let depth = |k: usize| board.stackup.copper_z(&l.copper[k]).unwrap_or(0.0) as f32;
+    let first = if a == 0 { z.0 } else { z.0 - depth(a) };
+    let last = if b + 1 == l.copper.len() { z.1 } else { z.0 - depth(b) };
+    (first, last)
+}
+
+fn holes(l: &Layout, board: &Board, z: (f32, f32)) -> Vec<Hole> {
+    let mut out: Vec<Hole> = l
+        .vias
+        .iter()
+        .map(|v| Hole {
+            ring: disc(v.at, v.drill / 2.0, 12),
+            plated: true,
+            z: via_z(v, l, board, z),
+        })
+        .collect();
     for part in &l.parts {
         for pad in &part.pads {
             let Some((c, d, rot)) = pad.drill else { continue };
@@ -260,15 +282,14 @@ fn holes(l: &Layout) -> Vec<Hole> {
                 let (dx, dy) = (half * a.cos(), -half * a.sin());
                 capsule([c[0] - dx, c[1] - dy], [c[0] + dx, c[1] + dy], r)
             };
-            out.push(Hole { ring, plated });
+            out.push(Hole { ring, plated, z });
         }
     }
-    out.extend(
-        l.board_cutouts
-            .iter()
-            .filter(|c| c.len() >= 3)
-            .map(|c| Hole { ring: c.clone(), plated: false }),
-    );
+    out.extend(l.board_cutouts.iter().filter(|c| c.len() >= 3).map(|c| Hole {
+        ring: c.clone(),
+        plated: false,
+        z,
+    }));
     out
 }
 
@@ -314,7 +335,7 @@ fn faces(
 ) -> Surface {
     let mut coords: Vec<f64> = outline.iter().flat_map(|p| [p[0], p[1]]).collect();
     let mut starts = Vec::new();
-    for h in holes {
+    for h in holes.iter().filter(|h| h.opens(z)) {
         starts.push(coords.len() / 2);
         coords.extend(h.ring.iter().flat_map(|p| [p[0], p[1]]));
     }
@@ -356,7 +377,7 @@ fn decals(l: &Layout, board: &Board, side: usize) -> Decal {
             flat(&[capsule(w[0], w[1], tr.width / 2.0)], under, &mut d);
         }
     }
-    for v in &l.vias {
+    for v in l.vias.iter().filter(|v| v.layers.iter().any(|c| c == cu)) {
         flat(&[disc(v.at, v.diameter / 2.0, 20)], under, &mut d);
     }
     for part in &l.parts {
@@ -554,7 +575,7 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     let size = bb.size();
     let bounds = [bb.min[0], bb.min[1], size[0].max(1e-3), size[1].max(1e-3)];
     let ppm = (40.0f64).min(4096.0 / size[0].max(size[1]));
-    let hs = holes(l);
+    let hs = holes(l, board, (top, bot));
     for side in 0..2 {
         s.images.push(rasterize(&decals(l, board, side), mask, bounds, ppm));
     }
@@ -564,7 +585,7 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     walls(&outline, bot, top, true, &mut edge);
     let mut plated = Surface { colour: rgb(gold), metal: 0.8, ..Default::default() };
     for h in &hs {
-        walls(&h.ring, bot, top, false, if h.plated { &mut plated } else { &mut edge });
+        walls(&h.ring, h.z.1, h.z.0, false, if h.plated { &mut plated } else { &mut edge });
     }
     s.surfaces.push(edge);
     s.surfaces.push(plated);
@@ -891,6 +912,50 @@ mod tests {
         assert!((area - (200.0 - 16.0)).abs() < 1e-3, "top face area {area}");
         let walls = &scene.surfaces[2];
         assert_eq!(walls.positions.len(), 6 * 8);
+    }
+
+    #[test]
+    fn a_blind_via_opens_one_face_and_its_barrel_stops_at_its_span() {
+        let dir = std::env::temp_dir().join(format!("agentee-3d-vias-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\nfab = \"hdi\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[vias]]\nname = \"uv\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[nets]]\nname = \"A\"\npins = []\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[vias]]\nnet = \"A\"\nat = [5, 5]\nvia = \"uv\"\n",
+        )
+        .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let (l, board) = (&p.layouts[0].item, &p.boards[0].item);
+        let scene = build(l, board, &dir, Fetch::Blocking);
+        let area = |s: &Surface| {
+            s.positions
+                .chunks_exact(3)
+                .map(|t| {
+                    let (u, v) = (
+                        [t[1][0] - t[0][0], t[1][1] - t[0][1]],
+                        [t[2][0] - t[0][0], t[2][1] - t[0][1]],
+                    );
+                    ((u[0] * v[1] - u[1] * v[0]) / 2.0).abs() as f64
+                })
+                .sum::<f64>()
+        };
+        assert!(area(&scene.surfaces[0]) < 200.0 - 1e-4);
+        assert!((area(&scene.surfaces[1]) - 200.0).abs() < 1e-4);
+        let plated = &scene.surfaces[3];
+        let t = board.stackup.thickness().to_mm() as f32;
+        let low = plated.positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
+        let depth = board.stackup.copper_z("In1.Cu").unwrap() as f32;
+        assert!((low - (t / 2.0 - depth)).abs() < 1e-4, "{low}");
     }
 
     #[test]

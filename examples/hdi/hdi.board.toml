@@ -1,0 +1,41 @@
+name = "hdi"
+description = "6 layer 1+4+1 HDI coupon: microvias in the pads of a 0.5 mm BGA field"
+fab = "hdi"
+
+[outline]
+size = [24, 12]
+corner_radius = 0.5
+
+[stackup]
+preset = "hdi-6l-1n1"
+finish = "ENIG"
+
+[[vias]]
+name = "uv-top"
+type = "microvia"
+from = "F.Cu"
+to = "In1.Cu"
+drill = "0.1mm"
+diameter = "0.25mm"
+fill = "filled_capped"
+
+[[vias]]
+name = "core"
+type = "buried"
+from = "In1.Cu"
+to = "In4.Cu"
+drill = "0.2mm"
+diameter = "0.45mm"
+cost = 2.0
+
+[[vias]]
+name = "std"
+drill = "0.2mm"
+diameter = "0.45mm"
+cost = 3.0
+
+[[netclasses]]
+name = "Default"
+track_width = "0.1mm"
+clearance = "0.1mm"
+via = ["uv-top", "core", "std"]

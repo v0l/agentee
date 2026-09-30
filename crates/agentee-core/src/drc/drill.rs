@@ -1,5 +1,5 @@
 use super::{Category, Ctx, Hole, HoleOf, Owner, Report, Rule, Setup, every, near};
-use crate::board::LayerKind;
+use crate::board::{LayerKind, ViaKind};
 use crate::diag::Severity;
 use crate::geom::{self, P};
 use crate::units::Length;
@@ -73,7 +73,7 @@ pub static RULES: &[Rule] = &[
         id: "hole-to-hole",
         category: Category::Drill,
         severity: Severity::Error,
-        summary: "drill holes of different parts or vias closer than min_hole_to_hole, wall to wall",
+        summary: "drill holes of different parts or vias closer than min_hole_to_hole, wall to wall, where their spans share a dielectric",
         when: "every board",
         applies: every,
         check: hole_to_hole,
@@ -82,7 +82,7 @@ pub static RULES: &[Rule] = &[
         id: "stacked-via",
         category: Category::Drill,
         severity: Severity::Error,
-        summary: "a via on the same spot as another via of its net",
+        summary: "a via on the same spot as another via whose span shares a dielectric, or a stacked via the fab does not build",
         when: "every board",
         applies: every,
         check: stacked_via,
@@ -210,6 +210,11 @@ fn aspect_ratio(cx: &Ctx, r: &mut Report) {
     let mut vias: BTreeMap<(String, String, String), (usize, String)> = BTreeMap::new();
     let mut found = Vec::new();
     for h in cx.holes().into_iter().filter(|h| h.plated) {
+        if let HoleOf::Via(v) = h.of
+            && cx.vias[v].kind == ViaKind::Microvia
+        {
+            continue;
+        }
         let drill = h.size[0].min(h.size[1]);
         let depth = span(cx, &h.layers);
         if drill <= 0.0 || depth / drill <= max + 1e-9 {
@@ -383,17 +388,23 @@ fn hole_to_edge(cx: &Ctx, r: &mut Report) {
     }
 }
 
+type Drill = (P, f64, String, Option<usize>, (usize, usize));
+
 fn hole_to_hole(cx: &Ctx, r: &mut Report) {
-    let mut drills: Vec<(P, f64, String, Option<usize>)> = cx
+    let all = (0, cx.copper.len().saturating_sub(1));
+    let mut drills: Vec<Drill> = cx
         .vias
         .iter()
-        .map(|v| (v.at, v.drill / 2.0, format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]), None))
+        .map(|v| {
+            let name = format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]);
+            (v.at, v.drill / 2.0, name, None, v.span_of(cx.copper).unwrap_or(all))
+        })
         .collect();
     for (pi, p) in cx.parts.iter().enumerate() {
         for pad in &p.pads {
             if let Some((c, s, _)) = pad.drill {
                 let name = format!("{}.{}", p.reference, pad.number);
-                drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi)));
+                drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi), all));
             }
         }
     }
@@ -403,7 +414,7 @@ fn hole_to_hole(cx: &Ctx, r: &mut Report) {
     for i in 0..drills.len() {
         for j in i + 1..drills.len() {
             let (a, b) = (&drills[i], &drills[j]);
-            if a.3.is_some() && a.3 == b.3 {
+            if (a.3.is_some() && a.3 == b.3) || a.4.0.max(b.4.0) >= a.4.1.min(b.4.1) {
                 continue;
             }
             let gap = geom::dist(a.0, b.0) - a.1 - b.1;
@@ -419,21 +430,31 @@ fn hole_to_hole(cx: &Ctx, r: &mut Report) {
 }
 
 fn stacked_via(cx: &Ctx, r: &mut Report) {
-    let mut stacked = 0;
-    let mut first = None;
+    let allowed = cx.board.rules.stacked_microvias;
+    let (mut doubled, mut stacked) = (0, 0);
+    let (mut first_doubled, mut first_stacked) = (None, None);
     for (i, a) in cx.vias.iter().enumerate() {
-        if cx.vias[..i].iter().any(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6) {
+        let here = |b: &&crate::layout::Via| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6;
+        let spot = || format!("[{:.3}, {:.3}] ({})", a.at[0], a.at[1], cx.nets[a.net].name);
+        let below: Vec<&crate::layout::Via> = cx.vias[..i].iter().filter(here).collect();
+        if below.iter().any(|b| a.shares_dielectric(b, cx.copper)) {
+            doubled += 1;
+            first_doubled.get_or_insert_with(spot);
+        } else if !below.is_empty() && !allowed {
             stacked += 1;
-            first.get_or_insert(format!(
-                "[{:.3}, {:.3}] ({})",
-                a.at[0], a.at[1], cx.nets[a.net].name
-            ));
+            first_stacked.get_or_insert_with(spot);
         }
     }
-    if let Some(f) = first {
+    if let Some(f) = first_doubled {
         r.emit(
             "vias",
-            format!("{stacked} vias sit on another of their net at the same spot, first at {f}"),
+            format!("{doubled} vias sit on another of their net at the same spot through the same layers, first at {f}"),
+        );
+    }
+    if let Some(f) = first_stacked {
+        r.emit(
+            "vias",
+            format!("{stacked} vias are stacked on another via, which the fab does not build (set [rules] stacked_microvias = true for an HDI fab, or stagger them), first at {f}"),
         );
     }
 }

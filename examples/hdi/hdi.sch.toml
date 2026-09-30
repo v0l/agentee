@@ -1,0 +1,33 @@
+name = "hdi"
+board = "hdi"
+no_connect = ["U1.3", "U1.5", "U1.8", "U1.9", "U1.12", "U1.15"]
+
+[[parts]]
+ref = "U1"
+symbol = "BGA16"
+value = "BGA16"
+at = [20.32, 20.32]
+
+[[parts]]
+ref = "R1"
+symbol = "R"
+value = "100"
+at = [50.8, 15.24]
+
+[[parts]]
+ref = "R2"
+symbol = "R"
+value = "100"
+at = [50.8, 30.48]
+
+[[nets]]
+name = "GND"
+pins = ["U1.1", "U1.4", "U1.6", "U1.7", "U1.10", "U1.11", "U1.13", "U1.16", "R1.2", "R2.2"]
+
+[[nets]]
+name = "S2"
+pins = ["U1.2", "R1.1"]
+
+[[nets]]
+name = "S14"
+pins = ["U1.14", "R2.1"]

@@ -137,16 +137,127 @@ pub struct LayerFile {
     pub loss_tangent: Option<f64>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViaKind {
+    #[default]
+    Through,
+    Blind,
+    Buried,
+    Microvia,
+}
+
+impl ViaKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            ViaKind::Through => "through",
+            ViaKind::Blind => "blind",
+            ViaKind::Buried => "buried",
+            ViaKind::Microvia => "microvia",
+        }
+    }
+
+    pub fn of_span(a: usize, b: usize, layers: usize) -> ViaKind {
+        let last = layers.saturating_sub(1);
+        match (a.min(b) == 0, a.max(b) == last) {
+            (true, true) => ViaKind::Through,
+            (false, false) => ViaKind::Buried,
+            _ => ViaKind::Blind,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViaFill {
+    Tented,
+    TentedCovered,
+    Plugged,
+    PluggedCovered,
+    Filled,
+    FilledCovered,
+    FilledCapped,
+}
+
+impl ViaFill {
+    pub fn ipc4761(self) -> &'static str {
+        match self {
+            ViaFill::Tented => "I",
+            ViaFill::TentedCovered => "II",
+            ViaFill::Plugged => "III",
+            ViaFill::PluggedCovered => "IV",
+            ViaFill::Filled => "V",
+            ViaFill::FilledCovered => "VI",
+            ViaFill::FilledCapped => "VII",
+        }
+    }
+
+    pub fn describe(self) -> &'static str {
+        match self {
+            ViaFill::Tented => "tented",
+            ViaFill::TentedCovered => "tented and covered",
+            ViaFill::Plugged => "plugged",
+            ViaFill::PluggedCovered => "plugged and covered",
+            ViaFill::Filled => "filled",
+            ViaFill::FilledCovered => "filled and covered",
+            ViaFill::FilledCapped => "filled and capped",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackdrillFile {
+    pub from: String,
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_stub: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diameter: Option<Length>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ViaFile {
     pub name: String,
     pub drill: Length,
     pub diameter: Length,
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ViaKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub stacked: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub skip: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<ViaFill>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backdrill: Option<BackdrillFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<f64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ViaNames {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl ViaNames {
+    pub fn list(&self) -> Vec<String> {
+        match self {
+            ViaNames::One(s) => vec![s.clone()],
+            ViaNames::Many(v) => v.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,7 +279,7 @@ pub struct NetclassFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clearance: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub via: Option<String>,
+    pub via: Option<ViaNames>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current: Option<Amps>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -206,12 +317,21 @@ macro_rules! rules {
             )*
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub max_aspect_ratio: Option<f64>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub max_microvia_aspect_ratio: Option<f64>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub hdi: Option<bool>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub stacked_microvias: Option<bool>,
         }
 
         #[derive(Clone, Debug, PartialEq, Serialize)]
         pub struct Rules {
             $(pub $field: Length,)*
             pub max_aspect_ratio: f64,
+            pub max_microvia_aspect_ratio: f64,
+            pub hdi: bool,
+            pub stacked_microvias: bool,
         }
 
         impl Rules {
@@ -219,6 +339,15 @@ macro_rules! rules {
                 $(if let Some(v) = f.$field { self.$field = v; })*
                 if let Some(v) = f.max_aspect_ratio {
                     self.max_aspect_ratio = v;
+                }
+                if let Some(v) = f.max_microvia_aspect_ratio {
+                    self.max_microvia_aspect_ratio = v;
+                }
+                if let Some(v) = f.hdi {
+                    self.hdi = v;
+                }
+                if let Some(v) = f.stacked_microvias {
+                    self.stacked_microvias = v;
                 }
             }
 
@@ -236,6 +365,10 @@ rules! {
     min_via_drill: "smallest via hole",
     min_via_diameter: "smallest via pad",
     min_annular_ring: "copper left around a via hole",
+    min_blind_via_drill: "smallest mechanically drilled blind or buried via hole",
+    min_microvia_drill: "smallest laser drilled microvia hole",
+    max_microvia_drill: "largest laser drilled microvia hole",
+    min_microvia_diameter: "smallest microvia capture pad",
     min_hole_to_hole: "drill edge to drill edge",
     min_copper_to_edge: "copper to board outline",
     min_silk_width: "silkscreen line width",
@@ -260,7 +393,7 @@ rules! {
     flex_zone: "distance from the edge, corners and mounting holes where bending cracks MLCCs",
 }
 
-pub const FAB_PRESETS: &[&str] = &["generic", "jlcpcb"];
+pub const FAB_PRESETS: &[&str] = &["generic", "jlcpcb", "hdi"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FabSetup {
@@ -284,6 +417,28 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
     let multi = s.layers > 2;
     let enig = s.finish.eq_ignore_ascii_case("ENIG");
     match name {
+        "hdi" => Some(Rules {
+            min_track_width: mm(0.075),
+            min_clearance: mm(0.075),
+            min_drill: mm(0.2),
+            min_via_drill: mm(0.15),
+            min_via_diameter: mm(0.35),
+            min_annular_ring: mm(0.1),
+            min_blind_via_drill: mm(0.15),
+            min_microvia_drill: mm(0.1),
+            max_microvia_drill: mm(0.15),
+            min_microvia_diameter: mm(0.25),
+            min_hole_to_hole: mm(0.25),
+            min_via_hole_to_copper: mm(0.15),
+            min_copper_to_edge: mm(0.3),
+            min_bga_pad: mm(0.2),
+            min_bga_pitch: mm(0.4),
+            max_aspect_ratio: 10.0,
+            max_microvia_aspect_ratio: 0.8,
+            hdi: true,
+            stacked_microvias: true,
+            ..fab_rules_for("generic", s)?
+        }),
         "generic" => Some(Rules {
             min_track_width: mm(0.15),
             min_clearance: mm(0.15),
@@ -291,6 +446,10 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             min_via_drill: mm(0.3),
             min_via_diameter: mm(0.6),
             min_annular_ring: mm(0.15),
+            min_blind_via_drill: mm(0.2),
+            min_microvia_drill: mm(0.1),
+            max_microvia_drill: mm(0.15),
+            min_microvia_diameter: mm(0.3),
             min_hole_to_hole: mm(0.5),
             min_copper_to_edge: mm(0.5),
             min_silk_width: mm(0.12),
@@ -314,6 +473,9 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             min_body_to_edge: mm(1.0),
             flex_zone: mm(5.0),
             max_aspect_ratio: 8.0,
+            max_microvia_aspect_ratio: 0.8,
+            hdi: false,
+            stacked_microvias: false,
         }),
         "jlcpcb" => {
             let track = match (multi, s.outer_oz) {
@@ -338,6 +500,10 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
                 min_via_drill: mm(if single { 0.3 } else { 0.15 }),
                 min_via_diameter: mm(if single { 0.5 } else { 0.25 }),
                 min_annular_ring: mm(0.05),
+                min_blind_via_drill: mm(0.2),
+                min_microvia_drill: mm(0.1),
+                max_microvia_drill: mm(0.15),
+                min_microvia_diameter: mm(0.3),
                 min_hole_to_hole: mm(0.5),
                 min_copper_to_edge: mm(0.3),
                 min_silk_width: mm(0.15),
@@ -365,6 +531,9 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
                 min_body_to_edge: mm(1.0),
                 flex_zone: mm(5.0),
                 max_aspect_ratio: 10.7,
+                max_microvia_aspect_ratio: 0.8,
+                hdi: false,
+                stacked_microvias: false,
             })
         }
         _ => None,
@@ -388,6 +557,8 @@ pub const STACKUP_PRESETS: &[(&str, &str)] = &[
     ("jlcpcb-2l-1.6mm", "2 layer FR4, 1.6 mm, 1 oz outer"),
     ("jlcpcb-4l-1.6mm-7628", "JLC04161H-7628: 4 layer, 7628 prepreg, 1 oz outer, 0.5 oz inner"),
     ("jlcpcb-4l-1.6mm-3313", "JLC04161H-3313: 4 layer, 3313 prepreg, 1 oz outer, 0.5 oz inner"),
+    ("hdi-6l-1n1", "6 layer HDI 1+4+1 (IPC-2226 type I/II): 1080 build-up prepreg for microvias"),
+    ("hdi-8l-2n2", "8 layer HDI 2+4+2 (IPC-2226 type III): two 1080 build-up layers per side"),
 ];
 
 pub fn stackup_preset(name: &str) -> Option<Vec<LayerFile>> {
@@ -422,6 +593,36 @@ pub fn stackup_preset(name: &str) -> Option<Vec<LayerFile>> {
             core(1.065, 4.6),
             cu(0.0152),
             pp(0.2104, 4.4, "7628"),
+            cu(0.035),
+        ],
+        "hdi-6l-1n1" => vec![
+            cu(0.035),
+            pp(0.07, 4.0, "1080"),
+            cu(0.018),
+            core(0.2, 4.6),
+            cu(0.018),
+            pp(0.12, 4.2, "2116"),
+            cu(0.018),
+            core(0.2, 4.6),
+            cu(0.018),
+            pp(0.07, 4.0, "1080"),
+            cu(0.035),
+        ],
+        "hdi-8l-2n2" => vec![
+            cu(0.035),
+            pp(0.07, 4.0, "1080"),
+            cu(0.018),
+            pp(0.07, 4.0, "1080"),
+            cu(0.018),
+            core(0.2, 4.6),
+            cu(0.018),
+            pp(0.12, 4.2, "2116"),
+            cu(0.018),
+            core(0.2, 4.6),
+            cu(0.018),
+            pp(0.07, 4.0, "1080"),
+            cu(0.018),
+            pp(0.07, 4.0, "1080"),
             cu(0.035),
         ],
         "jlcpcb-4l-1.6mm-3313" => vec![
@@ -522,6 +723,63 @@ impl Stackup {
         if h > 0.0 { w / h } else { 4.2 }
     }
 
+    pub fn depth(&self, from: &str, to: &str) -> Length {
+        let (Some(i), Some(j)) = (self.index_of(from), self.index_of(to)) else {
+            return Length::ZERO;
+        };
+        self.layers[i.min(j) + 1..i.max(j)]
+            .iter()
+            .filter(|l| l.kind == LayerKind::Copper || l.kind.is_dielectric())
+            .map(|l| l.thickness)
+            .sum()
+    }
+
+    pub fn drillable_span(&self, from: &str, to: &str) -> Result<(), String> {
+        let (Some(i), Some(j)) = (self.index_of(from), self.index_of(to)) else {
+            return Err(format!("{from} or {to} is not in the stackup"));
+        };
+        let (i, j) = (i.min(j), i.max(j));
+        let body = |l: &&Layer| l.kind == LayerKind::Copper || l.kind.is_dielectric();
+        let above = self.layers[..i].iter().rev().find(body);
+        let below = self.layers[j + 1..].iter().find(body);
+        for (l, end, side) in
+            [(above, &self.layers[i].name, "above"), (below, &self.layers[j].name, "below")]
+        {
+            if let Some(l) = l
+                && l.kind == LayerKind::Core
+            {
+                let spans: Vec<String> =
+                    self.drill_spans().iter().map(|(a, b)| format!("{a}-{b}")).collect();
+                return Err(format!(
+                    "{end} is a foil of core `{}` {side} it, a drilled span must start and end on a laminated sub-stack with prepreg outside both ends; this stackup can drill {}",
+                    l.name,
+                    spans.join(", ")
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn drill_spans(&self) -> Vec<(String, String)> {
+        let body = |l: &&Layer| l.kind == LayerKind::Copper || l.kind.is_dielectric();
+        let cu: Vec<usize> = self.copper().map(|(i, _)| i).collect();
+        let open_above = |i: usize| {
+            self.layers[..i].iter().rev().find(body).is_none_or(|l| l.kind != LayerKind::Core)
+        };
+        let open_below = |i: usize| {
+            self.layers[i + 1..].iter().find(body).is_none_or(|l| l.kind != LayerKind::Core)
+        };
+        let mut out = Vec::new();
+        for (x, &i) in cu.iter().enumerate() {
+            for &j in &cu[x + 1..] {
+                if open_above(i) && open_below(j) {
+                    out.push((self.layers[i].name.clone(), self.layers[j].name.clone()));
+                }
+            }
+        }
+        out
+    }
+
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.layers.iter().position(|l| l.name == name)
     }
@@ -615,6 +873,14 @@ impl Outline {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Backdrill {
+    pub from: String,
+    pub to: String,
+    pub max_stub: Length,
+    pub diameter: Length,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Via {
     pub name: String,
@@ -622,11 +888,50 @@ pub struct Via {
     pub diameter: Length,
     pub from: String,
     pub to: String,
+    pub kind: ViaKind,
+    pub stacked: bool,
+    pub skip: bool,
+    pub fill: Option<ViaFill>,
+    pub backdrill: Option<Backdrill>,
+    pub cost: f64,
 }
 
 impl Via {
     pub fn annular_ring(&self) -> Length {
         (self.diameter - self.drill) / 2.0
+    }
+
+    pub fn span(&self, copper: &[String]) -> (usize, usize) {
+        let a = copper.iter().position(|c| *c == self.from).unwrap_or(0);
+        let b = copper.iter().position(|c| *c == self.to).unwrap_or(copper.len().saturating_sub(1));
+        (a.min(b), a.max(b))
+    }
+
+    pub fn hole_layers(&self, copper: &[String]) -> Vec<String> {
+        let (a, b) = self.span(copper);
+        copper.get(a..=b).map(<[String]>::to_vec).unwrap_or_default()
+    }
+
+    pub fn copper_layers(&self, copper: &[String]) -> Vec<String> {
+        let (mut a, mut b) = self.span(copper);
+        if let Some(bd) = &self.backdrill
+            && let (Some(side), Some(keep)) =
+                (copper.iter().position(|c| *c == bd.from), copper.iter().position(|c| *c == bd.to))
+        {
+            if side <= a && keep > a && keep <= b {
+                a = keep;
+            } else if side >= b && keep < b && keep >= a {
+                b = keep;
+            }
+        }
+        copper.get(a..=b).map(<[String]>::to_vec).unwrap_or_default()
+    }
+
+    pub fn covers(&self, copper: &[String], x: usize, y: usize) -> bool {
+        let (a, b) = self.span(copper);
+        let reach = self.copper_layers(copper);
+        let on = |l: usize| copper.get(l).is_some_and(|n| reach.contains(n));
+        a <= x.min(y) && x.max(y) <= b && on(x) && on(y)
     }
 }
 
@@ -636,7 +941,7 @@ pub struct Netclass {
     pub description: String,
     pub track_width: Length,
     pub clearance: Length,
-    pub via: Option<String>,
+    pub via: Vec<String>,
     pub current: Option<Amps>,
     pub max_temp_rise: Kelvin,
     pub impedance: Option<Ohms>,
@@ -716,12 +1021,36 @@ impl BoardFile {
         let vias = self
             .vias
             .iter()
-            .map(|v| Via {
-                name: v.name.clone(),
-                drill: v.drill,
-                diameter: v.diameter,
-                from: v.from.clone().unwrap_or_else(|| first.clone()),
-                to: v.to.clone().unwrap_or_else(|| last.clone()),
+            .map(|v| {
+                let from = v.from.clone().unwrap_or_else(|| first.clone());
+                let to = v.to.clone().unwrap_or_else(|| last.clone());
+                let kind = v.kind.unwrap_or_else(|| {
+                    match (
+                        copper.iter().position(|c| *c == from),
+                        copper.iter().position(|c| *c == to),
+                    ) {
+                        (Some(a), Some(b)) => ViaKind::of_span(a, b, copper.len()),
+                        _ => ViaKind::Through,
+                    }
+                });
+                Via {
+                    name: v.name.clone(),
+                    drill: v.drill,
+                    diameter: v.diameter,
+                    from,
+                    to,
+                    kind,
+                    stacked: v.stacked,
+                    skip: v.skip,
+                    fill: v.fill,
+                    backdrill: v.backdrill.as_ref().map(|b| Backdrill {
+                        from: b.from.clone(),
+                        to: b.to.clone(),
+                        max_stub: b.max_stub.unwrap_or(Length::mm(0.25)),
+                        diameter: b.diameter.unwrap_or(v.drill + Length::mm(0.2)),
+                    }),
+                    cost: v.cost.unwrap_or(1.0),
+                }
             })
             .collect();
 
@@ -752,7 +1081,7 @@ impl BoardFile {
                     description: n.description.clone(),
                     track_width,
                     clearance: n.clearance.unwrap_or(rules.min_clearance),
-                    via: n.via.clone(),
+                    via: n.via.as_ref().map(ViaNames::list).unwrap_or_default(),
                     current: n.current,
                     max_temp_rise: n.max_temp_rise.unwrap_or(Kelvin(10.0)),
                     impedance: n.impedance,
@@ -868,6 +1197,26 @@ fn n_of<'a>(v: &'a [Netclass], name: &str) -> &'a Netclass {
 }
 
 impl Board {
+    pub fn via_for(
+        &self,
+        name: Option<&str>,
+        class: Option<&Netclass>,
+        reach: &[&str],
+    ) -> Option<&Via> {
+        let copper = self.stackup.copper_names();
+        let named = |n: &str| self.vias.iter().find(|v| v.name == n);
+        if let Some(n) = name {
+            return named(n).or(self.vias.first());
+        }
+        let listed: Vec<&Via> =
+            class.map(|c| c.via.iter().filter_map(|n| named(n)).collect()).unwrap_or_default();
+        let reaches = |v: &&Via| {
+            let on = v.copper_layers(&copper);
+            reach.iter().all(|r| on.iter().any(|x| x == r))
+        };
+        listed.iter().copied().find(reaches).or(listed.first().copied()).or(self.vias.first())
+    }
+
     pub fn analyze(&self) -> Vec<LayerAnalysis> {
         let mut out = Vec::new();
         for n in &self.netclasses {
@@ -921,45 +1270,7 @@ impl Board {
 
         let copper = self.stackup.copper_names();
         for (i, v) in self.vias.iter().enumerate() {
-            let at = format!("vias[{i}]");
-            if self.vias.iter().filter(|o| o.name == v.name).count() > 1 {
-                d.error(&at, format!("via name `{}` is used twice", v.name));
-            }
-            if v.drill < r.min_via_drill {
-                d.error(
-                    &at,
-                    format!("drill {} is under the fab minimum {}", v.drill, r.min_via_drill),
-                );
-            }
-            if v.diameter < r.min_via_diameter {
-                d.error(
-                    &at,
-                    format!(
-                        "diameter {} is under the fab minimum {}",
-                        v.diameter, r.min_via_diameter
-                    ),
-                );
-            }
-            if v.annular_ring() < r.min_annular_ring {
-                d.error(
-                    &at,
-                    format!(
-                        "annular ring {} is under the fab minimum {}, use a diameter of at least {}",
-                        v.annular_ring(),
-                        r.min_annular_ring,
-                        v.drill + r.min_annular_ring * 2.0
-                    ),
-                );
-            }
-            match (copper.iter().position(|c| *c == v.from), copper.iter().position(|c| *c == v.to))
-            {
-                (Some(a), Some(b)) if a < b => {}
-                (Some(_), Some(_)) => d.error(&at, "`from` must be above `to` in the stackup"),
-                _ => d.error(
-                    &at,
-                    format!("`from`/`to` must name copper layers: {}", copper.join(", ")),
-                ),
-            }
+            self.check_via(i, v, &copper, d);
         }
 
         for id in self.drc.disable.iter().chain(self.drc.severity.keys()) {
@@ -1044,10 +1355,10 @@ impl Board {
             if n.diff_gap.is_some() && n.impedance.is_none() {
                 d.warn(&at, format!("`{}` has a pair gap but no `impedance` target", n.name));
             }
-            if let Some(v) = &n.via
-                && !self.vias.iter().any(|x| &x.name == v)
-            {
-                d.error(&at, format!("via `{v}` is not defined in [[vias]]"));
+            for v in &n.via {
+                if !self.vias.iter().any(|x| &x.name == v) {
+                    d.error(&at, format!("via `{v}` is not defined in [[vias]]"));
+                }
             }
             for l in &n.layers {
                 if !copper.contains(l) {
@@ -1095,6 +1406,233 @@ impl Board {
                     ),
                 );
             }
+        }
+    }
+
+    fn check_via(&self, i: usize, v: &Via, copper: &[String], d: &mut Diags) {
+        let r = &self.rules;
+        let at = format!("vias[{i}]");
+        if self.vias.iter().filter(|o| o.name == v.name).count() > 1 {
+            d.error(&at, format!("via name `{}` is used twice", v.name));
+        }
+        let (a, b) = match (
+            copper.iter().position(|c| *c == v.from),
+            copper.iter().position(|c| *c == v.to),
+        ) {
+            (Some(a), Some(b)) if a < b => (a, b),
+            (Some(_), Some(_)) => {
+                d.error(&at, "`from` must be above `to` in the stackup");
+                return;
+            }
+            _ => {
+                d.error(&at, format!("`from`/`to` must name copper layers: {}", copper.join(", ")));
+                return;
+            }
+        };
+        let last = copper.len() - 1;
+        let span = format!("{} to {}", v.from, v.to);
+        let micro = v.kind == ViaKind::Microvia;
+        if v.kind != ViaKind::Through && !r.hdi {
+            d.error(
+                &at,
+                format!(
+                    "a {} via needs sequential lamination, which fab `{}` does not build: use fab = \"hdi\" or set [rules] hdi = true",
+                    v.kind.name(),
+                    self.fab
+                ),
+            );
+        }
+        match v.kind {
+            ViaKind::Through if a != 0 || b != last => d.error(
+                &at,
+                format!(
+                    "a through via spans {} to {}, not {span}: use type = \"blind\" or \"buried\"",
+                    copper[0], copper[last]
+                ),
+            ),
+            ViaKind::Blind if (a == 0) == (b == last) => d.error(
+                &at,
+                format!("a blind via must touch exactly one outer layer, {span} does not"),
+            ),
+            ViaKind::Buried if a == 0 || b == last => d.error(
+                &at,
+                format!("a buried via stays between inner layers, {span} reaches an outer layer"),
+            ),
+            _ => {}
+        }
+        if (v.stacked || v.skip) && !micro {
+            d.error(&at, "`stacked` and `skip` apply to microvias only");
+        }
+        let floor = match v.kind {
+            ViaKind::Through => r.min_via_drill,
+            ViaKind::Blind | ViaKind::Buried => r.min_via_drill.max(r.min_blind_via_drill),
+            ViaKind::Microvia => r.min_microvia_drill,
+        };
+        if v.drill < floor {
+            d.error(&at, format!("drill {} is under the fab minimum {floor}", v.drill));
+        }
+        let pad_floor = if micro { r.min_microvia_diameter } else { r.min_via_diameter };
+        if v.diameter < pad_floor {
+            d.error(&at, format!("diameter {} is under the fab minimum {pad_floor}", v.diameter));
+        }
+        if !micro && v.annular_ring() < r.min_annular_ring {
+            d.error(
+                &at,
+                format!(
+                    "annular ring {} is under the fab minimum {}, use a diameter of at least {}",
+                    v.annular_ring(),
+                    r.min_annular_ring,
+                    v.drill + r.min_annular_ring * 2.0
+                ),
+            );
+        }
+        if micro {
+            self.check_microvia(&at, v, a, b, copper, d);
+        } else if let Err(e) = self.stackup.drillable_span(&v.from, &v.to) {
+            d.error(&at, format!("{span} cannot be drilled: {e}"));
+        }
+        if let Some(bd) = &v.backdrill {
+            self.check_backdrill(&at, v, bd, a, b, copper, d);
+        }
+        if v.cost <= 0.0 {
+            d.error(&at, "`cost` must be positive");
+        }
+    }
+
+    fn check_microvia(
+        &self,
+        at: &str,
+        v: &Via,
+        a: usize,
+        b: usize,
+        copper: &[String],
+        d: &mut Diags,
+    ) {
+        let r = &self.rules;
+        let steps = b - a;
+        match (v.stacked, v.skip) {
+            (true, true) => d.error(at, "a microvia is `stacked` or `skip`, not both"),
+            (false, false) if steps != 1 => d.error(
+                at,
+                format!(
+                    "a microvia spans one dielectric, {} to {} spans {steps}: set `stacked = true` for a stack of microvias or `skip = true` for a skip via over two",
+                    v.from, v.to
+                ),
+            ),
+            (false, true) if steps != 2 => {
+                d.error(at, format!("a skip microvia spans two dielectrics, not {steps}"))
+            }
+            _ => {}
+        }
+        if v.stacked && !r.stacked_microvias {
+            d.error(
+                at,
+                "the fab does not stack microvias: stagger them as separate one-layer microvias, or set [rules] stacked_microvias = true",
+            );
+        }
+        if v.stacked
+            && !matches!(
+                v.fill,
+                Some(ViaFill::Filled | ViaFill::FilledCovered | ViaFill::FilledCapped)
+            )
+        {
+            d.warn(
+                at,
+                "stacked microvias sit on copper filled microvias, set `fill = \"filled_capped\"`",
+            );
+        }
+        if v.drill > r.max_microvia_drill {
+            d.error(
+                at,
+                format!("a laser drill of {} is over the fab's {}", v.drill, r.max_microvia_drill),
+            );
+        }
+        let depths: Vec<Length> = if v.stacked {
+            (a..b).map(|k| self.stackup.depth(&copper[k], &copper[k + 1])).collect()
+        } else {
+            vec![self.stackup.depth(&v.from, &v.to)]
+        };
+        for depth in depths {
+            let ratio = depth.to_mm() / v.drill.to_mm().max(1e-9);
+            if ratio > r.max_microvia_aspect_ratio + 1e-9 {
+                d.error(
+                    at,
+                    format!(
+                        "microvia {depth} deep over a {} drill is {ratio:.2}:1, over the fab's {}:1",
+                        v.drill, r.max_microvia_aspect_ratio
+                    ),
+                );
+            }
+            if depth > Length::mm(0.25) + Length::mm(1e-6) && !v.skip {
+                d.warn(at, format!("microvia {depth} deep, IPC-T-50 limits a microvia to 0.25 mm"));
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_backdrill(
+        &self,
+        at: &str,
+        v: &Via,
+        bd: &Backdrill,
+        a: usize,
+        b: usize,
+        copper: &[String],
+        d: &mut Diags,
+    ) {
+        if matches!(v.kind, ViaKind::Microvia | ViaKind::Buried) {
+            d.error(at, format!("a {} via cannot be backdrilled", v.kind.name()));
+            return;
+        }
+        if !self.rules.hdi {
+            d.error(
+                at,
+                format!(
+                    "fab `{}` does not backdrill: use fab = \"hdi\" or set [rules] hdi = true",
+                    self.fab
+                ),
+            );
+        }
+        let last = copper.len() - 1;
+        let side = copper.iter().position(|c| *c == bd.from);
+        let keep = copper.iter().position(|c| *c == bd.to);
+        match (side, keep) {
+            (Some(s), Some(k)) => {
+                let reaches = (s == 0 && a == 0) || (s == last && b == last);
+                if !reaches {
+                    d.error(
+                        at,
+                        format!(
+                            "backdrill `from` must be an outer layer the via reaches, not {}",
+                            bd.from
+                        ),
+                    );
+                } else if k <= a || k >= b {
+                    d.error(
+                        at,
+                        format!(
+                            "backdrill `to` must be a layer strictly inside {} to {}",
+                            v.from, v.to
+                        ),
+                    );
+                }
+            }
+            _ => d.error(
+                at,
+                format!("backdrill `from`/`to` must name copper layers: {}", copper.join(", ")),
+            ),
+        }
+        if bd.diameter <= v.drill {
+            d.error(
+                at,
+                format!(
+                    "backdrill diameter {} must be wider than the drill {}",
+                    bd.diameter, v.drill
+                ),
+            );
+        }
+        if !bd.max_stub.is_positive() {
+            d.error(at, "backdrill `max_stub` must be positive");
         }
     }
 
@@ -1277,6 +1815,121 @@ severity = { "via-in-pad" = "error" }
             )
             .is_err()
         );
+    }
+
+    fn hdi(vias: &str) -> (Board, Diags) {
+        board(&format!(
+            "name = \"x\"\nfab = \"hdi\"\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[netclasses]]\nname = \"Default\"\ntrack_width = \"0.1mm\"\n{vias}"
+        ))
+    }
+
+    fn errors(d: &Diags) -> Vec<String> {
+        d.list
+            .iter()
+            .filter(|x| x.severity == crate::diag::Severity::Error)
+            .map(|x| x.message.clone())
+            .collect()
+    }
+
+    #[test]
+    fn via_type_is_inferred_from_the_span() {
+        let (b, d) = hdi(
+            "[[vias]]\nname = \"std\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\n[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"F.Cu\"\nto = \"In4.Cu\"\n[[vias]]\nname = \"bu\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"In1.Cu\"\nto = \"In4.Cu\"\n",
+        );
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+        let kinds: Vec<ViaKind> = b.vias.iter().map(|v| v.kind).collect();
+        assert_eq!(kinds, [ViaKind::Through, ViaKind::Blind, ViaKind::Buried]);
+        let cu = b.stackup.copper_names();
+        assert_eq!(b.vias[2].copper_layers(&cu), ["In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu"]);
+    }
+
+    #[test]
+    fn jlcpcb_rejects_blind_vias_unless_hdi_is_set() {
+        let src = "name = \"x\"\nfab = \"jlcpcb\"\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\ntype = \"blind\"\nfrom = \"F.Cu\"\nto = \"In4.Cu\"\n";
+        let (_, d) = board(src);
+        assert!(errors(&d).iter().any(|m| m.contains("sequential lamination")), "{:?}", d.list);
+        let (_, d) = board(&format!("{src}[rules]\nhdi = true\n"));
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+    }
+
+    #[test]
+    fn via_type_must_match_its_span() {
+        let (_, d) = hdi(
+            "[[vias]]\nname = \"a\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\ntype = \"blind\"\nfrom = \"In1.Cu\"\nto = \"In2.Cu\"\n[[vias]]\nname = \"b\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\ntype = \"through\"\nto = \"In4.Cu\"\n[[vias]]\nname = \"c\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\ntype = \"buried\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\n",
+        );
+        let e = errors(&d);
+        assert!(e.iter().any(|m| m.contains("exactly one outer layer")), "{e:?}");
+        assert!(e.iter().any(|m| m.contains("a through via spans")), "{e:?}");
+        assert!(e.iter().any(|m| m.contains("reaches an outer layer")), "{e:?}");
+    }
+
+    #[test]
+    fn buried_span_must_match_the_lamination() {
+        let (b, d) = hdi(
+            "[[vias]]\nname = \"core\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"In1.Cu\"\nto = \"In2.Cu\"\n[[vias]]\nname = \"split\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"In2.Cu\"\nto = \"In3.Cu\"\n",
+        );
+        let e = errors(&d);
+        assert_eq!(e.len(), 1, "{e:?}");
+        assert!(e[0].starts_with("In2.Cu to In3.Cu cannot be drilled") && e[0].contains("core"));
+        let spans = b.stackup.drill_spans();
+        assert!(spans.contains(&("In1.Cu".into(), "In4.Cu".into())));
+        assert!(spans.contains(&("In3.Cu".into(), "In4.Cu".into())));
+        assert!(!spans.contains(&("In2.Cu".into(), "In3.Cu".into())));
+    }
+
+    #[test]
+    fn microvias_span_one_dielectric_within_the_aspect_ratio() {
+        let (_, d) = hdi(
+            "[[vias]]\nname = \"u\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\nfill = \"filled_capped\"\n",
+        );
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+        let (_, d) = hdi(
+            "[[vias]]\nname = \"u\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In2.Cu\"\n",
+        );
+        let e = errors(&d);
+        assert!(e.iter().any(|m| m.contains("spans one dielectric")), "{e:?}");
+        let (_, d) = hdi(
+            "[[vias]]\nname = \"u\"\ndrill = \"0.08mm\"\ndiameter = \"0.2mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\n",
+        );
+        let e = errors(&d);
+        assert!(e.iter().any(|m| m.contains("under the fab minimum 0.1")), "{e:?}");
+        assert!(e.iter().any(|m| m.contains(":1, over the fab's 0.8:1")), "{e:?}");
+        let (_, d) = board(
+            "name = \"x\"\nfab = \"hdi\"\n[stackup]\npreset = \"hdi-8l-2n2\"\n[[vias]]\nname = \"s\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nstacked = true\nfill = \"filled_capped\"\nfrom = \"F.Cu\"\nto = \"In2.Cu\"\n[rules]\nstacked_microvias = false\n",
+        );
+        let e = errors(&d);
+        assert_eq!(e.len(), 1, "{e:?}");
+        assert!(e[0].contains("does not stack microvias"));
+    }
+
+    #[test]
+    fn backdrill_leaves_the_copper_above_its_stop_layer() {
+        let (b, d) = hdi(
+            "[[vias]]\nname = \"bd\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nbackdrill = { from = \"B.Cu\", to = \"In2.Cu\", max_stub = \"0.2mm\" }\n",
+        );
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+        let cu = b.stackup.copper_names();
+        assert_eq!(b.vias[0].copper_layers(&cu), ["F.Cu", "In1.Cu", "In2.Cu"]);
+        assert_eq!(b.vias[0].hole_layers(&cu).len(), 6);
+        let bd = b.vias[0].backdrill.as_ref().unwrap();
+        assert_eq!(bd.diameter, Length::mm(0.4));
+        let (_, d) = hdi(
+            "[[vias]]\nname = \"bd\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nbackdrill = { from = \"In1.Cu\", to = \"In2.Cu\" }\n",
+        );
+        assert!(errors(&d).iter().any(|m| m.contains("outer layer the via reaches")));
+    }
+
+    #[test]
+    fn class_vias_are_a_list_and_via_for_picks_one_that_reaches() {
+        let (b, d) = hdi(
+            "[[vias]]\nname = \"std\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\n[[vias]]\nname = \"ub\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"In4.Cu\"\nto = \"B.Cu\"\n[[netclasses]]\nname = \"Fast\"\ntrack_width = \"0.1mm\"\nvia = [\"ub\", \"std\"]\n",
+        );
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+        let fast = b.netclasses.iter().find(|c| c.name == "Fast");
+        assert_eq!(fast.unwrap().via, ["ub", "std"]);
+        assert_eq!(b.via_for(None, fast, &["B.Cu"]).unwrap().name, "ub");
+        assert_eq!(b.via_for(None, fast, &["F.Cu"]).unwrap().name, "std");
+        assert_eq!(b.via_for(Some("std"), fast, &[]).unwrap().name, "std");
     }
 
     #[test]

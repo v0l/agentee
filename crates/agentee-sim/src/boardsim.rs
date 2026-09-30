@@ -651,4 +651,46 @@ mod tests {
             .count();
         assert!((49..=81).contains(&holes), "{holes} cells out");
     }
+
+    #[test]
+    fn via_barrels_run_only_through_their_span() {
+        let dir = std::env::temp_dir().join(format!("agentee-sim-vias-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\nfab = \"hdi\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"hdi-6l-1n1\"\n\
+             [[vias]]\nname = \"uv\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\n\
+             [[vias]]\nname = \"bu\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"In1.Cu\"\nto = \"In4.Cu\"\n\
+             [[vias]]\nname = \"bd\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\nbackdrill = { from = \"B.Cu\", to = \"In2.Cu\" }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[nets]]\nname = \"A\"\npins = []\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n\
+             [[vias]]\nnet = \"A\"\nat = [5, 5]\nvia = \"uv\"\n\
+             [[vias]]\nnet = \"A\"\nat = [10, 5]\nvia = \"bu\"\n\
+             [[vias]]\nnet = \"A\"\nat = [15, 5]\nvia = \"bd\"\n",
+        )
+        .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let (board, layout) = (&p.boards[0].item, &p.layouts[0].item);
+        let model = PcbModel::geometry(layout, board);
+        let spans: Vec<(usize, usize)> = model.vias.iter().map(|v| (v.2, v.3)).collect();
+        assert_eq!(spans, [(0, 1), (1, 4), (0, 2)]);
+        let r = raster(&model, board, 0.25);
+        let on = |q: P, s: usize| {
+            let (i, j) = r.node(q);
+            r.copper[s][i * r.ny + j]
+        };
+        let sheets = |q: P| (0..model.sheets.len()).filter(|&s| on(q, s)).collect::<Vec<_>>();
+        assert_eq!(sheets([5.0, 5.0]), [0, 1]);
+        assert_eq!(sheets([10.0, 5.0]), [1, 2, 3, 4]);
+        assert_eq!(sheets([15.0, 5.0]), [0, 1, 2]);
+    }
 }

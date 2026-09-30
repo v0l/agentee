@@ -9,6 +9,18 @@ use egui_bench::theme::{self, ETCH, LEGEND, PANEL, READOUT, TRACE, VALUE, WELL};
 pub const F_CU: Color32 = Color32::from_rgb(0xD0, 0x6A, 0x50);
 pub const B_CU: Color32 = Color32::from_rgb(0x4F, 0x8C, 0xD6);
 pub const PTH: Color32 = Color32::from_rgb(0xC9, 0xA2, 0x4B);
+pub const BLIND_VIA: Color32 = Color32::from_rgb(0x5B, 0xB8, 0xA8);
+pub const BURIED_VIA: Color32 = Color32::from_rgb(0x8C, 0x8C, 0xD8);
+pub const MICROVIA: Color32 = Color32::from_rgb(0x6F, 0xD0, 0xE0);
+
+pub fn via_color(kind: agentee_core::board::ViaKind) -> Color32 {
+    match kind {
+        agentee_core::board::ViaKind::Through => PTH,
+        agentee_core::board::ViaKind::Blind => BLIND_VIA,
+        agentee_core::board::ViaKind::Buried => BURIED_VIA,
+        agentee_core::board::ViaKind::Microvia => MICROVIA,
+    }
+}
 pub const SILK: Color32 = Color32::from_rgb(0xE6, 0xE9, 0xEE);
 pub const B_SILK: Color32 = Color32::from_rgb(0x9A, 0x8F, 0xC8);
 pub const FAB: Color32 = Color32::from_rgb(0x8B, 0x92, 0x9C);

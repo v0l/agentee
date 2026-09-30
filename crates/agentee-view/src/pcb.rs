@@ -25,6 +25,15 @@ pub fn copper_color(layer: &str) -> Color32 {
     }
 }
 
+fn arc(c: Pos2, r: f32, from: f32) -> Vec<Pos2> {
+    (0..=12)
+        .map(|k| {
+            let a = from + std::f32::consts::PI * k as f32 / 12.0;
+            Pos2::new(c.x + r * a.cos(), c.y + r * a.sin())
+        })
+        .collect()
+}
+
 fn inner_index(layer: &str) -> Option<u32> {
     layer.strip_prefix("In")?.strip_suffix(".Cu")?.parse().ok()
 }
@@ -186,15 +195,27 @@ pub fn layout(
         }
     }
 
-    for v in &l.vias {
+    for v in l.vias.iter().filter(|v| v.layers.iter().any(|x| layers.shows(x))) {
         let c = xf.world(v.at);
         let lit = hit.net == Some(v.net);
+        let ring = paint::via_color(v.kind);
         p.circle_filled(
             c,
             xf.len(v.diameter / 2.0),
-            if lit { paint::PTH.lerp_to_gamma(Color32::WHITE, 0.35) } else { paint::PTH },
+            if lit { ring.lerp_to_gamma(Color32::WHITE, 0.35) } else { ring },
         );
         p.circle_filled(c, xf.len(v.drill / 2.0), WELL);
+        if v.kind != agentee_core::board::ViaKind::Through {
+            let edge = [v.layers.first(), v.layers.last()]
+                .map(|x| x.map(|n| copper_color(n)).unwrap_or(ring));
+            let r = xf.len(v.diameter / 2.0);
+            let w = (r * 0.25).max(1.0);
+            p.add(PathShape::line(
+                arc(c, r - w / 2.0, -std::f32::consts::PI),
+                Stroke::new(w, edge[0]),
+            ));
+            p.add(PathShape::line(arc(c, r - w / 2.0, 0.0), Stroke::new(w, edge[1])));
+        }
     }
     for part in &l.parts {
         for pad in &part.pads {

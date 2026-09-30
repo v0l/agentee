@@ -1,0 +1,65 @@
+name = "BGA-16_P0.5mm"
+description = "4 x 4 ball grid, 0.5 mm pitch, 0.25 mm lands"
+tags = ["BGA"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "circle"
+at = [-0.75, -0.75]
+size = [0.25, 0.25]
+count = 4
+pitch = [0.5, 0]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "circle"
+at = [-0.75, -0.25]
+size = [0.25, 0.25]
+count = 4
+pitch = [0.5, 0]
+
+[[pads]]
+number = "9"
+kind = "smd"
+shape = "circle"
+at = [-0.75, 0.25]
+size = [0.25, 0.25]
+count = 4
+pitch = [0.5, 0]
+
+[[pads]]
+number = "13"
+kind = "smd"
+shape = "circle"
+at = [-0.75, 0.75]
+size = [0.25, 0.25]
+count = 4
+pitch = [0.5, 0]
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-1.25, -1.25]
+end = [1.25, 1.25]
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.5, -1.5]
+end = [1.5, 1.5]
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [-1.45, -1.45]
+radius = 0.1
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+text = "${REFERENCE}"
+at = [0, -2.2]

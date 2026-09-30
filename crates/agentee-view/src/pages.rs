@@ -567,16 +567,28 @@ fn board_sheet(ui: &mut Ui, b: &Board, _st: &mut PageState) {
     });
     ui.add_space(10.0);
     section(ui, "vias", "drill, pad and the ring left between them", |ui| {
-        let cols =
-            [("name", 110.0), ("drill", 70.0), ("diameter", 80.0), ("ring", 70.0), ("span", 140.0)];
+        let cols = [
+            ("name", 110.0),
+            ("type", 80.0),
+            ("drill", 70.0),
+            ("diameter", 80.0),
+            ("ring", 70.0),
+            ("span", 140.0),
+            ("fill", 150.0),
+        ];
         Table::new(&cols, b.vias.len()).show(ui, |i, p, r, at| {
             let v = &b.vias[i];
-            let ok = v.annular_ring() >= b.rules.min_annular_ring;
+            let ok = v.kind == agentee_core::board::ViaKind::Microvia
+                || v.annular_ring() >= b.rules.min_annular_ring;
+            let fill =
+                v.fill.map(|f| format!("{} ({})", f.describe(), f.ipc4761())).unwrap_or_default();
             cell(p, r, at(0), cols[0].1, &v.name, VALUE);
-            cell(p, r, at(1), cols[1].1, &mm(v.drill), READOUT);
-            cell(p, r, at(2), cols[2].1, &mm(v.diameter), READOUT);
-            cell(p, r, at(3), cols[3].1, &mm(v.annular_ring()), if ok { TRACE } else { FAULT });
-            cell(p, r, at(4), cols[4].1, &format!("{} - {}", v.from, v.to), LEGEND);
+            cell(p, r, at(1), cols[1].1, v.kind.name(), crate::paint::via_color(v.kind));
+            cell(p, r, at(2), cols[2].1, &mm(v.drill), READOUT);
+            cell(p, r, at(3), cols[3].1, &mm(v.diameter), READOUT);
+            cell(p, r, at(4), cols[4].1, &mm(v.annular_ring()), if ok { TRACE } else { FAULT });
+            cell(p, r, at(5), cols[5].1, &format!("{} - {}", v.from, v.to), LEGEND);
+            cell(p, r, at(6), cols[6].1, &fill, LEGEND);
         });
     });
 }

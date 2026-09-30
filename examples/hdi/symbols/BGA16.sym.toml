@@ -1,0 +1,26 @@
+name = "BGA16"
+reference = "U"
+description = "16 ball test die"
+footprint = "BGA-16_P0.5mm"
+
+[[bodies]]
+left = [
+  { number = "2", name = "S2", type = "bidirectional" },
+  { number = "3", name = "S3", type = "bidirectional" },
+  { number = "5", name = "S5", type = "bidirectional" },
+  { number = "8", name = "S8", type = "bidirectional" },
+  { number = "9", name = "S9", type = "bidirectional" },
+  { number = "12", name = "S12", type = "bidirectional" },
+  { number = "14", name = "S14", type = "bidirectional" },
+  { number = "15", name = "S15", type = "bidirectional" },
+]
+right = [
+  { number = "1", name = "GND", type = "power_in" },
+  { number = "4", name = "GND", type = "power_in" },
+  { number = "6", name = "GND", type = "power_in" },
+  { number = "7", name = "GND", type = "power_in" },
+  { number = "10", name = "GND", type = "power_in" },
+  { number = "11", name = "GND", type = "power_in" },
+  { number = "13", name = "GND", type = "power_in" },
+  { number = "16", name = "GND", type = "power_in" },
+]

@@ -25,7 +25,9 @@ The full reference is [docs/format.md](docs/format.md), also printed by `agentee
 over MCP as `format_reference`. `examples/demo` is a small project that passes `check`, and
 `examples/lna` is a worked design: a bias-tee powered SPF5189Z LNA with its circuit and layout
 notes in `DESIGN.md`. `examples/hackrf-pro` is Great Scott Gadgets' HackRF Pro board imported from
-KiCad, a large real layout to check and benchmark against.
+KiCad, a large real layout to check and benchmark against. `examples/hdi` is a 6 layer 1+4+1 HDI
+coupon: filled and capped microvias in the pads of a 0.5 mm BGA field, buried vias stitching the
+In1 and In4 ground planes, and routed through vias to parts on the bottom.
 
 ## Use
 

@@ -676,7 +676,8 @@ fn lane(side: &[usize], spec: &Spec, cx: &Ctx, at: &str, d: &mut Findings) -> La
         let span: Vec<usize> = v.layers.iter().filter_map(|l| layer_of(l)).collect();
         let (Some(&a), Some(&b)) = (span.iter().min(), span.iter().max()) else { continue };
         if let (Some(&lo), Some(&hi)) = (used.iter().min(), used.iter().max()) {
-            let stub = (z(lo) - z(a)).abs().max(0.0) + (z(b) - z(hi)).abs().max(0.0);
+            let left = v.backdrill.as_ref().map(|bd| bd.max_stub.to_mm()).unwrap_or(0.0);
+            let stub = (z(lo) - z(a)).abs().max(0.0) + (z(b) - z(hi)).abs().max(0.0) + left;
             if stub > stub_mm {
                 stub_mm = stub;
                 worst_stub = Some(v.at);

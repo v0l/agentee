@@ -1020,3 +1020,206 @@ fn silk_over_a_board_cutout_runs_off_the_board_and_the_watermark_avoids_it() {
     let edge = l.edge();
     assert!(edge.holds(&w.outline()) && w.at[0] > 26.0, "watermark at {:?}", w.at);
 }
+
+const HDI_VIAS: &str = r#"
+[rules]
+hdi = true
+min_microvia_diameter = "0.25mm"
+"#;
+
+const HDI_VIA_TYPES: &str = r#"
+[[vias]]
+name = "uv"
+drill = "0.1mm"
+diameter = "0.25mm"
+type = "microvia"
+from = "F.Cu"
+to = "In1.Cu"
+[[vias]]
+name = "bu"
+drill = "0.2mm"
+diameter = "0.45mm"
+from = "In1.Cu"
+to = "In4.Cu"
+[[vias]]
+name = "vip"
+drill = "0.1mm"
+diameter = "0.25mm"
+type = "microvia"
+from = "F.Cu"
+to = "In1.Cu"
+fill = "plugged"
+[[vias]]
+name = "bd"
+drill = "0.2mm"
+diameter = "0.45mm"
+backdrill = { from = "B.Cu", to = "In1.Cu", max_stub = "0.2mm" }
+"#;
+
+fn typed_via(net: &str, at: [f64; 2], kind: &str) -> String {
+    format!("\n[[vias]]\nnet = \"{net}\"\nat = [{}, {}]\nvia = \"{kind}\"\n", at[0], at[1])
+}
+
+fn hdi(pcb: &str, board: &str) -> Project {
+    let board = format!("{HDI_VIAS}{board}{HDI_VIA_TYPES}");
+    load(&Fixture { preset: "hdi-6l-1n1", board: &board, pcb, ..Default::default() })
+}
+
+#[test]
+fn a_microvia_occupies_only_its_span() {
+    let crossing = track("B", "In2.Cu", "[[8.0, 12.0], [12.0, 12.0]]");
+    let p = hdi(&format!("{}{crossing}", typed_via("A", [10.0, 12.0], "uv")), "");
+    let v = &p.layouts[0].item.vias[0];
+    assert_eq!(v.layers, ["F.Cu", "In1.Cu"]);
+    assert!(hits(&p, "short").is_empty(), "{:?}", hits(&p, "short"));
+    assert!(hits(&p, "hole-to-copper").is_empty(), "{:?}", hits(&p, "hole-to-copper"));
+    let p = hdi(&format!("{}{crossing}", typed_via("A", [10.0, 12.0], "std")), "");
+    assert_eq!(hits(&p, "short").len(), 1);
+}
+
+#[test]
+fn hole_to_hole_counts_only_holes_through_a_shared_dielectric() {
+    let p = hdi(
+        &format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("A", [10.3, 12.0], "bu")),
+        "",
+    );
+    assert!(hits(&p, "hole-to-hole").is_empty(), "{:?}", hits(&p, "hole-to-hole"));
+    let p = hdi(
+        &format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("B", [10.3, 12.0], "uv")),
+        "",
+    );
+    assert_eq!(hits(&p, "hole-to-hole").len(), 1);
+}
+
+#[test]
+fn stacked_vias_follow_the_fab_rule() {
+    let stack =
+        format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("A", [10.0, 12.0], "bu"));
+    let e = hits(&hdi(&stack, ""), "stacked-via");
+    assert!(e.len() == 1 && e[0].1.contains("stacked on another via"), "{e:?}");
+    assert!(hits(&hdi(&stack, "stacked_microvias = true\n"), "stacked-via").is_empty());
+    let twice =
+        format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("A", [10.0, 12.0], "uv"));
+    let e = hits(&hdi(&twice, "stacked_microvias = true\n"), "stacked-via");
+    assert!(e.len() == 1 && e[0].1.contains("through the same layers"), "{e:?}");
+}
+
+#[test]
+fn a_via_in_pad_needs_a_filled_and_capped_type() {
+    let p = hdi(&typed_via("A", [4.0, 5.0], "vip"), "");
+    let e = hits(&p, "via-in-pad-fill");
+    assert!(e.len() == 1 && e[0].1.contains("plugged (IPC-4761 type III)"), "{e:?}");
+    let info = hits(&p, "via-in-pad");
+    assert!(info[0].1.contains("microvia plugged"), "{info:?}");
+    assert!(hits(&hdi(&typed_via("A", [4.0, 5.0], "uv"), ""), "via-in-pad-fill").is_empty());
+}
+
+#[test]
+fn a_pour_on_a_layer_the_via_misses_keeps_no_antipad() {
+    let zone = "\n[[zones]]\nnet = \"B\"\nlayers = [\"In2.Cu\", \"In1.Cu\"]\n\
+                outline = [[8.0, 10.0], [12.0, 10.0], [12.0, 14.0], [8.0, 14.0]]\n\
+                min_island_area = 0.0\n";
+    let anchor = typed_via("B", [9.0, 11.0], "std");
+    let p = hdi(&format!("{}{anchor}{zone}", typed_via("A", [10.0, 12.0], "uv")), "");
+    let l = &p.layouts[0].item;
+    let on = |layer: &str| l.zones.iter().find(|z| z.layer == layer).unwrap().filled([10.0, 12.0]);
+    assert!(on("In2.Cu"));
+    assert!(!on("In1.Cu"));
+    assert!(hits(&p, "short").is_empty());
+}
+
+#[test]
+fn a_via_stub_ends_at_the_via_span_or_its_backdrill() {
+    let lane = format!(
+        "{}{}\n[[interfaces]]\nname = \"x\"\nnets = [\"A\"]\nmax_stub = \"0.1mm\"\n",
+        track("A", "F.Cu", "[[4.0, 5.0], [10.0, 12.0]]"),
+        track("A", "In1.Cu", "[[10.0, 12.0], [14.0, 12.0]]")
+    );
+    let stub = |kind: &str| {
+        let p = hdi(&format!("{lane}{}", typed_via("A", [10.0, 12.0], kind)), "");
+        let l = &p.layouts[0].item;
+        (l.interfaces[0].lanes[0].stub_mm, hits(&p, "interface-stub"))
+    };
+    let (mm, e) = stub("uv");
+    assert!(mm.abs() < 1e-9 && e.is_empty(), "{mm} {e:?}");
+    let (mm, e) = stub("bd");
+    assert!((mm - 0.2).abs() < 1e-9 && e.len() == 1, "{mm} {e:?}");
+    let (mm, e) = stub("std");
+    assert!(mm > 0.6 && e.len() == 1, "{mm} {e:?}");
+}
+
+#[test]
+fn the_router_picks_the_cheapest_class_via_that_spans_the_layer_change() {
+    let wall = track("B", "F.Cu", "[[12.0, 0.1], [12.0, 19.9]]");
+    let board = format!("{HDI_VIAS}{HDI_VIA_TYPES}");
+    let p = load(&Fixture {
+        preset: "hdi-6l-1n1",
+        board: &board,
+        parts: &[("R1", "TWO", [5.0, 5.0]), ("R2", "TWO", [20.0, 5.0])],
+        nets: &[("A", &["R1.2", "R2.1"]), ("B", &["R1.1"])],
+        pcb: &wall,
+        ..Default::default()
+    });
+    let l = &p.layouts[0].item;
+    let routed = |uv_cost: f64, layers: &[&str]| {
+        let mut b = p.boards[0].item.clone();
+        b.netclasses[0].via = vec!["uv".into(), "std".into()];
+        b.vias.iter_mut().find(|v| v.name == "uv").unwrap().cost = uv_cost;
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: layers.iter().map(|s| s.to_string()).collect(),
+            grid: 0.1,
+            ..Default::default()
+        };
+        let r = agentee_core::route::route(l, &b, &opts).unwrap();
+        assert!(r.routed == 1, "{:?}", r.failed);
+        let mut names: Vec<String> = r.vias.iter().map(|v| v.via.clone()).collect();
+        names.dedup();
+        names
+    };
+    assert_eq!(routed(1.0, &["F.Cu", "In1.Cu"]), ["uv"]);
+    assert_eq!(routed(5.0, &["F.Cu", "In1.Cu"]), ["std"]);
+    assert_eq!(routed(1.0, &["F.Cu", "In2.Cu"]), ["std"]);
+}
+
+#[test]
+fn the_router_staggers_vias_unless_the_fab_stacks_them() {
+    let walls = format!(
+        "{}{}",
+        track("B", "F.Cu", "[[12.0, 0.1], [12.0, 19.9]]"),
+        track("B", "In1.Cu", "[[12.0, 0.1], [12.0, 19.9]]")
+    );
+    let routed = |stack: bool| {
+        let board = format!("{HDI_VIAS}stacked_microvias = {stack}\n{HDI_VIA_TYPES}");
+        let p = load(&Fixture {
+            preset: "hdi-6l-1n1",
+            board: &board,
+            parts: &[("R1", "TWO", [5.0, 5.0]), ("R2", "TWO", [20.0, 5.0])],
+            nets: &[("A", &["R1.2", "R2.1"]), ("B", &["R1.1"])],
+            pcb: &walls,
+            ..Default::default()
+        });
+        let mut b = p.boards[0].item.clone();
+        b.netclasses[0].via = vec!["uv".into(), "bu".into()];
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: vec!["F.Cu".into(), "In1.Cu".into(), "In4.Cu".into()],
+            grid: 0.1,
+            ..Default::default()
+        };
+        let r = agentee_core::route::route(&p.layouts[0].item, &b, &opts).unwrap();
+        assert!(r.routed == 1, "{:?}", r.failed);
+        let stacked =
+            r.vias.iter().enumerate().any(|(i, a)| {
+                r.vias[..i].iter().any(|b| agentee_core::geom::dist(a.at, b.at) < 1e-6)
+            });
+        let kinds: std::collections::BTreeSet<String> =
+            r.vias.iter().map(|v| v.via.clone()).collect();
+        (stacked, kinds)
+    };
+    let (stacked, kinds) = routed(false);
+    assert!(!stacked);
+    assert_eq!(kinds.into_iter().collect::<Vec<_>>(), ["bu", "uv"]);
+    let (stacked, _) = routed(true);
+    assert!(stacked);
+}
