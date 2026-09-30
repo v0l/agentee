@@ -1,0 +1,19 @@
+name = "dut6cm-s"
+description = "P370 dut6cm coupon, lumped ports where the 1.85 mm connector pins land"
+layout = "dut6cm"
+cell = 0.05
+
+[frequency]
+start = "100MHz"
+stop = "40GHz"
+points = 400
+
+[[ports]]
+name = "P1"
+pad = "P1.1"
+reference = "In1.Cu"
+
+[[ports]]
+name = "P2"
+pad = "P2.1"
+reference = "In1.Cu"

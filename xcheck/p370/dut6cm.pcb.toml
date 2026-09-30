@@ -1,0 +1,131 @@
+name = "dut6cm"
+board = "dut6cm"
+schematic = "dut6cm"
+
+[[footprints]]
+ref = "P1"
+at = [0.0, 9.0045]
+label = { hide = true }
+
+[[footprints]]
+ref = "P2"
+at = [59.9948, 9.0045]
+rotation = 180
+label = { hide = true }
+
+[[zones]]
+net = "GND"
+layers = ["In1.Cu"]
+outline = [[0.0, 0.381], [0.0, 17.6276], [59.9948, 17.6276], [59.9948, 0.381]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "SIG"
+layers = ["F.Cu"]
+outline = [[0.0, 8.8646], [0.0, 9.144], [1.27, 9.224], [58.7248, 9.224], [59.9948, 9.144], [59.9948, 8.8646], [58.7248, 8.7846], [1.27, 8.7846]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+priority = 2
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[0.0, 9.2837], [0.508, 9.3218], [0.762, 9.8298], [0.762, 10.6553], [5.2324, 10.6553], [5.2324, 15.3543], [0.0, 15.3543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[0.0, 8.7249], [0.508, 8.6868], [0.762, 8.1788], [0.762, 7.3533], [5.2324, 7.3533], [5.2324, 2.6543], [0.0, 2.6543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[59.9948, 9.2837], [59.4868, 9.3218], [59.2328, 9.8298], [59.2328, 10.6553], [54.7624, 10.6553], [54.7624, 15.3543], [59.9948, 15.3543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[59.9948, 8.7249], [59.4868, 8.6868], [59.2328, 8.1788], [59.2328, 7.3533], [54.7624, 7.3533], [54.7624, 2.6543], [59.9948, 2.6543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["B.Cu"]
+outline = [[0.0, 0.381], [0.0, 17.6276], [59.9948, 17.6276], [59.9948, 0.381]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["In2.Cu"]
+outline = [[0.762, 0.381], [59.2328, 0.381], [59.2328, 17.6276], [0.762, 17.6276]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[vias]]
+net = "GND"
+at = [59.6138, 7.9121]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.2794, 8.4709]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [59.6138, 7.2771]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.2794, 9.5377]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [0.381, 10.0965]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [59.7154, 8.4709]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [0.381, 10.7315]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.381, 7.2771]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [59.6138, 10.7315]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.381, 7.9121]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [59.7154, 9.5377]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [59.6138, 10.0965]
+via = "gnd12"

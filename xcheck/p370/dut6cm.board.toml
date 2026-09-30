@@ -1,0 +1,109 @@
+name = "dut6cm"
+description = "Signal Microwave / IEEE P370 plug and play kit coupons: Rogers RO4003C and RO4450F, NiAu finish, 17.3 mil microstrip on 8 mil (User's Guide rev 1, figure 2)"
+
+[outline]
+size = [59.9948, 18.009]
+
+[stackup]
+finish = "ENIG"
+mask_color = "none"
+
+[[stackup.layers]]
+kind = "copper"
+name = "F.Cu"
+thickness = "0.0533mm"
+
+[[stackup.layers]]
+kind = "core"
+name = "diel1"
+material = "RO4003C"
+thickness = "0.2032mm"
+er = 3.55
+loss_tangent = 0.0027
+
+[[stackup.layers]]
+kind = "copper"
+name = "In1.Cu"
+thickness = "0.017mm"
+
+[[stackup.layers]]
+kind = "prepreg"
+name = "diel2"
+material = "RO4450F"
+thickness = "0.1016mm"
+er = 3.52
+loss_tangent = 0.004
+
+[[stackup.layers]]
+kind = "core"
+name = "diel3"
+material = "RO4003C"
+thickness = "0.8128mm"
+er = 3.55
+loss_tangent = 0.0027
+
+[[stackup.layers]]
+kind = "prepreg"
+name = "diel4"
+material = "RO4450F"
+thickness = "0.1016mm"
+er = 3.52
+loss_tangent = 0.004
+
+[[stackup.layers]]
+kind = "copper"
+name = "In2.Cu"
+thickness = "0.017mm"
+
+[[stackup.layers]]
+kind = "core"
+name = "diel5"
+material = "RO4003C"
+thickness = "0.2032mm"
+er = 3.55
+loss_tangent = 0.0027
+
+[[stackup.layers]]
+kind = "copper"
+name = "B.Cu"
+thickness = "0.0533mm"
+
+[rules]
+min_clearance = "0.05mm"
+min_track_width = "0.1mm"
+min_copper_to_edge = "0mm"
+min_drill = "0.2mm"
+min_via_drill = "0.2mm"
+min_via_diameter = "0.3mm"
+min_annular_ring = "0.05mm"
+min_hole_to_hole = "0.2mm"
+
+[[vias]]
+name = "gnd8"
+drill = "0.2032mm"
+diameter = "0.3048mm"
+
+[[vias]]
+name = "gnd12"
+drill = "0.3048mm"
+diameter = "0.4064mm"
+
+[[vias]]
+name = "sig10"
+drill = "0.254mm"
+diameter = "0.508mm"
+
+[[netclasses]]
+name = "Default"
+track_width = "0.1mm"
+clearance = "0.05mm"
+via = "gnd8"
+
+[[netclasses]]
+name = "RF"
+impedance = "50ohm"
+track_width = "0.4394mm"
+clearance = "0.05mm"
+solver = "field"
+layers = ["F.Cu", "B.Cu"]
+via = "sig10"

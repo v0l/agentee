@@ -1,0 +1,131 @@
+name = "thru3cm"
+board = "thru3cm"
+schematic = "thru3cm"
+
+[[footprints]]
+ref = "P1"
+at = [0.0, 9.0045]
+label = { hide = true }
+
+[[footprints]]
+ref = "P2"
+at = [29.9974, 9.0045]
+rotation = 180
+label = { hide = true }
+
+[[zones]]
+net = "GND"
+layers = ["In1.Cu"]
+outline = [[0.0, 0.381], [0.0, 17.6276], [29.9974, 17.6276], [29.9974, 0.381]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "SIG"
+layers = ["F.Cu"]
+outline = [[0.0, 8.8646], [0.0, 9.144], [1.27, 9.224], [28.7272, 9.224], [29.9972, 9.144], [29.9974, 9.144], [29.9974, 8.8646], [29.9972, 8.8646], [28.7272, 8.7846], [1.27, 8.7846]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+priority = 2
+
+[[zones]]
+net = "GND"
+layers = ["B.Cu"]
+outline = [[0.0, 0.381], [0.0, 17.6276], [29.9974, 17.6276], [29.9974, 0.381]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["In2.Cu"]
+outline = [[0.762, 0.381], [29.2354, 0.381], [29.2354, 17.6276], [0.762, 17.6276]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[0.0, 9.2837], [0.508, 9.3218], [0.762, 9.8298], [0.762, 10.6553], [5.2324, 10.6553], [5.2324, 15.3543], [0.0, 15.3543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[0.0, 8.7249], [0.508, 8.6868], [0.762, 8.1788], [0.762, 7.3533], [5.2324, 7.3533], [5.2324, 2.6543], [0.0, 2.6543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[29.9974, 9.2837], [29.4894, 9.3218], [29.2354, 9.8298], [29.2354, 10.6553], [24.765, 10.6553], [24.765, 15.3543], [29.9974, 15.3543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[zones]]
+net = "GND"
+layers = ["F.Cu"]
+outline = [[29.9974, 8.7249], [29.4894, 8.6868], [29.2354, 8.1788], [29.2354, 7.3533], [24.765, 7.3533], [24.765, 2.6543], [29.9974, 2.6543]]
+clearance = "0.05mm"
+min_width = "0.05mm"
+
+[[vias]]
+net = "GND"
+at = [29.6164, 7.9121]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.2794, 8.4709]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [29.6164, 7.2771]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.2794, 9.5377]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [0.381, 10.0965]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [29.718, 8.4709]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [0.381, 10.7315]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.381, 7.2771]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [29.6164, 10.7315]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [0.381, 7.9121]
+via = "gnd12"
+
+[[vias]]
+net = "GND"
+at = [29.718, 9.5377]
+via = "gnd8"
+
+[[vias]]
+net = "GND"
+at = [29.6164, 10.0965]
+via = "gnd12"

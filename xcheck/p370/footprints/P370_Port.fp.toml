@@ -1,0 +1,19 @@
+name = "P370_Port"
+description = "Where the 1.85 mm edge connector pin lands on the tapered trace end, for a lumped port"
+mount = "smd"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [0.1, 0.0]
+size = [0.2, 0.279]
+layers = ["F.Cu"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [2.5, -2.5]
+size = [1.0, 1.0]
+layers = ["F.Cu"]

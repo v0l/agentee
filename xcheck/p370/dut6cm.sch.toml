@@ -1,0 +1,27 @@
+name = "dut6cm"
+description = "6 cm microstrip DUT"
+board = "dut6cm"
+
+[[parts]]
+ref = "P1"
+symbol = "Port"
+footprint = "P370_Port"
+at = [25.4, 25.4]
+
+[[parts]]
+ref = "P2"
+symbol = "Port"
+footprint = "P370_Port"
+at = [76.2, 25.4]
+mirror = true
+
+[[nets]]
+name = "SIG"
+class = "RF"
+style = "label"
+pins = ["P1.1", "P2.1"]
+
+[[nets]]
+name = "GND"
+style = "label"
+pins = ["P1.2", "P2.2"]
