@@ -1381,10 +1381,8 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
         let cy = grid.center(0, y)[1];
         let mut xs: Vec<f64> = edges
             .iter()
-            .filter_map(|&(a, b)| {
-                ((a[1] <= cy) != (b[1] <= cy))
-                    .then(|| a[0] + (cy - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
-            })
+            .filter(|(a, b)| (a[1] <= cy) != (b[1] <= cy))
+            .map(|&(a, b)| a[0] + (cy - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
             .collect();
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
         for x in 0..w {
