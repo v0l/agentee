@@ -298,7 +298,11 @@ first that reaches the pad's layer, and the router picks, at each layer change, 
 listed via whose layers hold both ends (`cost` times `--via-cost`, ties go to the via
 that spans fewer layers), so with `["std", "uvia-top"]` a change from F.Cu to In1.Cu takes the
 microvia and a change to In2.Cu the through via. It changes layer twice at one spot (a microvia
-on a buried via) only with `stacked_microvias`, otherwise it staggers them.
+on a buried via) only with `stacked_microvias`, otherwise it staggers them, and never on or under a
+controlled depth via. Where it changes layer twice at one spot and a listed via spans both
+changes, it places that one via instead, when it keeps clear of the fixed copper and of the
+copper and via holes routed in the same pass. A class via the lamination cannot drill is left
+out; a class with none left fails with the spans the lamination drills.
 
 ### Rules
 
@@ -1100,7 +1104,8 @@ names instead, `--via-cost` in mm of
 track, default 3, times the via's `cost`), charges `--bend-cost` mm of track for
 each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
-it would cross, remembers the spot as congested, and those nets go back in the queue. The search
+it would cross or whose via holes it would bring within `min_hole_to_hole` of its own (holes whose
+spans share a dielectric), remembers the spot as congested, and those nets go back in the queue. The search
 steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
 45 degree bends; afterwards runs are pulled tight with two-segment 45 degree doglegs and any 90
 degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
