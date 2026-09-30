@@ -764,6 +764,7 @@ struct Board2 {
     crystal: f64,
     spread: f64,
     depth: EdgeDepth,
+    edges: std::sync::Arc<EdgeIndex>,
     silk: Vec<WShape>,
 }
 
@@ -806,6 +807,7 @@ const SOLVE_SWEEPS: usize = 12;
 const SPECTRAL_ROUNDS: usize = 60;
 const GLOBAL_CROSSING: f64 = 0.02;
 const DEPTH_CELL: f64 = 0.5;
+const EDGE_CELL: f64 = 1.0;
 const GRID_MARGIN: f64 = 20.0;
 
 #[derive(Clone, Copy)]
@@ -948,6 +950,89 @@ impl EdgeDepth {
             }
         }
         low
+    }
+}
+
+struct EdgeIndex {
+    origin: P,
+    nx: usize,
+    ny: usize,
+    reach: f64,
+    near: Vec<Vec<(P, P)>>,
+    rows: Vec<Vec<(usize, P, P)>>,
+    rings: usize,
+}
+
+impl EdgeIndex {
+    fn new(edge: geom::BoardEdge, bb: &Bounds, reach: f64) -> EdgeIndex {
+        let origin = [bb.min[0] - reach - EDGE_CELL, bb.min[1] - reach - EDGE_CELL];
+        let span = |axis: usize| {
+            ((bb.max[axis] - bb.min[axis] + 2.0 * (reach + EDGE_CELL)) / EDGE_CELL).ceil() as usize
+                + 1
+        };
+        let (nx, ny) = (span(0), span(1));
+        let mut near = vec![Vec::new(); nx * ny];
+        let mut rows = vec![Vec::new(); ny];
+        let cell = |v: f64, axis: usize, n: usize| {
+            ((v - origin[axis]) / EDGE_CELL).floor().clamp(0.0, (n - 1) as f64) as usize
+        };
+        let mut rings = 0;
+        for (r, ring) in edge.rings().enumerate() {
+            rings = r + 1;
+            let n = ring.len();
+            for k in 0..n {
+                let (a, b) = (ring[k], ring[(k + n - 1) % n]);
+                let (x0, x1) = (a[0].min(b[0]) - reach, a[0].max(b[0]) + reach);
+                let (y0, y1) = (a[1].min(b[1]) - reach, a[1].max(b[1]) + reach);
+                for y in cell(y0, 1, ny)..=cell(y1, 1, ny) {
+                    for x in cell(x0, 0, nx)..=cell(x1, 0, nx) {
+                        near[y * nx + x].push((a, b));
+                    }
+                }
+                for row in rows.iter_mut().take(cell(a[1].max(b[1]), 1, ny) + 1).skip(cell(
+                    a[1].min(b[1]),
+                    1,
+                    ny,
+                )) {
+                    row.push((r, a, b));
+                }
+            }
+        }
+        EdgeIndex { origin, nx, ny, reach, near, rows, rings }
+    }
+
+    fn cell(&self, v: f64, axis: usize) -> Option<usize> {
+        let n = if axis == 0 { self.nx } else { self.ny };
+        let k = ((v - self.origin[axis]) / EDGE_CELL).floor();
+        (k >= 1.0 && k < (n - 1) as f64).then_some(k as usize)
+    }
+
+    fn contains(&self, p: P) -> Option<bool> {
+        if self.rings > 64 {
+            return None;
+        }
+        let row = &self.rows[self.cell(p[1], 1)?];
+        let mut odd = 0u64;
+        for (r, a, b) in row {
+            if (a[1] > p[1]) != (b[1] > p[1])
+                && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]
+            {
+                odd ^= 1 << r;
+            }
+        }
+        Some(odd == 1)
+    }
+
+    fn clear(&self, p: P, gap: f64) -> Option<bool> {
+        if gap > self.reach {
+            return None;
+        }
+        let (x, y) = (self.cell(p[0], 0)?, self.cell(p[1], 1)?);
+        Some(
+            self.near[y * self.nx + x]
+                .iter()
+                .all(|(a, b)| geom::point_segment_distance(p, *a, *b) >= gap),
+        )
     }
 }
 
@@ -1185,7 +1270,15 @@ impl<'a> Placer<'a> {
 
     fn edge_clear(&self, edge: geom::BoardEdge, v: P, min: f64) -> bool {
         let depth = self.b.depth.at(v);
-        (depth > 0.0 && depth >= min - 1e-6) || (edge.contains(v) && edge.distance(v) >= min - 1e-6)
+        if depth > 0.0 && depth >= min - 1e-6 {
+            return true;
+        }
+        self.on_board(edge, v)
+            && self.b.edges.clear(v, min - 1e-6).unwrap_or_else(|| edge.distance(v) >= min - 1e-6)
+    }
+
+    fn on_board(&self, edge: geom::BoardEdge, v: P) -> bool {
+        self.b.edges.contains(v).unwrap_or_else(|| edge.contains(v))
     }
 
     fn inside(&self, i: usize, st: St, sh: &[WShape]) -> bool {
@@ -1224,7 +1317,7 @@ impl<'a> Placer<'a> {
         let ok = deep
             || match part.role {
                 Role::Connector if edge_mount(part.fp) => {
-                    part.pads.iter().filter(|q| !q.edge).all(|q| edge.contains(t.apply(q.c)))
+                    part.pads.iter().filter(|q| !q.edge).all(|q| self.on_board(edge, t.apply(q.c)))
                 }
                 Role::Hole => body_in(0.0) && pads_in(self.b.copper_edge, false),
                 Role::Fiducial => body_in(0.0) && pads_in(FIDUCIAL_TO_EDGE, false),
@@ -1236,7 +1329,8 @@ impl<'a> Placer<'a> {
             };
         let label_in = deep
             || sh.iter().filter(|s| s.label).all(|s| {
-                s.poly.iter().all(|v| edge.contains(*v)) && self.clear_of_cutouts(&s.poly, 0.0)
+                s.poly.iter().all(|v| self.on_board(edge, *v))
+                    && self.clear_of_cutouts(&s.poly, 0.0)
             });
         ok && label_in
             && !sh.iter().any(|s| {
@@ -1767,6 +1861,18 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         crystal: pd.crystal_distance.map(|l| l.to_mm()).unwrap_or(CRYSTAL_DISTANCE),
         spread: pd.cluster_spread.map(|l| l.to_mm()).unwrap_or(CLUSTER_SPREAD),
         depth: EdgeDepth::new(input.outline, input.cutouts, &ob),
+        edges: std::sync::Arc::new(EdgeIndex::new(
+            geom::BoardEdge::new(input.outline, input.cutouts),
+            &ob,
+            board
+                .rules
+                .min_body_to_edge
+                .to_mm()
+                .max(board.rules.min_part_to_edge.to_mm())
+                .max(board.rules.min_copper_to_edge.to_mm())
+                .max(FIDUCIAL_TO_EDGE)
+                + EDGE_CELL,
+        )),
         silk: input
             .silk
             .iter()
