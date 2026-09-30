@@ -519,3 +519,15 @@ fn layout_checks_carry_rule_ids_and_follow_the_drc_table() {
     assert!(s.len() == 1 && s[0].0 == Severity::Warning, "{s:?}");
     assert!(!p.layouts[0].diags.iter().any(|d| d.message.contains("connects to nothing")));
 }
+
+#[test]
+fn a_via_of_another_net_on_a_pad_is_a_short_not_a_cut() {
+    for at in [[4.45, 5.0], [4.0, 5.0]] {
+        let pcb = via("B", at);
+        let p = load(&Fixture { pcb: &pcb, ..Default::default() });
+        assert!(hits(&p, "via-cuts-pad").is_empty(), "{at:?}");
+        assert!(hits(&p, "via-in-pad").is_empty(), "{at:?}");
+        let s = hits(&p, "short");
+        assert!(s.len() == 1 && s[0].1.contains("R1.1 touches via at"), "{s:?}");
+    }
+}

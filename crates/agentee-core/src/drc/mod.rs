@@ -664,7 +664,8 @@ pub fn vias_in_pads(parts: &[Placed], vias: &[Via]) -> Vec<(usize, usize, usize)
     let mut out = Vec::new();
     for (vi, v) in vias.iter().enumerate() {
         for p in &pads {
-            if near(&p.bounds, v.at, v.diameter / 2.0)
+            if p.q.net == Some(v.net)
+                && near(&p.bounds, v.at, v.diameter / 2.0)
                 && p.q.copper.iter().any(|l| v.layers.contains(l))
                 && via::via_on_pad(v, p.q).is_some_and(via::ViaOnPad::in_pad)
             {
