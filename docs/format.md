@@ -300,8 +300,11 @@ next layer): FDTD meshes it as metal to the nearest mesh plane, thermal conducts
 copper and through the rest of the dielectric as FR-4, and DC leaves it out since a dead end
 carries no current. The 2D viewer
 draws a via only when one of its layers is shown, rings it in its type's colour (through gold,
-blind teal, buried lavender, microvia cyan) with its two end layers' colours on the rim, and the 3D
+blind teal, buried lavender, microvia cyan) with its two end layers' colours on the rim, and marks
+a controlled depth via with a dot of its ring colour in the hole, its plated bottom. The 3D
 viewer drills the board face only on the sides a via reaches and ends its barrel at its span; a
+controlled depth via ends in a plated drill point, a cone 0.6 of its drill radius deep (a 118
+degree drill) past its stop layer, where a sequentially drilled via ends flat; a
 backdrill shows as a wider unplated hole, at the backdrill diameter, from the drilled face to the
 stub, where the plated barrel ends.
 

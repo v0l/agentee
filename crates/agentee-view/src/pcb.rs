@@ -205,6 +205,9 @@ pub fn layout(
             if lit { ring.lerp_to_gamma(Color32::WHITE, 0.35) } else { ring },
         );
         p.circle_filled(c, xf.len(v.drill / 2.0), WELL);
+        if v.drill_kind == agentee_core::board::DrillKind::ControlledDepth {
+            p.circle_filled(c, xf.len(v.drill / 4.0).max(1.0), ring);
+        }
         if v.kind != agentee_core::board::ViaKind::Through {
             let edge = [v.layers.first(), v.layers.last()]
                 .map(|x| x.map(|n| copper_color(n)).unwrap_or(ring));

@@ -281,6 +281,46 @@ fn backdrilled(
     }
 }
 
+const DRILL_POINT: f64 = 0.6;
+
+fn drill_point(
+    v: &agentee_core::layout::Via,
+    l: &Layout,
+    board: &Board,
+    z: (f32, f32),
+) -> Option<(f32, f32)> {
+    if v.drill_kind != agentee_core::board::DrillKind::ControlledDepth || v.backdrill.is_some() {
+        return None;
+    }
+    let (a, _) = v.span_of(&l.copper)?;
+    let barrel = via_z(v, l, board, z);
+    let h = (v.drill / 2.0 * DRILL_POINT) as f32;
+    Some(if a == 0 { (barrel.1, barrel.1 - h) } else { (barrel.0, barrel.0 + h) })
+}
+
+fn cone(ring: &[P], c: P, base: f32, apex: f32, s: &mut Surface) {
+    let up = if base > apex { 1.0 } else { -1.0 };
+    let tip = [c[0] as f32, -c[1] as f32, apex];
+    for i in 0..ring.len() {
+        let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+        let pa = [a[0] as f32, -a[1] as f32, base];
+        let pb = [b[0] as f32, -b[1] as f32, base];
+        let (u, w) = (
+            [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]],
+            [tip[0] - pa[0], tip[1] - pa[1], tip[2] - pa[2]],
+        );
+        let mut n =
+            [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+        let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-12);
+        let flip = if n[2] * up < 0.0 { -1.0 } else { 1.0 };
+        n = n.map(|x| x * flip / len);
+        for p in [pa, pb, tip] {
+            s.positions.push(p);
+            s.normals.push(n);
+        }
+    }
+}
+
 fn holes(l: &Layout, board: &Board, z: (f32, f32)) -> Vec<Hole> {
     let mut out: Vec<Hole> = Vec::new();
     for v in &l.vias {
@@ -610,6 +650,11 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     let mut plated = Surface { colour: rgb(gold), metal: 0.8, ..Default::default() };
     for h in &hs {
         walls(&h.ring, h.z.1, h.z.0, false, if h.plated { &mut plated } else { &mut edge });
+    }
+    for v in &l.vias {
+        if let Some((base, apex)) = drill_point(v, l, board, (top, bot)) {
+            cone(&disc(v.at, v.drill / 2.0, 12), v.at, base, apex, &mut plated);
+        }
     }
     s.surfaces.push(edge);
     s.surfaces.push(plated);
@@ -1034,6 +1079,38 @@ mod tests {
             .collect();
         let top = wide.iter().cloned().fold(f32::MIN, f32::max);
         assert!(!wide.is_empty() && (top - floor).abs() < 1e-4, "{top} {floor}");
+    }
+
+    #[test]
+    fn a_controlled_depth_via_ends_in_a_drill_point() {
+        let dir = std::env::temp_dir().join(format!("agentee-3d-depth-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let board = "name = \"t\"\nfab = \"hdi\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[vias]]\nname = \"cd\"\ndrill = \"0.15mm\"\ndiameter = \"0.45mm\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\ndrill_kind = \"controlled_depth\"\n";
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[nets]]\nname = \"A\"\npins = []\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[vias]]\nnet = \"A\"\nat = [5, 5]\nvia = \"cd\"\n",
+        )
+        .unwrap();
+        let lowest = |board: &str| {
+            std::fs::write(dir.join("t.board.toml"), board).unwrap();
+            let p = agentee_core::Project::load(&dir).unwrap();
+            let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+            let scene = build(l, b, &dir, Fetch::Blocking);
+            let t = b.stackup.thickness().to_mm() as f32;
+            let stop = t / 2.0 - b.stackup.copper_z("In1.Cu").unwrap() as f32;
+            let low = scene.surfaces[3].positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
+            low - stop
+        };
+        let point = lowest(board);
+        assert!((point + 0.075 * 0.6).abs() < 1e-4, "{point}");
+        let flat = lowest(&board.replace("drill_kind = \"controlled_depth\"\n", ""));
+        assert!(flat.abs() < 1e-4, "{flat}");
     }
 
     #[test]
