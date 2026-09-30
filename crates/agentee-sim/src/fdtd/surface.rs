@@ -37,6 +37,7 @@ fn lstsq(a: &Mat<f64>, b: &Mat<f64>) -> Vec<f64> {
         .map(|j| (0..a.nrows()).map(|i| a[(i, j)] * a[(i, j)]).sum::<f64>().sqrt().max(1e-300))
         .collect();
     let scaled = Mat::<f64>::from_fn(a.nrows(), a.ncols(), |i, j| a[(i, j)] / norms[j]);
+    faer::set_global_parallelism(faer::Par::Seq);
     let x = scaled.col_piv_qr().solve_lstsq(b);
     (0..a.ncols()).map(|j| x[(j, 0)] / norms[j]).collect()
 }

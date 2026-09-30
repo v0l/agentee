@@ -23,7 +23,7 @@ struct Params {
     plane_n: u32,
     patches: u32,
     debye: u32,
-    pad1: u32,
+    wide: u32,
     pad2: u32,
     pad3: u32,
 }
@@ -32,7 +32,8 @@ struct Params {
 @group(0) @binding(8) var<storage, read> e_ro: array<f32>;
 @group(0) @binding(9) var<storage, read_write> h: array<f32>;
 @group(0) @binding(10) var<storage, read> h_ro: array<f32>;
-@group(0) @binding(1) var<storage, read> coef: array<f32>;
+@group(0) @binding(1) var<storage, read> coef_idx: array<u32>;
+@group(0) @binding(11) var<storage, read> coef_set: array<vec2<f32>>;
 @group(0) @binding(2) var<storage, read_write> psi: array<f32>;
 @group(0) @binding(3) var<storage, read> axes: array<f32>;
 @group(0) @binding(4) var<uniform> P: Params;
@@ -55,6 +56,18 @@ struct Params {
 @group(1) @binding(13) var<storage, read_write> debye_state: array<f32>;
 
 const STRIDE: u32 = 10u;
+
+fn coef_at(f: u32) -> vec2<f32> {
+    if P.wide != 0u {
+        return coef_set[coef_idx[f]];
+    }
+    let w = coef_idx[f >> 1u];
+    return coef_set[(w >> ((f & 1u) * 16u)) & 0xffffu];
+}
+
+fn step() -> u32 {
+    return state[0] - 1u;
+}
 
 fn psi_base(e: u32, c: u32, a: u32) -> u32 {
     let k = e * 9u + c * 3u + a;
@@ -109,8 +122,8 @@ fn curl_h(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i
 
 fn curl_e(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) {
     let f = c * P.nn + id;
-    let cb = coef[(3u + c) * P.nn + id];
-    if cb == 0.0 { return; }
+    let cf = coef_at(f);
+    if cf.y == 0.0 { return; }
     let hv = h_ro[v * P.nn + id] - h_ro[v * P.nn + id - du];
     let hu = h_ro[u * P.nn + id] - h_ro[u * P.nn + id - dv];
     var t1 = hv * axv(u, pu, 1u);
@@ -129,11 +142,12 @@ fn curl_e(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i
             t2 += psi[q];
         }
     }
-    e[f] = coef[f] * e[f] + cb * (t1 - t2);
+    e[f] = cf.x * e[f] + cf.y * (t1 - t2);
 }
 
 @compute @workgroup_size(64, 4, 1)
 fn update_h(@builtin(global_invocation_id) g: vec3<u32>) {
+    if all(g == vec3<u32>(0u)) { state[0] = state[0] + 1u; }
     let i = g.z;
     let j = g.y;
     let k = g.x;
@@ -265,9 +279,7 @@ fn debye_post(@builtin(global_invocation_id) g: vec3<u32>) {
     for (var k = 0u; k < np; k++) {
         s0 += 0.5 * (1.0 + debye_table[1u + 2u * k]) * debye_state[k * P.debye + s];
     }
-    let comp = f / P.nn;
-    let cb = coef[(3u + comp) * P.nn + (f % P.nn)];
-    let next = e[f] - cb * s0;
+    let next = e[f] - coef_at(f).y * s0;
     e[f] = next;
     let de = next - old;
     for (var k = 0u; k < np; k++) {
@@ -285,7 +297,7 @@ fn pulse(t: f32) -> f32 {
 fn lumped(@builtin(global_invocation_id) g: vec3<u32>) {
     let i = g.x;
     if i < P.sources {
-        let n = state[0];
+        let n = step();
         let t = (f32(n) + 0.5) * P.dt;
         let id = u32(source[i * 3u]);
         let comp = u32(source[i * 3u + 2u]);
@@ -304,7 +316,7 @@ fn lumped(@builtin(global_invocation_id) g: vec3<u32>) {
 fn probe(@builtin(global_invocation_id) g: vec3<u32>) {
     let k = g.x;
     if k >= P.ports { return; }
-    let n = state[0];
+    let n = step();
     let b = k * 8u;
     let comp = u32(probe_def[b]);
     let first = u32(probe_def[b + 1u]);
@@ -325,11 +337,6 @@ fn probe(@builtin(global_invocation_id) g: vec3<u32>) {
         series[(n * P.ports + k) * 2u] = v;
         series[(n * P.ports + k) * 2u + 1u] = cur;
     }
-}
-
-@compute @workgroup_size(1, 1, 1)
-fn tick() {
-    state[0] = state[0] + 1u;
 }
 
 var<workgroup> scratch: array<f32, 256>;
@@ -362,7 +369,7 @@ fn field_dft(@builtin(global_invocation_id) g: vec3<u32>) {
     let i = q / P.n1;
     let j = q % P.n1;
     let id = (i * P.n1 + j) * P.n2 + P.plane_k;
-    let n = state[0];
+    let n = step();
     let te = (f32(n) + 1.0) * P.dt;
     let th = (f32(n) + 0.5) * P.dt;
     let f = array<f32, 5>(e_ro[id], e_ro[P.nn + id], e_ro[2u * P.nn + id], h_ro[id], h_ro[P.nn + id]);
@@ -382,7 +389,7 @@ fn field_dft(@builtin(global_invocation_id) g: vec3<u32>) {
 @compute @workgroup_size(64, 1, 1)
 fn ntff(@builtin(global_invocation_id) g: vec3<u32>) {
     if g.x >= P.patches { return; }
-    let n = state[0];
+    let n = step();
     let b = g.x * 13u;
     let meta_ = patch_idx[b];
     let axis = meta_ & 3u;

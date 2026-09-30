@@ -1,3 +1,4 @@
+import os
 import sys
 
 import numpy as np
@@ -5,9 +6,12 @@ import skrf
 
 names = sys.argv[2:]
 d = sys.argv[1]
+# XCHECK_A / XCHECK_B: the two result tags to compare (<name>.<tag>.s2p), default agentee / openems
+tag_a = os.environ.get("XCHECK_A", "agentee")
+tag_b = os.environ.get("XCHECK_B", "openems")
 for name in names:
-    a = skrf.Network(f"{d}/{name}.agentee.s2p")
-    o = skrf.Network(f"{d}/{name}.openems.s2p")
+    a = skrf.Network(f"{d}/{name}.{tag_a}.s2p")
+    o = skrf.Network(f"{d}/{name}.{tag_b}.s2p")
     f = o.f
     a = a.interpolate(skrf.Frequency.from_f(f, unit="Hz"))
     s11a, s21a = a.s[:, 0, 0], a.s[:, 1, 0]
@@ -18,7 +22,7 @@ for name in names:
     dph = np.degrees(ph(s21a) - ph(s21o))
     loss_a = -10 * np.log10(np.abs(s11a) ** 2 + np.abs(s21a) ** 2)
     loss_o = -10 * np.log10(np.abs(s11o) ** 2 + np.abs(s21o) ** 2)
-    print(f"== {name}")
+    print(f"== {name} ({tag_a} / {tag_b})")
     print(f"  |S21| diff dB: max {np.max(np.abs(d21)):.3f}, mean {np.mean(np.abs(d21)):.3f}")
     print(f"  S21 phase diff deg: max {np.max(np.abs(dph)):.2f} (at {f[np.argmax(np.abs(dph))]/1e9:.2f} GHz)")
     print(f"  |S11 - S11| max {np.max(np.abs(s11a - s11o)):.3f}; S11 dB agentee max {np.max(db(s11a)):.1f}, openEMS max {np.max(db(s11o)):.1f}")

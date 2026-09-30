@@ -26,7 +26,8 @@ struct Params {
     plane_n: u32,
     patches: u32,
     debye: u32,
-    pad: [u32; 3],
+    wide: u32,
+    pad: [u32; 2],
 }
 
 #[derive(Clone, Default)]
@@ -57,6 +58,47 @@ fn psi_len(n: [usize; 3], axis: usize, pml: usize) -> usize {
     super::engine::psi_len(n, axis, pml)
 }
 
+struct CoefSets {
+    index: Vec<u32>,
+    sets: Vec<[f32; 2]>,
+    wide: bool,
+}
+
+impl CoefSets {
+    fn new(sim: &Sim) -> CoefSets {
+        CoefSets::build(sim, 1 << 16)
+    }
+
+    fn build(sim: &Sim, narrow: usize) -> CoefSets {
+        let nn = sim.ca[0].len();
+        let mut lookup: std::collections::HashMap<(u32, u32), u32> = Default::default();
+        let mut sets = vec![[0f32; 2]];
+        lookup.insert((0, 0), 0);
+        let mut flat = Vec::with_capacity(3 * nn);
+        let mut last = ((0u32, 0u32), 0u32);
+        for c in 0..3 {
+            for (a, b) in sim.ca[c].iter().zip(&sim.cb[c]) {
+                let key = if *b == 0.0 { (0, 0) } else { (a.to_bits(), b.to_bits()) };
+                if key != last.0 {
+                    let id = *lookup.entry(key).or_insert_with(|| {
+                        sets.push([*a, *b]);
+                        (sets.len() - 1) as u32
+                    });
+                    last = (key, id);
+                }
+                flat.push(last.1);
+            }
+        }
+        let wide = sets.len() > narrow;
+        let index = if wide {
+            flat
+        } else {
+            flat.chunks(2).map(|p| p[0] | p.get(1).map_or(0, |v| v << 16)).collect()
+        };
+        CoefSets { index, sets, wide }
+    }
+}
+
 pub fn run(
     sim: &Sim,
     driven: usize,
@@ -71,13 +113,7 @@ pub fn run(
     if nn >= (1 << 24) * 4 {
         return Err(format!("{} cells is too many for one run", sim.grid.cells()));
     }
-    let mut coef = Vec::with_capacity(6 * nn);
-    for c in 0..3 {
-        coef.extend_from_slice(&sim.ca[c]);
-    }
-    for c in 0..3 {
-        coef.extend_from_slice(&sim.cb[c]);
-    }
+    let coef = CoefSets::new(sim);
     let mut offsets = [0u32; 20];
     let mut psi_total = 0usize;
     for e in 0..2 {
@@ -248,7 +284,8 @@ pub fn run(
         plane_n: if extras.plane_k.is_some() { (n[0] * n[1]) as u32 } else { 0 },
         patches: extras.ntff.as_ref().map(|v| v.len() / 13).unwrap_or(0) as u32,
         debye: debye_count as u32,
-        pad: [0; 3],
+        wide: coef.wide as u32,
+        pad: [0; 2],
     };
     let nf = extras.freqs.len().min(4);
     let plane_len = if extras.plane_k.is_some() { n[0] * n[1] * nf * 10 } else { 0 };
@@ -256,7 +293,8 @@ pub fn run(
     let nonempty = |v: Vec<f32>| if v.is_empty() { vec![0.0f32; 4] } else { v };
     let b_e = g.zeroed("e", (3 * nn * 4) as u64);
     let b_h = g.zeroed("h", (3 * nn * 4) as u64);
-    let b_coef = g.storage("coef", &coef);
+    let b_coef = g.storage("coef_idx", &coef.index);
+    let b_coef_set = g.storage("coef_set", &coef.sets);
     let b_psi = g.zeroed("psi", (psi_total.max(1) * 4) as u64);
     let b_axes = g.storage("axes", &axes);
     let b_params = g.uniform("params", &params);
@@ -290,7 +328,7 @@ pub fn run(
             wgpu::ShaderRuntimeChecks::unchecked(),
         )
     };
-    let group0: [(u32, &wgpu::Buffer); 11] = [
+    let group0: [(u32, &wgpu::Buffer); 12] = [
         (0, &b_e),
         (1, &b_coef),
         (2, &b_psi),
@@ -302,6 +340,7 @@ pub fn run(
         (8, &b_e),
         (9, &b_h),
         (10, &b_h),
+        (11, &b_coef_set),
     ];
     let group1: [(u32, &wgpu::Buffer); 14] = [
         (0, &b_inductor),
@@ -354,7 +393,7 @@ pub fn run(
     };
     let grid = [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), n[0] as u32];
     let lumped_n = (sim.port_src[driven].len().max(sim.inductors.len()) as u32).div_ceil(64).max(1);
-    let mut pipes = vec![(make("update_h", &[2, 3, 4, 8, 9], &[]), grid)];
+    let mut pipes = vec![(make("update_h", &[2, 3, 4, 5, 8, 9], &[]), grid)];
     let sheet_groups = [(sheet_count as u32).div_ceil(64), 1, 1];
     if sheet_count > 0 {
         pipes.push((make("sheet_pre", &[0, 4, 10], &[9]), sheet_groups));
@@ -368,12 +407,12 @@ pub fn run(
     if debye_count > 0 {
         pipes.push((make("debye_pre", &[0, 4], &[11]), debye_groups));
     }
-    pipes.extend([(make("update_e", &[0, 1, 2, 3, 4, 10], &[]), grid)]);
+    pipes.extend([(make("update_e", &[0, 1, 2, 3, 4, 10, 11], &[]), grid)]);
     if sheet_count > 0 {
         pipes.push((make("sheet_post", &[0, 4], &[8, 9, 10]), sheet_groups));
     }
     if debye_count > 0 {
-        pipes.push((make("debye_post", &[0, 1, 4], &[11, 12, 13]), debye_groups));
+        pipes.push((make("debye_post", &[0, 1, 4, 11], &[11, 12, 13]), debye_groups));
     }
     pipes.extend([
         (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),
@@ -388,7 +427,6 @@ pub fn run(
     if patches > 0 && nf > 0 {
         pipes.push((make("ntff", &[4, 5, 8, 10], &[6, 7]), [(patches as u32).div_ceil(64), 1, 1]));
     }
-    pipes.push((make("tick", &[5], &[]), [1, 1, 1]));
     let energy = make("energy", &[4, 8, 10], &[2]);
     let chunk = 1000;
     let mut steps = 0;
@@ -433,4 +471,55 @@ pub fn run(
     let plane = if plane_len > 0 { g.read(&b_plane, plane_len) } else { Vec::new() };
     let ntff = if patches > 0 && nf > 0 { g.read(&b_ntff, patches * nf * 12) } else { Vec::new() };
     Ok(Record { steps, ports, series, decay_db: decay, plane, ntff })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fdtd::engine::{Debye, Edge, Grid, Materials, Media, PortDef};
+    use crate::fdtd::surface::Surface;
+
+    fn at(sets: &CoefSets, f: usize) -> [f32; 2] {
+        let i =
+            if sets.wide { sets.index[f] } else { (sets.index[f / 2] >> (16 * (f % 2))) & 0xffff };
+        sets.sets[i as usize]
+    }
+
+    #[test]
+    fn coefficient_sets_give_back_every_edge() {
+        let line = |n: usize| (0..n).map(|i| i as f64 * 1e-3 * (1.0 + 0.1 * i as f64)).collect();
+        let grid = Grid { x: line(9), y: line(8), z: line(7), pml: 0 };
+        let mut mats = Materials::new(&grid);
+        for (i, e) in mats.eps.iter_mut().enumerate() {
+            *e = 1.0 + (i % 5) as f32;
+        }
+        for (i, s) in mats.sigma.iter_mut().enumerate() {
+            *s = (i % 3) as f32 * 0.01;
+        }
+        let port = PortDef {
+            name: "p".into(),
+            columns: vec![vec![Edge { comp: 2, at: [4, 4, 3] }]],
+            r: 50.0,
+        };
+        let media = Media {
+            surface: Surface { scale: 1e9, ..Default::default() },
+            debye: Debye::default(),
+        };
+        let sim = Sim::new(grid, &mats, &|c, p| c == 0 && p[2] == 2, &[], vec![port], &[], media);
+        let nn = sim.ca[0].len();
+        for narrow in [1 << 16, 1] {
+            let sets = CoefSets::build(&sim, narrow);
+            assert_eq!(sets.wide, narrow == 1);
+            assert!(sets.sets.len() > 2);
+            for c in 0..3 {
+                for id in 0..nn {
+                    let [a, b] = at(&sets, c * nn + id);
+                    assert_eq!(b, sim.cb[c][id]);
+                    if b != 0.0 {
+                        assert_eq!(a, sim.ca[c][id]);
+                    }
+                }
+            }
+        }
+    }
 }

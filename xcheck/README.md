@@ -11,6 +11,20 @@ python xcheck/openems_cases.py xcheck/cases.json target/xcheck
 python xcheck/compare.py target/xcheck msl50 msl50_lossy stub stub_fine thin_lossy
 ```
 
+`openems_cases.py` takes the engine from `XCHECK_ENGINE` (e.g. `gpu` for the GPU engine of openEMS PR
+225, `multithreaded`), `XCHECK_EXACT=1` evaluates the end criteria every Nyquist period (GPU branch
+only), and `XCHECK_TAG` names the results (`<case>.<tag>.s2p`, default `openems`); `compare.py`
+compares the tags in `XCHECK_A` and `XCHECK_B` (default `agentee` and `openems`).
+
+Engine throughput on the free-space grid of openEMS's `FreeSpace_Benchmark.py` (n^3 cells of 1 mm,
+PML 8 or PEC walls), the difference between two step counts giving the cost per step without the
+setup of a run:
+
+```sh
+./target/release/examples/xcheck throughput 300 8 3 200 800   # n, pml (0: PEC), repeats, steps...
+python xcheck/openems_freespace.py gpu 300 800 PML_8 target/xcheck [noprobe]
+```
+
 The openEMS side uses a wider air box (8 mm), PML_8, the thirds rule on the strip edges,
 `AddConductingSheet` for lossy copper (frequency dependent) and PEC otherwise. Lossy substrates
 are an openEMS Debye material with the same poles agentee uses for its Djordjevic-Sarkar
