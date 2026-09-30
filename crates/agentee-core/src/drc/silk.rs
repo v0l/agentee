@@ -40,6 +40,15 @@ pub static RULES: &[Rule] = &[
         check: recorded,
     },
     Rule {
+        id: "watermark",
+        category: Category::Silk,
+        severity: Severity::Error,
+        summary: "the agentee version watermark has no clear spot on the silk, or the [watermark] spot is not clear; fab refuses without it",
+        when: "every board",
+        applies: every,
+        check: recorded,
+    },
+    Rule {
         id: "silk-width",
         category: Category::Silk,
         severity: Severity::Warning,

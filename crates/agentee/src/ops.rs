@@ -190,6 +190,7 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                 "zones": l.zones.iter().map(|z| json!({ "net": l.nets[z.net].name, "layer": z.layer, "islands_removed": z.islands_removed })).collect::<Vec<_>>(),
                 "unrouted": ratsnest,
                 "silk": l.silk,
+                "watermark": l.watermark,
                 "pairs": l.pairs,
                 "match_groups": l.match_groups,
                 "interfaces": l.interfaces,
@@ -1306,37 +1307,8 @@ pub fn route(
     let layout = &entry.item;
     let board = p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
     let result = agentee_core::route::route(layout, &board.item, opts)?;
-    if write && (!result.tracks.is_empty() || !result.vias.is_empty()) {
-        let f = |v: f64| {
-            let s = format!("{:.4}", v);
-            let s = s.trim_end_matches('0');
-            if s.ends_with('.') { format!("{s}0") } else { s.to_string() }
-        };
-        let pt = |q: [f64; 2]| format!("[{}, {}]", f(q[0]), f(q[1]));
-        let mut text = format!("\n# agentee route {}\n", opts.nets.join(" "));
-        for t in &result.tracks {
-            let pts: Vec<String> = t.points.iter().map(|q| pt(*q)).collect();
-            let width = t.width.map(|w| format!("width = {}\n", f(w))).unwrap_or_default();
-            text += &format!(
-                "\n[[tracks]]\nnet = \"{}\"\nlayer = \"{}\"\n{width}points = [{}]\n",
-                t.net,
-                t.layer,
-                pts.join(", ")
-            );
-        }
-        for v in &result.vias {
-            text += &format!(
-                "\n[[vias]]\nnet = \"{}\"\nat = {}\nvia = \"{}\"\n",
-                v.net,
-                pt(v.at),
-                v.via
-            );
-        }
-        let mut file = std::fs::OpenOptions::new()
-            .append(true)
-            .open(&entry.path)
-            .map_err(|e| format!("{}: {e}", entry.path.display()))?;
-        std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| e.to_string())?;
+    if write {
+        append_route(&entry.path, &format!("agentee route {}", opts.nets.join(" ")), &result)?;
     }
     Ok(json!({
         "layout": entry.name,
@@ -1347,6 +1319,42 @@ pub fn route(
         "vias": result.vias.len(),
         "failed": result.failed,
     }))
+}
+
+fn append_route(
+    path: &Path,
+    header: &str,
+    result: &agentee_core::route::RouteResult,
+) -> Result<(), String> {
+    if result.tracks.is_empty() && result.vias.is_empty() {
+        return Ok(());
+    }
+    let f = |v: f64| {
+        let s = format!("{:.4}", v);
+        let s = s.trim_end_matches('0');
+        if s.ends_with('.') { format!("{s}0") } else { s.to_string() }
+    };
+    let pt = |q: [f64; 2]| format!("[{}, {}]", f(q[0]), f(q[1]));
+    let mut text = format!("\n# {header}\n");
+    for t in &result.tracks {
+        let pts: Vec<String> = t.points.iter().map(|q| pt(*q)).collect();
+        let width = t.width.map(|w| format!("width = {}\n", f(w))).unwrap_or_default();
+        text += &format!(
+            "\n[[tracks]]\nnet = \"{}\"\nlayer = \"{}\"\n{width}points = [{}]\n",
+            t.net,
+            t.layer,
+            pts.join(", ")
+        );
+    }
+    for v in &result.vias {
+        text +=
+            &format!("\n[[vias]]\nnet = \"{}\"\nat = {}\nvia = \"{}\"\n", v.net, pt(v.at), v.via);
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| e.to_string())
 }
 
 pub fn tune(
@@ -1467,4 +1475,332 @@ pub fn silk(root: &std::path::Path, name: &str, hide: bool, write: bool) -> Resu
         "hidden": hidden,
         "still_failing": left,
     }))
+}
+
+pub struct TestpointOptions {
+    pub nets: Vec<String>,
+    pub side: Option<String>,
+    pub pitch: f64,
+    pub write: bool,
+}
+
+fn layout_index(p: &Project, name: &str) -> Result<usize, String> {
+    match find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))? {
+        ItemRef::Layout(i) => Ok(i),
+        _ => Err(format!("`{name}` is not a layout")),
+    }
+}
+
+fn design_sheets(p: &Project, root: &str) -> Vec<PathBuf> {
+    let mut names = vec![root.to_string()];
+    let mut k = 0;
+    while k < names.len() {
+        for e in &p.schematics {
+            if e.item.parent.as_deref() == Some(names[k].as_str()) && !names.contains(&e.name) {
+                names.push(e.name.clone());
+            }
+        }
+        k += 1;
+    }
+    names
+        .iter()
+        .filter_map(|n| p.schematics.iter().find(|e| &e.name == n).map(|e| e.path.clone()))
+        .collect()
+}
+
+fn edit_toml(path: &Path) -> Result<toml_edit::DocumentMut, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    text.parse().map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn add_to_sheet(path: &Path, reference: &str, net: &str) -> Result<bool, String> {
+    let mut doc = edit_toml(path)?;
+    let Some(nets) = doc.get_mut("nets").and_then(|v| v.as_array_of_tables_mut()) else {
+        return Ok(false);
+    };
+    let Some(entry) = nets.iter_mut().find(|t| t.get("name").and_then(|v| v.as_str()) == Some(net))
+    else {
+        return Ok(false);
+    };
+    let Some(pins) = entry.get_mut("pins").and_then(|v| v.as_array_mut()) else {
+        return Ok(false);
+    };
+    pins.push(format!("{reference}.1"));
+    let at = |t: &toml_edit::Table| -> Option<(f64, f64)> {
+        let a = t.get("at")?.as_array()?;
+        let n = |v: &toml_edit::Value| v.as_float().or_else(|| v.as_integer().map(|i| i as f64));
+        Some((n(a.get(0)?)?, n(a.get(1)?)?))
+    };
+    let parts = doc.get("parts").and_then(|v| v.as_array_of_tables());
+    let is_tp = |t: &toml_edit::Table| {
+        t.get("symbol").and_then(|v| v.as_str()) == Some(agentee_core::testpoint::SYMBOL)
+    };
+    let placed: Vec<(f64, f64)> =
+        parts.map(|a| a.iter().filter_map(at).collect()).unwrap_or_default();
+    let others: Vec<(f64, f64)> =
+        parts.map(|a| a.iter().filter(|t| !is_tp(t)).filter_map(at).collect()).unwrap_or_default();
+    let x = others.iter().map(|p| p.0).fold(0.0, f64::max) + 12.7;
+    let x = (x / 2.54).ceil() * 2.54;
+    let column = placed.iter().filter(|p| (p.0 - x).abs() < 1e-6).count();
+    let y = others.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+    let y = if y == f64::MAX { 20.32 } else { (y / 2.54).round() * 2.54 } + column as f64 * 7.62;
+    let mut part = toml_edit::Table::new();
+    part["ref"] = toml_edit::value(reference);
+    part["symbol"] = toml_edit::value(agentee_core::testpoint::SYMBOL);
+    part["value"] = toml_edit::value("TP");
+    part["footprint"] = toml_edit::value(agentee_core::testpoint::PAD_FOOTPRINT);
+    let mut pt = toml_edit::Array::new();
+    pt.push((x * 100.0).round() / 100.0);
+    pt.push((y * 100.0).round() / 100.0);
+    part["at"] = toml_edit::value(pt);
+    match doc.get_mut("parts").and_then(|v| v.as_array_of_tables_mut()) {
+        Some(a) => a.push(part),
+        None => {
+            let mut a = toml_edit::ArrayOfTables::new();
+            a.push(part);
+            doc["parts"] = toml_edit::Item::ArrayOfTables(a);
+        }
+    }
+    std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn ensure_library(root: &Path, p: &Project) -> Result<Vec<String>, String> {
+    use agentee_core::testpoint as tp;
+    let mut written = Vec::new();
+    if !p.footprints.iter().any(|f| f.item.name == tp::PAD_FOOTPRINT) {
+        let path = root.join("footprints").join(format!("{}.fp.toml", tp::PAD_FOOTPRINT));
+        std::fs::create_dir_all(root.join("footprints")).map_err(|e| e.to_string())?;
+        std::fs::write(&path, tp::PAD_FOOTPRINT_TOML).map_err(|e| e.to_string())?;
+        written.push(path.display().to_string());
+    }
+    if !p.symbols.iter().any(|s| s.item.name == tp::SYMBOL) {
+        let path = root.join("symbols").join(format!("{}.sym.toml", tp::SYMBOL));
+        std::fs::create_dir_all(root.join("symbols")).map_err(|e| e.to_string())?;
+        std::fs::write(&path, tp::SYMBOL_TOML).map_err(|e| e.to_string())?;
+        written.push(path.display().to_string());
+    }
+    Ok(written)
+}
+
+type Placed = (String, String, [f64; 2], Option<String>, Option<[f64; 2]>);
+
+pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value, String> {
+    use agentee_core::testpoint as tp;
+    let p = load(root)?;
+    let i = layout_index(&p, name)?;
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let mut spec = layout.test.clone();
+    if let Some(side) = &o.side {
+        let mut d = agentee_core::diag::Diags::new("test");
+        let file = tp::TestFile { side: Some(side.clone()), ..Default::default() };
+        spec.side = file.resolve(&mut d).side;
+        if !d.list.is_empty() {
+            return Err(format!("side `{side}` is not F or B"));
+        }
+    }
+    if !o.nets.is_empty() {
+        spec.nets = o.nets.clone();
+    }
+    let mut targets = Vec::new();
+    let mut have = Vec::new();
+    let mut exempt = Vec::new();
+    for (ni, net) in layout.nets.iter().enumerate() {
+        if !tp::wanted(&spec, board, net)
+            || !layout.parts.iter().any(|p| p.pads.iter().any(|q| q.net == Some(ni)))
+        {
+            continue;
+        }
+        if tp::has_access(&spec, &layout.parts, &layout.vias, ni) {
+            have.push(net.name.clone());
+        } else if let Some(why) = tp::exempt(board, &layout.pairs, ni, net) {
+            exempt.push(format!("{} ({why})", net.name));
+        } else {
+            targets.push(ni);
+        }
+    }
+    let spots = tp::place(layout, board, &spec, &targets, o.pitch);
+    let mut used: Vec<u32> = p
+        .schematics
+        .iter()
+        .flat_map(|s| s.item.parts.iter())
+        .filter_map(|q| q.reference.strip_prefix("TP").and_then(|n| n.parse().ok()))
+        .collect();
+    let mut next = || {
+        let n = (1..).find(|n| !used.contains(n)).unwrap_or(1);
+        used.push(n);
+        format!("TP{n}")
+    };
+    let sheets = design_sheets(&p, &layout.schematic);
+    let mut placed = Vec::new();
+    let mut failed = Vec::new();
+    for s in &spots {
+        let net = layout.nets[s.net].name.clone();
+        let Some(at) = s.at else {
+            failed.push(
+                json!({ "net": net, "reason": "no clear spot on the probe side near its copper" }),
+            );
+            continue;
+        };
+        let reference = next();
+        let mut sheet = None;
+        if o.write {
+            for path in &sheets {
+                if add_to_sheet(path, &reference, &net)? {
+                    sheet = Some(path.display().to_string());
+                    break;
+                }
+            }
+            if sheet.is_none() {
+                failed.push(json!({ "net": net, "reason": "no schematic sheet lists this net" }));
+                continue;
+            }
+        }
+        placed.push((reference, net, at, sheet, s.via));
+    }
+    let base = json!({
+        "layout": entry.name,
+        "side": spec.side,
+        "already_probed": have,
+        "exempt": exempt,
+    });
+    let listed = |placed: &[Placed]| -> Vec<Value> {
+        placed
+            .iter()
+            .map(|(r, n, a, s, v)| json!({ "ref": r, "net": n, "at": a, "sheet": s, "via": v }))
+            .collect()
+    };
+    if !o.write || placed.is_empty() {
+        let mut out = base;
+        out["written"] = json!(false);
+        out["placed"] = json!(listed(&placed));
+        out["failed"] = json!(failed);
+        return Ok(out);
+    }
+    let library = ensure_library(entry.path.parent().unwrap_or(root), &p)?;
+    let f = |v: f64| (v * 1e4).round() / 1e4;
+    let mut text = format!("\n# agentee testpoints {}\n", o.nets.join(" "));
+    for (r, _, at, _, _) in &placed {
+        text += &format!("\n[[footprints]]\nref = \"{r}\"\nat = [{}, {}]\n", f(at[0]), f(at[1]));
+        if spec.bottom() {
+            text += "side = \"bottom\"\n";
+        }
+    }
+    for (_, net, at, _, via) in &placed {
+        let Some(v) = via else { continue };
+        text += &format!(
+            "\n[[tracks]]\nnet = \"{net}\"\nlayer = \"{}\"\npoints = [[{}, {}], [{}, {}]]\n",
+            spec.copper(),
+            f(at[0]),
+            f(at[1]),
+            f(v[0]),
+            f(v[1])
+        );
+        text += &format!("\n[[vias]]\nnet = \"{net}\"\nat = [{}, {}]\n", f(v[0]), f(v[1]));
+    }
+    let path = entry.path.clone();
+    let layout_name = entry.name.clone();
+    drop(p);
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| e.to_string())?;
+
+    let p = load(root)?;
+    let i = layout_index(&p, &layout_name)?;
+    let mut layout = p.layouts[i].item.clone();
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let pads: Vec<(usize, Vec<Vec<[f64; 2]>>)> = layout
+        .parts
+        .iter()
+        .filter(|q| placed.iter().any(|(r, ..)| *r == q.reference))
+        .flat_map(|q| q.pads.iter().filter_map(|x| x.net.map(|n| (n, x.outlines.clone()))))
+        .collect();
+    let on_pad = |c: [f64; 2], n: usize| {
+        pads.iter().any(|(pn, o)| {
+            *pn == n
+                && o.iter().any(|ring| {
+                    agentee_core::geom::point_in_polygon(c, ring)
+                        || agentee_core::drc::edge_distance(ring, c) < 1e-3
+                })
+        })
+    };
+    layout.ratsnest.retain(|(a, b, n)| on_pad(*a, *n) || on_pad(*b, *n));
+    let route_nets: Vec<String> = {
+        let mut v: Vec<String> =
+            layout.ratsnest.iter().map(|(_, _, n)| layout.nets[*n].name.clone()).collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let routed = if route_nets.is_empty() {
+        agentee_core::route::RouteResult::default()
+    } else {
+        let opts = agentee_core::route::RouteOptions { nets: route_nets, ..Default::default() };
+        agentee_core::route::route(&layout, board, &opts)?
+    };
+    append_route(&path, "agentee testpoints routes", &routed)?;
+    drop(p);
+
+    let mut labels: std::collections::BTreeMap<String, Value> = Default::default();
+    for pass in 0..2 {
+        let p = load(root)?;
+        let i = layout_index(&p, &layout_name)?;
+        let fixes: Vec<_> = p.layouts[i]
+            .item
+            .label_fixes
+            .iter()
+            .filter(|f| placed.iter().any(|(r, ..)| *r == f.reference))
+            .cloned()
+            .collect();
+        if fixes.is_empty() {
+            break;
+        }
+        let mut doc = edit_toml(&path)?;
+        let Some(parts) = doc.get_mut("footprints").and_then(|v| v.as_array_of_tables_mut()) else {
+            break;
+        };
+        for fx in &fixes {
+            let Some(t) = parts
+                .iter_mut()
+                .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(fx.reference.as_str()))
+            else {
+                continue;
+            };
+            let mut label = toml_edit::InlineTable::new();
+            match fx.at {
+                Some(at) if pass == 0 => {
+                    let mut pt = toml_edit::Array::new();
+                    pt.push((at[0] * 100.0).round() / 100.0);
+                    pt.push((at[1] * 100.0).round() / 100.0);
+                    label.insert("at", pt.into());
+                    if fx.rotation != 0.0 {
+                        label.insert("rotation", fx.rotation.into());
+                    }
+                    labels.insert(fx.reference.clone(), json!({ "moved": at }));
+                }
+                _ => {
+                    label.insert("hide", true.into());
+                    labels.insert(fx.reference.clone(), json!({ "hidden": true }));
+                }
+            }
+            t["label"] = toml_edit::value(label);
+        }
+        std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
+    }
+    let mut out = base;
+    out["written"] = json!(true);
+    out["placed"] = json!(listed(&placed));
+    out["failed"] = json!(failed);
+    out["library"] = json!(library);
+    out["connections"] = json!(routed.connections);
+    out["routed"] = json!(routed.routed);
+    out["tracks"] = json!(routed.tracks.len());
+    out["vias"] = json!(routed.vias.len());
+    out["unrouted"] = json!(routed.failed);
+    out["labels"] = json!(labels);
+    Ok(out)
 }
