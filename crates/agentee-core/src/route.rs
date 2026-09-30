@@ -782,9 +782,11 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                             let conn = conn_found(&grid, &p, net, &ctx);
                             let mut hits: Vec<usize> = (0..routed.len())
                                 .filter(|&k| {
-                                    routed[k]
-                                        .as_ref()
-                                        .is_some_and(|r| r.net != net && conflicts(r, &conn, &ctx))
+                                    routed[k].as_ref().is_some_and(|r| {
+                                        r.net != net
+                                            && (conflicts(r, &conn, &ctx)
+                                                || holes_crowd(r, &conn, &ctx))
+                                    })
                                 })
                                 .collect();
                             let partners: Vec<usize> = hits
@@ -1571,6 +1573,17 @@ fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
         }
     }
     false
+}
+
+fn holes_crowd(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
+    r.vias.iter().zip(&r.options).any(|(v, &k)| {
+        let via = &ctx.vias[k];
+        c.vias.iter().zip(&c.options).any(|(w, &j)| {
+            let other = &ctx.vias[j];
+            via.shares_dielectric(other)
+                && geom::dist(*v, *w) < via.drill_r + other.drill_r + ctx.hole_gap - 1e-6
+        })
+    })
 }
 
 fn attraction(
