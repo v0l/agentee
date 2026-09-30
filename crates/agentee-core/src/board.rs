@@ -762,17 +762,33 @@ impl BoardFile {
         };
         let n_cu = files.iter().filter(|l| l.kind == LayerKind::Copper).count();
         let mut seen_cu = 0;
+        let mut dielectrics_here = 0;
         let layers = files
             .iter()
             .map(|f| {
+                let stacked = match f.kind {
+                    k if k.is_dielectric() => {
+                        dielectrics_here += 1;
+                        if dielectrics_here > 1 {
+                            format!("{}", (b'a' + dielectrics_here as u8 - 2) as char)
+                        } else {
+                            String::new()
+                        }
+                    }
+                    LayerKind::Copper => {
+                        dielectrics_here = 0;
+                        String::new()
+                    }
+                    _ => String::new(),
+                };
                 let side = if seen_cu == 0 { "F" } else { "B" };
                 let name = f.name.clone().unwrap_or_else(|| match f.kind {
                     LayerKind::Copper => copper_name(seen_cu, n_cu),
                     LayerKind::Silk => format!("{side}.SilkS"),
                     LayerKind::Paste => format!("{side}.Paste"),
                     LayerKind::Mask => format!("{side}.Mask"),
-                    LayerKind::Core => format!("core{}", seen_cu),
-                    LayerKind::Prepreg => format!("prepreg{}", seen_cu),
+                    LayerKind::Core => format!("core{seen_cu}{stacked}"),
+                    LayerKind::Prepreg => format!("prepreg{seen_cu}{stacked}"),
                 });
                 if f.kind == LayerKind::Copper {
                     seen_cu += 1;
@@ -1131,6 +1147,15 @@ mod tests {
         assert!(!d.has_errors(), "{:?}", d.list);
         let t = b.stackup.thickness().to_mm();
         assert!((1.55..1.65).contains(&t), "{t}");
+    }
+
+    #[test]
+    fn every_stackup_preset_resolves_clean() {
+        for p in crate::stackups::stackup_presets() {
+            let (b, d) = board(&format!("name = \"x\"\n[stackup]\npreset = \"{}\"\n", p.name));
+            assert!(!d.has_errors(), "{}: {:?}", p.name, d.list);
+            assert_eq!(b.stackup.copper_names().len(), p.copper_layers, "{}", p.name);
+        }
     }
 
     #[test]
