@@ -2835,12 +2835,17 @@ fn vector_fill(
     for c in cutouts {
         clip.push(c.to_vec());
     }
-    for it in items.iter().filter(|it| it.layers.iter().any(|l| l == &raster.layer)) {
-        if it.net == Some(raster.net) && it.owner != Owner::Hole {
-            continue;
-        }
-        let gap = clearance.max(clearance_of(it.net));
-        clip.extend(inflated(&it.shape, gap));
+    let keepouts: Vec<(&Shape, f64)> = items
+        .iter()
+        .filter(|it| it.layers.iter().any(|l| l == &raster.layer))
+        .filter(|it| it.net != Some(raster.net) || it.owner == Owner::Hole)
+        .map(|it| (&it.shape, clearance.max(clearance_of(it.net))))
+        .collect();
+    for (shape, gap) in &keepouts {
+        clip.extend(inflated(shape, *gap));
+    }
+    if min_width > 0.0 {
+        clip.extend(gap_bridges(&keepouts, min_width));
     }
     for z in blockers {
         let gap = clearance.max(clearance_of(Some(z.net)));
@@ -2879,6 +2884,147 @@ fn vector_fill(
         }
     }
     rings
+}
+
+fn closest_on_segment(p: P, a: P, b: P) -> P {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len2 = dx * dx + dy * dy;
+    if len2 == 0.0 {
+        return a;
+    }
+    let t = (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2).clamp(0.0, 1.0);
+    [a[0] + t * dx, a[1] + t * dy]
+}
+
+fn core_of(shape: &Shape) -> (Vec<(P, P)>, f64) {
+    match shape {
+        Shape::Circle(c, r) => (vec![(*c, *c)], *r),
+        Shape::Seg(a, b, hw) => (vec![(*a, *b)], *hw),
+        Shape::Poly(rings) => (rings.iter().flat_map(|r| edges(r)).collect(), 0.0),
+    }
+}
+
+fn nearest_points(a: &[(P, P)], b: &[(P, P)]) -> Option<(P, P)> {
+    let mut best: Option<(f64, P, P)> = None;
+    for (p, q) in a {
+        for (r, s) in b {
+            if geom::segments_intersect(*p, *q, *r, *s) {
+                return None;
+            }
+            for (x, y) in [
+                (*p, closest_on_segment(*p, *r, *s)),
+                (*q, closest_on_segment(*q, *r, *s)),
+                (closest_on_segment(*r, *p, *q), *r),
+                (closest_on_segment(*s, *p, *q), *s),
+            ] {
+                let d = geom::dist(x, y);
+                if best.is_none_or(|b| d < b.0) {
+                    best = Some((d, x, y));
+                }
+            }
+        }
+    }
+    best.map(|(_, x, y)| (x, y))
+}
+
+fn cap_points(rings: &[Vec<P>], m: P, rho: f64, out: &mut Vec<P>) {
+    for r in rings {
+        for (a, b) in edges(r) {
+            if geom::dist(a, m) <= rho {
+                out.push(a);
+            }
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let f = [a[0] - m[0], a[1] - m[1]];
+            let qa = d[0] * d[0] + d[1] * d[1];
+            let qb = 2.0 * (f[0] * d[0] + f[1] * d[1]);
+            let qc = f[0] * f[0] + f[1] * f[1] - rho * rho;
+            let disc = qb * qb - 4.0 * qa * qc;
+            if qa == 0.0 || disc < 0.0 {
+                continue;
+            }
+            for t in [(-qb - disc.sqrt()) / (2.0 * qa), (-qb + disc.sqrt()) / (2.0 * qa)] {
+                if (0.0..=1.0).contains(&t) {
+                    out.push([a[0] + t * d[0], a[1] + t * d[1]]);
+                }
+            }
+        }
+    }
+}
+
+fn convex_hull(mut pts: Vec<P>) -> Vec<P> {
+    pts.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+    pts.dedup_by(|a, b| geom::dist(*a, *b) < 1e-9);
+    if pts.len() < 3 {
+        return pts;
+    }
+    let cross = |o: P, a: P, b: P| (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    let mut hull: Vec<P> = Vec::new();
+    for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &P>> =
+            if pass == 0 { Box::new(pts.iter()) } else { Box::new(pts.iter().rev()) };
+        for p in iter {
+            while hull.len() >= start + 2
+                && cross(hull[hull.len() - 2], hull[hull.len() - 1], *p) <= 0.0
+            {
+                hull.pop();
+            }
+            hull.push(*p);
+        }
+        hull.pop();
+    }
+    hull
+}
+
+fn gap_bridges(keepouts: &[(&Shape, f64)], min_width: f64) -> Vec<Vec<P>> {
+    let mut order: Vec<(Bounds, usize)> = keepouts
+        .iter()
+        .enumerate()
+        .map(|(i, (s, gap))| {
+            let mut b = s.bounds();
+            b.add([b.min[0] - gap, b.min[1] - gap]);
+            b.add([b.max[0] + gap, b.max[1] + gap]);
+            (b, i)
+        })
+        .collect();
+    order.sort_by(|a, b| a.0.min[0].total_cmp(&b.0.min[0]));
+    let mut out = Vec::new();
+    for (k, (ba, i)) in order.iter().enumerate() {
+        for (bb, j) in &order[k + 1..] {
+            if bb.min[0] > ba.max[0] + min_width {
+                break;
+            }
+            if bb.min[1] > ba.max[1] + min_width || bb.max[1] < ba.min[1] - min_width {
+                continue;
+            }
+            let ((sa, ga), (sb, gb)) = (keepouts[*i], keepouts[*j]);
+            let apart = sa.distance(sb) - ga - gb;
+            if apart <= 1e-6 || apart >= min_width {
+                continue;
+            }
+            let ((ca, ra), (cb, rb)) = (core_of(sa), core_of(sb));
+            let Some((qa, qb)) = nearest_points(&ca, &cb) else { continue };
+            let core = geom::dist(qa, qb);
+            if core < 1e-9 {
+                continue;
+            }
+            let dir = [(qb[0] - qa[0]) / core, (qb[1] - qa[1]) / core];
+            let (ea, eb) = (ra + ga, rb + gb);
+            let m = [
+                (qa[0] + dir[0] * ea + qb[0] - dir[0] * eb) / 2.0,
+                (qa[1] + dir[1] * ea + qb[1] - dir[1] * eb) / 2.0,
+            ];
+            let rho = apart / 2.0 + 1.5 * min_width;
+            let mut pts = Vec::new();
+            cap_points(&inflated(sa, ga), m, rho, &mut pts);
+            cap_points(&inflated(sb, gb), m, rho, &mut pts);
+            let hull = convex_hull(pts);
+            if hull.len() >= 3 {
+                out.push(hull);
+            }
+        }
+    }
+    out
 }
 
 fn pair_base(name: &str, positive: bool) -> Option<String> {
@@ -3233,6 +3379,37 @@ mod pair_tests {
             assert_eq!(pair_base(p, true), pair_base(n, false), "{p} {n}");
         }
         assert_ne!(pair_base("USB_DP", true), pair_base("CLK_N", false));
+    }
+
+    fn via(net: usize, c: P) -> Item {
+        let shape = Shape::Circle(c, 0.175);
+        Item {
+            owner: Owner::Via(0),
+            net: Some(net),
+            layers: vec!["In6.Cu".into()],
+            bounds: shape.bounds(),
+            shape,
+        }
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_antipads_closer_than_min_width() {
+        let items = [via(1, [-0.375, -0.075]), via(1, [0.375, 0.075]), via(0, [1.5, 1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let (fill, _) =
+            fill_zone(0, "In6.Cu", &square, &[], 0.0, 0.1, &items, &|_| 0.1, &[], &[], 0.25, 0.0);
+        let copper =
+            |p: P| fill.rings.iter().filter(|r| geom::point_in_polygon(p, r)).count() % 2 == 1;
+        let across = [-0.196, 0.981];
+        for k in 0..=26 {
+            let s = k as f64 * 0.01;
+            for side in [1.0, -1.0] {
+                let p = [across[0] * s * side, across[1] * s * side];
+                assert!(!copper(p), "copper at {p:?}");
+            }
+        }
+        assert!(copper([across[0] * 0.6, across[1] * 0.6]));
+        assert!(copper([0.0, 1.0]) && copper([-1.0, 0.0]));
     }
 
     #[test]

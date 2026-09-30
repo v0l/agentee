@@ -256,3 +256,23 @@ fn same_net_vias_on_the_same_spot_are_an_error() {
         with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"A\"\nat = [6, 5]\n");
     assert!(!e.iter().any(|t| t.starts_with("vias") || t.starts_with("drills")), "{e:?}");
 }
+
+#[test]
+#[ignore]
+fn sdr_in6_ground_has_no_stubs_between_the_u3_antipads() {
+    let sdr = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sdr");
+    let p = Project::load(&sdr).unwrap();
+    let layout = &p.layouts[0].item;
+    let gnd = layout.nets.iter().position(|n| n.name == "GND").unwrap();
+    let fill = layout.zones.iter().find(|z| z.layer == "In6.Cu" && z.net == gnd).unwrap();
+    let copper = |q: [f64; 2]| {
+        fill.rings.iter().filter(|r| agentee_core::geom::point_in_polygon(q, r)).count() % 2 == 1
+    };
+    let (m, across) = ([64.75, 43.15], [-0.196, 0.981]);
+    for k in -20..=20 {
+        let s = k as f64 * 0.01;
+        let q = [m[0] + across[0] * s, m[1] + across[1] * s];
+        assert!(!copper(q), "copper at {q:?}");
+    }
+    assert!(copper([64.7, 43.7]));
+}
