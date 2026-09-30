@@ -308,6 +308,25 @@ enum Cmd {
         #[command(subcommand)]
         calc: Calc,
     },
+    /// List the fab stackup presets a board's `stackup.preset` can name, or print one
+    Stackups {
+        /// Print this preset's layers as JSON
+        name: Option<String>,
+        /// jlcpcb or pcbway
+        #[arg(long)]
+        fab: Option<String>,
+        /// Copper layer count
+        #[arg(long)]
+        layers: Option<usize>,
+        /// Finished thickness in mm, matched within 10%
+        #[arg(long)]
+        thickness: Option<f64>,
+        /// Substring of the name or description, like 1080 or 2oz
+        #[arg(long)]
+        search: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the file format reference
     Docs,
 }
@@ -698,6 +717,25 @@ fn run(cli: Cli) -> Result<bool, String> {
                 && r["unrouted"].as_array().is_none_or(|f| f.is_empty());
             print_json(&r);
             Ok(ok)
+        }
+        Cmd::Stackups { name, fab, layers, thickness, search, json } => {
+            if let Some(name) = name {
+                print_json(&ops::stackup(&name)?);
+                return Ok(true);
+            }
+            let q = ops::StackupQuery {
+                fab: fab.as_deref(),
+                layers,
+                thickness_mm: thickness,
+                search: search.as_deref(),
+            };
+            let list = ops::stackups(&q);
+            if json {
+                print_json(&serde_json::to_value(&list).unwrap_or_default());
+            } else {
+                print!("{}", ops::stackups_text(&list));
+            }
+            Ok(true)
         }
         Cmd::Docs => {
             print!("{FORMAT}");

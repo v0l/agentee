@@ -54,7 +54,8 @@ by name.
 
 Order of work, each stage passing check before the next:
 
-1. **Board spec.** Pick `fab` (`jlcpcb` or `generic`) and a stackup preset. Define `Default` and
+1. **Board spec.** Pick `fab` (`jlcpcb` or `generic`) and a stackup preset from
+   `agentee stackups --fab jlcpcb --layers 4` rather than typing layers in. Define `Default` and
    one net class per kind of net (RF, power, pairs). Put impedance and current targets on the
    class and let check solve the widths; `agentee show board:NAME` prints them per layer.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same

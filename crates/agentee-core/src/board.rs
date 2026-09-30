@@ -380,61 +380,8 @@ pub struct DrcFile {
     pub severity: std::collections::BTreeMap<String, crate::diag::Severity>,
 }
 
-pub const STACKUP_PRESETS: &[(&str, &str)] = &[
-    ("jlcpcb-2l-1.6mm", "2 layer FR4, 1.6 mm, 1 oz outer"),
-    ("jlcpcb-4l-1.6mm-7628", "JLC04161H-7628: 4 layer, 7628 prepreg, 1 oz outer, 0.5 oz inner"),
-    ("jlcpcb-4l-1.6mm-3313", "JLC04161H-3313: 4 layer, 3313 prepreg, 1 oz outer, 0.5 oz inner"),
-];
-
 pub fn stackup_preset(name: &str) -> Option<Vec<LayerFile>> {
-    let l = |kind, t: f64, material: Option<&str>, er: Option<f64>, tan: Option<f64>| LayerFile {
-        kind,
-        name: None,
-        thickness: Some(Length::mm(t)),
-        material: material.map(str::to_string),
-        er,
-        loss_tangent: tan,
-    };
-    use LayerKind::*;
-    let silk = || LayerFile {
-        kind: Silk,
-        name: None,
-        thickness: None,
-        material: None,
-        er: None,
-        loss_tangent: None,
-    };
-    let paste = || LayerFile { kind: Paste, ..silk() };
-    let mask = || l(Mask, 0.0152, Some("LPI"), Some(3.8), None);
-    let core = |t, er| l(Core, t, Some("FR4"), Some(er), Some(0.02));
-    let pp = |t, er, m| l(Prepreg, t, Some(m), Some(er), Some(0.02));
-    let cu = |t| l(Copper, t, None, None, None);
-    let body = match name {
-        "jlcpcb-2l-1.6mm" => vec![cu(0.035), core(1.51, 4.5), cu(0.035)],
-        "jlcpcb-4l-1.6mm-7628" => vec![
-            cu(0.035),
-            pp(0.2104, 4.4, "7628"),
-            cu(0.0152),
-            core(1.065, 4.6),
-            cu(0.0152),
-            pp(0.2104, 4.4, "7628"),
-            cu(0.035),
-        ],
-        "jlcpcb-4l-1.6mm-3313" => vec![
-            cu(0.035),
-            pp(0.0994, 4.1, "3313"),
-            cu(0.0152),
-            core(1.265, 4.6),
-            cu(0.0152),
-            pp(0.0994, 4.1, "3313"),
-            cu(0.035),
-        ],
-        _ => return None,
-    };
-    let mut v = vec![silk(), paste(), mask()];
-    v.extend(body);
-    v.extend([mask(), paste(), silk()]);
-    Some(v)
+    crate::stackups::find_stackup_preset(name).map(|p| p.layers.clone())
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -796,10 +743,14 @@ impl BoardFile {
         let s = &self.stackup;
         let files = match (&s.preset, s.layers.is_empty()) {
             (Some(p), true) => stackup_preset(p).unwrap_or_else(|| {
-                let names: Vec<_> = STACKUP_PRESETS.iter().map(|p| p.0).collect();
+                let near = crate::stackups::suggest_stackup_presets(p, 5);
                 d.error(
                     "stackup.preset",
-                    format!("unknown preset `{p}`, use one of {}", names.join(", ")),
+                    format!(
+                        "unknown preset `{p}`; close: {}; `agentee stackups` lists all {}",
+                        near.join(", "),
+                        crate::stackups::stackup_presets().len()
+                    ),
                 );
                 Vec::new()
             }),

@@ -76,7 +76,7 @@ cargo bench -p agentee-core --bench fill -- 'load/'
 ## MCP
 
 `agentee mcp <project>` serves the project on stdio. Tools: `format_reference`, `check`,
-`list_items`, `show_item`, `render_item` (returns the PNG), `run_sim`, `field_solve`, `kicad_search`,
+`list_items`, `stackups`, `show_item`, `render_item` (returns the PNG), `run_sim`, `field_solve`, `kicad_search`,
 `import_kicad_symbol`, `import_kicad_footprint`, `new_item`, `trace_width`, `impedance`.
 
 ```json
@@ -100,8 +100,9 @@ link the `skills/agentee` directory into your agent's skills folder.
 - Footprints: overlapping pads, pads under the fab clearance, courtyard, silk over copper.
 - Symbol to footprint: every pin number has a pad.
 
-Fab presets are `generic` and `jlcpcb`; stackup presets are the JLCPCB 2 layer and JLC04161H
-4 layer builds. The numbers come from the fab's published capabilities and move over time.
+Fab presets are `generic` and `jlcpcb`. Stackup presets cover every JLCPCB impedance build (4 to 20
+layers) and the PCBWay standard builds; `agentee stackups` lists them. The numbers come from the
+fabs' published data and move over time, `crates/agentee-core/stackups/fetch.py` refetches them.
 
 ## Crates
 
