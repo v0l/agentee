@@ -30,6 +30,7 @@ const CROSSING_WEIGHT: f64 = 4.0;
 const SILK_ROOM: f64 = 0.2;
 const LABEL_SHARE: f64 = 0.25;
 const LABEL_REACH: usize = 60;
+const LABEL_WEIGHT: f64 = 0.2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -301,6 +302,7 @@ pub struct PlaceResult {
 #[derive(Clone, Debug, Serialize)]
 pub struct LabelRoom {
     pub reserved: bool,
+    pub weighed: bool,
     pub label_mm2: f64,
     pub free_mm2: f64,
 }
@@ -783,6 +785,8 @@ struct Placer<'a> {
     stamp: u32,
     holes: Vec<(P, f64)>,
     cross_w: f64,
+    soft_labels: bool,
+    label_at: Vec<Option<(u8, Bounds)>>,
 }
 
 const CELL: f64 = 2.0;
@@ -853,6 +857,13 @@ impl PartGrid {
         let nx = ((bb.size()[0] + 2.0 * GRID_MARGIN) / CELL).ceil() as usize + 1;
         let ny = ((bb.size()[1] + 2.0 * GRID_MARGIN) / CELL).ceil() as usize + 1;
         PartGrid { origin, nx, ny, cells: vec![Vec::new(); nx * ny] }
+    }
+
+    fn cell_of(&self, p: P) -> usize {
+        let at = |v: f64, axis: usize, n: usize| {
+            ((v - self.origin[axis]) / CELL).floor().clamp(0.0, (n - 1) as f64) as usize
+        };
+        at(p[1], 1, self.ny) * self.nx + at(p[0], 0, self.nx)
     }
 
     fn cells(&self, b: &Bounds) -> impl Iterator<Item = usize> + use<> {
@@ -1038,10 +1049,55 @@ impl<'a> Placer<'a> {
                 shape(poly, side, false)
             })
             .collect();
-        if let Some(label) = &p.label {
+        if let Some(label) = p.label.as_ref().filter(|_| !self.soft_labels) {
             out.push(shape(&label.poly, if st.bottom { 2 } else { 1 }, true));
         }
         out
+    }
+
+    fn soft_label(&self, i: usize, st: St) -> Option<(u8, Bounds)> {
+        let label = self.parts[i].label.as_ref().filter(|_| self.soft_labels)?;
+        let t = st.transform();
+        let mut b = Bounds::EMPTY;
+        label.poly.iter().for_each(|q| b.add(t.apply(*q)));
+        Some((if st.bottom { 2 } else { 1 }, b))
+    }
+
+    fn label_overlap(&self, i: usize) -> f64 {
+        let grid = &self.grid;
+        let area = |c: usize, a: &Bounds, b: &Bounds| {
+            let lo = [a.min[0].max(b.min[0]), a.min[1].max(b.min[1])];
+            let w = a.max[0].min(b.max[0]) - lo[0];
+            let h = a.max[1].min(b.max[1]) - lo[1];
+            if w > 0.0 && h > 0.0 && grid.cell_of(lo) == c { w * h } else { 0.0 }
+        };
+        let mut sum = 0.0;
+        if let Some((side, lb)) = self.label_at[i] {
+            for c in grid.cells(&lb) {
+                for &j in grid.cells[c].iter().filter(|j| **j != i) {
+                    for t in self.cache[j].iter().filter(|t| t.side & side != 0) {
+                        sum += area(c, &lb, &t.b);
+                    }
+                    if let Some((sj, bj)) = self.label_at[j]
+                        && sj == side
+                    {
+                        sum += area(c, &lb, &bj);
+                    }
+                }
+            }
+        }
+        for s in &self.cache[i] {
+            for c in grid.cells(&s.b) {
+                for &j in grid.cells[c].iter().filter(|j| **j != i) {
+                    if let Some((sj, bj)) = self.label_at[j]
+                        && s.side & sj != 0
+                    {
+                        sum += area(c, &s.b, &bj);
+                    }
+                }
+            }
+        }
+        sum
     }
 
     fn insert(&mut self, i: usize) {
@@ -1055,6 +1111,15 @@ impl<'a> Placer<'a> {
             }
         }
         self.cache[i] = sh;
+        self.label_at[i] = self.soft_label(i, self.parts[i].st);
+        if let Some((_, b)) = self.label_at[i] {
+            for c in self.grid.cells(&b) {
+                let v = &mut self.grid.cells[c];
+                if !v.contains(&i) {
+                    v.push(i);
+                }
+            }
+        }
         let t = self.parts[i].st.transform();
         self.pad_at[i] = self.parts[i].pads.iter().map(|q| t.apply(q.c)).collect();
         self.parts[i].placed = true;
@@ -1064,6 +1129,11 @@ impl<'a> Placer<'a> {
     fn remove(&mut self, i: usize) {
         for s in std::mem::take(&mut self.cache[i]) {
             for c in self.grid.cells(&s.b) {
+                self.grid.cells[c].retain(|j| *j != i);
+            }
+        }
+        if let Some((_, b)) = self.label_at[i].take() {
+            for c in self.grid.cells(&b) {
                 self.grid.cells[c].retain(|j| *j != i);
             }
         }
@@ -1483,6 +1553,9 @@ impl<'a> Placer<'a> {
                 cost += self.link_cost(&self.links[l]);
             }
             cost += self.unary(i);
+            if self.soft_labels {
+                cost += LABEL_WEIGHT * self.label_overlap(i);
+            }
         }
         cost
     }
@@ -1937,11 +2010,13 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         })
         .sum();
     let label_room = label_area <= LABEL_SHARE * (room - used);
-    for p in parts.iter_mut().filter(|p| !p.active || !label_room) {
+    let soft_labels = !label_room && label_area <= room - used;
+    for p in parts.iter_mut().filter(|p| !p.active || !(label_room || soft_labels)) {
         p.label = None;
     }
     let labels = LabelRoom {
         reserved: label_room,
+        weighed: soft_labels,
         label_mm2: (label_area * 10.0).round() / 10.0,
         free_mm2: ((room - used) * 10.0).round() / 10.0,
     };
@@ -1973,6 +2048,8 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         stamp: 0,
         holes: Vec::new(),
         cross_w: CROSSING_WEIGHT,
+        soft_labels,
+        label_at: vec![None; n_parts],
     };
 
     pl.build_clusters();
@@ -2047,16 +2124,27 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         }
     }
     let after = pl.metrics();
+    let clear: Vec<bool> = (0..n_parts)
+        .map(|i| match pl.label_at[i] {
+            Some((side, b)) => {
+                pl.label_overlap(i) == 0.0
+                    && pl.b.depth.least(&b) > 0.0
+                    && !pl.b.silk.iter().any(|k| k.side & side != 0 && strict_overlap(&b, &k.b))
+            }
+            None => !pl.soft_labels,
+        })
+        .collect();
     let placements = pl
         .parts
         .iter()
-        .filter(|p| p.active)
-        .map(|p| Placement {
+        .enumerate()
+        .filter(|(_, p)| p.active)
+        .map(|(i, p)| Placement {
             reference: p.reference.clone(),
             at: [(p.st.at[0] * 1e4).round() / 1e4, (p.st.at[1] * 1e4).round() / 1e4],
             rotation: p.st.rot,
             bottom: p.st.bottom,
-            label: p.label.as_ref().filter(|_| p.placed).map(|l| {
+            label: p.label.as_ref().filter(|_| p.placed && clear[i]).map(|l| {
                 let at = p.st.transform().apply(l.at);
                 (
                     [(at[0] * 1e4).round() / 1e4, (at[1] * 1e4).round() / 1e4],
@@ -3044,7 +3132,7 @@ impl<'a> Placer<'a> {
                 self.insert(i);
                 true
             }
-            None if self.parts[i].label.is_some() => {
+            None if self.parts[i].label.is_some() && !self.soft_labels => {
                 self.parts[i].label = None;
                 self.try_place(i, target, rot, prefer_bottom)
             }
