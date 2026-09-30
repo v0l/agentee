@@ -707,7 +707,7 @@ ref = "R13"
 at = [61.5, 6]
 label = { at = [64.19, 6.0] }
 
-# FX20 support
+# FX5 support
 
 [[footprints]]
 ref = "Y2"
@@ -1115,7 +1115,7 @@ nets = ["GND", "3V3", "1V8", "2V5", "1V3A", "1V0", "VSYS", "1V8_USB"]
 exclude = ["U6", "U7", "U8", "J4", "J5", "J1", "C23", "C24", "C25", "C26", "C27", "C28", "C29", "C30", "C32", "C33", "C34", "C40", "C75", "C77", "C78", "C80", "C81", "C82", "C83", "C84", "C85", "C86", "C87"]
 
 # Planes. In1, In3 and In6 are solid ground. In4 is the core plane (1V0 up to U6,
-# 1V8 everywhere else, VSYS down the right edge, 1V8_USB under the FX20 PHY balls).
+# 1V8 everywhere else, VSYS down the right edge, 1V8_USB under the FX5 PHY balls).
 # In5 is the IO plane (1V3A under the AD9364, 2V5 left of the FPGA, 3V3 on the rest).
 
 [[zones]]
@@ -1220,7 +1220,7 @@ net = "3V3"
 layers = ["In5.Cu"]
 outline = [[51.2, 42.4], [51.2, 17.1], [53.2, 17.1], [53.2, 1.0], [89.0, 1.0], [89.0, 59.0], [34.0, 59.0], [34.0, 42.4]]
 
-# FX20 LVDS breakout: P leaves column 1 straight out, N slips between the column 1 balls,
+# FX5 LVDS breakout: P leaves column 1 straight out, N slips between the column 1 balls,
 # then both drop to In2.Cu through a staggered via pair just outside the ball field.
 
 [[tracks]]
@@ -1343,7 +1343,7 @@ net = "FX_LVDS_D0_N"
 at = [57.6, 44.625]
 via = "bga"
 
-# FX20 LVDS on In2.Cu: the pairs leave the breakout vias west as a bus, turn north into lanes
+# FX5 LVDS on In2.Cu: the pairs leave the breakout vias west as a bus, turn north into lanes
 # between the FPGA ball columns (x 47, 48, 49, 50) or wrap round its bottom left corner (D0, D1).
 # D0, D1 and CTL are polarity swapped at the FPGA and inverted in the gateware.
 
@@ -1478,11 +1478,6 @@ points = [[55.5, 28.5], [54.675, 28.075], [54.325, 28.075], [54.075, 28.325], [5
 net = "FX_D12"
 layer = "F.Cu"
 points = [[57.5, 27.5], [58.075, 28.675], [65.425, 36.025], [65.5, 37.5]]
-
-[[tracks]]
-net = "FX_D9"
-layer = "F.Cu"
-points = [[53.5, 27.5], [53.075, 28.325], [53.075, 28.675], [59.625, 34.625], [60.775, 35.775], [60.875, 35.775], [61.975, 36.875], [62.025, 36.875], [62.425, 37.275], [62.5, 37.5]]
 
 [[tracks]]
 net = "FX_D14"
@@ -2483,7 +2478,7 @@ layer = "F.Cu"
 points = [[12.41, 47.6], [2.54, 47.6]]
 
 # USB 3.2 lanes. TX1 and RX2 run on F.Cu straight into the connector's front row; RX1 and TX2
-# drop through the FX20's ball vias to B.Cu (over In6.Cu, same 85 ohm geometry) and come up
+# drop through the FX5's ball vias to B.Cu (over In6.Cu, same 85 ohm geometry) and come up
 # through a via row behind the connector's back row. The inner M-row ball of each pair necks
 # to 0.09 mm to slip past its outer partner. RX1 is polarity crossed at the connector.
 
@@ -4031,21 +4026,6 @@ layer = "In2.Cu"
 points = [[70.825, 42.325], [70.125, 43.025], [69.525, 43.025], [68.675, 43.875], [68.275, 43.875], [68.025, 44.125], [66.25, 44.25]]
 
 [[tracks]]
-net = "FX_PCLK"
-layer = "F.Cu"
-points = [[64.75, 37.5], [64.725, 36.575]]
-
-[[tracks]]
-net = "FX_PCLK"
-layer = "B.Cu"
-points = [[64.725, 36.575], [63.425, 35.625], [59.925, 32.125], [59.925, 31.475]]
-
-[[tracks]]
-net = "FX_PCLK"
-layer = "In2.Cu"
-points = [[59.925, 31.475], [59.925, 25.975], [59.5, 25.5]]
-
-[[tracks]]
 net = "FPGA_INIT_B"
 layer = "F.Cu"
 points = [[55.5, 22.5], [56.175, 23.075], [56.675, 23.075], [57.075, 23.475], [57.075, 23.675], [57.425, 24.025], [61.625, 24.025], [63.575, 26.425], [63.975, 26.825], [64.225, 26.825], [70.875, 34.025], [70.875, 41.675], [70.425, 42.125], [70.425, 42.525], [70.625, 42.725], [71.125, 42.725]]
@@ -4338,16 +4318,6 @@ via = "bga"
 [[vias]]
 net = "FX_SWDCLK"
 at = [70.825, 42.325]
-via = "bga"
-
-[[vias]]
-net = "FX_PCLK"
-at = [64.725, 36.575]
-via = "bga"
-
-[[vias]]
-net = "FX_PCLK"
-at = [59.925, 31.475]
 via = "bga"
 
 [[vias]]
@@ -4669,13 +4639,13 @@ via = "std"
 
 [[interfaces]]
 name = "usb-ss"
-preset = "usb3-gen2"
+preset = "usb3-gen1"
 nets = ["SS_TX*", "SS_RX*", "FX_TX?_?"]
 
 [[interfaces.measure]]
 sim = "sdr-usb"
 pair = ["TX1_FX+", "TX1_FX-", "TX1_J+", "TX1_J-"]
-up_to = "5GHz"
+up_to = "2.5GHz"
 max_loss = 1.5
 min_return_loss = 10.0
 max_mode_conversion = -25.0
@@ -4683,28 +4653,28 @@ max_mode_conversion = -25.0
 [[interfaces.measure]]
 sim = "sdr-usb"
 pair = ["RX2_J+", "RX2_J-", "RX2_FX+", "RX2_FX-"]
-up_to = "5GHz"
+up_to = "2.5GHz"
 max_loss = 1.5
 min_return_loss = 10.0
 max_mode_conversion = -25.0
 
-# USB 3.2 Electrical Compliance Test Specification, Gen 2 data eye: 70 mV, 48 ps
+# USB 3.2 Revision 1.1, Table 6-20, Gen 1 transmit eye at TP4: 100 mV, Tj 0.66 UI so 68 ps of the 200 ps UI
 [[interfaces.measure]]
 sim = "sdr-usb-tx1-eye"
-min_eye_height = "70mV"
-min_eye_width = "48ps"
+min_eye_height = "100mV"
+min_eye_width = "68ps"
 
 [[interfaces.measure]]
 sim = "sdr-usb-rx2-eye"
-min_eye_height = "70mV"
-min_eye_width = "48ps"
+min_eye_height = "100mV"
+min_eye_width = "68ps"
 
 [[interfaces]]
 name = "usb-hs"
 preset = "usb2-hs"
 nets = ["USB_DP", "USB_DN"]
 
-# FPGA to FX20 LVDS receive port, source synchronous; 50 ps of lane and clock skew is an
+# FPGA to FX5 LVDS receive port, source synchronous; 50 ps of lane and clock skew is an
 # allocation, a tenth of the 500 ps UI at 1 Gbps per lane
 [[interfaces]]
 name = "fx-lvds"
@@ -4715,7 +4685,7 @@ clock = "FX_LVDS_CLK_P"
 max_bus_skew = "50ps"
 clock_window = ["-50ps", "50ps"]
 
-# FX20 GPIF to FPGA bank 14, 16 bit DDR on FX_PCLK; 250 ps is an allocation
+# FX5 GPIF to FPGA bank 14, 16 bit DDR on FX_PCLK; 250 ps is an allocation
 [[interfaces]]
 name = "fx-gpif"
 preset = "cmos"

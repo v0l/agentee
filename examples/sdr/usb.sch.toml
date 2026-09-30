@@ -1,5 +1,5 @@
 name = "usb"
-description = "EZ-USB FX20 on a full featured USB-C receptacle: two 10 Gbps lanes with AC coupling (RX1 polarity crossed, USB 3 receivers invert it), ESD on USB 2.0 and CC, USB 2.0, CC orientation, LVDS receive port from the FPGA, LVCMOS port toward it"
+description = "EZ-USB FX5 on a full featured USB-C receptacle: both 5 Gbps lane pairs to the on-chip flip mux, with AC coupling (RX1 polarity crossed, USB 3 receivers invert it), ESD on USB 2.0 and CC, USB 2.0, CC orientation, LVDS receive port from the FPGA, LVCMOS port toward it"
 board = "sdr"
 no_connect = [
   "U3.B1", "U3.B2", "U3.C1", "U3.C2", "U3.D1", "U3.D2", "U3.E1", "U3.E2", "U3.H4", "U3.G4", "U3.F4", "U3.E4", "U3.D4",
@@ -13,30 +13,30 @@ no_connect = [
 [[parts]]
 ref = "U3"
 unit = 1
-symbol = "CYUSB4024"
-value = "CYUSB4024-FCAXI"
+symbol = "CYUSB3084"
+value = "CYUSB3084-FCAXI"
 at = [177.8, 76.2]
-fields = { mpn = "Infineon CYUSB4024-FCAXI" }
+fields = { mpn = "Infineon CYUSB3084-FCAXI" }
 
 [[parts]]
 ref = "U3"
 unit = 2
-symbol = "CYUSB4024"
-value = "CYUSB4024-FCAXI"
+symbol = "CYUSB3084"
+value = "CYUSB3084-FCAXI"
 at = [292.1, 88.9]
 
 [[parts]]
 ref = "U3"
 unit = 3
-symbol = "CYUSB4024"
-value = "CYUSB4024-FCAXI"
+symbol = "CYUSB3084"
+value = "CYUSB3084-FCAXI"
 at = [393.7, 76.2]
 
 [[parts]]
 ref = "U3"
 unit = 4
-symbol = "CYUSB4024"
-value = "CYUSB4024-FCAXI"
+symbol = "CYUSB3084"
+value = "CYUSB3084-FCAXI"
 at = [495.3, 76.2]
 
 [[parts]]
@@ -621,7 +621,7 @@ pins = ["U3.A4"]
 [[nets]]
 name = "FX_D9"
 style = "label"
-pins = ["U3.A5"]
+pins = ["U3.A8"]
 
 [[nets]]
 name = "FX_D10"
@@ -656,7 +656,7 @@ pins = ["U3.A12"]
 [[nets]]
 name = "FX_PCLK"
 style = "label"
-pins = ["U3.A8"]
+pins = ["U3.A5"]
 
 [[nets]]
 name = "FX_CTL0"
