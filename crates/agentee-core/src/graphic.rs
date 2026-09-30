@@ -66,6 +66,8 @@ pub struct GraphicFile {
     pub width: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<Fill>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
 }
 
 impl GraphicFile {
@@ -87,6 +89,7 @@ impl GraphicFile {
             anchor: None,
             width: None,
             fill: None,
+            locked: false,
         }
     }
 }
@@ -110,6 +113,8 @@ pub struct Graphic {
     pub fill: Fill,
     pub layer: String,
     pub unit: u32,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
 }
 
 pub struct GraphicDefaults<'a> {
@@ -182,6 +187,7 @@ pub fn resolve(g: &GraphicFile, at: &str, d: &mut Diags, def: &GraphicDefaults) 
         fill: g.fill.unwrap_or_default(),
         layer,
         unit: g.unit.unwrap_or(0),
+        locked: g.locked,
     })
 }
 

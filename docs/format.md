@@ -880,6 +880,7 @@ points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
 kind = "text"
 layer = "F.SilkS"              # F.SilkS, B.SilkS, F.Fab or B.Fab
 at = [7.4, 7.6]
+# locked = true                # `agentee place` never moves it
 text = "RF IN"
 size = 1.0                     # mm, the fab minimum is in the board rules
 
@@ -1067,7 +1068,11 @@ What goes where, strongest first, and why:
   for Switching Power Supplies; Linear Technology AN139, Power Supply Layout and EMI).
 - Hot parts (sources of 0.25 W or more in a thermal sim of this layout, and large packages over
   49 mm2) are pushed 10 mm apart so their heat does not stack (TI SNVA419, AN-2020 Thermal Design
-  by Insight, not Hindsight; IPC-2221B, thermal management).
+  by Insight, not Hindsight; IPC-2221B, thermal management). Where the hot parts, each grown by
+  `hot_distance`, take at most a quarter of one side of the board, their courtyards must also
+  keep `hot_distance` apart, as `placement-hot-parts-close` measures it (a part that fits nowhere
+  else drops the rule); on a tighter board wirelength wins. `hot_spread` in the output gives that
+  share and whether the rule applied.
 - Ceramic capacitors of 0805 or larger stay out of `flex_zone`, and smaller ones inside it lie
   along the edge, corner or mounting hole they are nearest (Murata and TDK MLCC mounting guidance
   on board flexure; Knowles). The zone is measured as the `mlcc-flex-zone` checks measure it,
@@ -1090,6 +1095,8 @@ centre; the spreading step bisects the free board area (inside the outline and c
 keepouts and placed parts) in turn along its longer side, giving each block a region the size of
 its area, and each round pulls the blocks harder to their regions. Connectors are then assigned
 to edges (every assignment tried up to seven connectors, greedy past that) and slid along them,
+flush with the outline where it runs at that point (a notch or a step counts as edge), trying
+the other edges nearest first when no spot on the assigned one is free,
 and the solve runs again with them fixed. Legalisation places each cluster as a whole: its anchor
 at each quarter turn (for chips) and five nudges of a third of the cluster's width, its members
 around it, keeping the cheapest by wirelength and crossings; each part goes to the nearest spot on
@@ -1102,9 +1109,14 @@ crossing), and the rules above as penalties. Eight starts (the eight reflections
 layout) are legalised on parallel threads, and the three cheapest go on to the cluster moves and
 the annealing, so the result depends on the files and `--seed` only, not on the number of threads.
 
-Parts keep off the board's own silk: `[[graphics]]` text and lines on a silk layer and silk
-`[[artwork]]` block the courtyards on their side (a part that fits nowhere else may still cover
-them). Each part's reference label needs room too: where the labels take at most a quarter of the
+Parts keep off the board's own silk: `[[graphics]]` lines on a silk layer, silk text with
+`locked = true` and silk `[[artwork]]` block the courtyards on their side (a part that fits
+nowhere else may still cover them). Silk text that is not locked does not block parts: after
+placing, each such text a part (or its reserved label) covers moves to the nearest clear spot on
+the board within 10 mm, clear of parts, labels, locked silk and the other texts; `texts_moved`
+lists the moves written back into `[[graphics]]` and `texts_stuck` the texts with no clear spot.
+Connectors, mounting holes and fiducials reserve a label too, on the outer side of the part or
+turned to the inner side, and go without one where neither fits at the spot the part takes. Each part's reference label needs room too: where the labels take at most a quarter of the
 free board area, a box the size of the reference text (0.2 mm around it, at the footprint's
 reference spot pushed clear of its own pads and silk) is kept clear like a courtyard, and place
 writes that spot as `label.at`; on a fuller board with room left the overlap of those boxes with
@@ -1907,7 +1919,8 @@ Shared by symbols and footprints. `kind` picks the shape and the fields it needs
 | `text` | `text`, `at`, `size`, `rotation`, `anchor` (`left` / `center` / `right`) |
 
 Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (footprints) or
-`unit` (symbols).
+`unit` (symbols). On layout `[[graphics]]`, `locked = true` keeps `agentee place` from moving a
+text.
 
 ## Workflow
 

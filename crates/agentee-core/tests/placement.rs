@@ -191,7 +191,8 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
         spec: &spec,
         fast_nets: Vec::new(),
         heat: vec![("U1".into(), 0.45)],
-        silk: place::board_silk(layout),
+        silk: place::board_silk(&layout.graphics, &layout.artwork),
+        texts: place::movable_texts(&layout.graphics),
     };
     place::place(&input, opts).unwrap()
 }
@@ -478,8 +479,9 @@ fn board_art(text: &str) -> String {
 fn parts_stay_off_board_silk_text() {
     let dir = temp_dir("boardsilk");
     copy_dir(&lna(), &dir, false);
-    let art = board_art(&std::fs::read_to_string(lna().join("lna.pcb.toml")).unwrap());
-    assert!(art.contains("RF OUT"));
+    let art = board_art(&std::fs::read_to_string(lna().join("lna.pcb.toml")).unwrap())
+        .replace("kind = \"text\"", "kind = \"text\"\nlocked = true");
+    assert!(art.contains("RF OUT") && art.contains("locked = true"));
     std::fs::write(
         dir.join("lna.pcb.toml"),
         format!("name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n{art}"),
@@ -499,6 +501,41 @@ fn parts_stay_off_board_silk_text() {
         .map(|d| d.to_string())
         .collect();
     assert!(on_text.is_empty(), "{on_text:#?}");
+}
+
+#[test]
+fn place_moves_unlocked_board_text_off_parts() {
+    let dir = temp_dir("movetext");
+    copy_dir(&lna(), &dir, false);
+    let text = "[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [18, 12]\ntext = \"MIDDLE\"\nsize = 1\n";
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        format!("name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n{text}"),
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    let [m] = r.texts_moved.as_slice() else { panic!("{:?} {:?}", r.texts_moved, r.texts_stuck) };
+    assert_eq!(m.text, "MIDDLE");
+    let moved = text.replace("at = [18, 12]", &format!("at = [{}, {}]", m.to[0], m.to[1]));
+    write_placements(&dir, &moved, &r);
+    let p = Project::load(&dir).unwrap();
+    let on_parts: Vec<String> = p.layouts[0]
+        .diags
+        .iter()
+        .filter(|d| d.rule.as_deref() == Some("silk-text") && d.at.contains("MIDDLE"))
+        .map(|d| d.to_string())
+        .collect();
+    assert!(on_parts.is_empty(), "{on_parts:#?}");
+
+    let locked = text.replace("kind = \"text\"", "kind = \"text\"\nlocked = true");
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        format!("name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n{locked}"),
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.texts_moved.is_empty() && r.texts_stuck.is_empty(), "{:?}", r.texts_moved);
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use crate::board::Board;
 use crate::footprint::{Footprint, PadKind};
 use crate::geom::{self, P, Transform};
-use crate::graphic::{Anchor, Bounds, Shape};
-use crate::layout::{BoardSide, Layout, PlacementFile, glob};
+use crate::graphic::{Anchor, Bounds, Graphic, Shape};
+use crate::layout::{Artwork, BoardSide, PlacementFile, SilkText, glob};
 use crate::schematic::{PinRef, Schematic};
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,8 @@ const SILK_ROOM: f64 = 0.2;
 const LABEL_SHARE: f64 = 0.25;
 const LABEL_REACH: usize = 60;
 const LABEL_WEIGHT: f64 = 0.2;
+const TEXT_REACH: f64 = 10.0;
+const HOT_SHARE: f64 = 0.25;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,6 +122,7 @@ pub struct PlaceInput<'a> {
     pub fast_nets: Vec<String>,
     pub heat: Vec<(String, f64)>,
     pub silk: Vec<SilkArea>,
+    pub texts: Vec<SilkText>,
 }
 
 #[derive(Clone, Debug)]
@@ -128,15 +131,20 @@ pub struct SilkArea {
     pub poly: Vec<P>,
 }
 
-pub fn board_silk(layout: &Layout) -> Vec<SilkArea> {
+pub fn movable_texts(graphics: &[Graphic]) -> Vec<SilkText> {
+    let unlocked: Vec<Graphic> = graphics.iter().filter(|g| !g.locked).cloned().collect();
+    crate::layout::board_texts(&unlocked)
+}
+
+pub fn board_silk(graphics: &[Graphic], artwork: &[Artwork]) -> Vec<SilkArea> {
     let side = |layer: &str| layer.starts_with("B.");
-    let mut out: Vec<SilkArea> = layout
-        .board_texts()
+    let locked: Vec<Graphic> = graphics.iter().filter(|g| g.locked).cloned().collect();
+    let mut out: Vec<SilkArea> = crate::layout::board_texts(&locked)
         .iter()
         .filter(|t| t.part == usize::MAX && t.owner != "watermark")
         .map(|t| SilkArea { bottom: side(&t.layer), poly: grow(&t.outline(), SILK_ROOM) })
         .collect();
-    for g in layout.graphics.iter().filter(|g| g.layer.ends_with(".SilkS")) {
+    for g in graphics.iter().filter(|g| g.layer.ends_with(".SilkS")) {
         if matches!(g.shape, Shape::Text { .. }) {
             continue;
         }
@@ -160,7 +168,7 @@ pub fn board_silk(layout: &Layout) -> Vec<SilkArea> {
             out.push(SilkArea { bottom: side(&g.layer), poly });
         }
     }
-    for a in layout.artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
+    for a in artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
         for poly in &a.polygons {
             out.push(SilkArea { bottom: side(&a.layer), poly: poly.clone() });
         }
@@ -193,6 +201,7 @@ fn label_room(
     reference: &str,
     placed: Option<&PlacementFile>,
     centre: P,
+    inward: bool,
 ) -> Option<LabelBox> {
     let file = placed.and_then(|f| f.label.as_ref());
     if file.is_some_and(|l| l.hide) {
@@ -250,6 +259,7 @@ fn label_room(
     let d = [c0[0] - centre[0], c0[1] - centre[1]];
     let l = d[0].hypot(d[1]);
     let dir = if l < 1e-6 { [0.0, -1.0] } else { [d[0] / l, d[1] / l] };
+    let dir = if inward { [-dir[0], -dir[1]] } else { dir };
     let at = (0..=LABEL_REACH)
         .map(|k| [c0[0] + dir[0] * k as f64 * GRID, c0[1] + dir[1] * k as f64 * GRID])
         .find(|c| clear(*c))?;
@@ -297,6 +307,24 @@ pub struct PlaceResult {
     pub after: Metrics,
     pub moves: usize,
     pub labels: LabelRoom,
+    pub texts_moved: Vec<TextMove>,
+    pub texts_stuck: Vec<String>,
+    pub hot_spread: HotSpread,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HotSpread {
+    pub applied: bool,
+    pub share: f64,
+    pub threshold: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TextMove {
+    pub text: String,
+    pub layer: String,
+    pub from: P,
+    pub to: P,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -568,22 +596,41 @@ fn strict_overlap(a: &Bounds, b: &Bounds) -> bool {
         && b.min[1] < a.max[1] - EPS
 }
 
+fn near_box(b: &Bounds, v: P) -> bool {
+    v[0] >= b.min[0] - EPS
+        && v[0] <= b.max[0] + EPS
+        && v[1] >= b.min[1] - EPS
+        && v[1] <= b.max[1] + EPS
+}
+
 fn polys_overlap(a: &[P], b: &[P]) -> bool {
-    let n = a.len();
-    let m = b.len();
-    for i in 0..n {
-        for j in 0..m {
-            if geom::segments_intersect(a[i], a[(i + 1) % n], b[j], b[(j + 1) % m]) {
+    let (box_a, box_b) = (poly_bounds(a), poly_bounds(b));
+    let edges = |poly: &[P], other: &Bounds| -> Vec<(P, P)> {
+        let n = poly.len();
+        (0..n)
+            .map(|i| (poly[i], poly[(i + 1) % n]))
+            .filter(|(p, q)| {
+                p[0].max(q[0]) >= other.min[0] - EPS
+                    && p[0].min(q[0]) <= other.max[0] + EPS
+                    && p[1].max(q[1]) >= other.min[1] - EPS
+                    && p[1].min(q[1]) <= other.max[1] + EPS
+            })
+            .collect()
+    };
+    let near_b = edges(b, &box_a);
+    if !near_b.is_empty() {
+        for (p, q) in edges(a, &box_b) {
+            if near_b.iter().any(|(u, v)| geom::segments_intersect(p, q, *u, *v)) {
                 return true;
             }
         }
     }
-    let inner = |p: P, q: &[P]| {
-        let c = poly_bounds(q).center();
+    let inner = |p: P, q: &[P], c: P| {
         let s = [p[0] + (c[0] - p[0]) * 1e-4, p[1] + (c[1] - p[1]) * 1e-4];
         geom::point_in_polygon(s, q)
     };
-    a.iter().any(|p| inner(*p, b)) || b.iter().any(|p| inner(*p, a))
+    let (ca, cb) = (box_a.center(), box_b.center());
+    a.iter().any(|p| inner(*p, b, cb)) || b.iter().any(|p| inner(*p, a, ca))
 }
 
 fn snap(v: f64) -> f64 {
@@ -690,6 +737,7 @@ struct Part<'a> {
     local: Bounds,
     extent: Bounds,
     label: Option<LabelBox>,
+    label_inward: Option<LabelBox>,
     over_silk: bool,
     area: f64,
     pins: usize,
@@ -704,6 +752,8 @@ struct Part<'a> {
     pin_edge: Option<Edge>,
     sensitive: bool,
     switcher: bool,
+    hot: bool,
+    spread_hot: bool,
 }
 
 #[derive(Clone)]
@@ -758,6 +808,8 @@ struct Board2 {
     crystal: f64,
     spread: f64,
     depth: EdgeDepth,
+    edges: std::sync::Arc<EdgeIndex>,
+    flex_edges: std::sync::Arc<EdgeIndex>,
     silk: Vec<WShape>,
 }
 
@@ -786,6 +838,7 @@ struct Placer<'a> {
     holes: Vec<(P, f64)>,
     cross_w: f64,
     soft_labels: bool,
+    hot_gap: f64,
     label_at: Vec<Option<(u8, Bounds)>>,
 }
 
@@ -800,6 +853,8 @@ const SOLVE_SWEEPS: usize = 12;
 const SPECTRAL_ROUNDS: usize = 60;
 const GLOBAL_CROSSING: f64 = 0.02;
 const DEPTH_CELL: f64 = 0.5;
+const EDGE_CELL: f64 = 1.0;
+const FLEX_RAD: f64 = 6.0;
 const GRID_MARGIN: f64 = 20.0;
 
 #[derive(Clone, Copy)]
@@ -942,6 +997,91 @@ impl EdgeDepth {
             }
         }
         low
+    }
+}
+
+struct EdgeIndex {
+    origin: P,
+    nx: usize,
+    ny: usize,
+    reach: f64,
+    near: Vec<Vec<(P, P)>>,
+    rows: Vec<Vec<(usize, P, P)>>,
+    rings: usize,
+}
+
+impl EdgeIndex {
+    fn new(edge: geom::BoardEdge, bb: &Bounds, reach: f64) -> EdgeIndex {
+        let origin = [bb.min[0] - reach - EDGE_CELL, bb.min[1] - reach - EDGE_CELL];
+        let span = |axis: usize| {
+            ((bb.max[axis] - bb.min[axis] + 2.0 * (reach + EDGE_CELL)) / EDGE_CELL).ceil() as usize
+                + 1
+        };
+        let (nx, ny) = (span(0), span(1));
+        let mut near = vec![Vec::new(); nx * ny];
+        let mut rows = vec![Vec::new(); ny];
+        let cell = |v: f64, axis: usize, n: usize| {
+            ((v - origin[axis]) / EDGE_CELL).floor().clamp(0.0, (n - 1) as f64) as usize
+        };
+        let mut rings = 0;
+        for (r, ring) in edge.rings().enumerate() {
+            rings = r + 1;
+            let n = ring.len();
+            for k in 0..n {
+                let (a, b) = (ring[k], ring[(k + n - 1) % n]);
+                let e = ring[(k + 1) % n];
+                let (x0, x1) = (a[0].min(e[0]) - reach, a[0].max(e[0]) + reach);
+                let (y0, y1) = (a[1].min(e[1]) - reach, a[1].max(e[1]) + reach);
+                for y in cell(y0, 1, ny)..=cell(y1, 1, ny) {
+                    for x in cell(x0, 0, nx)..=cell(x1, 0, nx) {
+                        near[y * nx + x].push((a, e));
+                    }
+                }
+                for row in rows.iter_mut().take(cell(a[1].max(b[1]), 1, ny) + 1).skip(cell(
+                    a[1].min(b[1]),
+                    1,
+                    ny,
+                )) {
+                    row.push((r, a, b));
+                }
+            }
+        }
+        EdgeIndex { origin, nx, ny, reach, near, rows, rings }
+    }
+
+    fn cell(&self, v: f64, axis: usize) -> Option<usize> {
+        let n = if axis == 0 { self.nx } else { self.ny };
+        let k = ((v - self.origin[axis]) / EDGE_CELL).floor();
+        (k >= 1.0 && k < (n - 1) as f64).then_some(k as usize)
+    }
+
+    fn contains(&self, p: P) -> Option<bool> {
+        if self.rings > 64 {
+            return None;
+        }
+        let row = &self.rows[self.cell(p[1], 1)?];
+        let mut odd = 0u64;
+        for (r, a, b) in row {
+            if (a[1] > p[1]) != (b[1] > p[1])
+                && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]
+            {
+                odd ^= 1 << r;
+            }
+        }
+        Some(odd == 1)
+    }
+
+    fn near(&self, p: P, reach: f64) -> Option<&[(P, P)]> {
+        if reach > self.reach {
+            return None;
+        }
+        let (x, y) = (self.cell(p[0], 0)?, self.cell(p[1], 1)?);
+        Some(&self.near[y * self.nx + x])
+    }
+
+    fn clear(&self, p: P, gap: f64) -> Option<bool> {
+        let near = self.near(p, gap)?;
+        Some(near.iter().all(|(a, b)| geom::point_segment_distance(p, *a, *b) >= gap))
     }
 }
 
@@ -1177,6 +1317,19 @@ impl<'a> Placer<'a> {
         })
     }
 
+    fn edge_clear(&self, edge: geom::BoardEdge, v: P, min: f64) -> bool {
+        let depth = self.b.depth.at(v);
+        if depth > 0.0 && depth >= min - 1e-6 {
+            return true;
+        }
+        self.on_board(edge, v)
+            && self.b.edges.clear(v, min - 1e-6).unwrap_or_else(|| edge.distance(v) >= min - 1e-6)
+    }
+
+    fn on_board(&self, edge: geom::BoardEdge, v: P) -> bool {
+        self.b.edges.contains(v).unwrap_or_else(|| edge.contains(v))
+    }
+
     fn inside(&self, i: usize, st: St, sh: &[WShape]) -> bool {
         let part = &self.parts[i];
         let o = &self.b.outline;
@@ -1189,15 +1342,15 @@ impl<'a> Placer<'a> {
             part.pads.iter().filter(|q| !(skip_edge && q.edge)).all(|q| {
                 q.outline.iter().all(|ring| {
                     let w: Vec<P> = ring.iter().map(|v| t.apply(*v)).collect();
-                    w.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
+                    w.iter().all(|v| self.edge_clear(edge, *v, min))
                         && self.clear_of_cutouts(&w, min)
                 })
             })
         };
         let body_in = |min: f64| {
             sh.iter().filter(|s| !s.label).all(|s| {
-                s.poly.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
-                    && !o.iter().any(|v| geom::point_in_polygon(*v, &s.poly))
+                s.poly.iter().all(|v| self.edge_clear(edge, *v, min))
+                    && !o.iter().any(|v| near_box(&s.b, *v) && geom::point_in_polygon(*v, &s.poly))
                     && self.clear_of_cutouts(&s.poly, min)
             })
         };
@@ -1213,7 +1366,7 @@ impl<'a> Placer<'a> {
         let ok = deep
             || match part.role {
                 Role::Connector if edge_mount(part.fp) => {
-                    part.pads.iter().filter(|q| !q.edge).all(|q| edge.contains(t.apply(q.c)))
+                    part.pads.iter().filter(|q| !q.edge).all(|q| self.on_board(edge, t.apply(q.c)))
                 }
                 Role::Hole => body_in(0.0) && pads_in(self.b.copper_edge, false),
                 Role::Fiducial => body_in(0.0) && pads_in(FIDUCIAL_TO_EDGE, false),
@@ -1225,7 +1378,8 @@ impl<'a> Placer<'a> {
             };
         let label_in = deep
             || sh.iter().filter(|s| s.label).all(|s| {
-                s.poly.iter().all(|v| edge.contains(*v)) && self.clear_of_cutouts(&s.poly, 0.0)
+                s.poly.iter().all(|v| self.on_board(edge, *v))
+                    && self.clear_of_cutouts(&s.poly, 0.0)
             });
         ok && label_in
             && !sh.iter().any(|s| {
@@ -1266,7 +1420,25 @@ impl<'a> Placer<'a> {
 
     fn legal(&self, i: usize, st: St, skip: &[usize]) -> bool {
         let sh = self.shapes(i, st);
-        self.inside(i, st, &sh) && !self.clashes(i, &sh, skip)
+        self.inside(i, st, &sh) && !self.clashes(i, &sh, skip) && !self.too_hot(i, &sh, skip)
+    }
+
+    fn too_hot(&self, i: usize, sh: &[WShape], skip: &[usize]) -> bool {
+        if !self.parts[i].spread_hot {
+            return false;
+        }
+        let mut own = Bounds::EMPTY;
+        sh.iter().filter(|s| !s.label).for_each(|s| own.union(&s.b));
+        (0..self.parts.len()).any(|j| {
+            if j == i || skip.contains(&j) || !self.parts[j].placed || !self.parts[j].hot {
+                return false;
+            }
+            let mut other = Bounds::EMPTY;
+            self.cache[j].iter().filter(|s| !s.label).for_each(|s| other.union(&s.b));
+            let dx = (own.min[0] - other.max[0]).max(other.min[0] - own.max[0]).max(0.0);
+            let dy = (own.min[1] - other.max[1]).max(other.min[1] - own.max[1]).max(0.0);
+            dx.hypot(dy) < self.hot_gap + GRID
+        })
     }
 
     fn nearest(
@@ -1448,11 +1620,6 @@ impl<'a> Placer<'a> {
         p.mlcc_len?;
         let (ka, kb) = p.ends?;
         let t = st.transform();
-        let rings: Vec<Vec<P>> = [ka, kb]
-            .iter()
-            .flat_map(|k| p.pads[*k].outline.iter())
-            .map(|r| r.iter().map(|v| t.apply(*v)).collect())
-            .collect();
         let (a, b) = (t.apply(p.pads[ka].c), t.apply(p.pads[kb].c));
         let c = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
         let reach = geom::dist(a, b) + p.local.size()[0].max(p.local.size()[1]);
@@ -1463,13 +1630,29 @@ impl<'a> Placer<'a> {
             && c[1] - bb.min[1] > zone + reach
             && bb.max[1] - c[1] > zone + reach
             && self.b.cutouts.is_empty();
-        let clear = deep || self.b.depth.at(c) > zone + reach || self.edge_gap(c) > zone + reach;
+        let clear = deep
+            || self.b.depth.at(c) > zone + reach
+            || match self.b.flex_edges.near(c, zone + reach) {
+                Some(near) => {
+                    near.iter().all(|(s, e)| geom::point_segment_distance(c, *s, *e) > zone + reach)
+                }
+                None => self.edge_gap(c) > zone + reach,
+            };
         if clear && self.holes.iter().all(|(h, r)| geom::dist(*h, c) > zone + reach + r) {
             return None;
         }
+        let rings: Vec<Vec<P>> = [ka, kb]
+            .iter()
+            .flat_map(|k| p.pads[*k].outline.iter())
+            .map(|r| r.iter().map(|v| t.apply(*v)).collect())
+            .collect();
         let rad = rings.iter().flatten().map(|v| geom::dist(*v, c)).fold(0.0, f64::max);
         let mut best: Option<(f64, P)> = None;
-        for (s, e) in self.board_edge().segments() {
+        let segments: Vec<(P, P)> = match self.b.flex_edges.near(c, zone + rad) {
+            Some(near) => near.to_vec(),
+            None => self.board_edge().segments().collect(),
+        };
+        for (s, e) in segments {
             let bound = geom::point_segment_distance(c, s, e) - rad;
             if bound >= best.map_or(zone, |b| b.0.min(zone)) {
                 continue;
@@ -1716,6 +1899,30 @@ fn edge_geom(p: &Part, part_edge: f64, body_edge: f64) -> EdgeGeom {
     EdgeGeom { u, e_loc: snap_up(e_loc) }
 }
 
+fn edge_level(o: &[P], n: P, tg: P, lo: f64, hi: f64) -> Option<f64> {
+    let mut samples = vec![lo, hi];
+    samples.extend(o.iter().map(|q| dot(*q, tg)).filter(|t| *t > lo && *t < hi));
+    let mut level = f64::MAX;
+    for t in samples {
+        let mut out = f64::MIN;
+        for k in 0..o.len() {
+            let (a, b) = (o[k], o[(k + 1) % o.len()]);
+            let (ta, tb) = (dot(a, tg), dot(b, tg));
+            if (ta - t).abs() < EPS && (tb - t).abs() < EPS {
+                out = out.max(dot(a, n)).max(dot(b, n));
+            } else if (ta - t) * (tb - t) <= 0.0 {
+                let f = (t - ta) / (tb - ta);
+                out = out.max(dot([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], n));
+            }
+        }
+        if out == f64::MIN {
+            return None;
+        }
+        level = level.min(out);
+    }
+    Some(level)
+}
+
 fn rotation_for(u: P, n: P, bottom: bool) -> f64 {
     for r in [0.0, 90.0, 180.0, 270.0] {
         let t = Transform { at: [0.0, 0.0], rotation: r, mirror: bottom };
@@ -1756,6 +1963,23 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         crystal: pd.crystal_distance.map(|l| l.to_mm()).unwrap_or(CRYSTAL_DISTANCE),
         spread: pd.cluster_spread.map(|l| l.to_mm()).unwrap_or(CLUSTER_SPREAD),
         depth: EdgeDepth::new(input.outline, input.cutouts, &ob),
+        edges: std::sync::Arc::new(EdgeIndex::new(
+            geom::BoardEdge::new(input.outline, input.cutouts),
+            &ob,
+            board
+                .rules
+                .min_body_to_edge
+                .to_mm()
+                .max(board.rules.min_part_to_edge.to_mm())
+                .max(board.rules.min_copper_to_edge.to_mm())
+                .max(FIDUCIAL_TO_EDGE)
+                + EDGE_CELL,
+        )),
+        flex_edges: std::sync::Arc::new(EdgeIndex::new(
+            geom::BoardEdge::new(input.outline, input.cutouts),
+            &ob,
+            board.rules.flex_zone.to_mm() + FLEX_RAD,
+        )),
         silk: input
             .silk
             .iter()
@@ -1833,12 +2057,14 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         let mut extent = local;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| extent.add(*q));
         let role = role_of(r, &fp_name, fp);
-        let label = if matches!(role, Role::Connector | Role::Hole | Role::Fiducial) {
-            None
+        let placed = input.placements.iter().find(|f| f.reference == *r);
+        let label = label_room(fp, r, placed, local.center(), false);
+        let label_inward = if matches!(role, Role::Connector | Role::Hole | Role::Fiducial) {
+            label_room(fp, r, placed, local.center(), true)
         } else {
-            label_room(fp, r, input.placements.iter().find(|f| f.reference == *r), local.center())
+            None
         };
-        label.iter().flat_map(|l| l.poly.iter()).for_each(|q| extent.add(*q));
+        label.iter().chain(&label_inward).flat_map(|l| l.poly.iter()).for_each(|q| extent.add(*q));
         let through = fp.pads.iter().any(|q| q.kind == PadKind::Tht || q.kind == PadKind::Npth);
         let mut pad_box = Bounds::EMPTY;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| pad_box.add(*q));
@@ -1878,6 +2104,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             local,
             extent,
             label,
+            label_inward,
             over_silk: false,
             area,
             pins,
@@ -1892,6 +2119,8 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             pin_edge: input.spec.edges.get(*r).copied(),
             sensitive: false,
             switcher: false,
+            hot: false,
+            spread_hot: false,
         });
     }
     for r in input.spec.edges.keys() {
@@ -1906,6 +2135,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         }
     }
     for p in parts.iter_mut() {
+        p.hot = p.heat >= HOT_WATTS || (p.role == Role::Chip && p.large && p.area >= 49.0);
         if p.large && p.heat == 0.0 && p.area >= 49.0 {
             p.heat = 1.0;
         }
@@ -2009,10 +2239,30 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             s[0] * s[1]
         })
         .sum();
+    let hot_gap = pd.hot_distance.map(|l| l.to_mm()).unwrap_or(HOT_DISTANCE);
+    let hot_area: f64 = parts
+        .iter()
+        .filter(|p| p.hot && p.active)
+        .map(|p| {
+            let s = p.local.size();
+            (s[0] + hot_gap) * (s[1] + hot_gap)
+        })
+        .sum();
+    let hot_share = hot_area / b.depth.placeable(b.body_edge).max(1e-9);
+    let spread = parts.iter().filter(|p| p.hot && p.active).count() >= 2 && hot_share <= HOT_SHARE;
+    for p in parts.iter_mut() {
+        p.spread_hot = spread && p.hot;
+    }
+    let hot_spread = HotSpread {
+        applied: spread,
+        share: (hot_share * 1000.0).round() / 1000.0,
+        threshold: HOT_SHARE,
+    };
     let label_room = label_area <= LABEL_SHARE * (room - used);
     let soft_labels = !label_room && label_area <= room - used;
     for p in parts.iter_mut().filter(|p| !p.active || !(label_room || soft_labels)) {
         p.label = None;
+        p.label_inward = None;
     }
     let labels = LabelRoom {
         reserved: label_room,
@@ -2049,6 +2299,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         holes: Vec::new(),
         cross_w: CROSSING_WEIGHT,
         soft_labels,
+        hot_gap,
         label_at: vec![None; n_parts],
     };
 
@@ -2085,6 +2336,8 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         let edges = cand.place_connectors(&rough, &mut failed);
         let pos = cand.global(start, Some(&rough));
         cand.legalise(&pos, &mut failed);
+        let mut seen = std::collections::HashSet::new();
+        failed.retain(|r| seen.insert(r.clone()));
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
         (score, cand, failed, edges)
@@ -2162,7 +2415,21 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             members: c.members.iter().map(|m| pl.parts[*m].reference.clone()).collect(),
         })
         .collect();
-    Ok(PlaceResult { placements, kept, failed, edges, clusters, before, after, moves, labels })
+    let (texts_moved, texts_stuck) = pl.move_texts(&input.texts);
+    Ok(PlaceResult {
+        placements,
+        kept,
+        failed,
+        edges,
+        clusters,
+        before,
+        after,
+        moves,
+        labels,
+        texts_moved,
+        texts_stuck,
+        hot_spread,
+    })
 }
 
 pub const DECOUPLING_DISTANCE: f64 = 3.0;
@@ -2454,6 +2721,7 @@ impl<'a> Placer<'a> {
                 let lc = self.parts[i].local.center();
                 let target = [c[0] + d[0] * inset - lc[0], c[1] + d[1] * inset - lc[1]];
                 let fid_bottom = bottom && role == Role::Fiducial;
+                let labels = self.take_labels(i);
                 let found =
                     self.nearest(i, target, 0.0, fid_bottom, 40.0, &|_| 0.0).or_else(|| {
                         self.parts[i].over_silk = true;
@@ -2462,6 +2730,7 @@ impl<'a> Placer<'a> {
                 match found {
                     Some(st) => {
                         self.parts[i].st = st;
+                        self.label_where_it_fits(i, st, labels);
                         self.insert(i);
                         if role == Role::Hole {
                             let hole = self.hole_of(i);
@@ -3020,49 +3289,173 @@ impl<'a> Placer<'a> {
             for (y, &x) in on.iter().enumerate() {
                 let i = list[x];
                 let rot = rotation_for(geo[x].u, e.normal(), bottom);
-                let depth = level - geo[x].e_loc;
                 let nrm = e.normal();
-                let base = |t: f64| -> P {
-                    let t = snap(t);
+                let depth = level - geo[x].e_loc;
+                let target = {
+                    let t = snap(coords[y]);
                     [tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth]
                 };
-                let mut done = false;
-                let mut steps = 0i64;
-                while !done && (steps as f64) * GRID < (hi - lo) {
-                    for sgn in [1.0, -1.0] {
-                        let at = base(coords[y] + sgn * steps as f64 * GRID);
-                        let st = St { at, rot, bottom };
-                        if self.legal(i, st, &[]) {
-                            self.parts[i].st = st;
-                            self.insert(i);
-                            done = true;
-                            break;
-                        }
-                        if steps == 0 {
+                let labels = self.take_labels(i);
+                let mut edge = e;
+                let mut slid = self.slide_to_edge(i, e, &geo[x], spans[y], coords[y], (lo, hi));
+                if slid.is_none() && pins_of[x].is_none() {
+                    let mut others: Vec<Edge> = EDGES.into_iter().filter(|o| *o != e).collect();
+                    others.sort_by(|a, b| dist_to(x, *a).total_cmp(&dist_to(x, *b)));
+                    for o in others {
+                        let (olo, ohi) = range(o);
+                        let (a0, a1) = span(x, o);
+                        let start =
+                            dot(pos[i], o.tangent()).clamp(olo - a0, (ohi - a1).max(olo - a0));
+                        slid = self.slide_to_edge(i, o, &geo[x], (a0, a1), start, (olo, ohi));
+                        if slid.is_some() {
+                            edge = o;
                             break;
                         }
                     }
-                    steps += 1;
                 }
-                if !done {
-                    let target = base(coords[y]);
-                    let found =
-                        self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0).or_else(|| {
-                            self.parts[i].over_silk = true;
-                            self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0)
-                        });
-                    match found {
-                        Some(st) => {
-                            self.parts[i].st = st;
-                            self.insert(i);
-                        }
-                        None => failed.push(self.parts[i].reference.clone()),
+                let found = slid.or_else(|| {
+                    self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0).or_else(|| {
+                        self.parts[i].over_silk = true;
+                        self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0)
+                    })
+                });
+                match found {
+                    Some(st) => {
+                        self.parts[i].st = st;
+                        self.label_where_it_fits(i, st, labels);
+                        self.insert(i);
+                    }
+                    None => {
+                        self.parts[i].label = labels.0;
+                        failed.push(self.parts[i].reference.clone());
                     }
                 }
-                out.insert(self.parts[i].reference.clone(), e);
+                out.insert(self.parts[i].reference.clone(), edge);
             }
         }
         out
+    }
+
+    fn slide_to_edge(
+        &self,
+        i: usize,
+        e: Edge,
+        geo: &EdgeGeom,
+        span: (f64, f64),
+        start: f64,
+        (lo, hi): (f64, f64),
+    ) -> Option<St> {
+        let bottom = self.sides == Sides::Bottom;
+        let rot = rotation_for(geo.u, e.normal(), bottom);
+        let (tg, nrm) = (e.tangent(), e.normal());
+        let mut steps = 0i64;
+        while (steps as f64) * GRID < (hi - lo) {
+            for sgn in [1.0, -1.0] {
+                let t = snap(start + sgn * steps as f64 * GRID);
+                if let Some(level) = edge_level(&self.b.outline, nrm, tg, t + span.0, t + span.1) {
+                    let depth = level - geo.e_loc;
+                    let at = [tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth];
+                    let st = St { at, rot, bottom };
+                    if self.legal(i, st, &[]) {
+                        return Some(st);
+                    }
+                }
+                if steps == 0 {
+                    break;
+                }
+            }
+            steps += 1;
+        }
+        None
+    }
+
+    fn on_parts(&self, side: u8, poly: &[P]) -> bool {
+        let b = poly_bounds(poly);
+        self.grid.cells(&b).any(|c| {
+            self.grid.cells[c].iter().any(|&j| {
+                self.parts[j].placed
+                    && (self.cache[j].iter().any(|s| {
+                        s.side & side != 0
+                            && strict_overlap(&s.b, &b)
+                            && polys_overlap(&s.poly, poly)
+                    }) || self.label_at[j]
+                        .is_some_and(|(ls, lb)| ls & side != 0 && strict_overlap(&lb, &b)))
+            })
+        })
+    }
+
+    fn move_texts(&self, texts: &[SilkText]) -> (Vec<TextMove>, Vec<String>) {
+        let side = |t: &SilkText| if t.layer.starts_with("B.") { 2u8 } else { 1u8 };
+        let mut taken: Vec<Vec<P>> = texts.iter().map(|t| grow(&t.outline(), SILK_ROOM)).collect();
+        let edge = self.board_edge();
+        let mut moved = Vec::new();
+        let mut stuck = Vec::new();
+        for (k, t) in texts.iter().enumerate() {
+            let sd = side(t);
+            if !self.on_parts(sd, &taken[k]) {
+                continue;
+            }
+            let base = grow(&t.outline(), SILK_ROOM);
+            let clear = |poly: &[P]| {
+                let b = poly_bounds(poly);
+                poly.iter().all(|v| self.edge_clear(edge, *v, 0.0))
+                    && !self.on_parts(sd, poly)
+                    && !self.b.silk.iter().any(|a| {
+                        a.side & sd != 0 && strict_overlap(&a.b, &b) && polys_overlap(&a.poly, poly)
+                    })
+                    && texts.iter().zip(&taken).enumerate().all(|(x, (o, q))| {
+                        x == k
+                            || side(o) != sd
+                            || !(strict_overlap(&poly_bounds(q), &b) && polys_overlap(q, poly))
+                    })
+            };
+            let found = self
+                .offsets
+                .iter()
+                .take_while(|o| o[0].hypot(o[1]) <= TEXT_REACH)
+                .map(|o| (*o, base.iter().map(|q| [q[0] + o[0], q[1] + o[1]]).collect::<Vec<P>>()))
+                .find(|(_, poly)| clear(poly));
+            match found {
+                Some((o, poly)) => {
+                    taken[k] = poly;
+                    let to = [
+                        ((t.at[0] + o[0]) * 1e4).round() / 1e4,
+                        ((t.at[1] + o[1]) * 1e4).round() / 1e4,
+                    ];
+                    moved.push(TextMove {
+                        text: t.text.clone(),
+                        layer: t.layer.clone(),
+                        from: t.at,
+                        to,
+                    });
+                }
+                None => stuck.push(t.text.clone()),
+            }
+        }
+        (moved, stuck)
+    }
+
+    fn take_labels(&mut self, i: usize) -> (Option<LabelBox>, Option<LabelBox>) {
+        (self.parts[i].label.take(), self.parts[i].label_inward.take())
+    }
+
+    fn label_where_it_fits(
+        &mut self,
+        i: usize,
+        st: St,
+        labels: (Option<LabelBox>, Option<LabelBox>),
+    ) {
+        if self.soft_labels {
+            self.parts[i].label = labels.0;
+            return;
+        }
+        for l in [labels.0, labels.1].into_iter().flatten() {
+            self.parts[i].label = Some(l);
+            if self.legal(i, st, &[]) {
+                return;
+            }
+        }
+        self.parts[i].label = None;
     }
 
     fn other_ends(&self, i: usize, n: usize, est: &[P]) -> Option<P> {
@@ -3138,6 +3531,10 @@ impl<'a> Placer<'a> {
             }
             None if !self.parts[i].over_silk => {
                 self.parts[i].over_silk = true;
+                self.try_place(i, target, rot, prefer_bottom)
+            }
+            None if self.parts[i].spread_hot => {
+                self.parts[i].spread_hot = false;
                 self.try_place(i, target, rot, prefer_bottom)
             }
             None => false,
