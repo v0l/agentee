@@ -147,6 +147,11 @@ fn tools() -> Value {
             }), &["name", "nets"]),
         },
         {
+            "name": "fill",
+            "description": "Fill the zones of a layout and store the copper at the end of its file, so loads and the viewer skip the fill until the zone's copper, clearances or neighbours change.",
+            "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
+        },
+        {
             "name": "tune",
             "description": "Length-match a layout: meander the short net of every pair over its skew limit and every match group member short of its target, on the longest segments where the bumps clear every other net, and write the points back into the tracks.",
             "inputSchema": s(json!({
@@ -472,6 +477,10 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let p = ops::load_footprints(root)?;
             Ok(ok(vec![text(pretty(&ops::fetch_models(&p)?))]))
         }
+        "fill" => Ok(ok(vec![text(pretty(&ops::write_fills(
+            &ops::load(root)?,
+            arg(a, "name").ok_or("name is required")?,
+        )?))])),
         "fab" => {
             let p = ops::load(root)?;
             let out = root.join(arg(a, "out").ok_or("out is required")?);

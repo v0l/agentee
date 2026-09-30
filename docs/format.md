@@ -601,6 +601,12 @@ pour is cut back to the straight lines joining them, within about 1.5 `min_width
 stub or hairline waist is left pointing into it. The same holds between a clearance area and the
 board edge's clearance, a cutout, or the clearance around another zone's fill.
 
+`agentee fill NAME` (MCP `fill`) fills the zones and stores the copper at the end of the layout
+file, one `[[fills]]` table per zone and layer with the zone's index, a hash of everything the
+fill depends on and the rings, rounded to 0.1 um. Loading uses a stored fill while its hash
+matches and fills again in memory when it does not; check notes the stale ones with `--info`.
+Importing a board stores its fills. Leave the `[[fills]]` tables to the tool.
+
 A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad. Two
 segments of one net that lie on top of each other on a layer (parallel, overlapping by more
 than a track width) are an error, since the copper is doubled; a bend sharper than 90 degrees is
@@ -1154,7 +1160,7 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 | file | from |
 |---|---|
 | `NAME.board.toml` | the Edge.Cuts outline (inner loops become cutouts), the stackup with thickness, er and loss tangent, the copper finish and mask colour, the design rules and net classes from `NAME.kicad_pro` |
-| `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones |
+| `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones, with agentee's zone fills stored |
 | `NAME.sch.toml` | every part with its value, and each net as a list of pins, drawn with net labels |
 | `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept |
 | `symbols/` | one box symbol per footprint with a pin per pad number |

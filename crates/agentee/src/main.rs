@@ -194,6 +194,12 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
+    /// Fill the zones of a layout and store the copper in its file, so loads skip the fill
+    Fill {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Route nets of a layout on a grid and append the tracks and vias to its file
     Route {
         name: String,
@@ -582,6 +588,11 @@ fn run(cli: Cli) -> Result<bool, String> {
         Cmd::Models { path } => {
             let p = ops::load_footprints(&path)?;
             print_json(&ops::fetch_models(&p)?);
+            Ok(true)
+        }
+        Cmd::Fill { name, project } => {
+            let p = ops::load(&project)?;
+            print_json(&ops::write_fills(&p, &name)?);
             Ok(true)
         }
         Cmd::Fab { name, project, out } => {

@@ -283,7 +283,51 @@ pub fn import_board(
     for s in &b.symbols {
         emit(&s.name, Kind::Symbol, t(toml::to_string(s))?, "symbols", &mut written)?;
     }
-    Ok((written, b.notes))
+    let mut notes = b.notes;
+    if !b.layout.zones.is_empty() {
+        let fill = write_fills(&load(dir)?, &name)?;
+        notes.push(format!("stored {} zone fills in the layout", fill["fills"]));
+    }
+    Ok((written, notes))
+}
+
+pub fn write_fills(p: &Project, name: &str) -> Result<Value, String> {
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    #[derive(serde::Serialize)]
+    struct Fills {
+        fills: Vec<agentee_core::layout::FillFile>,
+    }
+    let fills = Fills {
+        fills: layout
+            .fill_keys
+            .iter()
+            .zip(&layout.zones)
+            .map(|(k, z)| agentee_core::layout::fill_file(k, z))
+            .collect(),
+    };
+    let path = &entry.path;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    doc.remove("fills");
+    let mut out = doc.to_string().trim_end().to_string();
+    out.push('\n');
+    if !fills.fills.is_empty() {
+        out.push('\n');
+        out += &toml::to_string(&fills).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(path, &out).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(json!({
+        "layout": layout.name,
+        "file": path,
+        "fills": fills.fills.len(),
+        "refilled": layout.fill_keys.iter().filter(|k| !k.stored).count(),
+        "points": fills.fills.iter().flat_map(|f| &f.rings).map(|r| r.len()).sum::<usize>(),
+    }))
 }
 
 pub enum FootprintPick {

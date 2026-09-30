@@ -13,3 +13,10 @@ toml.workspace = true
 thiserror.workspace = true
 usvg = { version = "0.45", default-features = false }
 i_overlay = "9"
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "fill"
+harness = false

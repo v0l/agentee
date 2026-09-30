@@ -8,6 +8,14 @@ use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
+mod index;
+mod pour;
+
+pub use pour::{
+    FillCase, FillFile, FillKey, ZonesCase, capture_fill_cases, take_fill_cases, take_zones_cases,
+    to_file as fill_file,
+};
+
 pub(crate) const DRC_EPSILON: f64 = 5e-4;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +173,8 @@ pub struct LayoutFile {
     pub stitching: Vec<StitchFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interfaces: Vec<crate::interface::InterfaceFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fills: Vec<FillFile>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -423,6 +433,7 @@ pub struct Layout {
     #[serde(skip)]
     pub label_fixes: Vec<LabelFix>,
     pub interfaces: Vec<crate::interface::Interface>,
+    pub fill_keys: Vec<FillKey>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -477,6 +488,14 @@ impl Shape {
             Shape::Circle(c, r) => b.add_circle(*c, *r),
         }
         b
+    }
+
+    fn probe(&self) -> P {
+        match self {
+            Shape::Seg(p, q, _) => [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
+            Shape::Circle(c, _) => *c,
+            Shape::Poly(v) => v.first().and_then(|r| r.first()).copied().unwrap_or([0.0, 0.0]),
+        }
     }
 
     fn point_distance(&self, p: P) -> f64 {
@@ -535,6 +554,7 @@ enum Owner {
     Hole,
 }
 
+#[derive(Clone)]
 struct Item {
     owner: Owner,
     net: Option<usize>,
@@ -1199,6 +1219,7 @@ impl LayoutFile {
             .map(|c| (c.layers.clone(), c.points.iter().map(|p| p.to_mm()).collect()))
             .collect();
         let mut zones = Vec::new();
+        let mut fill_keys: Vec<FillKey> = Vec::new();
         let mut island_nodes: Vec<Vec<usize>> = Vec::new();
         let zone_area = |z: &ZoneFile| {
             let pts: Vec<P> = match &z.outline {
@@ -1238,24 +1259,80 @@ impl LayoutFile {
                 }
                 let layer_cutouts: Vec<&Vec<P>> =
                     cutouts.iter().filter(|(ls, _)| ls.contains(layer)).map(|(_, p)| p).collect();
-                let blockers: Vec<&ZoneFill> = zones
+                let (blockers, blocker_hashes): (Vec<&ZoneFill>, Vec<u64>) = zones
                     .iter()
-                    .filter(|f: &&ZoneFill| &f.layer == layer && f.net != net)
-                    .collect();
-                let (fill, touched) = fill_zone(
+                    .zip(&fill_keys)
+                    .filter(|(f, _): &(&ZoneFill, &FillKey)| &f.layer == layer && f.net != net)
+                    .map(|(f, k)| (f, k.hash))
+                    .unzip();
+                let spec = pour::FillSpec {
                     net,
+                    net_name: &z.net,
                     layer,
-                    &poly,
-                    &outline,
+                    poly: &poly,
+                    board: &outline,
                     edge_clear,
                     clearance,
-                    &items,
-                    &clearance_of,
-                    &layer_cutouts,
-                    &blockers,
-                    z.min_width.map(Length::to_mm).unwrap_or(0.25),
-                    z.min_island_area.unwrap_or(2.0),
-                );
+                    cutouts: &layer_cutouts,
+                    min_width: z.min_width.map(Length::to_mm).unwrap_or(0.25),
+                    min_island_area: z.min_island_area.unwrap_or(2.0),
+                };
+                let hash = spec.hash(&items, &clearance_of, &blocker_hashes);
+                let stored = self.fills.iter().find(|f| f.zone == zi && &f.layer == layer);
+                let fresh = stored.filter(|f| f.hash == format!("{hash:016x}"));
+                if pour::capturing() {
+                    pour::capture(|| FillCase {
+                        name: format!("zone{zi} {} {layer}", z.net),
+                        net,
+                        layer: layer.clone(),
+                        poly: poly.clone(),
+                        board: outline.clone(),
+                        edge_clear,
+                        clearance,
+                        items: items
+                            .iter()
+                            .filter(|it| it.layers.iter().any(|l| l == layer))
+                            .cloned()
+                            .collect(),
+                        net_clearance: nets.iter().map(|n| n.clearance).collect(),
+                        default_clearance,
+                        cutouts: layer_cutouts.iter().map(|c| c.to_vec()).collect(),
+                        blockers: blockers.iter().map(|b| (*b).clone()).collect(),
+                        min_width: spec.min_width,
+                        min_island_area: spec.min_island_area,
+                    });
+                }
+                let (fill, touched) = match fresh {
+                    Some(f) => spec.stored(&items, f),
+                    None if pour::capturing() => spec.stored(&items, &FillFile::default()),
+                    None => fill_zone(
+                        net,
+                        layer,
+                        &poly,
+                        &outline,
+                        edge_clear,
+                        clearance,
+                        &items,
+                        &clearance_of,
+                        &layer_cutouts,
+                        &blockers,
+                        spec.min_width,
+                        spec.min_island_area,
+                    ),
+                };
+                if stored.is_some() && fresh.is_none() {
+                    d.info(
+                        &at,
+                        format!("the stored fill on {layer} is stale, `agentee fill` refreshes it"),
+                    );
+                }
+                fill_keys.push(FillKey {
+                    zone: zi,
+                    layer: layer.clone(),
+                    hash,
+                    stored: fresh.is_some(),
+                    stale: stored.is_some() && fresh.is_none(),
+                });
                 if fill.islands_removed > 0 {
                     found.add(
                         "zone-islands",
@@ -1275,6 +1352,12 @@ impl LayoutFile {
                 uf.union(group[0], group[1]);
             }
         }
+        pour::capture_zones(|| pour::ZonesCase {
+            zones: zones.clone(),
+            items: items.clone(),
+            nets: nets.clone(),
+            default_clearance,
+        });
         check_zones(&zones, &items, &nets, &clearance_of, &mut found);
 
         let mut ratsnest = Vec::new();
@@ -1411,6 +1494,7 @@ impl LayoutFile {
             silk,
             label_fixes,
             interfaces,
+            fill_keys,
         }
     }
 
@@ -2040,6 +2124,44 @@ impl ZoneFill {
     }
 }
 
+fn scan_spans(
+    poly: &[P],
+    origin: P,
+    cell: f64,
+    w: usize,
+    h: usize,
+    mut span: impl FnMut(usize, usize, usize),
+) {
+    let mut rows: Vec<Vec<f64>> = vec![Vec::new(); h];
+    for (a, c) in edges(poly) {
+        let lo = (((a[1].min(c[1]) - origin[1]) / cell) - 0.5).ceil().max(0.0) as usize;
+        let hi = (((a[1].max(c[1]) - origin[1]) / cell) - 0.5).floor();
+        if hi < 0.0 {
+            continue;
+        }
+        for (y, row) in rows.iter_mut().enumerate().take((hi as usize + 1).min(h)).skip(lo) {
+            let py = origin[1] + (y as f64 + 0.5) * cell;
+            if (a[1] > py) != (c[1] > py) {
+                row.push(a[0] + (py - a[1]) / (c[1] - a[1]) * (c[0] - a[0]));
+            }
+        }
+    }
+    for (y, xs) in rows.iter_mut().enumerate() {
+        xs.sort_by(|a, b| a.total_cmp(b));
+        for pair in xs.chunks(2) {
+            if pair.len() < 2 {
+                continue;
+            }
+            let x0 = (((pair[0] - origin[0]) / cell) - 0.5).ceil().max(0.0) as usize;
+            let x1 = (((pair[1] - origin[0]) / cell) - 0.5).floor().min(w as f64 - 1.0);
+            if x1 < 0.0 || x0 > x1 as usize {
+                continue;
+            }
+            span(y, x0, x1 as usize);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn fill_zone(
     net: usize,
@@ -2055,39 +2177,12 @@ fn fill_zone(
     min_width: f64,
     min_island_area: f64,
 ) -> (ZoneFill, Vec<Vec<usize>>) {
-    let mut b = Bounds::EMPTY;
-    poly.iter().for_each(|p| b.add(*p));
-    let [sw, sh] = b.size();
-    let cell = (sw.max(sh) / 1600.0).max(0.02);
-    let (w, h) = ((sw / cell).ceil() as usize + 1, (sh / cell).ceil() as usize + 1);
-    let origin = b.min;
+    let (origin, cell, w, h) = pour::raster_grid(poly);
     let center = |x: usize, y: usize| {
         [origin[0] + (x as f64 + 0.5) * cell, origin[1] + (y as f64 + 0.5) * cell]
     };
     let mut mask = vec![0u8; w * h];
-    for y in 0..h {
-        let py = origin[1] + (y as f64 + 0.5) * cell;
-        let mut xs = Vec::new();
-        for (a, c) in edges(poly) {
-            if (a[1] > py) != (c[1] > py) {
-                xs.push(a[0] + (py - a[1]) / (c[1] - a[1]) * (c[0] - a[0]));
-            }
-        }
-        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        for pair in xs.chunks(2) {
-            if pair.len() < 2 {
-                continue;
-            }
-            let x0 = (((pair[0] - origin[0]) / cell) - 0.5).ceil().max(0.0) as usize;
-            let x1 = (((pair[1] - origin[0]) / cell) - 0.5).floor().min(w as f64 - 1.0);
-            if x1 < 0.0 {
-                continue;
-            }
-            for x in x0..=(x1 as usize) {
-                mask[y * w + x] = 1;
-            }
-        }
-    }
+    scan_spans(poly, origin, cell, w, h, |y, x0, x1| mask[y * w + x0..=y * w + x1].fill(1));
     let margin = 1.75 * cell;
     let clear_near = |mask: &mut Vec<u8>, bb: Bounds, grow: f64, test: &dyn Fn(P) -> bool| {
         let grow = grow + margin;
@@ -2114,13 +2209,11 @@ fn fill_zone(
                 geom::point_segment_distance(p, a, c) < edge_clear + margin
             });
         }
-        for y in 0..h {
-            for x in 0..w {
-                if mask[y * w + x] != 0 && !geom::point_in_polygon(center(x, y), board) {
-                    mask[y * w + x] = 0;
-                }
-            }
-        }
+        let mut on_board = vec![0u8; w * h];
+        scan_spans(board, origin, cell, w, h, |y, x0, x1| {
+            on_board[y * w + x0..=y * w + x1].fill(1)
+        });
+        mask.iter_mut().zip(&on_board).for_each(|(m, b)| *m &= b);
     }
     for c in cutouts {
         let mut bb = Bounds::EMPTY;
@@ -2145,12 +2238,15 @@ fn fill_zone(
         if bb.is_empty() {
             continue;
         }
-        clear_near(&mut mask, bb, gap, &|p| {
-            z.filled(p)
-                || z.rings.iter().any(|r| {
-                    edges(r).any(|(a, c)| geom::point_segment_distance(p, a, c) < gap + margin)
-                })
-        });
+        clear_near(&mut mask, bb, 0.0, &|p| z.filled(p));
+        for (a, c) in z.rings.iter().flat_map(|r| edges(r)) {
+            let mut eb = Bounds::EMPTY;
+            eb.add(a);
+            eb.add(c);
+            clear_near(&mut mask, eb, gap, &|p| {
+                geom::point_segment_distance(p, a, c) < gap + margin
+            });
+        }
     }
 
     let mut label = vec![0u32; w * h];
@@ -2249,6 +2345,7 @@ fn fill_zone(
         min_width,
     );
     let _ = touched;
+    pour::snap(&mut fill.rings);
     let (rings, touched, dropped) = keep_connected(&fill.rings, net, layer, items, min_island_area);
     fill.rings = rings;
     fill.islands_removed += dropped;
@@ -2283,7 +2380,10 @@ fn keep_connected(
     for shape in shapes {
         let outer = shape[0];
         let b = ring_bounds(std::slice::from_ref(outer));
-        let body = Shape::Poly(vec![outer.clone()]);
+        let body = index::Winding::new(std::slice::from_ref(outer));
+        let rim = EdgeBins::new(std::slice::from_ref(outer), 1.0);
+        let holes: Vec<(Bounds, &Vec<P>)> =
+            shape[1..].iter().map(|h| (ring_bounds(std::slice::from_ref(*h)), *h)).collect();
         let hits: Vec<usize> = own
             .iter()
             .copied()
@@ -2296,7 +2396,12 @@ fn keep_connected(
                 {
                     return false;
                 }
-                if it.shape.distance(&body) > 1e-6 {
+                let touches = body.inside(it.shape.probe())
+                    || rim
+                        .near(&it.bounds, 1e-6)
+                        .into_iter()
+                        .any(|(p, q)| it.shape.distance(&Shape::Seg(p, q, 0.0)) <= 1e-6);
+                if !touches {
                     return false;
                 }
                 let corners = [
@@ -2305,7 +2410,15 @@ fn keep_connected(
                     [it.bounds.min[0], it.bounds.max[1]],
                     [it.bounds.max[0], it.bounds.min[1]],
                 ];
-                !shape[1..].iter().any(|h| corners.iter().all(|c| geom::point_in_polygon(*c, h)))
+                !holes.iter().any(|(hb, h)| {
+                    corners.iter().all(|c| {
+                        c[0] >= hb.min[0]
+                            && c[0] <= hb.max[0]
+                            && c[1] >= hb.min[1]
+                            && c[1] <= hb.max[1]
+                            && geom::point_in_polygon(*c, h)
+                    })
+                })
             })
             .collect();
         let area: f64 = shape.iter().map(|r| geom::signed_area(r)).sum();
@@ -2349,6 +2462,80 @@ fn rasterize(fill: &mut ZoneFill) {
             }
         }
     }
+}
+
+fn spans(shape: &[Vec<P>], at: f64, axis: usize) -> Vec<(f64, f64)> {
+    let o = 1 - axis;
+    let mut cross: Vec<(f64, i32)> = Vec::new();
+    for r in shape {
+        for (a, c) in edges(r) {
+            if (a[o] > at) != (c[o] > at) {
+                let v = a[axis] + (at - a[o]) / (c[o] - a[o]) * (c[axis] - a[axis]);
+                cross.push((v, if c[o] > a[o] { 1 } else { -1 }));
+            }
+        }
+    }
+    cross.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut wind = 0;
+    let mut out = Vec::new();
+    for w in cross.windows(2) {
+        wind += w[0].1;
+        if wind != 0 && w[1].0 > w[0].0 {
+            out.push((w[0].0, w[1].0));
+        }
+    }
+    out
+}
+
+fn interior_point(shape: &[Vec<P>]) -> Option<P> {
+    let b = ring_bounds(&shape[..1.min(shape.len())]);
+    if b.is_empty() {
+        return None;
+    }
+    let mut best: Option<(f64, P)> = None;
+    let lines = 16;
+    for k in 0..lines {
+        let y = b.min[1] + (b.max[1] - b.min[1]) * (k as f64 + 0.5) / lines as f64;
+        let mut row = spans(shape, y, 0);
+        row.sort_by(|a, b| (b.1 - b.0).total_cmp(&(a.1 - a.0)));
+        for (x0, x1) in row.into_iter().take(4) {
+            let x = (x0 + x1) / 2.0;
+            let Some((y0, y1)) = spans(shape, x, 1).into_iter().find(|s| s.0 <= y && y <= s.1)
+            else {
+                continue;
+            };
+            let p = [x, (y0 + y1) / 2.0];
+            let depth = ((x1 - x0) / 2.0).min((y1 - y0) / 2.0);
+            if best.is_none_or(|(d, _)| depth > d) {
+                best = Some((depth, p));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+fn ring_shapes(rings: &[Vec<P>]) -> Vec<Vec<Vec<P>>> {
+    let mut shapes: Vec<Vec<Vec<P>>> = Vec::new();
+    for r in rings {
+        if geom::signed_area(r) > 0.0 || shapes.is_empty() {
+            shapes.push(vec![r.clone()]);
+        } else if let Some(last) = shapes.last_mut() {
+            last.push(r.clone());
+        }
+    }
+    shapes
+}
+
+#[allow(clippy::ptr_arg)]
+fn grown(shapes: &Vec<Vec<Vec<P>>>, gap: f64) -> Vec<Vec<Vec<P>>> {
+    use i_overlay::mesh::float::outline::offset::OutlineOffset;
+    use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+    if shapes.is_empty() || gap <= 0.0 {
+        return shapes.clone();
+    }
+    let step = 2.0 * (1.0 - 0.002f64.min(gap * 0.5) / gap).acos();
+    let out = gap / (step / 2.0).cos();
+    shapes.outline(&OutlineStyle::new(out).line_join(LineJoin::Round(step)))
 }
 
 fn arc_steps(r: f64) -> usize {
@@ -2405,6 +2592,109 @@ fn inflated(shape: &Shape, gap: f64) -> Vec<Vec<P>> {
 }
 
 #[allow(clippy::too_many_arguments)]
+fn fill_clip(
+    layer: &str,
+    net: usize,
+    poly: &[P],
+    board: &[P],
+    edge_clear: f64,
+    clearance: f64,
+    items: &[Item],
+    clearance_of: &dyn Fn(Option<usize>) -> f64,
+    cutouts: &[&Vec<P>],
+    blockers: &[&ZoneFill],
+    min_width: f64,
+) -> (Vec<Vec<P>>, Vec<Vec<P>>) {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    let subject: Vec<Vec<P>> = if board.len() >= 3 && poly.len() >= 3 {
+        poly.to_vec()
+            .overlay(&board.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
+            .into_iter()
+            .flatten()
+            .collect()
+    } else {
+        vec![poly.to_vec()]
+    };
+    let reach = ring_bounds(&subject);
+    let near = |b: Bounds, grow: f64| {
+        b.max[0] + grow + min_width >= reach.min[0]
+            && b.min[0] - grow - min_width <= reach.max[0]
+            && b.max[1] + grow + min_width >= reach.min[1]
+            && b.min[1] - grow - min_width <= reach.max[1]
+    };
+    let edge_near = |a: P, b: P, grow: f64| {
+        let mut bb = Bounds::EMPTY;
+        bb.add(a);
+        bb.add(b);
+        near(bb, grow)
+    };
+    let mut clip: Vec<Vec<P>> = Vec::new();
+    if board.len() >= 3 && edge_clear > 0.0 {
+        for (a, b) in edges(board).filter(|(a, b)| edge_near(*a, *b, edge_clear)) {
+            clip.push(capsule(a, b, edge_clear));
+        }
+    }
+    for c in cutouts.iter().filter(|c| near(ring_bounds(std::slice::from_ref(*c)), 0.0)) {
+        clip.push(c.to_vec());
+    }
+    let keepouts: Vec<(&Shape, f64)> = items
+        .iter()
+        .filter(|it| it.layers.iter().any(|l| l == layer))
+        .filter(|it| it.net != Some(net) || it.owner == Owner::Hole)
+        .map(|it| (it, clearance.max(clearance_of(it.net)).max(it.pour_gap)))
+        .filter(|(it, gap)| near(it.bounds, *gap))
+        .map(|(it, gap)| (&it.shape, gap))
+        .collect();
+    for (shape, gap) in &keepouts {
+        clip.extend(inflated(shape, *gap));
+    }
+    if min_width > 0.0 {
+        clip.extend(gap_bridges(&keepouts, min_width));
+        let mut walls: Vec<Wall> = Vec::new();
+        if board.len() >= 3 && edge_clear > 0.0 {
+            walls.extend(
+                edges(board).filter(|(a, b)| edge_near(*a, *b, edge_clear)).map(|(a, b)| Wall {
+                    a,
+                    b,
+                    gap: edge_clear,
+                    group: 0,
+                }),
+            );
+        }
+        for (k, c) in cutouts.iter().enumerate() {
+            walls.extend(edges(c).filter(|(a, b)| edge_near(*a, *b, 0.0)).map(|(a, b)| Wall {
+                a,
+                b,
+                gap: 0.0,
+                group: 1 + k,
+            }));
+        }
+        for z in blockers {
+            let gap = clearance.max(clearance_of(Some(z.net)));
+            for r in &z.rings {
+                let group = 1 + cutouts.len() + walls.len();
+                walls.extend(edges(r).filter(|(a, b)| edge_near(*a, *b, gap)).map(|(a, b)| Wall {
+                    a,
+                    b,
+                    gap,
+                    group,
+                }));
+            }
+        }
+        clip.extend(wall_bridges(&keepouts, &walls, min_width));
+    }
+    for z in blockers {
+        let gap = clearance.max(clearance_of(Some(z.net)));
+        let shapes: Vec<Vec<Vec<P>>> =
+            ring_shapes(&z.rings).into_iter().filter(|s| near(ring_bounds(s), gap)).collect();
+        clip.extend(grown(&shapes, gap).into_iter().flatten());
+    }
+    (subject, clip)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn vector_fill(
     raster: &ZoneFill,
     poly: &[P],
@@ -2417,81 +2707,49 @@ fn vector_fill(
     blockers: &[&ZoneFill],
     min_width: f64,
 ) -> Vec<Vec<P>> {
+    let (subject, clip) = fill_clip(
+        &raster.layer,
+        raster.net,
+        poly,
+        board,
+        edge_clear,
+        clearance,
+        items,
+        clearance_of,
+        cutouts,
+        blockers,
+        min_width,
+    );
+    let shapes = clip_overlay(&subject, &clip);
+    let shapes = open_to_width(shapes, min_width);
+    probe_shapes(shapes, raster)
+}
+
+#[allow(clippy::ptr_arg)]
+fn clip_overlay(subject: &Vec<Vec<P>>, clip: &Vec<Vec<P>>) -> Vec<Vec<Vec<P>>> {
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
     use i_overlay::float::single::SingleFloatOverlay;
+    subject.overlay(clip, OverlayRule::Difference, FillRule::NonZero)
+}
+
+fn open_to_width(shapes: Vec<Vec<Vec<P>>>, min_width: f64) -> Vec<Vec<Vec<P>>> {
+    if min_width <= 0.0 {
+        return shapes;
+    }
+    use i_overlay::mesh::float::outline::offset::OutlineOffset;
+    use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+    let r = min_width / 2.0;
+    let step = 2.0 * (1.0 - 0.002f64.min(r * 0.5) / r).acos();
+    let eroded = shapes.outline(&OutlineStyle::new(-r).line_join(LineJoin::Round(step)));
+    eroded.outline(&OutlineStyle::new(r).line_join(LineJoin::Round(step)))
+}
+
+fn probe_shapes(shapes: Vec<Vec<Vec<P>>>, raster: &ZoneFill) -> Vec<Vec<P>> {
     let area_of = |r: &[P]| crate::contour::area(r);
-    let subject: Vec<Vec<P>> = if board.len() >= 3 && poly.len() >= 3 {
-        poly.to_vec()
-            .overlay(&board.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
-            .into_iter()
-            .flatten()
-            .collect()
-    } else {
-        vec![poly.to_vec()]
-    };
-    let mut clip: Vec<Vec<P>> = Vec::new();
-    if board.len() >= 3 && edge_clear > 0.0 {
-        for (a, b) in edges(board) {
-            clip.push(capsule(a, b, edge_clear));
-        }
-    }
-    for c in cutouts {
-        clip.push(c.to_vec());
-    }
-    let keepouts: Vec<(&Shape, f64)> = items
-        .iter()
-        .filter(|it| it.layers.iter().any(|l| l == &raster.layer))
-        .filter(|it| it.net != Some(raster.net) || it.owner == Owner::Hole)
-        .map(|it| (&it.shape, clearance.max(clearance_of(it.net)).max(it.pour_gap)))
-        .collect();
-    for (shape, gap) in &keepouts {
-        clip.extend(inflated(shape, *gap));
-    }
-    if min_width > 0.0 {
-        clip.extend(gap_bridges(&keepouts, min_width));
-        let mut walls: Vec<Wall> = Vec::new();
-        if board.len() >= 3 && edge_clear > 0.0 {
-            walls.extend(edges(board).map(|(a, b)| Wall { a, b, gap: edge_clear, group: 0 }));
-        }
-        for (k, c) in cutouts.iter().enumerate() {
-            walls.extend(edges(c).map(|(a, b)| Wall { a, b, gap: 0.0, group: 1 + k }));
-        }
-        for z in blockers {
-            let gap = clearance.max(clearance_of(Some(z.net)));
-            for r in &z.rings {
-                let group = 1 + cutouts.len() + walls.len();
-                walls.extend(edges(r).map(|(a, b)| Wall { a, b, gap, group }));
-            }
-        }
-        clip.extend(wall_bridges(&keepouts, &walls, min_width));
-    }
-    for z in blockers {
-        let gap = clearance.max(clearance_of(Some(z.net)));
-        for r in &z.rings {
-            clip.push(r.clone());
-            for (a, b) in edges(r) {
-                clip.push(capsule(a, b, gap));
-            }
-        }
-    }
-    let mut shapes = subject.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
-    if min_width > 0.0 {
-        use i_overlay::mesh::float::outline::offset::OutlineOffset;
-        use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
-        let eroded =
-            shapes.outline(&OutlineStyle::new(-min_width / 2.0).line_join(LineJoin::Round(0.05)));
-        shapes =
-            eroded.outline(&OutlineStyle::new(min_width / 2.0).line_join(LineJoin::Round(0.05)));
-    }
     let mut rings = Vec::new();
     for shape in shapes {
-        let tris = crate::contour::triangles(&shape);
-        let probe = tris
-            .iter()
-            .max_by(|a, b| area_of(a.as_ref()).abs().total_cmp(&area_of(b.as_ref()).abs()))
-            .map(|t| [(t[0][0] + t[1][0] + t[2][0]) / 3.0, (t[0][1] + t[1][1] + t[2][1]) / 3.0]);
-        if !probe.is_some_and(|p| raster.filled(p)) {
+        if !interior_point(&shape).is_some_and(|p| raster.filled(p)) {
             continue;
         }
         for (k, mut r) in shape.into_iter().enumerate() {
@@ -2767,15 +3025,6 @@ fn ring_bounds(rings: &[Vec<P>]) -> Bounds {
     b
 }
 
-fn inside_rings(rings: &[Vec<P>], p: P) -> bool {
-    rings
-        .iter()
-        .filter(|r| geom::point_in_polygon(p, r))
-        .map(|r| if geom::signed_area(r) > 0.0 { 1 } else { -1 })
-        .sum::<i32>()
-        > 0
-}
-
 struct EdgeBins {
     size: f64,
     bins: HashMap<(i64, i64), Vec<(P, P)>>,
@@ -2835,6 +3084,7 @@ fn check_zones(
     const TOL: f64 = 3e-3;
     let bins: Vec<EdgeBins> = zones.iter().map(|z| EdgeBins::new(&z.rings, 1.0)).collect();
     let bounds: Vec<Bounds> = zones.iter().map(|z| ring_bounds(&z.rings)).collect();
+    let inside: Vec<index::Winding> = zones.iter().map(|z| index::Winding::new(&z.rings)).collect();
     let at = |z: &ZoneFill| format!("zone {} on {}", nets[z.net].name, z.layer);
     for (i, a) in zones.iter().enumerate() {
         if a.rings.is_empty() {
@@ -2882,8 +3132,8 @@ fn check_zones(
                 .rings
                 .iter()
                 .flatten()
-                .find(|p| inside_rings(&b.rings, **p))
-                .or_else(|| b.rings.iter().flatten().find(|p| inside_rings(&a.rings, **p)));
+                .find(|p| inside[j].inside(**p))
+                .or_else(|| b.rings.iter().flatten().find(|p| inside[i].inside(**p)));
             if let Some(p) = over {
                 d.add(
                     "zone-overlap",
@@ -2932,7 +3182,7 @@ fn check_zones(
                 Shape::Circle(c, _) => *c,
                 Shape::Poly(v) => v.first().and_then(|r| r.first()).copied().unwrap_or([0.0, 0.0]),
             };
-            if inside_rings(&a.rings, probe) {
+            if inside[i].inside(probe) {
                 hit = Some((-1.0, probe));
             } else {
                 for (p, q) in bins[i].near(&it.bounds, need) {
