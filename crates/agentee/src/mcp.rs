@@ -139,6 +139,7 @@ fn tools() -> Value {
                 "grid": { "type": "number", "default": 0.05 },
                 "via": { "type": "string" },
                 "via_cost": { "type": "number", "default": 1.0 },
+                "bend_cost": { "type": "number", "default": 0.1, "description": "mm of track per 45 degree bend, three times that for 90" },
                 "pairs": { "type": "boolean" },
                 "reroute": { "type": "boolean", "description": "remove these nets' tracks and vias first" },
                 "dry_run": { "type": "boolean" },
@@ -420,6 +421,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 grid: a.get("grid").and_then(Value::as_f64).unwrap_or(0.05),
                 via: arg(a, "via").map(str::to_string),
                 via_cost: a.get("via_cost").and_then(Value::as_f64).unwrap_or(1.0),
+                bend_cost: a.get("bend_cost").and_then(Value::as_f64).unwrap_or(0.1),
                 pairs: flag(a, "pairs"),
                 ..Default::default()
             };

@@ -215,12 +215,16 @@ pub struct Interface {
     pub lanes: Vec<Lane>,
     pub pairs: Vec<(usize, usize, f64, f64)>,
     pub timing: Vec<Timing>,
+    pub max_bus_skew_ps: Option<f64>,
+    pub clock_window_ps: Option<[f64; 2]>,
     pub measure: Vec<MeasureFile>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Timing {
     pub signal: String,
+    pub lanes: Vec<usize>,
+    pub clock: bool,
     pub delay_ps: f64,
     pub to_clock_ps: Option<f64>,
 }
@@ -297,7 +301,7 @@ pub fn check(files: &[InterfaceFile], cx: &Ctx, d: &mut Diags) -> Vec<Interface>
                 );
             }
         }
-        let timing = timing(f, &lanes, &pairs, &at, d);
+        let (timing, max_bus_skew_ps, clock_window_ps) = timing(f, &lanes, &pairs, &at, d);
         out.push(Interface {
             name: f.name.clone(),
             preset: f.preset.clone(),
@@ -305,6 +309,8 @@ pub fn check(files: &[InterfaceFile], cx: &Ctx, d: &mut Diags) -> Vec<Interface>
             lanes,
             pairs,
             timing,
+            max_bus_skew_ps,
+            clock_window_ps,
             measure: f.measure.clone(),
         });
     }
@@ -317,8 +323,9 @@ fn timing(
     pairs: &[(usize, usize, f64, f64)],
     at: &str,
     d: &mut Diags,
-) -> Vec<Timing> {
+) -> (Vec<Timing>, Option<f64>, Option<[f64; 2]>) {
     let mut signals: Vec<(String, f64, Vec<String>)> = Vec::new();
+    let mut members: Vec<Vec<usize>> = Vec::new();
     let mut paired = vec![false; lanes.len()];
     for p in pairs {
         paired[p.0] = true;
@@ -326,12 +333,16 @@ fn timing(
         let (a, b) = (&lanes[p.0], &lanes[p.1]);
         let nets: Vec<String> = a.nets.iter().chain(&b.nets).cloned().collect();
         signals.push((a.nets.join("+"), (a.delay_ps + b.delay_ps) / 2.0, nets));
+        members.push(vec![p.0, p.1]);
     }
     for (i, l) in lanes.iter().enumerate() {
         if !paired[i] {
             signals.push((l.nets.join("+"), l.delay_ps, l.nets.clone()));
+            members.push(vec![i]);
         }
     }
+    let mut bus_limit = None;
+    let mut window = None;
     let clock = f.clock.as_ref().map(|c| {
         let found = signals.iter().position(|s| s.2.iter().any(|n| n == c));
         if found.is_none() {
@@ -345,6 +356,7 @@ fn timing(
     if let Some(v) = &f.max_bus_skew {
         match Limit::parse(v) {
             Ok(Limit::Ps(limit)) => {
+                bus_limit = Some(limit);
                 let lo = data.iter().map(|&k| signals[k].1).fold(f64::MAX, f64::min);
                 let hi = data.iter().map(|&k| signals[k].1).fold(f64::MIN, f64::max);
                 if data.len() > 1 && hi - lo > limit + 1e-9 {
@@ -376,6 +388,7 @@ fn timing(
     if let Some([lo, hi]) = &f.clock_window {
         match (Picos::parse(lo), Picos::parse(hi), clock_delay) {
             (Ok(lo), Ok(hi), Some(c)) => {
+                window = Some([lo.0, hi.0]);
                 for &k in &data {
                     let rel = signals[k].1 - c;
                     if rel < lo.0 - 1e-9 || rel > hi.0 + 1e-9 {
@@ -393,14 +406,19 @@ fn timing(
             _ => d.error(at, "clock_window is two times, like [\"-50ps\", \"50ps\"]"),
         }
     }
-    signals
+    let timing = signals
         .iter()
-        .map(|s| Timing {
+        .zip(members)
+        .enumerate()
+        .map(|(k, (s, lanes))| Timing {
             signal: s.0.clone(),
+            lanes,
+            clock: Some(k) == clock,
             delay_ps: s.1,
             to_clock_ps: clock_delay.map(|c| s.1 - c),
         })
-        .collect()
+        .collect();
+    (timing, bus_limit, window)
 }
 
 pub struct Measured<'a> {

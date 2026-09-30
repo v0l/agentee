@@ -565,10 +565,19 @@ ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the
 to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
 It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
 the board edge, keeps new vias `min_hole_to_hole` from every drill, uses the class via to change
-layer (`--via` to override, `--via-cost` in mm of track), and never moves what is already there
+layer (`--via` to override, `--via-cost` in mm of track), charges `--bend-cost` mm of track for
+each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
-it would cross, remembers the spot as congested, and those nets go back in the queue. Paths are
-pulled tight into straight runs afterwards. The second net of a pair is drawn toward its
+it would cross, remembers the spot as congested, and those nets go back in the queue. The search
+steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
+45 degree bends; afterwards runs are pulled tight with two-segment 45 degree doglegs and any 90
+degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
+at another angle. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+each routed connection that uses vias is tried again on one layer at a time with the rest held
+fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. A net in an
+interface with `max_vias` keeps the trace (every net of the lane, through series parts) within
+it: a route with too many vias is tried again with dearer vias, then on one layer, and fails with
+the reason if neither fits. The second net of a pair is drawn toward its
 partner at the pair gap; `--pairs` tries to route both halves together as one coupled track
 first. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
@@ -661,7 +670,13 @@ group member short of its target it meanders the short side, on its longest stra
 anywhere along a series chain, with bumps that keep every other net's clearance and the board
 edge rule, and writes the new points into the tracks. `--nets` limits it, `--amplitude` caps the
 bump height and `--pitch` fixes the bump pitch (default three track widths, tighter where that is
-all that fits). A net that is over its group target is reported, not shortened. `agentee calc
+all that fits). Interfaces count too, in time as well as length: a pair over
+its `max_skew` in ps gets the short side lengthened by that delay; for `max_bus_skew` and
+`clock_window` the clock is lengthened until the latest data line falls inside its window and
+every data line short of the bus spread or the window's early edge is lengthened to the latest
+one (inside the window), both legs of a pair together. Delays turn into millimetres at each net's
+own ps per mm. When one leg of a pair cannot take all of it, the other leg is held to what it got.
+A net that is over its group target is reported, not shortened. `agentee calc
 serpentine --from x,y --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of one such
 meander on a segment you pick. Net lengths and delays are in `agentee show pcb:NAME`.
 

@@ -212,6 +212,9 @@ enum Cmd {
         /// Cost of a via in mm of track
         #[arg(long, default_value_t = 1.0)]
         via_cost: f64,
+        /// Cost of a 45 degree bend in mm of track, three times that for 90
+        #[arg(long, default_value_t = 0.1)]
+        bend_cost: f64,
         /// Route differential pairs as coupled pairs where they fit
         #[arg(long)]
         pairs: bool,
@@ -583,6 +586,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             grid,
             via,
             via_cost,
+            bend_cost,
             pairs,
             reroute,
             dry_run,
@@ -598,6 +602,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                 grid,
                 via,
                 via_cost,
+                bend_cost,
                 pairs,
                 ..Default::default()
             };
