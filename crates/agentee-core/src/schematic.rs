@@ -643,27 +643,84 @@ fn point(c: Cell) -> P {
 
 const DIRS: [Cell; 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
-#[derive(Default)]
 struct Grid {
-    blocked: HashSet<Cell>,
-    used: HashMap<Cell, (usize, u8)>,
+    blocked: Vec<bool>,
+    used: Vec<Option<(usize, u8)>>,
     min: Cell,
     max: Cell,
 }
 
 impl Grid {
+    fn new(min: Cell, max: Cell) -> Grid {
+        let n = ((max.0 - min.0 + 1) * (max.1 - min.1 + 1)).max(0) as usize;
+        Grid { blocked: vec![false; n], used: vec![None; n], min, max }
+    }
+
+    fn index(&self, c: Cell) -> Option<usize> {
+        if c.0 < self.min.0 || c.1 < self.min.1 || c.0 > self.max.0 || c.1 > self.max.1 {
+            return None;
+        }
+        let h = (self.max.1 - self.min.1 + 1) as usize;
+        Some((c.0 - self.min.0) as usize * h + (c.1 - self.min.1) as usize)
+    }
+
+    fn block(&mut self, c: Cell) {
+        if let Some(i) = self.index(c) {
+            self.blocked[i] = true;
+        }
+    }
+
+    fn is_blocked(&self, c: Cell) -> bool {
+        self.index(c).is_some_and(|i| self.blocked[i])
+    }
+
+    fn used_at(&self, c: Cell) -> Option<(usize, u8)> {
+        self.index(c).and_then(|i| self.used[i])
+    }
+
     fn mark(&mut self, net: usize, path: &[Cell]) {
         for w in path.windows(2) {
             let horizontal = w[0].1 == w[1].1;
             let axis = if horizontal { 1 } else { 2 };
             for c in [w[0], w[1]] {
-                let e = self.used.entry(c).or_insert((net, 0));
+                let Some(i) = self.index(c) else { continue };
+                let e = self.used[i].get_or_insert((net, 0));
                 if e.0 == net {
                     e.1 |= axis;
                 } else {
                     e.1 |= 4;
                 }
             }
+        }
+    }
+}
+
+struct Scratch {
+    stamp: u32,
+    seen: Vec<u32>,
+    best: Vec<u32>,
+    prev: Vec<(Cell, u8)>,
+}
+
+impl Scratch {
+    fn new(cells: usize) -> Scratch {
+        let n = cells * 4;
+        Scratch { stamp: 0, seen: vec![0; n], best: vec![0; n], prev: vec![((0, 0), 0); n] }
+    }
+
+    fn best(&self, k: Option<usize>) -> Option<u32> {
+        k.filter(|k| self.seen[*k] == self.stamp).map(|k| self.best[k])
+    }
+
+    fn prev(&self, k: Option<usize>) -> Option<(Cell, u8)> {
+        k.filter(|k| self.seen[*k] == self.stamp).map(|k| self.prev[k])
+    }
+
+    fn set(&mut self, k: Option<usize>, cost: u32, prev: (Cell, u8)) {
+        if let Some(k) = k {
+            self.seen[k] = self.stamp;
+            self.best[k] = cost;
+            self.prev[k] = prev;
         }
     }
 }
@@ -689,14 +746,15 @@ impl PartialOrd for Node {
 
 fn search(
     g: &Grid,
+    s: &mut Scratch,
     net: usize,
     start: Cell,
     out: Cell,
     targets: &HashSet<Cell>,
 ) -> Option<Vec<Cell>> {
     let start_dir = DIRS.iter().position(|d| *d == out).unwrap_or(0) as u8;
-    let mut best: HashMap<(Cell, u8), u32> = HashMap::new();
-    let mut prev: HashMap<(Cell, u8), (Cell, u8)> = HashMap::new();
+    s.stamp += 1;
+    let key = |c: Cell, dir: u8| g.index(c).map(|i| i * 4 + dir as usize);
     let mut heap = BinaryHeap::new();
     for (nd, d) in DIRS.iter().enumerate() {
         let nd = nd as u8;
@@ -704,25 +762,24 @@ fn search(
         if targets.contains(&first) && nd == start_dir {
             return Some(vec![start, first]);
         }
-        if g.blocked.contains(&first) && !targets.contains(&first) {
+        if g.is_blocked(first) && !targets.contains(&first) {
             continue;
         }
-        if g.used.get(&first).is_some_and(|u| u.0 != net) {
+        if g.used_at(first).is_some_and(|u| u.0 != net) {
             continue;
         }
         let cost = if nd == start_dir { 10 } else { 50 };
-        best.insert((first, nd), cost);
-        prev.insert((first, nd), (start, nd));
+        s.set(key(first, nd), cost, (start, nd));
         heap.push(Node { cost, cell: first, dir: nd });
     }
     while let Some(Node { cost, cell: c, dir }) = heap.pop() {
-        if best.get(&(c, dir)).is_some_and(|b| *b < cost) {
+        if s.best(key(c, dir)).is_some_and(|b| b < cost) {
             continue;
         }
         if targets.contains(&c) {
             let mut path = vec![c];
             let mut k = (c, dir);
-            while let Some(&p) = prev.get(&k) {
+            while let Some(p) = s.prev(key(k.0, k.1)) {
                 path.push(p.0);
                 if p.0 == start {
                     break;
@@ -741,17 +798,17 @@ fn search(
             if n.0 < g.min.0 || n.1 < g.min.1 || n.0 > g.max.0 || n.1 > g.max.1 {
                 continue;
             }
-            if g.blocked.contains(&n) && !targets.contains(&n) {
+            if g.is_blocked(n) && !targets.contains(&n) {
                 continue;
             }
             let mut step = 10u32;
             if nd != dir {
-                if g.used.get(&c).is_some_and(|u| u.0 != net) {
+                if g.used_at(c).is_some_and(|u| u.0 != net) {
                     continue;
                 }
                 step += 40;
             }
-            if let Some(&(owner, axes)) = g.used.get(&n)
+            if let Some((owner, axes)) = g.used_at(n)
                 && owner != net
             {
                 let along = if d.1 == 0 { 1 } else { 2 };
@@ -761,9 +818,8 @@ fn search(
                 step += 60;
             }
             let nc = cost + step;
-            if best.get(&(n, nd)).is_none_or(|b| nc < *b) {
-                best.insert((n, nd), nc);
-                prev.insert((n, nd), (c, dir));
+            if s.best(key(n, nd)).is_none_or(|b| nc < b) {
+                s.set(key(n, nd), nc, (c, dir));
                 heap.push(Node { cost: nc, cell: n, dir: nd });
             }
         }
@@ -786,16 +842,23 @@ fn simplify(path: &[Cell]) -> Vec<P> {
 }
 
 fn route(s: &mut Schematic, d: &mut Diags) {
-    let mut g = Grid::default();
     let mut all = Bounds::EMPTY;
     for p in s.parts.iter() {
         all.union(&p.bounds());
+    }
+    if all.is_empty() {
+        return;
+    }
+    let margin = 12;
+    let (lo, hi) = (cell(all.min), cell(all.max));
+    let mut g = Grid::new((lo.0 - margin, lo.1 - margin), (hi.0 + margin, hi.1 + margin));
+    for p in s.parts.iter() {
         let body = p.body_bounds();
         if !body.is_empty() {
             let (a, b) = (cell(body.min), cell(body.max));
             for x in a.0..=b.0 {
                 for y in a.1..=b.1 {
-                    g.blocked.insert((x, y));
+                    g.block((x, y));
                 }
             }
         }
@@ -806,18 +869,12 @@ fn route(s: &mut Schematic, d: &mut Diags) {
             let mut c = tip;
             while c != end {
                 c = (c.0 + dx, c.1 + dy);
-                g.blocked.insert(c);
+                g.block(c);
             }
-            g.blocked.insert(tip);
+            g.block(tip);
         }
     }
-    if all.is_empty() {
-        return;
-    }
-    let margin = 12;
-    let (lo, hi) = (cell(all.min), cell(all.max));
-    g.min = (lo.0 - margin, lo.1 - margin);
-    g.max = (hi.0 + margin, hi.1 + margin);
+    let mut scratch = Scratch::new(g.blocked.len());
 
     for (ni, n) in s.nets.iter().enumerate() {
         if n.drawn_by_hand {
@@ -835,7 +892,7 @@ fn route(s: &mut Schematic, d: &mut Diags) {
                 let o = p.pin_outward(r.pin);
                 let o = (o[0].round() as i32, o[1].round() as i32);
                 for k in 1..=3 {
-                    g.blocked.insert((tip.0 + o.0 * k, tip.1 + o.1 * k));
+                    g.block((tip.0 + o.0 * k, tip.1 + o.1 * k));
                 }
             }
         }
@@ -872,7 +929,7 @@ fn route(s: &mut Schematic, d: &mut Diags) {
                 .unwrap();
             done[next] = true;
             let (start, out) = pins[next];
-            let found = search(&g, ni, start, out, &tree);
+            let found = search(&g, &mut scratch, ni, start, out, &tree);
             match found {
                 Some(path) => {
                     g.mark(ni, &path);
