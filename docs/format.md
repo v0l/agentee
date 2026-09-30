@@ -361,7 +361,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `placement-decoupling-distance` | info | parts | a capacitor between a supply and ground whose supply pad is farther than `decoupling_distance` (3 mm) from the nearest pin of an IC on that supply, 2.5 times that for bulk capacitors over 1 uF |
 | `placement-crystal-distance` | info | parts | a crystal or oscillator (reference `Y`, or a footprint named like a crystal or oscillator) whose signal pad is farther than `crystal_distance` (5 mm) from the IC pin on its net |
 | `placement-large-part-off-centre` | info | parts | a large chip (a BGA, a package of 16 or more pins over 25 mm2, else the parts with the most pins) whose courtyard centre is more than `off_centre` (0.6) of the way from the board centre to the edge |
-| `placement-hot-parts-close` | info | parts | two large packages (courtyard of 49 mm2 or more) whose courtyards are closer than `hot_distance` (5 mm) |
+| `placement-hot-parts-close` | info | parts | two hot parts whose courtyards are closer than `hot_distance` (5 mm): the `[[sources]]` of this layout's thermal sims at 0.25 W or more, and the large packages (courtyard of 49 mm2 or more) those sims do not list |
 | `placement-cluster-spread` | info | parts | a two-pin passive whose signal nets reach one IC and nothing else, farther than `cluster_spread` (10 mm) from that IC's pin |
 | `placement-connector-not-at-edge` | info | parts | a connector (edge pads, `overhang = true`, or a `J`/`P` reference that is not a Tag-Connect, U.FL or test pad) whose courtyard is farther than `connector_edge` (3 mm) from the outline |
 | `short` | error | always | copper of two different nets touches |

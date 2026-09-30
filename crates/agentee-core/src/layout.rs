@@ -725,6 +725,7 @@ pub struct Context<'a> {
     pub board: &'a Board,
     pub schematic: &'a Schematic,
     pub footprints: HashMap<&'a str, &'a Footprint>,
+    pub heat: Vec<(String, f64)>,
 }
 
 fn max_clear_of(nets: &[LayoutNet], default: f64) -> f64 {
@@ -1719,6 +1720,7 @@ impl LayoutFile {
             )
             .with_signals(&graphics, &pairs, &match_groups, &interfaces)
             .with_test(&test)
+            .with_heat(&cx.heat)
             .with_found(&found),
             d,
         );

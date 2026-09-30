@@ -12,7 +12,7 @@ pub const GRID: f64 = 0.05;
 pub const FIDUCIAL_TO_EDGE: f64 = 3.0;
 const HOT_GAP: f64 = 10.0;
 const QUIET_GAP: f64 = 8.0;
-const HOT_WATTS: f64 = 0.25;
+pub const HOT_WATTS: f64 = 0.25;
 const EPS: f64 = 1e-6;
 const LARGE_MLCC: f64 = 1.8;
 const FLEX_LARGE: f64 = 20.0;
@@ -244,6 +244,35 @@ pub fn conn_kind(fp_name: &str) -> ConnKind {
     } else {
         ConnKind::Other
     }
+}
+
+pub fn watts(v: &str) -> Option<f64> {
+    let s = v.trim().to_ascii_lowercase();
+    if let Some(x) = s.strip_suffix("mw") {
+        return x.trim().parse::<f64>().ok().map(|x| x * 1e-3);
+    }
+    s.strip_suffix('w').unwrap_or(&s).trim().parse().ok()
+}
+
+pub fn thermal_heat<'a>(
+    sims: impl IntoIterator<Item = &'a crate::sim::SimFile>,
+    layout: &str,
+) -> Vec<(String, f64)> {
+    let mut heat: Vec<(String, f64)> = Vec::new();
+    for f in sims {
+        let mine = f.layout.as_deref().is_none_or(|l| l == layout);
+        if f.kind != Some(crate::sim::SimKind::Thermal) || !mine {
+            continue;
+        }
+        for h in &f.sources {
+            if let Some(w) = watts(&h.power)
+                && !heat.iter().any(|(r, _)| *r == h.reference)
+            {
+                heat.push((h.reference.clone(), w));
+            }
+        }
+    }
+    heat
 }
 
 pub fn is_ground(name: &str) -> bool {

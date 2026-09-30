@@ -20,6 +20,10 @@ fn lna() -> PathBuf {
 }
 
 fn small_project(drc: &str, pcb: &str) -> Project {
+    Project::load(&small_dir(drc, pcb)).unwrap()
+}
+
+fn small_dir(drc: &str, pcb: &str) -> PathBuf {
     let dir = temp_dir("drc");
     for s in ["C", "SPF5189Z", "Conn_Coaxial"] {
         let f = format!("symbols/{s}.sym.toml");
@@ -94,7 +98,7 @@ pins = ["U1.1", "J1.1"]
         format!("name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n{pcb}"),
     )
     .unwrap();
-    Project::load(&dir).unwrap()
+    dir
 }
 
 fn placed(u1: [f64; 2], c1: [f64; 2], j1: [f64; 2], j1_rot: f64) -> String {
@@ -410,4 +414,28 @@ fn settled_labels_clear_the_silk_errors_of_a_fresh_placement() {
         .filter(|(_, m)| r.placements.iter().any(|q| m.starts_with(&format!("`{}`", q.reference))))
         .collect();
     assert!(labels.is_empty(), "{labels:#?}");
+}
+
+#[test]
+fn hot_parts_come_from_the_thermal_sims_of_the_layout() {
+    let pcb = placed([10.0, 10.0], [13.0, 10.0], [0.9, 20.0], 180.0);
+    let dir = small_dir("", &pcb);
+    let p = Project::load(&dir).unwrap();
+    assert!(rule(&p, "placement-hot-parts-close").is_empty());
+    std::fs::write(
+        dir.join("t-thermal.sim.toml"),
+        "name = \"t-thermal\"\nkind = \"thermal\"\nlayout = \"t\"\nambient = 25.0\n\n[[sources]]\nref = \"U1\"\npower = \"0.5W\"\n\n[[sources]]\nref = \"C1\"\npower = \"300mW\"\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    let hot = rule(&p, "placement-hot-parts-close");
+    assert_eq!(hot.len(), 1, "{hot:?}");
+    assert!(hot[0].1.contains("U1") && hot[0].1.contains("C1"), "{hot:?}");
+    std::fs::write(
+        dir.join("t-thermal.sim.toml"),
+        "name = \"t-thermal\"\nkind = \"thermal\"\nlayout = \"other\"\nambient = 25.0\n\n[[sources]]\nref = \"U1\"\npower = \"0.5W\"\n\n[[sources]]\nref = \"C1\"\npower = \"300mW\"\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    assert!(rule(&p, "placement-hot-parts-close").is_empty());
 }

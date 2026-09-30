@@ -117,6 +117,7 @@ pub struct Ctx<'a> {
     pub match_groups: &'a [MatchGroup],
     pub interfaces: &'a [Interface],
     pub test: Option<&'a crate::testpoint::TestSpec>,
+    pub heat: &'a [(String, f64)],
     found: &'a [Finding],
     items: OnceCell<Vec<Cu>>,
     grid: OnceCell<HashMap<(i64, i64), Vec<usize>>>,
@@ -209,6 +210,7 @@ impl<'a> Ctx<'a> {
             match_groups: &[],
             interfaces: &[],
             test: None,
+            heat: &[],
             found: &[],
             items: OnceCell::new(),
             grid: OnceCell::new(),
@@ -252,6 +254,11 @@ impl<'a> Ctx<'a> {
         self.pairs = pairs;
         self.match_groups = match_groups;
         self.interfaces = interfaces;
+        self
+    }
+
+    pub fn with_heat(mut self, heat: &'a [(String, f64)]) -> Ctx<'a> {
+        self.heat = heat;
         self
     }
 
