@@ -654,7 +654,11 @@ pub fn severity_of(board: &Board, rule: &Rule) -> Severity {
 }
 
 pub fn enabled(board: &Board, rule: &Rule) -> bool {
-    !board.drc.disable.iter().any(|d| d == rule.id)
+    id_enabled(board, rule.id)
+}
+
+pub fn id_enabled(board: &Board, id: &str) -> bool {
+    !board.drc.disable.iter().any(|d| d == id)
 }
 
 pub fn run(cx: &Ctx, d: &mut Diags) {

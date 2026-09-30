@@ -196,8 +196,10 @@ drc NAME` prints the layout's rule messages alone.
 
 ```toml
 [drc]                          # in the board file
-disable = ["silk-width"]       # rule ids to skip
+disable = ["silk-width"]       # rule ids to skip; their checks are not computed, so with silk-text
+                               # and silk-hidden off `agentee silk` has nothing to move
 severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
+tombstone_ratio = 3            # copper or feed width one chip pad may have over the other
 ```
 
 | id | severity | runs when | checks |
@@ -229,12 +231,12 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `mlcc-flex-zone-case` | info | ceramic capacitors | a ceramic capacitor of case 0805 (2012 metric) or larger within `flex_zone` of the outline, a board corner, a board cutout, a mounting hole (a `MountingHole*` footprint) or a non-plated hole of 2 mm or more (Knowles: the stress zone is typically within 5 mm of the PCB edge or fixing points); the longer the chip, the more strain its ends see |
 | `mlcc-flex-zone` | info | ceramic capacitors | a smaller ceramic capacitor within `flex_zone` whose long axis points at the nearest edge, corner or hole (Murata FAQ: orient the chip horizontal to the stress direction, so its long axis runs along the edge) |
 | `mlcc-flex-zone-info` | info | ceramic capacitors | counts the smaller ceramic capacitors within `flex_zone` that already lie along the edge |
-| `tombstone-risk` | info | chips of 0603 or smaller | a two-pad SMD part of 0603 (1608 metric) or smaller whose pads differ in size or shape, that has a via in one pad and not the other, or whose copper within 0.3 mm of one pad on its layer (tracks, vias, pours of its net) is over three times that of the other; the end that heats first wets first and stands the part up (EMS DFM guides: symmetric lands and balanced copper on both ends) |
-| `tall-part-shadow` | info | footprint heights over 3 mm | a two-pad chip of 0603 or smaller closer to a part taller than 3 mm than that part's height, measured from the chip's pads to the tall part's body (EMS rule of thumb 1:1: shadowing in reflow and inspection); heights come from the footprint `height`, parts without one are skipped |
+| `tombstone-risk` | info | chips of 0603 or smaller | a two-pad SMD part of 0603 (1608 metric) or smaller whose pads differ in size or shape, that has a via in one pad and not the other, or whose copper within 0.3 mm of one pad on its layer (tracks, vias, pours of its net) is over `tombstone_ratio` (default 3) times that of the other; a pad joined to its pour through a thermal relief is weighed by its spoke width against the track width on the other pad instead, and a pad with no track, via or pour yet is not compared; the end that heats first wets first and stands the part up (EMS DFM guides: symmetric lands and balanced copper on both ends) |
+| `tall-part-shadow` | info | part heights over 3 mm | a two-pad chip of 0603 or smaller closer to a part taller than 3 mm than that part's height, measured from the chip's pads to the tall part's body (EMS rule of thumb 1:1: shadowing in reflow and inspection); heights come from the footprint `height`, else the body the 3D view draws without a model: its family default (SOIC, QFN, headers, shields) or an `_h1.25mm` part of the name |
 | `test-access` | info | parts | nets the `[test]` section asks for with no probe access from the probe side: no pad of a test point (reference `TP1`..., or a footprint named `TestPoint*`), no exposed plated through-hole pad (`through_holes`), no untented via (`vias`). Nets in classes with an impedance target, and the nets of pairs, are exempt and named, since a stub hurts them |
 | `test-pad-geometry` | info | test points | a test point pad under `min_test_pad`, closer than `min_test_pad_pitch` to another centre to centre, closer than `min_test_pad_to_body` to another part's body on the probe side, closer than `min_test_pad_to_edge` to the board edge or a tooling hole (non-plated holes and mounting holes), or not on the probe side |
 | `short` | error | always | copper of two different nets touches |
-| `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
+| `clearance` | error | always | copper of two nets closer than the larger of their class clearances (a footprint `clearance` replaces them for its pads), or copper run into a non-plated hole |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
 | `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
 | `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
@@ -420,6 +422,8 @@ model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
 # mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
                                # window, so min_mask_web is not checked between its own pads
+# clearance = "0.2mm"          # as KiCad's footprint clearance: its pads keep this from other
+                               # copper instead of the net class clearance
 # overhang = true              # a connector meant to hang over the board edge: part-body-to-edge
                                # skips it, its SMD pads still keep min_part_to_edge
 # mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules
@@ -596,6 +600,10 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # clearance = 0.25             # default: the net class clearance
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
 # min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
+# pad_connection = "relief"    # solid (default) | relief: SMD pads of the net join the pour by four
+                               # spokes across a gap, so they heat like a track-fed pad
+# relief_gap = "0.3mm"         # default: the zone clearance
+# spoke_width = "0.3mm"        # default: the net class track width, at least min_width
 
 [[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin;
                                # a hole through the board is [[outline.cutouts]] in the board file

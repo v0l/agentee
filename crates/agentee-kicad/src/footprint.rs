@@ -414,6 +414,11 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
         model_scale: model_xyz(root, "scale", 1.0),
         height: None,
         mask_web: None,
+        clearance: root
+            .find("clearance")
+            .and_then(|c| c.num(0))
+            .filter(|c| *c > 0.0)
+            .map(Length::mm),
         overhang: false,
         mlcc: None,
         pads: collapse(pads),
@@ -455,5 +460,14 @@ mod tests {
         assert_eq!(fp.pads[1].count, Some(4));
         assert_eq!(fp.pads[1].pitch, Some(Point::mm(0.0, -1.27)));
         assert_eq!(fp.graphics.len(), 1);
+    }
+
+    #[test]
+    fn footprint_clearance_is_kept_and_pad_options_are_not_it() {
+        let src = "(footprint \"JP\" (clearance 0.2) (pad \"1\" smd custom (at 0 0) (size 0.3 0.3) (layers \"F.Cu\") (options (clearance outline))))";
+        let fp = convert(&parse(src).unwrap()).unwrap();
+        assert_eq!(fp.clearance, Some(Length::mm(0.2)));
+        let src = "(footprint \"R\" (pad \"1\" smd rect (at 0 0) (size 0.3 0.3) (layers \"F.Cu\") (clearance 0.3)))";
+        assert_eq!(convert(&parse(src).unwrap()).unwrap().clearance, None);
     }
 }

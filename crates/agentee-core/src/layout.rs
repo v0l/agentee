@@ -134,6 +134,20 @@ pub struct ZoneFile {
     pub priority: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_island_area: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad_connection: Option<PadConnection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relief_gap: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spoke_width: Option<Length>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PadConnection {
+    #[default]
+    Solid,
+    Relief,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -572,6 +586,35 @@ impl Shape {
                 .fold(f64::MAX, f64::min),
         }
     }
+}
+
+fn footprint_copper(p: &Placed, copper: &[String]) -> Vec<(String, Vec<Shape>)> {
+    let tf = p.transform();
+    let mut out: Vec<(String, Vec<Shape>)> = Vec::new();
+    for g in &p.footprint.graphics {
+        let layer = p.flip_layer(&g.layer);
+        if !copper.contains(&layer) || matches!(g.shape, crate::graphic::Shape::Text { .. }) {
+            continue;
+        }
+        let path: Vec<P> =
+            crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
+        let hw = g.width.to_mm() / 2.0;
+        let shapes: Vec<Shape> = if g.fill == crate::graphic::Fill::Solid && path.len() >= 3 {
+            vec![Shape::Poly(vec![path])]
+        } else if hw > 0.0 {
+            path.windows(2).map(|w| Shape::Seg(w[0], w[1], hw)).collect()
+        } else {
+            Vec::new()
+        };
+        if shapes.is_empty() {
+            continue;
+        }
+        match out.iter_mut().find(|(l, _)| *l == layer) {
+            Some((_, v)) => v.extend(shapes),
+            None => out.push((layer, shapes)),
+        }
+    }
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1176,6 +1219,13 @@ impl LayoutFile {
             }
         };
 
+        let rule_on = |id: &str| crate::drc::id_enabled(board, id);
+        let copper_rules = rule_on("short") || rule_on("clearance");
+        let min_clearance = board.rules.min_clearance.to_mm();
+        let footprint_clearance = |it: &Item| match it.owner {
+            Owner::Pad(pi, _) => parts[pi].footprint.clearance,
+            _ => None,
+        };
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1200,8 +1250,11 @@ impl LayoutFile {
                 if !grown.overlaps(&b.bounds) && !grown.contains(&b.bounds) {
                     continue;
                 }
-                let dist = a.shape.distance(&b.shape);
                 let same = a.net.is_some() && a.net == b.net;
+                if !same && !copper_rules {
+                    continue;
+                }
+                let dist = a.shape.distance(&b.shape);
                 if same {
                     if dist <= 1e-6 {
                         uf.union(i, j);
@@ -1217,7 +1270,10 @@ impl LayoutFile {
                     }
                     continue;
                 }
-                let need = clearance_of(a.net).max(clearance_of(b.net));
+                let need = match (footprint_clearance(a), footprint_clearance(b)) {
+                    (None, None) => clearance_of(a.net).max(clearance_of(b.net)),
+                    (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
+                };
                 if dist <= 1e-6 {
                     shorts.push(format!("{} touches {}", name_of(a), name_of(b)));
                 } else if dist + DRC_EPSILON < need {
@@ -1228,6 +1284,71 @@ impl LayoutFile {
                         name_of(b),
                         Length::mm(need)
                     ));
+                }
+            }
+        }
+        for (pi, p) in parts.iter().enumerate() {
+            for (layer, shapes) in footprint_copper(p, &copper) {
+                let mut cb = Bounds::EMPTY;
+                shapes.iter().for_each(|sh| cb.union(&sh.bounds()));
+                let near = |it: &Item| {
+                    let mut grown = cb;
+                    grown.add([cb.min[0] - max_clear, cb.min[1] - max_clear]);
+                    grown.add([cb.max[0] + max_clear, cb.max[1] + max_clear]);
+                    it.layers.contains(&layer)
+                        && (grown.overlaps(&it.bounds) || grown.contains(&it.bounds))
+                };
+                let gap = |it: &Item| {
+                    shapes.iter().map(|sh| sh.distance(&it.shape)).fold(f64::MAX, f64::min)
+                };
+                let own: Vec<usize> = (0..items.len())
+                    .filter(|&i| {
+                        matches!(items[i].owner, Owner::Pad(q, _) if q == pi)
+                            && near(&items[i])
+                            && gap(&items[i]) <= 1e-6
+                    })
+                    .collect();
+                for w in own.windows(2) {
+                    uf.union(w[0], w[1]);
+                }
+                let tie: Vec<usize> = own.iter().filter_map(|&i| items[i].net).collect();
+                let name = format!("{} copper on {layer}", p.reference);
+                for (j, it) in items.iter().enumerate() {
+                    let tied = it.net.is_some_and(|n| tie.contains(&n));
+                    if matches!(it.owner, Owner::Pad(q, _) if q == pi)
+                        || !(tied || copper_rules)
+                        || !near(it)
+                    {
+                        continue;
+                    }
+                    let dist = gap(it);
+                    if it.owner == Owner::Hole {
+                        if dist <= 0.0 {
+                            tight.push(format!("{name} runs into a hole"));
+                        }
+                        continue;
+                    }
+                    if tied {
+                        if dist <= 1e-6 {
+                            uf.union(own[0], j);
+                        }
+                        continue;
+                    }
+                    let need = tie
+                        .iter()
+                        .map(|&n| clearance_of(Some(n)))
+                        .fold(clearance_of(None), f64::max)
+                        .max(clearance_of(it.net));
+                    if dist <= 1e-6 {
+                        shorts.push(format!("{name} touches {}", name_of(it)));
+                    } else if dist + DRC_EPSILON < need {
+                        tight.push(format!(
+                            "{name} is {} from {}, needs {}",
+                            Length::mm(dist),
+                            name_of(it),
+                            Length::mm(need)
+                        ));
+                    }
                 }
             }
         }
@@ -1284,8 +1405,26 @@ impl LayoutFile {
                     d.error(&at, format!("`{layer}` is not a copper layer"));
                     continue;
                 }
-                let layer_cutouts: Vec<&Vec<P>> =
-                    cutouts.iter().filter(|(ls, _)| ls.contains(layer)).map(|(_, p)| p).collect();
+                let reliefs = if z.pad_connection.unwrap_or_default() == PadConnection::Relief {
+                    let min_width = z.min_width.map(Length::to_mm).unwrap_or(0.25);
+                    relief_cutouts(
+                        &items,
+                        &parts,
+                        net,
+                        layer,
+                        &poly,
+                        z.relief_gap.map(Length::to_mm).unwrap_or(clearance),
+                        z.spoke_width.map(Length::to_mm).unwrap_or(nets[net].width.max(min_width)),
+                    )
+                } else {
+                    Vec::new()
+                };
+                let layer_cutouts: Vec<&Vec<P>> = cutouts
+                    .iter()
+                    .filter(|(ls, _)| ls.contains(layer))
+                    .map(|(_, p)| p)
+                    .chain(&reliefs)
+                    .collect();
                 let (blockers, blocker_hashes): (Vec<&ZoneFill>, Vec<u64>) = zones
                     .iter()
                     .zip(&fill_keys)
@@ -1390,7 +1529,7 @@ impl LayoutFile {
             nets: nets.clone(),
             default_clearance,
         });
-        check_zones(&zones, &items, &nets, &clearance_of, &mut found);
+        check_zones(&zones, &items, &nets, &clearance_of, &rule_on, &mut found);
 
         let mut ratsnest = Vec::new();
         let mut stats: Vec<(usize, f64)> = Vec::new();
@@ -1465,6 +1604,7 @@ impl LayoutFile {
             &artwork,
             geom::BoardEdge::new(&outline, &board_cutouts),
             board.rules.min_silk_text_height.to_mm(),
+            &rule_on,
             &mut found,
         );
 
@@ -1902,14 +2042,21 @@ fn check_silk(
     artwork: &[Artwork],
     board_edge: geom::BoardEdge,
     min_height: f64,
+    rule_on: &dyn Fn(&str) -> bool,
     d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
     let mut fixes = Vec::new();
+    let artwork_on = rule_on("silk-artwork");
+    let height_on = rule_on("silk-text-height");
+    let texts_on = rule_on("silk-text") || rule_on("silk-hidden");
+    if !(artwork_on || height_on || texts_on) {
+        return fixes;
+    }
     let mut texts: Vec<SilkText> =
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
     texts.extend(board_texts(graphics));
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
-    for a in artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
+    for a in artwork.iter().filter(|a| artwork_on && a.layer.ends_with(".SilkS")) {
         let at = format!("silk {}", a.name);
         let cu = format!("{}.Cu", a.layer.trim_end_matches(".SilkS"));
         let over: Vec<String> = parts
@@ -1948,7 +2095,7 @@ fn check_silk(
     for (i, t) in texts.iter().enumerate() {
         let who = &t.owner;
         let at = format!("silk {who}");
-        if t.size + 1e-9 < min_height {
+        if height_on && t.size + 1e-9 < min_height {
             d.add(
                 "silk-text-height",
                 &at,
@@ -1959,6 +2106,9 @@ fn check_silk(
                     Length::mm(min_height)
                 ),
             );
+        }
+        if !texts_on {
+            continue;
         }
         let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, board_edge);
         if found.is_empty() {
@@ -2979,6 +3129,67 @@ fn arc_steps(r: f64) -> usize {
         .clamp(12, 180)
 }
 
+fn relief_cutouts(
+    items: &[Item],
+    parts: &[Placed],
+    net: usize,
+    layer: &str,
+    poly: &[P],
+    gap: f64,
+    spoke: f64,
+) -> Vec<Vec<P>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    use i_overlay::mesh::float::outline::offset::OutlineOffset;
+    use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+    let mut zone = Bounds::EMPTY;
+    poly.iter().for_each(|p| zone.add(*p));
+    let ccw = |mut r: Vec<P>| {
+        if geom::signed_area(&r) < 0.0 {
+            r.reverse();
+        }
+        r
+    };
+    let mut out = Vec::new();
+    for it in items {
+        let (Owner::Pad(pi, k), Shape::Poly(rings)) = (it.owner, &it.shape) else { continue };
+        let part = &parts[pi];
+        if it.net != Some(net)
+            || part.pads[k].kind != PadKind::Smd
+            || !it.layers.iter().any(|l| l == layer)
+            || !(zone.overlaps(&it.bounds) || zone.contains(&it.bounds))
+            || gap <= 0.0
+        {
+            continue;
+        }
+        let pad_rotation = part.footprint.pads.get(k).map(|f| f.rotation).unwrap_or(0.0);
+        let u = part.transform().direction(geom::rotate([1.0, 0.0], pad_rotation));
+        let v = [-u[1], u[0]];
+        let c = it.bounds.center();
+        let [w, h] = it.bounds.size();
+        let reach = w.max(h) + gap + 1.0;
+        let half = spoke / 2.0;
+        let bar = |d: P, n: P| {
+            ccw(vec![
+                [c[0] - d[0] * reach - n[0] * half, c[1] - d[1] * reach - n[1] * half],
+                [c[0] + d[0] * reach - n[0] * half, c[1] + d[1] * reach - n[1] * half],
+                [c[0] + d[0] * reach + n[0] * half, c[1] + d[1] * reach + n[1] * half],
+                [c[0] - d[0] * reach + n[0] * half, c[1] - d[1] * reach + n[1] * half],
+            ])
+        };
+        let pad: Vec<Vec<P>> = rings.iter().cloned().map(ccw).collect();
+        let step = 2.0 * (1.0 - 0.002f64.min(gap * 0.5) / gap).acos();
+        let ring = pad.outline(&OutlineStyle::new(gap).line_join(LineJoin::Round(step)));
+        let mut clip = pad;
+        clip.push(bar(u, v));
+        clip.push(bar(v, u));
+        let pieces = ring.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+        out.extend(pieces.into_iter().flatten().filter(|r| r.len() >= 3).map(ccw));
+    }
+    out
+}
+
 fn capsule(a: P, b: P, r: f64) -> Vec<P> {
     let n = arc_steps(r);
     let r = r / (std::f64::consts::PI / (n / 2 * 2) as f64).cos();
@@ -3524,9 +3735,19 @@ fn check_zones(
     items: &[Item],
     nets: &[LayoutNet],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
+    rule_on: &dyn Fn(&str) -> bool,
     d: &mut crate::drc::Findings,
 ) {
     const TOL: f64 = 3e-3;
+    let (tips_on, overlap_on, gap_on, clear_on) = (
+        rule_on("zone-tips"),
+        rule_on("zone-overlap"),
+        rule_on("zone-to-zone"),
+        rule_on("zone-clearance"),
+    );
+    if !(tips_on || overlap_on || gap_on || clear_on) {
+        return;
+    }
     let bins: Vec<EdgeBins> = zones.iter().map(|z| EdgeBins::new(&z.rings, 1.0)).collect();
     let bounds: Vec<Bounds> = zones.iter().map(|z| ring_bounds(&z.rings)).collect();
     let inside: Vec<index::Winding> = zones.iter().map(|z| index::Winding::new(&z.rings)).collect();
@@ -3536,7 +3757,7 @@ fn check_zones(
             continue;
         }
         let mut tips = Vec::new();
-        for r in &a.rings {
+        for r in a.rings.iter().filter(|_| tips_on) {
             let n = r.len();
             for k in 0..n {
                 let (p, q, s) = (r[(k + n - 1) % n], r[k], r[(k + 1) % n]);
@@ -3561,7 +3782,8 @@ fn check_zones(
             );
         }
         for (j, b) in zones.iter().enumerate().skip(i + 1) {
-            if a.layer != b.layer || a.net == b.net || b.rings.is_empty() {
+            if !(overlap_on || gap_on) || a.layer != b.layer || a.net == b.net || b.rings.is_empty()
+            {
                 continue;
             }
             let need = clearance_of(Some(a.net)).max(clearance_of(Some(b.net)));
@@ -3591,7 +3813,7 @@ fn check_zones(
                 continue;
             }
             let mut worst: Option<(f64, P)> = None;
-            for r in &a.rings {
+            for r in a.rings.iter().filter(|_| gap_on) {
                 for (p, q) in edges(r) {
                     let mut eb = Bounds::EMPTY;
                     eb.add(p);
@@ -3618,7 +3840,10 @@ fn check_zones(
         let mut hits = 0;
         let mut first: Option<(String, f64, P)> = None;
         for it in items.iter().filter(|it| {
-            it.net != Some(a.net) && it.owner != Owner::Hole && it.layers.contains(&a.layer)
+            clear_on
+                && it.net != Some(a.net)
+                && it.owner != Owner::Hole
+                && it.layers.contains(&a.layer)
         }) {
             let need = clearance_of(Some(a.net)).max(clearance_of(it.net)).max(it.pour_gap);
             let mut hit: Option<(f64, P)> = None;

@@ -741,6 +741,39 @@ fn small_chips_with_unbalanced_pads_risk_tombstoning() {
 }
 
 #[test]
+fn tombstone_weighs_a_thermal_relief_by_its_spokes_and_skips_unrouted_pads() {
+    let even = chip([0.96, 0.0], [0.56, 0.62]);
+    let fixture = |board: &str, pcb: &str| {
+        let p = load(&Fixture {
+            board,
+            footprints: &[("R_0402_1005Metric", even.as_str())],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb,
+            ..Default::default()
+        });
+        hits(&p, "tombstone-risk")
+    };
+    let relief = format!(
+        "{}\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\n\
+         outline = [[10.6, 9.85], [10.91, 9.85], [10.91, 8.0], [14.0, 8.0], [14.0, 12.0], [10.91, 12.0], [10.91, 10.15], [10.6, 10.15]]\n\
+         min_island_area = 0.0\n",
+        track("A", "F.Cu", "[[9.52, 10.0], [7.0, 10.0]]")
+    );
+    let t = fixture("", &relief);
+    assert!(t.is_empty(), "{t:?}");
+    let t = fixture("[drc]\ntombstone_ratio = 1.2\n", &relief);
+    assert!(
+        t.len() == 1
+            && t[0].1.contains("pad 2 is fed by 0.3mm of spokes and tracks and pad 1 by 0.2mm"),
+        "{t:?}"
+    );
+    let unrouted = "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\n\
+                    outline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\n";
+    let t = fixture("", unrouted);
+    assert!(t.is_empty(), "{t:?}");
+}
+
+#[test]
 fn small_chips_keep_a_tall_part_height_away() {
     let tall = format!("height = \"4mm\"\n{TWO_PADS}{FAB_BODY}");
     let small = chip([0.96, 0.0], [0.56, 0.62]);
@@ -763,6 +796,72 @@ fn small_chips_keep_a_tall_part_height_away() {
     );
     assert!(near(17.0, &tall).is_empty());
     assert!(near(13.3, &format!("{TWO_PADS}{FAB_BODY}")).is_empty());
+
+    let named = format!("{TWO_PADS}{FAB_BODY}");
+    let p = load(&Fixture {
+        footprints: &[("L_Big_h5.0mm", named.as_str()), ("R_0402_1005Metric", small.as_str())],
+        parts: &[("L1", "L_Big_h5.0mm", [10.0, 10.0]), ("R1", "R_0402_1005Metric", [13.3, 10.0])],
+        nets: &[],
+        ..Default::default()
+    });
+    let w = hits(&p, "tall-part-shadow");
+    assert!(w.len() == 1 && w[0].1.contains("from L1, which is 5mm tall"), "{w:?}");
+}
+
+#[test]
+fn disabled_silk_rules_skip_the_silk_text_search() {
+    let fp = format!(
+        "{}\n[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [0, -1.5]\ntext = \"${{REFERENCE}}\"\nsize = 1.0\n",
+        chip([0.96, 0.0], [0.56, 0.62])
+    );
+    let load_with = |board: &str| {
+        load(&Fixture {
+            board,
+            footprints: &[("R_0402_1005Metric", fp.as_str())],
+            parts: &[
+                ("R1", "R_0402_1005Metric", [10.0, 10.0]),
+                ("R2", "R_0402_1005Metric", [10.0, 10.3]),
+            ],
+            nets: &[],
+            ..Default::default()
+        })
+    };
+    let p = load_with("");
+    assert!(!hits(&p, "silk-text").is_empty());
+    assert!(!p.layouts[0].item.label_fixes.is_empty());
+    let p = load_with("[drc]\ndisable = [\"silk-text\", \"silk-hidden\"]\n");
+    assert!(hits(&p, "silk-text").is_empty());
+    assert!(p.layouts[0].item.label_fixes.is_empty());
+}
+
+#[test]
+fn a_relief_zone_joins_smd_pads_by_four_spokes() {
+    let fp = chip([0.96, 0.0], [0.56, 0.62]);
+    let zone = |extra: &str| {
+        format!(
+            "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\n{extra}"
+        )
+    };
+    let load_with = |pcb: &str| {
+        load(&Fixture {
+            footprints: &[("R_0402_1005Metric", fp.as_str())],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb,
+            ..Default::default()
+        })
+    };
+    let corner = [10.91, 10.46];
+    let p = load_with(&zone(""));
+    assert!(p.layouts[0].item.zones[0].filled(corner));
+    let p = load_with(&zone(
+        "pad_connection = \"relief\"\nrelief_gap = \"0.3mm\"\nspoke_width = \"0.3mm\"\n",
+    ));
+    let fill = &p.layouts[0].item.zones[0];
+    assert!(!fill.filled(corner));
+    assert!(fill.filled([10.91, 10.0]) && fill.filled([10.48, 10.46]));
+    assert!(fill.filled([11.4, 10.46]));
+    assert!(p.layouts[0].item.nets.iter().all(|n| n.unrouted == 0));
+    assert!(hits(&p, "starved-thermal").is_empty());
 }
 
 const SLOT: &str = "[[outline.cutouts]]\norigin = [14, 8]\nsize = [2, 4]\n";

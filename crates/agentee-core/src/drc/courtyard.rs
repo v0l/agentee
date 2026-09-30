@@ -45,8 +45,32 @@ fn courtyard_hole(cx: &Ctx, r: &mut Report) {
 struct Courtyard {
     part: usize,
     side: String,
-    poly: Vec<P>,
+    rings: Vec<Vec<P>>,
     bounds: Bounds,
+}
+
+fn nest_rings(rings: Vec<Vec<P>>) -> Vec<Vec<P>> {
+    let areas: Vec<f64> = rings.iter().map(|r| geom::signed_area(r).abs()).collect();
+    let depth = |i: usize| {
+        (0..rings.len())
+            .filter(|&j| {
+                j != i
+                    && areas[j] > areas[i]
+                    && rings[i].iter().all(|q| geom::point_in_polygon(*q, &rings[j]))
+            })
+            .count()
+    };
+    let depths: Vec<usize> = (0..rings.len()).map(depth).collect();
+    rings
+        .into_iter()
+        .zip(depths)
+        .map(|(mut r, d)| {
+            if (geom::signed_area(&r) > 0.0) != (d % 2 == 0) {
+                r.reverse();
+            }
+            r
+        })
+        .collect()
 }
 
 fn chain_loops(mut open: Vec<Vec<P>>) -> Vec<Vec<P>> {
@@ -110,11 +134,13 @@ fn courtyards_of(pi: usize, p: &Placed) -> Vec<Courtyard> {
     for side in ["F", "B"] {
         let layer = format!("{side}.CrtYd");
         let placed_side = p.flip_layer(&layer).trim_end_matches(".CrtYd").to_string();
-        for poly in outlines_on(p, &layer) {
-            let mut bounds = Bounds::EMPTY;
-            poly.iter().for_each(|q| bounds.add(*q));
-            out.push(Courtyard { part: pi, side: placed_side.clone(), poly, bounds });
+        let rings = outlines_on(p, &layer);
+        if rings.is_empty() {
+            continue;
         }
+        let mut bounds = Bounds::EMPTY;
+        rings.iter().flatten().for_each(|q| bounds.add(*q));
+        out.push(Courtyard { part: pi, side: placed_side, rings: nest_rings(rings), bounds });
     }
     out
 }
@@ -148,7 +174,7 @@ pub fn body_outlines(p: &Placed) -> (BodyFrom, Vec<Vec<P>>) {
     (BodyFrom::Pads, p.pads.iter().flat_map(|q| q.outlines.iter().cloned()).collect())
 }
 
-fn overlap_area(a: &[P], b: &[P]) -> f64 {
+fn overlap_area(a: &[Vec<P>], b: &[Vec<P>]) -> f64 {
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
     use i_overlay::float::single::SingleFloatOverlay;
@@ -172,6 +198,8 @@ const MIN_AREA: f64 = 1e-4;
 
 type Issue = (String, String);
 
+type Hole = (usize, String, Option<String>, Vec<Vec<P>>);
+
 fn courtyard_issues(parts: &[Placed], holes_too: bool) -> (Vec<Issue>, Vec<Issue>) {
     let (mut over, mut covers) = (Vec::new(), Vec::new());
     let courts: Vec<Courtyard> =
@@ -186,7 +214,7 @@ fn courtyard_issues(parts: &[Placed], holes_too: bool) -> (Vec<Issue>, Vec<Issue
             {
                 continue;
             }
-            let area = overlap_area(&a.poly, &b.poly);
+            let area = overlap_area(&a.rings, &b.rings);
             if area > MIN_AREA {
                 overlapping.push((a.part.min(b.part), a.part.max(b.part)));
                 over.push((
@@ -202,33 +230,43 @@ fn courtyard_issues(parts: &[Placed], holes_too: bool) -> (Vec<Issue>, Vec<Issue
     if !holes_too {
         return (over, covers);
     }
-    let mut holes: Vec<(usize, String, Option<String>, Vec<P>)> = Vec::new();
+    let mut holes: Vec<Hole> = Vec::new();
     for (pi, p) in parts.iter().enumerate() {
         if p.footprint_name.starts_with("MountingHole") {
             let own: Vec<&Courtyard> = courts.iter().filter(|c| c.part == pi).collect();
             if own.is_empty() {
                 for pad in p.pads.iter().filter(|q| q.drill.is_some()) {
                     for o in &pad.outlines {
-                        holes.push((pi, format!("mounting hole {}", p.reference), None, o.clone()));
+                        holes.push((
+                            pi,
+                            format!("mounting hole {}", p.reference),
+                            None,
+                            vec![o.clone()],
+                        ));
                     }
                 }
             }
             for c in own {
                 let name = format!("mounting hole {}", p.reference);
-                holes.push((pi, name, Some(c.side.clone()), c.poly.clone()));
+                holes.push((pi, name, Some(c.side.clone()), c.rings.clone()));
             }
             continue;
         }
         for pad in p.pads.iter().filter(|q| q.kind == PadKind::Npth) {
             for o in &pad.outlines {
-                holes.push((pi, format!("hole {}.{}", p.reference, pad.number), None, o.clone()));
+                holes.push((
+                    pi,
+                    format!("hole {}.{}", p.reference, pad.number),
+                    None,
+                    vec![o.clone()],
+                ));
             }
         }
     }
     let mut reported: Vec<(usize, usize)> = Vec::new();
     for (hp, name, side, poly) in &holes {
         let mut hb = Bounds::EMPTY;
-        poly.iter().for_each(|q| hb.add(*q));
+        poly.iter().flatten().for_each(|q| hb.add(*q));
         for c in &courts {
             let pair = (c.part.min(*hp), c.part.max(*hp));
             if c.part == *hp
@@ -239,7 +277,7 @@ fn courtyard_issues(parts: &[Placed], holes_too: bool) -> (Vec<Issue>, Vec<Issue
             {
                 continue;
             }
-            if overlap_area(&c.poly, poly) > MIN_AREA {
+            if overlap_area(&c.rings, poly) > MIN_AREA {
                 reported.push((c.part, *hp));
                 covers.push((
                     format!("part {}", parts[c.part].reference),

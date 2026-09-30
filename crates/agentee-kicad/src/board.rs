@@ -759,6 +759,17 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         if let Some(m) = z.find("min_thickness").and_then(|m| m.num(0)) {
             e.insert("min_width".into(), json!(mm(m)));
         }
+        if z.find("connect_pads").is_some_and(|c| c.arg(0).is_none()) {
+            e.insert("pad_connection".into(), json!("relief"));
+            let fill = z.find("fill");
+            let setting = |key: &str| fill.and_then(|f| f.find(key)).and_then(|g| g.num(0));
+            if let Some(g) = setting("thermal_gap") {
+                e.insert("relief_gap".into(), json!(mm(g)));
+            }
+            if let Some(w) = setting("thermal_bridge_width") {
+                e.insert("spoke_width".into(), json!(mm(w)));
+            }
+        }
         if let Some(p) = z.find("priority").and_then(|p| p.num(0)) {
             e.insert("priority".into(), json!(p as i64));
         }
@@ -994,6 +1005,27 @@ mod tests {
         assert_eq!(cutouts[1].points.as_ref().unwrap().len(), 48);
         assert!(b.layout.cutouts.is_empty());
         assert!(b.notes.iter().any(|n| n.contains("1 Edge.Cuts loops outside")), "{:?}", b.notes);
+    }
+
+    #[test]
+    fn thermal_zones_import_as_relief_and_solid_ones_stay_solid() {
+        let zone = |connect: &str| {
+            let text = BOARD.replacen(
+                "  (segment",
+                &format!(
+                    "  (zone (net 1) (net_name \"GND\") (layer \"F.Cu\") (connect_pads {connect}(clearance 0.2)) (min_thickness 0.25) (fill yes (thermal_gap 0.4) (thermal_bridge_width 0.3)) (polygon (pts (xy 0 0) (xy 20 0) (xy 20 20) (xy 0 20))))\n  (segment"
+                ),
+                1,
+            );
+            let b = import_board(&text, None, "t").unwrap();
+            b.layout.zones[0].clone()
+        };
+        let relief = zone("");
+        assert_eq!(relief.pad_connection, Some(agentee_core::layout::PadConnection::Relief));
+        assert_eq!(relief.relief_gap, Some(agentee_core::units::Length::mm(0.4)));
+        assert_eq!(relief.spoke_width, Some(agentee_core::units::Length::mm(0.3)));
+        let solid = zone("yes ");
+        assert_eq!(solid.pad_connection, None);
     }
 
     #[test]
