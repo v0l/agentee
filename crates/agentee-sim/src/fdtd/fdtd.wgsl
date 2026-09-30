@@ -163,15 +163,14 @@ fn update_e(@builtin(global_invocation_id) g: vec3<u32>) {
     curl_e(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
 }
 
-const SHEET: u32 = 12u;
+const SHEET: u32 = 16u;
 
 @compute @workgroup_size(64, 1, 1)
 fn sheet_pre(@builtin(global_invocation_id) g: vec3<u32>) {
     let s = g.x;
     if s >= P.sheets { return; }
     let b = s * SHEET;
-    sheet[b + 11u] = e[bitcast<u32>(sheet[b])];
-    if sheet[b + 6u] == 0.0 { return; }
+    sheet[b + 12u] = e[bitcast<u32>(sheet[b])];
     let ha = h_ro[bitcast<u32>(sheet[b + 1u])];
     let hb = h_ro[bitcast<u32>(sheet[b + 2u])];
     let aa = sheet[b + 7u] + ha * ha;
@@ -180,10 +179,18 @@ fn sheet_pre(@builtin(global_invocation_id) g: vec3<u32>) {
     sheet[b + 7u] = aa;
     sheet[b + 8u] = bb;
     sheet[b + 9u] = ab;
-    let total = aa + bb - 2.0 * ab;
-    if total > 1e-30 {
-        sheet[b + 10u] = clamp((aa + bb) / total, 0.5, 4.0);
+    let sum = aa + bb;
+    if sum <= 1e-30 { return; }
+    var scale = 1.0;
+    if sheet[b + 6u] != 0.0 {
+        scale = sheet[b + 10u] + sheet[b + 11u];
+        let total = aa + bb - 2.0 * ab;
+        if total > 1e-30 {
+            scale = clamp(sum / total, 0.5, 4.0);
+        }
     }
+    sheet[b + 10u] = scale * aa / sum;
+    sheet[b + 11u] = scale * bb / sum;
 }
 
 @compute @workgroup_size(64, 1, 1)
@@ -194,24 +201,44 @@ fn sheet_post(@builtin(global_invocation_id) g: vec3<u32>) {
     let f = bitcast<u32>(sheet[b]);
     let len = sheet[b + 3u];
     let c = sheet[b + 4u];
-    let y = sheet[b + 5u] / sheet[b + 10u];
-    let old = sheet[b + 11u];
-    let nb = u32(branch[0]);
-    let base = s * nb;
-    var s0 = 0.0;
-    var bsum = branch[1];
-    for (var k = 0u; k < nb; k++) {
-        let alpha = branch[2u + 2u * k];
-        s0 += 0.5 * (1.0 + alpha) * current[base + k];
-        bsum += branch[3u + 2u * k];
+    let r = sheet[b + 5u];
+    let ma = sheet[b + 10u];
+    let mb = sheet[b + 11u];
+    let old = sheet[b + 12u];
+    let i_old = sheet[b + 13u];
+    let nr = u32(branch[0]);
+    let nc = u32(branch[1]);
+    let stride = 2u + nr + 2u * nc;
+    let faces = 4u + 2u * nr + 4u * nc;
+    let fa = faces + bitcast<u32>(sheet[b + 14u]) * stride;
+    let fb = faces + bitcast<u32>(sheet[b + 15u]) * stride;
+    let base = s * (nr + 2u * nc);
+    var hist = (ma * branch[fa + 1u] + mb * branch[fb + 1u]) * i_old;
+    for (var k = 0u; k < nr; k++) {
+        hist -= (ma * branch[fa + 2u + k] + mb * branch[fb + 2u + k]) * current[base + k];
     }
-    let q = 0.5 * c * len * y * bsum;
-    let next = (e[f] - c * s0 - q * old) / (1.0 + q);
-    e[f] = next;
-    let v = len * (next + old);
-    for (var k = 0u; k < nb; k++) {
-        let alpha = branch[2u + 2u * k];
-        current[base + k] = alpha * current[base + k] + y * branch[3u + 2u * k] * v;
+    for (var k = 0u; k < nc; k++) {
+        let o = 2u + nr + 2u * k;
+        let cr = ma * branch[fa + o] + mb * branch[fb + o];
+        let ci = ma * branch[fa + o + 1u] + mb * branch[fb + o + 1u];
+        let u = base + nr + 2u * k;
+        hist -= cr * current[u] - ci * current[u + 1u];
+    }
+    let a = r * (ma * branch[fa] + mb * branch[fb]);
+    let ibar = (0.5 * len * (e[f] + old) + r * hist) / (a + 0.5 * len * c);
+    e[f] = e[f] - c * ibar;
+    sheet[b + 13u] = 2.0 * ibar - i_old;
+    for (var k = 0u; k < nr; k++) {
+        let p = 4u + 2u * k;
+        current[base + k] = branch[p] * current[base + k] + branch[p + 1u] * ibar;
+    }
+    for (var k = 0u; k < nc; k++) {
+        let p = 4u + 2u * nr + 4u * k;
+        let u = base + nr + 2u * k;
+        let ur = current[u];
+        let ui = current[u + 1u];
+        current[u] = branch[p] * ur - branch[p + 1u] * ui + branch[p + 2u] * ibar;
+        current[u + 1u] = branch[p] * ui + branch[p + 1u] * ur + branch[p + 3u] * ibar;
     }
 }
 

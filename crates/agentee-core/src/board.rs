@@ -52,6 +52,10 @@ pub struct StackupFile {
     pub roughness: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub huray: Option<HurayFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nickel: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gold: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<LayerFile>,
 }
@@ -408,6 +412,8 @@ pub struct Stackup {
     pub silk_color: String,
     pub roughness_um: Option<f64>,
     pub huray: Option<(f64, f64)>,
+    pub nickel_um: Option<f64>,
+    pub gold_um: Option<f64>,
     pub layers: Vec<Layer>,
 }
 
@@ -762,6 +768,8 @@ impl BoardFile {
             silk_color: s.silk_color.clone().unwrap_or_else(|| "white".into()),
             roughness_um: s.roughness.map(|r| r.to_mm() * 1e3),
             huray: s.huray.as_ref().map(|h| (h.radius.to_mm() * 1e3, h.ratio)),
+            nickel_um: s.nickel.map(|t| t.to_mm() * 1e3),
+            gold_um: s.gold.map(|t| t.to_mm() * 1e3),
             layers,
         }
     }

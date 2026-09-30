@@ -3,6 +3,7 @@ pub mod engine;
 pub mod model;
 pub mod ntff;
 pub mod run;
+pub mod surface;
 
 use agentee_core::sim::SimResult;
 use engine::Sim;
@@ -425,6 +426,7 @@ mod tests {
             features_y: vec![-w / 2.0, w / 2.0],
             region: None,
             roughness: Default::default(),
+            plating: None,
         };
         tweak(&mut m);
         let excite = if both { vec![0, 1] } else { vec![0] };

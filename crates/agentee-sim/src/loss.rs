@@ -1,6 +1,7 @@
 use crate::gpu::gpu;
 use crate::xsection::{self, Grid, Resolution, Stack, Trace};
 use agentee_core::board::Board;
+use agentee_core::rf::Cx;
 use serde::Serialize;
 use std::f64::consts::PI;
 
@@ -8,9 +9,11 @@ pub const EPS0: f64 = 8.854_187_812_8e-12;
 pub const MU0: f64 = 1.256_637_062_12e-6;
 pub const C0: f64 = 299_792_458.0;
 pub const COPPER: f64 = 1.7241e-8;
+pub const GOLD: f64 = 2.44e-8;
+pub const NICKEL: f64 = 1.0e-7;
 pub const REFERENCE_HZ: f64 = 1e9;
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct Roughness {
     pub rms_um: Option<f64>,
     pub huray_radius_um: Option<f64>,
@@ -29,6 +32,93 @@ impl Roughness {
             None => 1.0,
         }
     }
+
+    pub fn causal(&self, s: Cx) -> Cx {
+        if let (Some(a), Some(sr)) = (self.huray_radius_um, self.huray_ratio) {
+            let a = a * 1e-6;
+            let q = csqrt(s * (MU0 * a * a / COPPER));
+            return Cx::ONE + q / (Cx::ONE + q) * (1.5 * sr);
+        }
+        match self.rms_um {
+            Some(r) => {
+                let r = r * 1e-6;
+                let x = s * (0.7 * MU0 * r * r / COPPER);
+                let q = csqrt(x);
+                let k = cln(Cx::ONE + q * 2.0 / (Cx::ONE + x)) + catan(q) * 2.0;
+                Cx::ONE + k * (1.0 / PI)
+            }
+            None => Cx::ONE,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+pub struct Enig {
+    pub nickel_um: f64,
+    pub gold_um: f64,
+}
+
+impl Default for Enig {
+    fn default() -> Self {
+        Enig { nickel_um: 4.5, gold_um: 0.075 }
+    }
+}
+
+pub fn nickel_permeability(s: Cx) -> Cx {
+    let (low, high, f0, damping) = (6.0, 2.0, 2.6e9, 0.18);
+    let w0 = 2.0 * PI * f0;
+    let g = damping * w0;
+    let num = Cx::new(w0 * w0, 0.0) + s * g;
+    let den = Cx::new(w0 * w0, 0.0) + s * (2.0 * g) + s * s;
+    Cx::new(high, 0.0) + num / den * (low - high)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Face {
+    Copper(Roughness),
+    Enig(Enig),
+}
+
+pub fn surface_impedance(face: Face, copper_m: f64, s: Cx) -> Cx {
+    let slab = metal_layer(None, COPPER, Cx::ONE, copper_m, s);
+    match face {
+        Face::Copper(r) => slab * r.causal(s),
+        Face::Enig(e) => {
+            let ni = metal_layer(Some(slab), NICKEL, nickel_permeability(s), e.nickel_um * 1e-6, s);
+            metal_layer(Some(ni), GOLD, Cx::ONE, e.gold_um * 1e-6, s)
+        }
+    }
+}
+
+fn metal_layer(load: Option<Cx>, rho: f64, mu: Cx, d: f64, s: Cx) -> Cx {
+    let eta = csqrt(s * mu * (MU0 * rho));
+    let t = ctanh(csqrt(s * mu * (MU0 / rho)) * d);
+    match load {
+        None => eta / t,
+        Some(z) => eta * (z + eta * t) / (eta + z * t),
+    }
+}
+
+pub fn csqrt(z: Cx) -> Cx {
+    let m = z.abs();
+    let re = ((m + z.re) / 2.0).max(0.0).sqrt();
+    let im = ((m - z.re) / 2.0).max(0.0).sqrt();
+    Cx::new(re, if z.im < 0.0 { -im } else { im })
+}
+
+fn cln(z: Cx) -> Cx {
+    Cx::new(z.abs().ln(), z.im.atan2(z.re))
+}
+
+fn ctanh(z: Cx) -> Cx {
+    let m = (-2.0 * z.re).exp();
+    let e = Cx::new(m * (-2.0 * z.im).cos(), m * (-2.0 * z.im).sin());
+    (Cx::ONE - e) / (Cx::ONE + e)
+}
+
+fn catan(z: Cx) -> Cx {
+    let i = Cx::new(0.0, 1.0);
+    (cln(Cx::ONE - i * z) - cln(Cx::ONE + i * z)) * i * 0.5
 }
 
 pub fn djordjevic_sarkar(er: f64, tan: f64, f_ref: f64, f: f64) -> (f64, f64) {
@@ -287,6 +377,58 @@ mod tests {
             Roughness { huray_radius_um: Some(0.5), huray_ratio: Some(2.0), ..Default::default() };
         assert!((h.factor(1e-12) - 4.0).abs() < 1e-3);
         assert!((h.factor(1.0) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn causal_roughness_matches_dmitriev_zdorov_and_simonovich_table_1() {
+        let rms = 1.0;
+        let r = Roughness { rms_um: Some(rms), ..Default::default() };
+        for x in [0.01f64, 0.3, 1.0, 2.0, 10.0, 300.0] {
+            let w = x * COPPER / (0.7 * MU0 * (rms * 1e-6).powi(2));
+            let k = r.causal(Cx::new(0.0, w)) - Cx::ONE;
+            let loss = 2.0 / PI * x.atan();
+            let q = (2.0 * x).sqrt();
+            let inductance = (((1.0 + q + x) / (1.0 - q + x)).ln() + 2.0 * q.atan2(1.0 - x)
+                - 2.0 * x.atan())
+                / PI;
+            assert!((k.re - k.im - loss).abs() < 1e-12, "{x}: {} vs {loss}", k.re - k.im);
+            assert!((k.re + k.im - inductance).abs() < 1e-12, "{x}: {} {inductance}", k.re + k.im);
+            let skin = (2.0 * COPPER / (w * MU0)).sqrt();
+            let smooth = Cx::new(1.0, 1.0) * r.causal(Cx::new(0.0, w));
+            assert!((smooth.re - r.factor(skin)).abs() < 1e-12);
+        }
+        let h =
+            Roughness { huray_radius_um: Some(0.5), huray_ratio: Some(2.0), ..Default::default() };
+        for f in [1e8, 1e9, 1e10, 1e11] {
+            let w = 2.0 * PI * f;
+            let skin = (2.0 * COPPER / (w * MU0)).sqrt();
+            let got = (Cx::new(1.0, 1.0) * h.causal(Cx::new(0.0, w))).re;
+            assert!((got - h.factor(skin)).abs() < 1e-12, "{f}: {got} {}", h.factor(skin));
+        }
+    }
+
+    #[test]
+    fn enig_face_reduces_to_its_metals_in_the_limits() {
+        let s = |f: f64| Cx::new(0.0, 2.0 * PI * f);
+        for f in [1e8, 2.6e9, 4e10] {
+            let cu = csqrt(s(f) * (MU0 * COPPER));
+            let bare = Enig { nickel_um: 0.0, gold_um: 0.0 };
+            let z = surface_impedance(Face::Enig(bare), 1e-3, s(f));
+            assert!((z - cu).abs() / cu.abs() < 1e-9, "{f}");
+            let thick = Enig { nickel_um: 1000.0, gold_um: 0.0 };
+            let ni = csqrt(s(f) * nickel_permeability(s(f)) * (MU0 * NICKEL));
+            let z = surface_impedance(Face::Enig(thick), 1e-3, s(f));
+            assert!((z - ni).abs() / ni.abs() < 1e-9, "{f}");
+            let rough = Roughness { rms_um: Some(2.0), ..Default::default() };
+            let z = surface_impedance(Face::Copper(rough), 1e-3, s(f));
+            assert!((z - cu * rough.causal(s(f))).abs() / cu.abs() < 1e-9);
+        }
+        let dc = surface_impedance(Face::Copper(Roughness::default()), 35e-6, s(1.0));
+        assert!((dc.re / (COPPER / 35e-6) - 1.0).abs() < 1e-6, "{dc:?}");
+        let mu = nickel_permeability(Cx::ZERO);
+        assert!((mu.re - 6.0).abs() < 1e-12 && mu.im.abs() < 1e-12);
+        let mu = nickel_permeability(s(1e14));
+        assert!((mu.re - 2.0).abs() < 1e-3);
     }
 
     #[test]

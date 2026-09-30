@@ -1,10 +1,12 @@
 use super::edge;
 use super::engine::{self, Edge, Element, Grid, Lumped, Materials, PortDef, Sim};
+use super::surface::Surface;
 use crate::xsection::lines;
 use agentee_core::board::{Board, LayerKind};
 use agentee_core::geom::{self, P};
 use agentee_core::graphic::Bounds;
 use agentee_core::layout::{Layout, ZoneFill};
+use agentee_core::rf::Cx;
 use agentee_core::sim::{Model, Sim as Spec};
 
 #[derive(Clone, Debug)]
@@ -167,6 +169,54 @@ pub struct PcbModel {
     pub features_y: Vec<f64>,
     pub region: Option<[f64; 4]>,
     pub roughness: crate::loss::Roughness,
+    pub plating: Option<Plating>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Exposure {
+    Covered,
+    All,
+    Pads(Vec<Vec<P>>),
+}
+
+struct Bare<'a> {
+    all: bool,
+    pads: Vec<(Bounds, &'a [P])>,
+}
+
+impl Bare<'_> {
+    fn new(e: &Exposure) -> Bare<'_> {
+        let pads = match e {
+            Exposure::Pads(v) => v
+                .iter()
+                .map(|o| {
+                    let mut b = Bounds::EMPTY;
+                    o.iter().for_each(|q| b.add(*q));
+                    (b, &o[..])
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        Bare { all: matches!(e, Exposure::All), pads }
+    }
+
+    fn contains(&self, p: P) -> bool {
+        self.all
+            || self.pads.iter().any(|(b, o)| {
+                p[0] >= b.min[0]
+                    && p[0] <= b.max[0]
+                    && p[1] >= b.min[1]
+                    && p[1] <= b.max[1]
+                    && geom::point_in_polygon(p, o)
+            })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Plating {
+    pub enig: crate::loss::Enig,
+    pub top: Exposure,
+    pub bottom: Exposure,
 }
 
 pub struct Meshing {
@@ -175,6 +225,40 @@ pub struct Meshing {
     pub margin: f64,
     pub pml: usize,
     pub f0: f64,
+}
+
+fn plating(layout: &Layout, board: &Board, sheets: &[Sheet]) -> Option<Plating> {
+    let st = &board.stackup;
+    if !st.finish.eq_ignore_ascii_case("ENIG") || sheets.is_empty() {
+        return None;
+    }
+    let first = st.layers.iter().position(|l| l.kind == LayerKind::Copper)?;
+    let last = st.layers.iter().rposition(|l| l.kind == LayerKind::Copper)?;
+    let masked =
+        |range: &[agentee_core::board::Layer]| range.iter().any(|l| l.kind == LayerKind::Mask);
+    let side = |masked: bool, sheet: &str| {
+        if !masked {
+            return Exposure::All;
+        }
+        Exposure::Pads(
+            layout
+                .parts
+                .iter()
+                .flat_map(|p| &p.pads)
+                .filter(|pad| pad.copper.iter().any(|l| l == sheet))
+                .flat_map(|pad| pad.outlines.iter().cloned())
+                .collect(),
+        )
+    };
+    let defaults = crate::loss::Enig::default();
+    Some(Plating {
+        enig: crate::loss::Enig {
+            nickel_um: st.nickel_um.unwrap_or(defaults.nickel_um),
+            gold_um: st.gold_um.unwrap_or(defaults.gold_um),
+        },
+        top: side(masked(&st.layers[..first]), &sheets[0].name),
+        bottom: side(masked(&st.layers[last + 1..]), &sheets[sheets.len() - 1].name),
+    })
 }
 
 pub fn stack(board: &Board) -> (Vec<Sheet>, Vec<Dielectric>) {
@@ -341,6 +425,7 @@ impl PcbModel {
                 m.vias.push((v.at, v.drill / 2.0, *a, *b));
             }
         }
+        m.plating = plating(layout, board, &sheets);
         for z in &layout.zones {
             if let Some(s) = sheet(&z.layer) {
                 for ring in &z.rings {
@@ -564,11 +649,7 @@ impl PcbModel {
         let f = opt.f0.max(1e6);
         let pi = std::f64::consts::PI;
         let rs = (pi * f * engine::MU0 * crate::loss::COPPER).sqrt();
-        let skin = (crate::loss::COPPER / (pi * f * engine::MU0)).sqrt();
-        self.sheets
-            .iter()
-            .map(|s| if s.thickness > 0.0 { rs * self.roughness.factor(skin) } else { 0.0 })
-            .collect()
+        self.sheets.iter().map(|s| if s.thickness > 0.0 { rs } else { 0.0 }).collect()
     }
 
     pub fn build(&self, opt: &Meshing) -> Result<Sim, String> {
@@ -715,7 +796,26 @@ impl PcbModel {
             lumped.push(Lumped { name: e.name.clone(), edges, element: e.element });
         }
         let in_pml = |i: usize, len: usize| i < grid.pml || i + 1 + grid.pml >= len;
-        let mut resistive: Vec<(usize, usize, f64, bool)> = Vec::new();
+        let (face_list, sheet_faces) = self.faces();
+        let covered = Exposure::Covered;
+        let top = Bare::new(self.plating.as_ref().map_or(&covered, |p| &p.top));
+        let bottom = Bare::new(self.plating.as_ref().map_or(&covered, |p| &p.bottom));
+        let last = self.sheets.len().saturating_sub(1);
+        let faces_at = |s: usize, comp: usize, i: usize, j: usize| -> [usize; 2] {
+            let [rough, bare] = sheet_faces[s];
+            if bare == rough {
+                return [rough, rough];
+            }
+            let p = if comp == 0 {
+                [0.5 * (grid.x[i] + grid.x[i + 1]), grid.y[j]]
+            } else {
+                [grid.x[i], 0.5 * (grid.y[j] + grid.y[j + 1])]
+            };
+            let above = if s == 0 && top.contains(p) { bare } else { rough };
+            let below = if s == last && s > 0 && bottom.contains(p) { bare } else { rough };
+            [above, below]
+        };
+        let mut resistive: Vec<engine::Resistive> = Vec::new();
         for (s, rs) in self.sheet_ohms(opt).into_iter().enumerate() {
             if rs <= 0.0 {
                 continue;
@@ -752,10 +852,14 @@ impl PcbModel {
                         };
                         let along = along_axis[a + 1] - along_axis[a];
                         let id = engine::idx(n, i, j, k);
+                        let faces = faces_at(s, comp, i, j);
+                        let mut push = |r: f64, adaptive: bool| {
+                            resistive.push(engine::Resistive { comp, id, r, adaptive, faces })
+                        };
                         let (before, after) = (run(-1), run(1));
                         if before == 0 && after == 0 {
                             let across = across_axis[c + 1] - across_axis[c];
-                            resistive.push((comp, id, rs * along / across, true));
+                            push(rs * along / across, true);
                             continue;
                         }
                         let (band, inward) =
@@ -769,17 +873,17 @@ impl PcbModel {
                         };
                         let r0 = rs * along / dual;
                         if band >= edge::BANDS || before.min(after) >= edge::BANDS {
-                            resistive.push((comp, id, r0, true));
+                            push(r0, true);
                             continue;
                         }
                         let w = edge::weights(d, dz_above, dz_below, thick);
-                        resistive.push((comp, id, r0 * w.bands[band], band > 0));
+                        push(r0 * w.bands[band], band > 0);
                     }
                 }
             }
         }
         let resistive_set: std::collections::HashSet<(usize, usize)> =
-            resistive.iter().map(|(c, id, _, _)| (*c, *id)).collect();
+            resistive.iter().map(|r| (r.comp, r.id)).collect();
         let lumped_edges: std::collections::HashSet<(usize, [usize; 3])> =
             lumped.iter().flat_map(|l| l.edges.iter().map(|e| (e.comp, e.at))).collect();
         let sheet_of_k: Vec<Option<usize>> =
@@ -816,10 +920,29 @@ impl PcbModel {
             0.0
         };
         let omega0 = 2.0 * pi * opt.f0.max(1e6);
-        let band = engine::SkinBand {
-            omega0,
-            x_min: (omega0 / 1000.0).max(dc),
-            x_max: 2.0 * pi * opt.f_max.max(opt.f0) * 100.0,
+        let (lo, hi) = ((omega0 / 1000.0).max(dc), 2.0 * pi * opt.f_max.max(opt.f0) * 100.0);
+        let surface = if face_list.is_empty() {
+            Surface { scale: omega0, ..Default::default() }
+        } else {
+            let decades = (hi / lo).log10();
+            let samples = (40.0 * decades).ceil() as usize + 1;
+            let omega: Vec<f64> = (0..samples)
+                .map(|k| lo * (hi / lo).powf(k as f64 / (samples - 1) as f64))
+                .collect();
+            let rs0 = (0.5 * omega0 * engine::MU0 * crate::loss::COPPER).sqrt();
+            let targets: Vec<Vec<Cx>> = face_list
+                .iter()
+                .map(|(face, t)| {
+                    omega
+                        .iter()
+                        .map(|w| {
+                            crate::loss::surface_impedance(*face, *t, Cx::new(0.0, *w))
+                                * (1.0 / rs0)
+                        })
+                        .collect()
+                })
+                .collect();
+            Surface::fit(&targets, &omega, omega0, 4 * decades.ceil() as usize)
         };
         Ok(Sim::new(
             metres,
@@ -828,8 +951,42 @@ impl PcbModel {
             &lumped,
             ports,
             &resistive,
-            engine::Media { skin: band, debye },
+            engine::Media { surface, debye },
         ))
+    }
+
+    fn faces(&self) -> (Vec<(crate::loss::Face, f64)>, Vec<[usize; 2]>) {
+        let mut list: Vec<(crate::loss::Face, f64)> = Vec::new();
+        let mut index = |face: crate::loss::Face, t: f64| {
+            if let Some(i) = list.iter().position(|x| x.0 == face && x.1 == t) {
+                return i;
+            }
+            list.push((face, t));
+            list.len() - 1
+        };
+        let last = self.sheets.len().saturating_sub(1);
+        let per_sheet = self
+            .sheets
+            .iter()
+            .enumerate()
+            .map(|(s, sh)| {
+                if sh.thickness <= 0.0 {
+                    return [0, 0];
+                }
+                let t = sh.thickness * 1e-3;
+                let rough = index(crate::loss::Face::Copper(self.roughness), t);
+                let outer = match &self.plating {
+                    Some(p) if s == 0 && !matches!(p.top, Exposure::Covered) => Some(p.enig),
+                    Some(p) if s == last && s > 0 && !matches!(p.bottom, Exposure::Covered) => {
+                        Some(p.enig)
+                    }
+                    _ => None,
+                };
+                let bare = outer.map_or(rough, |e| index(crate::loss::Face::Enig(e), t));
+                [rough, bare]
+            })
+            .collect();
+        (list, per_sheet)
     }
 }
 

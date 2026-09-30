@@ -1,3 +1,5 @@
+use super::surface::Surface;
+
 pub const C0: f64 = 299_792_458.0;
 pub const EPS0: f64 = 8.854_187_812_8e-12;
 pub const MU0: f64 = 1.256_637_062_12e-6;
@@ -219,7 +221,7 @@ pub struct Sim {
     pub port_src: Vec<Vec<(usize, usize, f32)>>,
     pub inductors: Vec<(usize, usize, f32, f32)>,
     pub sheets: Vec<SheetEdge>,
-    pub skin: Skin,
+    pub surface: Surface,
     pub debye: Debye,
     pub debye_edges: Vec<(usize, usize, f64)>,
 }
@@ -230,54 +232,18 @@ pub struct SheetEdge {
     pub id: usize,
     pub r: f64,
     pub adaptive: bool,
+    pub faces: [usize; 2],
     pub len: f64,
     pub c: f64,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Skin {
-    pub branches: Vec<(f64, f64)>,
-    pub g: f64,
-}
-
 #[derive(Clone, Copy, Debug)]
-pub struct SkinBand {
-    pub omega0: f64,
-    pub x_min: f64,
-    pub x_max: f64,
-}
-
-pub fn skin_poles(x_min: f64, x_max: f64) -> (Vec<(f64, f64)>, f64) {
-    let span = (x_max / x_min).ln();
-    let n = (span / 0.6).ceil().max(1.0) as usize;
-    let h = span / n as f64;
-    let pi = std::f64::consts::PI;
-    let poles = (0..=n)
-        .map(|k| {
-            let x = x_min * (k as f64 * h).exp();
-            let mut w = if k == 0 || k == n { 0.5 * h } else { h } * x.sqrt() / pi;
-            if k == 0 {
-                w += 2.0 * x_min.sqrt() / pi;
-            }
-            (x, w)
-        })
-        .collect();
-    (poles, 2.0 / (pi * x_max.sqrt()))
-}
-
-impl Skin {
-    fn new(band: SkinBand, dt: f64) -> Skin {
-        let (poles, g) = skin_poles(band.x_min, band.x_max);
-        let scale = (0.5 * band.omega0).sqrt();
-        let branches = poles
-            .into_iter()
-            .map(|(x, w)| {
-                let d = 1.0 + 0.5 * x * dt;
-                ((1.0 - 0.5 * x * dt) / d, scale * w * dt / (2.0 * d))
-            })
-            .collect();
-        Skin { branches, g: scale * g }
-    }
+pub struct Resistive {
+    pub comp: usize,
+    pub id: usize,
+    pub r: f64,
+    pub adaptive: bool,
+    pub faces: [usize; 2],
 }
 
 pub struct Materials {
@@ -288,7 +254,7 @@ pub struct Materials {
 }
 
 pub struct Media {
-    pub skin: SkinBand,
+    pub surface: Surface,
     pub debye: Debye,
 }
 
@@ -359,10 +325,10 @@ impl Sim {
         pec: &dyn Fn(usize, [usize; 3]) -> bool,
         lumped: &[Lumped],
         ports: Vec<PortDef>,
-        resistive: &[(usize, usize, f64, bool)],
+        resistive: &[Resistive],
         media: Media,
     ) -> Sim {
-        let Media { skin: band, debye } = media;
+        let Media { surface, debye } = media;
         let dt = time_step(&grid);
         let pml = grid.pml;
         let ax = [axis(&grid.x, pml, dt), axis(&grid.y, pml, dt), axis(&grid.z, pml, dt)];
@@ -465,8 +431,8 @@ impl Sim {
                 excluded.insert((e.comp, idx(n, e.at[0], e.at[1], e.at[2])));
             }
         }
-        for (comp, id, _, _) in resistive {
-            excluded.insert((*comp, *id));
+        for r in resistive {
+            excluded.insert((r.comp, r.id));
         }
         let half_g: f64 =
             debye.poles.iter().map(|(x, a)| a * x * dt / (1.0 + 0.5 * x * dt)).sum::<f64>() * 0.5;
@@ -497,18 +463,18 @@ impl Sim {
             resistor(&mut ca, &mut cb, &Edge { comp: *comp, at }, *r);
         }
         let mut sheets = Vec::new();
-        for (comp, id, r, adaptive) in resistive {
-            let e = Edge { comp: *comp, at: unidx(n, *id) };
+        for s in resistive {
+            let e = Edge { comp: s.comp, at: unidx(n, s.id) };
             sheets.push(SheetEdge {
-                comp: *comp,
-                id: *id,
-                r: *r,
-                adaptive: *adaptive,
+                comp: s.comp,
+                id: s.id,
+                r: s.r,
+                adaptive: s.adaptive,
+                faces: s.faces,
                 len: length(&e),
-                c: cb[*comp][*id] as f64 / area(&e),
+                c: cb[s.comp][s.id] as f64 / area(&e),
             });
         }
-        let skin = Skin::new(band, dt);
         let mut port_src = Vec::new();
         for p in &ports {
             let cols = p.columns.len().max(1) as f64;
@@ -545,7 +511,7 @@ impl Sim {
             port_src,
             inductors,
             sheets,
-            skin,
+            surface,
             debye,
             debye_edges,
         }
@@ -579,23 +545,6 @@ mod tests {
             let (want_re, want_tan) = crate::loss::djordjevic_sarkar(3.5, 0.004, 2e9, f);
             assert!((im / re / want_tan - 1.0).abs() < 0.03, "{f}: tan {} vs {want_tan}", im / re);
             assert!((re - want_re).abs() < 0.01, "{f}: er {re} vs {want_re}");
-        }
-    }
-
-    #[test]
-    fn skin_poles_follow_one_over_root_s() {
-        let (poles, g) = skin_poles(1e6, 1e13);
-        for w in [2e7, 1e9, 3e10, 5e11] {
-            let mut y = (g, 0.0);
-            for (x, a) in &poles {
-                let d = x * x + w * w;
-                y.0 += a * x / d;
-                y.1 -= a * w / d;
-            }
-            let exact = (1.0 / (2.0 * w).sqrt(), -1.0 / (2.0 * w).sqrt());
-            let err = ((y.0 - exact.0).powi(2) + (y.1 - exact.1).powi(2)).sqrt()
-                / (exact.0.powi(2) + exact.1.powi(2)).sqrt();
-            assert!(err < 0.01, "{w}: {y:?} vs {exact:?}");
         }
     }
 }

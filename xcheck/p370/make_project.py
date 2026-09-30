@@ -96,6 +96,8 @@ size = [{fmt(length)}, 18.009]
 
 [stackup]
 finish = "ENIG"
+gold = "0.075um"
+roughness = "2.8um"
 mask_color = "none"
 
 [[stackup.layers]]

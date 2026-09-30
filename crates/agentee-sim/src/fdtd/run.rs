@@ -116,10 +116,8 @@ pub fn run(
         inductor.extend_from_slice(&[*comp as f32, *id as f32, *ke, *ki, 0.0]);
     }
     let mut sheets = Vec::new();
-    let mut branches = vec![sim.skin.branches.len() as f32, sim.skin.g as f32];
-    for (a, b) in &sim.skin.branches {
-        branches.extend_from_slice(&[*a as f32, *b as f32]);
-    }
+    let branches = sim.surface.sheet_table(sim.dt);
+    let states = sim.surface.real.len() + 2 * sim.surface.pairs.len();
     for s in &sim.sheets {
         let (hc, ok) = match s.comp {
             0 => (1usize, true),
@@ -136,16 +134,20 @@ pub fn run(
             bits(hc * nn + s.id - 1),
             s.len as f32,
             s.c as f32,
-            (1.0 / s.r) as f32,
+            s.r as f32,
             if s.adaptive { 1.0 } else { 0.0 },
             0.0,
             0.0,
             0.0,
-            1.0,
+            0.5,
+            0.5,
             0.0,
+            0.0,
+            bits(s.faces[0]),
+            bits(s.faces[1]),
         ]);
     }
-    let sheet_count = sheets.len() / 12;
+    let sheet_count = sheets.len() / 16;
     let mut debye_edges = Vec::with_capacity(sim.debye_edges.len() * 3);
     for (c, id, dd) in &sim.debye_edges {
         debye_edges.extend_from_slice(&[f32::from_bits((c * nn + id) as u32), *dd as f32, 0.0]);
@@ -278,8 +280,7 @@ pub fn run(
     let b_debye_table = g.storage("debye_table", &debye_table);
     let b_debye_state =
         g.zeroed("debye_state", ((debye_count * sim.debye.poles.len()).max(1) * 4) as u64);
-    let b_currents =
-        g.zeroed("currents", ((sheet_count * sim.skin.branches.len()).max(1) * 4) as u64);
+    let b_currents = g.zeroed("currents", ((sheet_count * states).max(1) * 4) as u64);
     let module = unsafe {
         g.device.create_shader_module_trusted(
             wgpu::ShaderModuleDescriptor {

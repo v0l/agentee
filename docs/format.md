@@ -282,7 +282,15 @@ Copper roughness is set on the stackup:
 [stackup]
 roughness = "0.5um"            # rms, Hammerstad-Jensen
 # huray = { radius = "0.5um", ratio = 2.0 }   # or the Huray snowball model
+finish = "ENIG"
+nickel = "4.5um"               # ENIG nickel thickness, default 4.5 um
+gold = "0.075um"               # ENIG immersion gold thickness, default 0.075 um
 ```
+
+The 2D solver applies the roughness as a loss factor on the resistance at each frequency. The
+FDTD uses the roughness and the ENIG finish as described under "Losses in the FDTD" below;
+`nickel` and `gold` only matter when `finish = "ENIG"`. The defaults are the middle of the
+IPC-4552 windows (3 to 6 um nickel, gold 0.05 um minimum with fabs aiming for 0.05 to 0.1 um).
 
 A class with `diff_gap` is a pair: its `impedance` is the differential impedance, and the solver
 runs both the odd and even modes. `calc field` then adds a `pair` block with Zdiff, Zcommon, the
@@ -914,16 +922,41 @@ frequency to thirty times the highest, one polarisation current per pole on each
 (within 3% of the model's loss tangent and 0.01 of its er across the band). The loss therefore
 grows with frequency the way it should, and on a 50 ohm microstrip it lands within 4% of the
 Hammerstad filling-factor formula at 1.5, 2.2 and 3 GHz. Edges that carry a port, a lumped part
-or copper keep a conductivity fixed at the band centre instead. Copper layers are sheets
-with the skin-effect surface impedance, sqrt(j w mu / sigma), so both the resistance and the
-internal inductance follow sqrt(f) across the band. In the time domain that impedance is a sum
-of about 20 RL branches per sheet edge (poles log-spaced from the frequency where the skin depth
-reaches the copper thickness up to 100 times the top frequency, within 1% of sqrt(f)), updated
-implicitly so the sheet stays stable at any time step. The stackup roughness factor is taken at
-the band centre. A zero-thickness sheet has one current, while real copper carries it on two faces, so
-each sheet edge tracks the magnetic field just above and below it through the run and scales its
-resistance by (Jtop^2 + Jbottom^2) / (Jtop + Jbottom)^2: one half for a centred stripline, close to
-one for a trace over a plane.
+or copper keep a conductivity fixed at the band centre instead. Copper layers are sheets with a
+surface impedance that varies with frequency, so both the resistance and the internal inductance
+follow the skin effect, the roughness and the finish across the band, updated implicitly so the
+sheet stays stable at any time step. A zero-thickness sheet has one current, while real copper
+carries it on two faces, so each sheet edge tracks the magnetic field just above and below it
+through the run and takes its impedance as (Jtop^2 Ztop + Jbottom^2 Zbottom) / (Jtop + Jbottom)^2:
+one half of the face impedance for a centred stripline, close to the bottom face's for a trace
+over a plane.
+
+Each face has its own surface impedance, a function of frequency:
+
+- A copper face is a copper slab of the layer's thickness, sqrt(j w mu rho) coth(gamma t), which
+  settles to rho / t at DC, times the stackup roughness as a causal complex factor (Dmitriev-Zdorov,
+  Simonovich and Kochikov, "A Causal Conductor Roughness Model and its Effect on Transmission
+  Line Characteristics", DesignCon 2018, table 1). Its loss part is exactly the Hammerstad-Jensen
+  1 + (2/pi) atan(1.4 (rms / skin depth)^2) or the Huray 1 + 1.5 ratio / (1 + d/a + d^2 / 2a^2)
+  at every frequency, and the same function adds the inductance that causality demands.
+- With `finish = "ENIG"` the faces of the outer layers that face away from the board are gold over
+  nickel over the copper slab, each metal a transmission line section of its own impedance
+  sqrt(j w mu rho) and thickness. Under a stackup mask layer only the pads are plated. The nickel
+  is the plated nickel that Shlepnev and McMorrow identified from ENIG microstrip
+  measurements ("Nickel characterization for interconnect analysis", IEEE EMC Symposium 2011):
+  resistivity 1.0e-7 ohm m and a Landau-Lifshitz permeability falling from 6 to 2 through a
+  resonance at 2.6 GHz with damping 0.18 f0. Gold is 2.44e-8 ohm m. With the default 4.5 um of
+  nickel and 0.075 um of gold the plated face has 6 to 8 times the resistance of smooth copper
+  from 0.3 to 3 GHz, peaking at the resonance, and about 3 times from 6 to 40 GHz. Faces against
+  a dielectric stay rough copper, and the plated face takes no roughness.
+
+Each distinct face (per copper thickness) is fitted with a common set of about 24 poles by vector
+fitting (Gustavsen and Semlyen, IEEE Trans. Power Delivery 14(3), 1999) from a thousandth of the
+band centre to 100 times the top frequency (within 0.02% of the functions above for a 20 GHz
+band centre), and made passive by raising the series resistance if the fit dips below zero
+anywhere. The sheet edge steps one state per real pole and one complex state per pole pair,
+shared between its two faces, with the trapezoidal rule, so the discrete sheet is the bilinear
+image of the fitted impedance (a CPU replay of the table matches it to 5e-6).
 
 A grid puts a zero-thickness edge about a third of a cell past its last mesh line, so a strip
 drawn on the grid reads wider than it is, and real copper of thickness t reads wider again by

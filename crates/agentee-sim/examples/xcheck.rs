@@ -77,6 +77,7 @@ fn main() {
             features_y: [vec![-w / 2.0, w / 2.0], features_y_extra].concat(),
             region: None,
             roughness: Default::default(),
+            plating: None,
         };
         let f = &c["f"];
         let p = plan(
