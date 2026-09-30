@@ -500,6 +500,7 @@ struct Part<'a> {
     through: bool,
     pads_in_court: bool,
     local: Bounds,
+    extent: Bounds,
     area: f64,
     pins: usize,
     large: bool,
@@ -566,6 +567,7 @@ struct Board2 {
     decap: f64,
     crystal: f64,
     spread: f64,
+    depth: EdgeDepth,
 }
 
 #[derive(Clone)]
@@ -581,7 +583,10 @@ struct Placer<'a> {
     cluster_of: Vec<Option<usize>>,
     b: Board2,
     sides: Sides,
-    grid: HashMap<(i32, i32), Vec<usize>>,
+    grid: PartGrid,
+    pad_at: Vec<Vec<P>>,
+    segments: Vec<Option<(P, P)>>,
+    two_pin_at: Vec<usize>,
     cache: Vec<Vec<WShape>>,
     offsets: Vec<P>,
     net_stamp: Vec<u32>,
@@ -601,6 +606,8 @@ const SPREAD_GROWTH: f64 = 1.3;
 const SOLVE_SWEEPS: usize = 12;
 const SPECTRAL_ROUNDS: usize = 60;
 const GLOBAL_CROSSING: f64 = 0.02;
+const DEPTH_CELL: f64 = 0.5;
+const GRID_MARGIN: f64 = 20.0;
 
 #[derive(Clone, Copy)]
 struct MacroEdge {
@@ -640,6 +647,97 @@ impl FreeGrid {
             + self.sum[y0 * w + x0])
             * FREE_CELL
             * FREE_CELL
+    }
+}
+
+#[derive(Clone)]
+struct PartGrid {
+    origin: P,
+    nx: usize,
+    ny: usize,
+    cells: Vec<Vec<usize>>,
+}
+
+impl PartGrid {
+    fn new(bb: &Bounds) -> PartGrid {
+        let origin = [bb.min[0] - GRID_MARGIN, bb.min[1] - GRID_MARGIN];
+        let nx = ((bb.size()[0] + 2.0 * GRID_MARGIN) / CELL).ceil() as usize + 1;
+        let ny = ((bb.size()[1] + 2.0 * GRID_MARGIN) / CELL).ceil() as usize + 1;
+        PartGrid { origin, nx, ny, cells: vec![Vec::new(); nx * ny] }
+    }
+
+    fn cells(&self, b: &Bounds) -> impl Iterator<Item = usize> + use<> {
+        let at = |v: f64, axis: usize, n: usize| {
+            ((v - self.origin[axis]) / CELL).floor().clamp(0.0, (n - 1) as f64) as usize
+        };
+        let (x0, x1) = (at(b.min[0], 0, self.nx), at(b.max[0], 0, self.nx));
+        let (y0, y1) = (at(b.min[1], 1, self.ny), at(b.max[1], 1, self.ny));
+        let nx = self.nx;
+        (y0..=y1).flat_map(move |y| (x0..=x1).map(move |x| y * nx + x))
+    }
+}
+
+#[derive(Clone)]
+struct EdgeDepth {
+    origin: P,
+    nx: usize,
+    ny: usize,
+    depth: Vec<f64>,
+}
+
+impl EdgeDepth {
+    fn new(outline: &[P], cutouts: &[Vec<P>], bb: &Bounds) -> EdgeDepth {
+        let edge = geom::BoardEdge::new(outline, cutouts);
+        let nx = ((bb.size()[0] / DEPTH_CELL).ceil() as usize).max(1);
+        let ny = ((bb.size()[1] / DEPTH_CELL).ceil() as usize).max(1);
+        let half = DEPTH_CELL * std::f64::consts::FRAC_1_SQRT_2;
+        let mut depth = vec![0.0; nx * ny];
+        for y in 0..ny {
+            for x in 0..nx {
+                let q = [
+                    bb.min[0] + (x as f64 + 0.5) * DEPTH_CELL,
+                    bb.min[1] + (y as f64 + 0.5) * DEPTH_CELL,
+                ];
+                if edge.contains(q) {
+                    depth[y * nx + x] = (edge.distance(q) - half).max(0.0);
+                }
+            }
+        }
+        EdgeDepth { origin: bb.min, nx, ny, depth }
+    }
+
+    fn cell(&self, v: f64, axis: usize) -> Option<usize> {
+        let n = if axis == 0 { self.nx } else { self.ny };
+        let k = ((v - self.origin[axis]) / DEPTH_CELL).floor();
+        (k >= 0.0 && k < n as f64).then_some(k as usize)
+    }
+
+    fn at(&self, p: P) -> f64 {
+        match (self.cell(p[0], 0), self.cell(p[1], 1)) {
+            (Some(x), Some(y)) => self.depth[y * self.nx + x],
+            _ => 0.0,
+        }
+    }
+
+    fn least(&self, b: &Bounds) -> f64 {
+        let (Some(x0), Some(x1), Some(y0), Some(y1)) = (
+            self.cell(b.min[0], 0),
+            self.cell(b.max[0], 0),
+            self.cell(b.min[1], 1),
+            self.cell(b.max[1], 1),
+        ) else {
+            return 0.0;
+        };
+        let mut low = f64::MAX;
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                low = low.min(self.depth[y * self.nx + x]);
+                if low <= 0.0 {
+                    return 0.0;
+                }
+            }
+        }
+        low
     }
 }
 
@@ -745,35 +843,44 @@ impl<'a> Placer<'a> {
             .collect()
     }
 
-    fn cells(b: &Bounds) -> impl Iterator<Item = (i32, i32)> {
-        let (x0, x1) = ((b.min[0] / CELL).floor() as i32, (b.max[0] / CELL).floor() as i32);
-        let (y0, y1) = ((b.min[1] / CELL).floor() as i32, (b.max[1] / CELL).floor() as i32);
-        (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
-    }
-
     fn insert(&mut self, i: usize) {
         let sh = self.shapes(i, self.parts[i].st);
         for s in &sh {
-            for c in Self::cells(&s.b) {
-                let v = self.grid.entry(c).or_default();
+            for c in self.grid.cells(&s.b) {
+                let v = &mut self.grid.cells[c];
                 if !v.contains(&i) {
                     v.push(i);
                 }
             }
         }
         self.cache[i] = sh;
+        let t = self.parts[i].st.transform();
+        self.pad_at[i] = self.parts[i].pads.iter().map(|q| t.apply(q.c)).collect();
         self.parts[i].placed = true;
+        self.update_segments(i);
     }
 
     fn remove(&mut self, i: usize) {
         for s in std::mem::take(&mut self.cache[i]) {
-            for c in Self::cells(&s.b) {
-                if let Some(v) = self.grid.get_mut(&c) {
-                    v.retain(|j| *j != i);
-                }
+            for c in self.grid.cells(&s.b) {
+                self.grid.cells[c].retain(|j| *j != i);
             }
         }
         self.parts[i].placed = false;
+        self.update_segments(i);
+    }
+
+    fn update_segments(&mut self, i: usize) {
+        for k in 0..self.part_nets[i].len() {
+            let n = self.part_nets[i][k];
+            if self.is_two_pin[n] {
+                let pins = &self.nets[n].pins;
+                let (a, b) = (pins[0], pins[1]);
+                let seg = (self.parts[a.0].placed && self.parts[b.0].placed)
+                    .then(|| (self.pad_pos(a.0, a.1), self.pad_pos(b.0, b.1)));
+                self.segments[self.two_pin_at[n]] = seg;
+            }
+        }
     }
 
     fn board_edge(&self) -> geom::BoardEdge<'_> {
@@ -823,18 +930,28 @@ impl<'a> Placer<'a> {
                     && self.clear_of_cutouts(&s.poly, min)
             })
         };
-        let ok = match part.role {
-            Role::Connector if edge_mount(part.fp) => {
-                part.pads.iter().filter(|q| !q.edge).all(|q| edge.contains(t.apply(q.c)))
+        let loose = !matches!(part.role, Role::Connector | Role::Hole | Role::Fiducial);
+        let deep = loose && {
+            let mut wb = Bounds::EMPTY;
+            let e = &part.extent;
+            for q in [e.min, [e.max[0], e.min[1]], e.max, [e.min[0], e.max[1]]] {
+                wb.add(t.apply(q));
             }
-            Role::Hole => body_in(0.0) && pads_in(self.b.copper_edge, false),
-            Role::Fiducial => body_in(0.0) && pads_in(FIDUCIAL_TO_EDGE, false),
-            _ => {
-                body_in(self.b.body_edge)
-                    && ((part.pads_in_court && self.b.body_edge >= self.b.part_edge)
-                        || pads_in(self.b.part_edge, true))
-            }
+            self.b.depth.least(&wb) > self.b.body_edge.max(self.b.part_edge) + EPS
         };
+        let ok = deep
+            || match part.role {
+                Role::Connector if edge_mount(part.fp) => {
+                    part.pads.iter().filter(|q| !q.edge).all(|q| edge.contains(t.apply(q.c)))
+                }
+                Role::Hole => body_in(0.0) && pads_in(self.b.copper_edge, false),
+                Role::Fiducial => body_in(0.0) && pads_in(FIDUCIAL_TO_EDGE, false),
+                _ => {
+                    body_in(self.b.body_edge)
+                        && ((part.pads_in_court && self.b.body_edge >= self.b.part_edge)
+                            || pads_in(self.b.part_edge, true))
+                }
+            };
         ok && !sh.iter().any(|s| {
             self.b
                 .keepouts
@@ -845,8 +962,8 @@ impl<'a> Placer<'a> {
 
     fn clashes(&self, i: usize, sh: &[WShape], skip: &[usize]) -> bool {
         for s in sh {
-            for c in Self::cells(&s.b) {
-                let Some(v) = self.grid.get(&c) else { continue };
+            for c in self.grid.cells(&s.b) {
+                let v = &self.grid.cells[c];
                 for &j in v {
                     if j == i || skip.contains(&j) {
                         continue;
@@ -931,8 +1048,8 @@ impl<'a> Placer<'a> {
 
     fn clashes_boxes(&self, i: usize, sh: &[WShape]) -> bool {
         for s in sh.iter().filter(|s| s.rect) {
-            for c in Self::cells(&s.b) {
-                let Some(v) = self.grid.get(&c) else { continue };
+            for c in self.grid.cells(&s.b) {
+                let v = &self.grid.cells[c];
                 for &j in v {
                     if j != i
                         && self.cache[j]
@@ -948,7 +1065,11 @@ impl<'a> Placer<'a> {
     }
 
     fn pad_pos(&self, i: usize, k: usize) -> P {
-        self.parts[i].st.transform().apply(self.parts[i].pads[k].c)
+        if self.parts[i].placed {
+            self.pad_at[i][k]
+        } else {
+            self.parts[i].st.transform().apply(self.parts[i].pads[k].c)
+        }
     }
 
     fn centre(&self, i: usize) -> P {
@@ -981,26 +1102,18 @@ impl<'a> Placer<'a> {
         if count < 2 { 0.0 } else { b.size()[0] + b.size()[1] }
     }
 
-    fn segment(&self, n: usize) -> Option<(P, P)> {
-        let pins = &self.nets[n].pins;
-        let (a, b) = (pins[0], pins[1]);
-        if !self.parts[a.0].placed || !self.parts[b.0].placed {
-            return None;
-        }
-        Some((self.pad_pos(a.0, a.1), self.pad_pos(b.0, b.1)))
-    }
-
     fn crossings_of(&self, n: usize) -> usize {
-        let Some((a, b)) = self.segment(n) else { return 0 };
+        let own = self.two_pin_at[n];
+        let Some((a, b)) = self.segments[own] else { return 0 };
         let mut bb = Bounds::EMPTY;
         bb.add(a);
         bb.add(b);
         let mut count = 0;
-        for &m in &self.two_pin {
-            if m == n {
+        for (x, seg) in self.segments.iter().enumerate() {
+            if x == own {
                 continue;
             }
-            let Some((c, d)) = self.segment(m) else { continue };
+            let Some((c, d)) = *seg else { continue };
             if c[0].max(d[0]) < bb.min[0]
                 || c[0].min(d[0]) > bb.max[0]
                 || c[1].max(d[1]) < bb.min[1]
@@ -1074,7 +1187,7 @@ impl<'a> Placer<'a> {
             && c[1] - bb.min[1] > zone + reach
             && bb.max[1] - c[1] > zone + reach
             && self.b.cutouts.is_empty();
-        let clear = deep || self.edge_gap(c) > zone + reach;
+        let clear = deep || self.b.depth.at(c) > zone + reach || self.edge_gap(c) > zone + reach;
         if clear && self.holes.iter().all(|(h, r)| geom::dist(*h, c) > zone + reach + r) {
             return None;
         }
@@ -1360,6 +1473,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         decap: pd.decoupling_distance.map(|l| l.to_mm()).unwrap_or(DECOUPLING_DISTANCE),
         crystal: pd.crystal_distance.map(|l| l.to_mm()).unwrap_or(CRYSTAL_DISTANCE),
         spread: pd.cluster_spread.map(|l| l.to_mm()).unwrap_or(CLUSTER_SPREAD),
+        depth: EdgeDepth::new(input.outline, input.cutouts, &ob),
     };
 
     let mut refs: Vec<&str> = Vec::new();
@@ -1422,6 +1536,8 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         }
         let mut local = Bounds::EMPTY;
         loops.iter().flat_map(|l| l.1.iter()).for_each(|q| local.add(*q));
+        let mut extent = local;
+        pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| extent.add(*q));
         let through = fp.pads.iter().any(|q| q.kind == PadKind::Tht || q.kind == PadKind::Npth);
         let mut pad_box = Bounds::EMPTY;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| pad_box.add(*q));
@@ -1460,6 +1576,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
             through,
             pads_in_court,
             local,
+            extent,
             area,
             pins,
             large,
@@ -1579,6 +1696,8 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
     }
 
     let n_parts = parts.len();
+    let mut two_pin_at = vec![usize::MAX; nets.len()];
+    two_pin.iter().enumerate().for_each(|(x, n)| two_pin_at[*n] = x);
     let reach = ob.size()[0].hypot(ob.size()[1]) + 10.0;
     let mut pl = Placer {
         parts,
@@ -1594,7 +1713,10 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         clusters: Vec::new(),
         b,
         sides: opts.sides,
-        grid: HashMap::new(),
+        grid: PartGrid::new(&ob),
+        pad_at: vec![Vec::new(); n_parts],
+        segments: vec![None; two_pin_at.iter().filter(|x| **x != usize::MAX).count()],
+        two_pin_at,
         offsets: offsets(reach),
         link_stamp: Vec::new(),
         stamp: 0,
