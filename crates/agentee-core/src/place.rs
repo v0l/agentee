@@ -567,6 +567,13 @@ fn strict_overlap(a: &Bounds, b: &Bounds) -> bool {
         && b.min[1] < a.max[1] - EPS
 }
 
+fn near_box(b: &Bounds, v: P) -> bool {
+    v[0] >= b.min[0] - EPS
+        && v[0] <= b.max[0] + EPS
+        && v[1] >= b.min[1] - EPS
+        && v[1] <= b.max[1] + EPS
+}
+
 fn polys_overlap(a: &[P], b: &[P]) -> bool {
     let n = a.len();
     let m = b.len();
@@ -1176,6 +1183,11 @@ impl<'a> Placer<'a> {
         })
     }
 
+    fn edge_clear(&self, edge: geom::BoardEdge, v: P, min: f64) -> bool {
+        let depth = self.b.depth.at(v);
+        (depth > 0.0 && depth >= min - 1e-6) || (edge.contains(v) && edge.distance(v) >= min - 1e-6)
+    }
+
     fn inside(&self, i: usize, st: St, sh: &[WShape]) -> bool {
         let part = &self.parts[i];
         let o = &self.b.outline;
@@ -1188,15 +1200,15 @@ impl<'a> Placer<'a> {
             part.pads.iter().filter(|q| !(skip_edge && q.edge)).all(|q| {
                 q.outline.iter().all(|ring| {
                     let w: Vec<P> = ring.iter().map(|v| t.apply(*v)).collect();
-                    w.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
+                    w.iter().all(|v| self.edge_clear(edge, *v, min))
                         && self.clear_of_cutouts(&w, min)
                 })
             })
         };
         let body_in = |min: f64| {
             sh.iter().filter(|s| !s.label).all(|s| {
-                s.poly.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
-                    && !o.iter().any(|v| geom::point_in_polygon(*v, &s.poly))
+                s.poly.iter().all(|v| self.edge_clear(edge, *v, min))
+                    && !o.iter().any(|v| near_box(&s.b, *v) && geom::point_in_polygon(*v, &s.poly))
                     && self.clear_of_cutouts(&s.poly, min)
             })
         };
