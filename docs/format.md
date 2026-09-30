@@ -426,7 +426,8 @@ height = 0.8                   # mm, the width follows the aspect ratio
 ```
 
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
-vias and other parts' bodies, and stay on the board. When a reference label fails, check names a
+vias and other parts' bodies, and stay on the board. Each of these is an error, except text under
+another part's body, which is a warning. When a reference label fails, check names a
 spot that passes every rule, as a `label = { at = [...] }` line to paste. `agentee silk NAME`
 (MCP `silk`) pastes them all for you and repeats until the labels settle; `--hide` hides the
 references that have no clear spot, typically small passives under a BGA.
