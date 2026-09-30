@@ -1,6 +1,6 @@
 use agentee_core::logic::{
-    Check, Circuit, Edge, GateOp, Input, Level, LogicResult, LogicSpec, Prim, Stimulus, Trace,
-    Wave, fmt_time,
+    Check, Circuit, Edge, GateOp, Input, Level, LogicResult, LogicSpec, Mark, MarkKind,
+    OnViolation, Prim, Stimulus, Trace, Wave, fmt_time,
 };
 use agentee_core::sim::Reading;
 use std::cmp::Reverse;
@@ -9,6 +9,7 @@ use std::collections::BinaryHeap;
 pub const DELTA_LIMIT: usize = 1000;
 pub const EVENT_LIMIT: u64 = 50_000_000;
 const MESSAGE_LIMIT: usize = 20;
+pub const MARK_LIMIT: usize = 1000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Transition {
@@ -22,6 +23,18 @@ fn rising(prev: Level, now: Level) -> Transition {
         (Level::L, Level::H) => Transition::Clean,
         (Level::L, Level::X | Level::Z) | (Level::X | Level::Z, Level::H) => Transition::Maybe,
         _ => Transition::None,
+    }
+}
+
+fn edge_of(falling: bool, prev: Level, now: Level) -> Transition {
+    if falling { rising(prev.flip(), now.flip()) } else { rising(prev, now) }
+}
+
+fn enable(oe: Level, v: Vec<Level>) -> Vec<Level> {
+    match oe {
+        Level::H => v,
+        Level::L => vec![Level::Z; v.len()],
+        _ => vec![Level::X; v.len()],
     }
 }
 
@@ -138,7 +151,7 @@ pub fn eval(prim: &Prim, now: &[Level], prev: &[Level], state: &mut [Level]) -> 
                 let next = [data(now[0]), data(now[0]).flip()];
                 clocked_update(rising(prev[1], now[1]), &next, state);
             }
-            state.to_vec()
+            enable(now[4], state.to_vec())
         }
         Prim::Jk => {
             if !set_reset(now[3], now[4], state) {
@@ -172,7 +185,16 @@ pub fn eval(prim: &Prim, now: &[Level], prev: &[Level], state: &mut [Level]) -> 
                 (Level::L, _) => clocked_update(Transition::Maybe, &[d, d.flip()], state),
                 _ => state.copy_from_slice(&[Level::X, Level::X]),
             }
-            state.to_vec()
+            enable(now[3], state.to_vec())
+        }
+        Prim::Xcvr => {
+            let (a, b) = (data(now[0]), data(now[1]));
+            let out = match now[2] {
+                Level::H => vec![Level::Z, a],
+                Level::L => vec![b, Level::Z],
+                _ => vec![Level::X, Level::X],
+            };
+            enable(now[3], out)
         }
         Prim::Mux2 => {
             let (a, b) = (data(now[0]), data(now[1]));
@@ -295,6 +317,7 @@ pub struct Run {
     pub end: u64,
     pub events: u64,
     pub problems: Vec<String>,
+    pub marks: Vec<(u64, MarkKind, Vec<usize>, String)>,
     pub contentions: usize,
     pub violations: usize,
     pub oscillation: bool,
@@ -314,7 +337,8 @@ struct Engine<'a> {
     prev: Vec<Vec<Level>>,
     state: Vec<Vec<Level>>,
     changed_at: Vec<Vec<Option<u64>>>,
-    last_edge: Vec<Option<u64>>,
+    last_edge: Vec<Vec<Option<u64>>>,
+    on_violation: OnViolation,
     queue: BinaryHeap<Reverse<(u64, u64, usize, u8)>>,
     seq: u64,
     run: Run,
@@ -323,7 +347,7 @@ struct Engine<'a> {
 }
 
 impl<'a> Engine<'a> {
-    fn new(c: &'a Circuit, stimuli: &[Stimulus]) -> Engine<'a> {
+    fn new(c: &'a Circuit, stimuli: &[Stimulus], on_violation: OnViolation) -> Engine<'a> {
         let n = c.nets.len();
         let mut e = Engine {
             c,
@@ -339,7 +363,8 @@ impl<'a> Engine<'a> {
             prev: Vec::new(),
             state: Vec::new(),
             changed_at: Vec::new(),
-            last_edge: vec![None; c.cells.len()],
+            last_edge: c.cells.iter().map(|x| vec![None; x.prim.clocked().len()]).collect(),
+            on_violation,
             queue: BinaryHeap::new(),
             seq: 0,
             run: Run { changes: vec![Vec::new(); n], ..Default::default() },
@@ -435,91 +460,163 @@ impl Engine<'_> {
     fn contention(&mut self, net: usize, t: u64) {
         self.contention_seen[net] += 1;
         self.run.contentions += 1;
-        if self.contention_seen[net] > 1 || self.run.problems.len() >= MESSAGE_LIMIT {
-            return;
-        }
         let drivers: Vec<String> = self.net_slots[net]
             .iter()
             .filter(|s| !self.slot_weak[**s] && self.slot_val[**s].bit().is_some())
             .map(|s| format!("{} drives {}", self.slot_owner[*s], self.slot_val[*s].char()))
             .collect();
-        self.run.problems.push(format!(
+        let msg = format!(
             "contention on {} at {}: {}",
             self.c.nets[net],
             fmt_time(t),
             drivers.join(", ")
-        ));
+        );
+        self.mark(t, MarkKind::Contention, vec![net], &msg);
+        if self.contention_seen[net] > 1 || self.run.problems.len() >= MESSAGE_LIMIT {
+            return;
+        }
+        self.run.problems.push(msg);
     }
 
-    fn violation(&mut self, msg: String) {
+    fn mark(&mut self, t: u64, kind: MarkKind, nets: Vec<usize>, text: &str) {
+        if self.run.marks.len() < MARK_LIMIT {
+            self.run.marks.push((t, kind, nets, text.to_string()));
+        }
+    }
+
+    fn violation(&mut self, t: u64, nets: Vec<usize>, msg: String) {
         self.run.violations += 1;
+        self.mark(t, MarkKind::Timing, nets, &msg);
         if self.run.problems.len() < MESSAGE_LIMIT {
             self.run.problems.push(msg);
         }
     }
 
-    fn timing(&mut self, ci: usize, now: &[Level], prev: &[Level], t: u64) {
+    fn net_of(&self, ci: usize, i: usize) -> Vec<usize> {
+        match self.c.cells[ci].inputs[i] {
+            Input::Net { net, .. } => vec![net],
+            Input::Fixed(_) => Vec::new(),
+        }
+    }
+
+    fn timing(
+        &mut self,
+        ci: usize,
+        now: &[Level],
+        prev: &[Level],
+        t: u64,
+    ) -> Vec<std::ops::Range<usize>> {
         let cell = &self.c.cells[ci];
-        let Some(ck) = cell.prim.clocked() else { return };
-        let (setup, hold) = (cell.setup, cell.hold);
-        let quiet = ck.resets.iter().all(|i| now[*i] == Level::L);
-        let mut found = Vec::new();
-        for &i in ck.data {
+        let checks = cell.prim.clocked();
+        if checks.is_empty() {
+            return Vec::new();
+        }
+        for i in 0..now.len() {
             if now[i] != prev[i] {
-                if quiet
-                    && let Some(e) = self.last_edge[ci]
-                    && t > e
-                    && t - e < hold
-                {
-                    found.push(format!(
-                        "hold: {} {} changed {} after the {} edge at {} (needs {})",
-                        cell.part,
-                        cell.input_names[i],
-                        fmt_time(t - e),
-                        cell.input_names[ck.clock],
-                        fmt_time(e),
-                        fmt_time(hold)
-                    ));
-                }
                 self.changed_at[ci][i] = Some(t);
             }
         }
-        if rising(prev[ck.clock], now[ck.clock]) == Transition::Clean {
-            if quiet {
+        let name = |i: usize| cell.input_names[i].as_str();
+        let mut found: Vec<(Vec<usize>, String, std::ops::Range<usize>)> = Vec::new();
+        for (k, ck) in checks.iter().enumerate() {
+            let clock = if ck.falling {
+                format!("{} falling edge", name(ck.clock))
+            } else {
+                format!("{} edge", name(ck.clock))
+            };
+            let quiet = ck.resets.iter().all(|i| now[*i] == Level::L);
+            let last = self.last_edge[ci][k];
+            let mut hit = |i: usize, what: &str, dt: u64, side: &str, at: u64, need: u64| {
+                let verb =
+                    if matches!(what, "recovery" | "removal") { "released" } else { "changed" };
+                let msg = format!(
+                    "{what}: {} {} {verb} {} {side} the {clock} at {} (needs {})",
+                    cell.part,
+                    name(i),
+                    fmt_time(dt),
+                    fmt_time(at),
+                    fmt_time(need)
+                );
+                found.push((vec![i, ck.clock], msg, ck.state.clone()));
+            };
+            if let Some(e) = last
+                && t >= e
+            {
                 for &i in ck.data {
-                    if let Some(c) = self.changed_at[ci][i]
-                        && t - c < setup
-                    {
-                        found.push(format!(
-                            "setup: {} {} changed {} before the {} edge at {} (needs {})",
-                            cell.part,
-                            cell.input_names[i],
-                            fmt_time(t - c),
-                            cell.input_names[ck.clock],
-                            fmt_time(t),
-                            fmt_time(setup)
-                        ));
+                    if quiet && now[i] != prev[i] && t - e < cell.hold {
+                        hit(i, "hold", t - e, "after", e, cell.hold);
+                    }
+                }
+                for &i in ck.resets {
+                    if now[i] == Level::L && prev[i] != Level::L && t - e < cell.removal {
+                        hit(i, "removal", t - e, "after", e, cell.removal);
                     }
                 }
             }
-            self.last_edge[ci] = Some(t);
+            if edge_of(ck.falling, prev[ck.clock], now[ck.clock]) != Transition::Clean {
+                continue;
+            }
+            for &i in ck.data {
+                if quiet
+                    && let Some(c) = self.changed_at[ci][i]
+                    && t - c < cell.setup
+                {
+                    hit(i, "setup", t - c, "before", t, cell.setup);
+                }
+            }
+            for &i in ck.resets {
+                if now[i] == Level::L
+                    && let Some(c) = self.changed_at[ci][i]
+                    && t - c < cell.recovery
+                {
+                    hit(i, "recovery", t - c, "before", t, cell.recovery);
+                }
+            }
+            if let Some(l) = ck.lead
+                && let Some(j) = checks.iter().position(|x| x.clock == l)
+                && let Some(c) = self.last_edge[ci][j]
+                && t > c
+                && t - c < cell.setup
+            {
+                let msg = format!(
+                    "setup: {} {} edge {} before the {clock} at {} (needs {})",
+                    cell.part,
+                    name(l),
+                    fmt_time(t - c),
+                    fmt_time(t),
+                    fmt_time(cell.setup)
+                );
+                found.push((vec![l, ck.clock], msg, ck.state.clone()));
+            }
+            self.last_edge[ci][k] = Some(t);
         }
-        for m in found {
-            self.violation(m);
+        let mut ranges = Vec::new();
+        for (inputs, msg, range) in found {
+            let nets = inputs.iter().flat_map(|i| self.net_of(ci, *i)).collect();
+            self.violation(t, nets, msg);
+            ranges.push(range);
         }
+        ranges
     }
 
     fn step(&mut self, ci: usize, t: u64) {
         let now = self.inputs(ci);
         let prev = std::mem::take(&mut self.prev[ci]);
-        self.timing(ci, &now, &prev, t);
+        let broken = self.timing(ci, &now, &prev, t);
         let cell = &self.c.cells[ci];
-        let outs = eval(&cell.prim, &now, &prev, &mut self.state[ci]);
+        let mut outs = eval(&cell.prim, &now, &prev, &mut self.state[ci]);
+        if !broken.is_empty() && self.on_violation == OnViolation::X {
+            for r in broken {
+                self.state[ci][r].fill(Level::X);
+            }
+            outs = eval(&cell.prim, &now, &now, &mut self.state[ci]);
+        }
         self.prev[ci] = now;
         for (k, o) in cell.outputs.iter().enumerate() {
             if let Some(slot) = self.out_slot[ci][k] {
                 let v = outs.get(k).copied().unwrap_or(Level::X);
                 let v = if o.invert { invert_out(v) } else { v };
+                let v = if cell.open_drain && v == Level::H { Level::Z } else { v };
                 self.schedule(slot, t + o.delay, v);
             }
         }
@@ -541,8 +638,13 @@ impl Engine<'_> {
     }
 }
 
-pub fn simulate(c: &Circuit, stimuli: &[Stimulus], duration: u64) -> Run {
-    let mut e = Engine::new(c, stimuli);
+pub fn simulate(
+    c: &Circuit,
+    stimuli: &[Stimulus],
+    duration: u64,
+    on_violation: OnViolation,
+) -> Run {
+    let mut e = Engine::new(c, stimuli, on_violation);
     for (slot, wave) in std::mem::take(&mut e.stimulus_slots) {
         match wave {
             Wave::Steps(steps) => {
@@ -661,7 +763,9 @@ fn matches(want: &[Option<Level>], got: &[Level]) -> bool {
     want.iter().zip(got).all(|(w, g)| w.is_none() || *w == Some(*g))
 }
 
-pub fn check(spec: &LogicSpec, run: &Run) -> (usize, Vec<String>) {
+pub type Failed = (Option<u64>, Vec<usize>, String);
+
+pub fn check(spec: &LogicSpec, run: &Run) -> (usize, Vec<Failed>) {
     let mut passed = 0;
     let mut failures = Vec::new();
     for x in &spec.expects {
@@ -671,21 +775,27 @@ pub fn check(spec: &LogicSpec, run: &Run) -> (usize, Vec<String>) {
         let failure = match &x.check {
             Check::At { time, value: want } => {
                 if *time > run.end {
-                    Some(format!(
-                        "{}: {} was not reached, the run stopped at {}",
-                        x.label,
-                        fmt_time(*time),
-                        fmt_time(run.end)
+                    Some((
+                        None,
+                        format!(
+                            "{}: {} was not reached, the run stopped at {}",
+                            x.label,
+                            fmt_time(*time),
+                            fmt_time(run.end)
+                        ),
                     ))
                 } else {
                     let got = sample(*time, false);
                     (!matches(want, &got)).then(|| {
-                        format!(
-                            "{}: expected {} at {}, got {}",
-                            x.label,
-                            show(want),
-                            fmt_time(*time),
-                            got.iter().map(|l| l.char()).collect::<String>()
+                        (
+                            Some(*time),
+                            format!(
+                                "{}: expected {} at {}, got {}",
+                                x.label,
+                                show(want),
+                                fmt_time(*time),
+                                got.iter().map(|l| l.char()).collect::<String>()
+                            ),
                         )
                     })
                 }
@@ -696,26 +806,32 @@ pub fn check(spec: &LogicSpec, run: &Run) -> (usize, Vec<String>) {
                 let mut fail = None;
                 for (k, want) in values.iter().enumerate() {
                     let Some(t) = at.get(k) else {
-                        fail = Some(format!(
-                            "{}: {} has {} {dir} edge(s) from {}, the sequence needs {}",
-                            x.label,
-                            clock_name,
-                            at.len(),
-                            fmt_time(*from),
-                            values.len()
+                        fail = Some((
+                            None,
+                            format!(
+                                "{}: {} has {} {dir} edge(s) from {}, the sequence needs {}",
+                                x.label,
+                                clock_name,
+                                at.len(),
+                                fmt_time(*from),
+                                values.len()
+                            ),
                         ));
                         break;
                     };
                     let got = sample(*t, true);
                     if !matches(want, &got) {
-                        fail = Some(format!(
-                            "{}: {dir} edge {} of {} at {}: expected {}, got {}",
-                            x.label,
-                            k + 1,
-                            clock_name,
-                            fmt_time(*t),
-                            show(want),
-                            got.iter().map(|l| l.char()).collect::<String>()
+                        fail = Some((
+                            Some(*t),
+                            format!(
+                                "{}: {dir} edge {} of {} at {}: expected {}, got {}",
+                                x.label,
+                                k + 1,
+                                clock_name,
+                                fmt_time(*t),
+                                show(want),
+                                got.iter().map(|l| l.char()).collect::<String>()
+                            ),
                         ));
                         break;
                     }
@@ -724,7 +840,7 @@ pub fn check(spec: &LogicSpec, run: &Run) -> (usize, Vec<String>) {
             }
         };
         match failure {
-            Some(f) => failures.push(f),
+            Some((t, f)) => failures.push((t, x.nets.clone(), f)),
             None => passed += 1,
         }
     }
@@ -779,8 +895,37 @@ pub fn vcd(name: &str, traces: &[Trace]) -> String {
 
 pub fn run(spec: &LogicSpec, name: &str, spec_hash: u64, vcd_name: &str) -> (LogicResult, String) {
     let started = std::time::Instant::now();
-    let r = simulate(&spec.circuit, &spec.stimuli, spec.duration);
+    let r = simulate(&spec.circuit, &spec.stimuli, spec.duration, spec.on_violation);
     let (passed, failed) = check(spec, &r);
+    let names = |nets: &[usize]| -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for n in nets {
+            if let Some((name, _)) = spec.record.iter().find(|x| x.1 == *n)
+                && !out.contains(name)
+            {
+                out.push(name.clone());
+            }
+        }
+        out
+    };
+    let mut marks: Vec<Mark> = failed
+        .iter()
+        .filter_map(|(t, nets, text)| {
+            t.map(|time| Mark {
+                time,
+                kind: MarkKind::Assertion,
+                nets: names(nets),
+                text: text.clone(),
+            })
+        })
+        .collect();
+    for (time, kind, nets, text) in &r.marks {
+        if marks.len() >= MARK_LIMIT {
+            break;
+        }
+        marks.push(Mark { time: *time, kind: *kind, nets: names(nets), text: text.clone() });
+    }
+    marks.sort_by_key(|m| m.time);
     let traces: Vec<Trace> = spec
         .record
         .iter()
@@ -800,7 +945,12 @@ pub fn run(spec: &LogicSpec, name: &str, spec_hash: u64, vcd_name: &str) -> (Log
         reading("assertions passed", passed as f64, "", format!("of {}", spec.expects.len())),
         reading("assertions failed", failed.len() as f64, "", String::new()),
         reading("contention", r.contentions as f64, "", "strong drivers disagreeing".into()),
-        reading("timing violations", r.violations as f64, "", "setup and hold".into()),
+        reading(
+            "timing violations",
+            r.violations as f64,
+            "",
+            "setup, hold, recovery, removal".into(),
+        ),
         reading(
             "cells",
             spec.circuit.cells.len() as f64,
@@ -810,7 +960,7 @@ pub fn run(spec: &LogicSpec, name: &str, spec_hash: u64, vcd_name: &str) -> (Log
         reading("events", r.events as f64, "", format!("to {}", fmt_time(r.end))),
     ];
     let mut failures = r.problems.clone();
-    failures.extend(failed);
+    failures.extend(failed.into_iter().map(|f| f.2));
     let result = LogicResult {
         name: name.to_string(),
         kind: "logic".into(),
@@ -818,6 +968,8 @@ pub fn run(spec: &LogicSpec, name: &str, spec_hash: u64, vcd_name: &str) -> (Log
         duration_ps: spec.duration,
         end_ps: r.end,
         traces,
+        buses: spec.buses.clone(),
+        marks,
         passed,
         failures,
         readings,
@@ -843,8 +995,11 @@ mod tests {
             outputs: outs.iter().map(|n| Output { net: Some(*n), invert: false, delay }).collect(),
             prim,
             weak: false,
+            open_drain: false,
             setup: 0,
             hold: 0,
+            recovery: 0,
+            removal: 0,
         }
     }
 
@@ -895,7 +1050,7 @@ mod tests {
         assert_eq!(eval(&Prim::Mux2, &[H, H, X, H], &[L; 4], &mut [])[0], H);
         assert_eq!(eval(&Prim::Mux2, &[L, H, X, H], &[L; 4], &mut [])[0], X);
         let c = circuit(2, vec![cell(Prim::Gate { op: And, invert: true }, &[0], &[1], 1000)]);
-        let r = simulate(&c, &[], 10_000);
+        let r = simulate(&c, &[], 10_000, OnViolation::X);
         assert_eq!(at(&r, 1, 5_000), X);
     }
 
@@ -911,7 +1066,10 @@ mod tests {
     fn d_flip_flop_clocks_sets_and_resets() {
         let mut s = initial_state(&Prim::Dff);
         let e = |now: [Level; 4], prev: [Level; 4], s: &mut Vec<Level>| {
-            eval(&Prim::Dff, &now, &prev, s)
+            let (mut n, mut p) = (now.to_vec(), prev.to_vec());
+            n.push(H);
+            p.push(H);
+            eval(&Prim::Dff, &n, &p, s)
         };
         assert_eq!(e([H, L, L, L], [H, L, L, L], &mut s), vec![X, X]);
         assert_eq!(e([H, H, L, L], [H, L, L, L], &mut s), vec![H, L]);
@@ -946,10 +1104,10 @@ mod tests {
         assert_eq!(eval(&Prim::Sr, &[L, H], &[L, L], &mut s), vec![L, H]);
         assert_eq!(eval(&Prim::Sr, &[H, H], &[L, H], &mut s), vec![X, X]);
         let mut s = initial_state(&Prim::Dlatch);
-        assert_eq!(eval(&Prim::Dlatch, &[H, H, L], &[L; 3], &mut s), vec![H, L]);
-        assert_eq!(eval(&Prim::Dlatch, &[L, H, L], &[L; 3], &mut s), vec![L, H]);
-        assert_eq!(eval(&Prim::Dlatch, &[H, L, L], &[L; 3], &mut s), vec![L, H]);
-        assert_eq!(eval(&Prim::Dlatch, &[H, H, H], &[L; 3], &mut s), vec![L, H]);
+        assert_eq!(eval(&Prim::Dlatch, &[H, H, L, H], &[L; 4], &mut s), vec![H, L]);
+        assert_eq!(eval(&Prim::Dlatch, &[L, H, L, H], &[L; 4], &mut s), vec![L, H]);
+        assert_eq!(eval(&Prim::Dlatch, &[H, L, L, H], &[L; 4], &mut s), vec![L, H]);
+        assert_eq!(eval(&Prim::Dlatch, &[H, H, H, H], &[L; 4], &mut s), vec![L, H]);
     }
 
     #[test]
@@ -1052,7 +1210,7 @@ mod tests {
             ],
         );
         let stim = [steps(3, &[(0, L)]), steps(2, &[(5_000, H)]), steps(4, &[(0, L), (5_000, H)])];
-        let r = simulate(&c, &stim, 10_000);
+        let r = simulate(&c, &stim, 10_000, OnViolation::X);
         assert_eq!(at(&r, 0, 1_000), H);
         assert_eq!(at(&r, 1, 1_000), X);
         assert_eq!(at(&r, 2, 1_000), L);
@@ -1066,12 +1224,12 @@ mod tests {
     fn zero_delay_loop_stops_the_run() {
         let nand = Prim::Gate { op: GateOp::And, invert: true };
         let c = circuit(2, vec![cell(nand.clone(), &[0, 1], &[0], 0)]);
-        let r = simulate(&c, &[steps(1, &[(0, L), (10_000, H)])], 50_000);
+        let r = simulate(&c, &[steps(1, &[(0, L), (10_000, H)])], 50_000, OnViolation::X);
         assert!(r.oscillation);
         assert_eq!(r.end, 10_000);
         assert!(r.problems[0].contains("zero-delay oscillation at 10ns"));
         let c = circuit(2, vec![cell(nand, &[0, 1], &[0], 1_000)]);
-        let r = simulate(&c, &[steps(1, &[(0, L), (10_000, H)])], 50_000);
+        let r = simulate(&c, &[steps(1, &[(0, L), (10_000, H)])], 50_000, OnViolation::X);
         assert!(!r.oscillation);
         assert!(r.changes[0].len() > 30);
     }
@@ -1081,7 +1239,8 @@ mod tests {
         let mut ff = cell(Prim::Dff, &[0, 1], &[2, 3], 1_000);
         ff.inputs.push(Input::Fixed(L));
         ff.inputs.push(Input::Fixed(L));
-        ff.input_names = vec!["D".into(), "CLK".into(), "S".into(), "R".into()];
+        ff.inputs.push(Input::Fixed(H));
+        ff.input_names = vec!["D".into(), "CLK".into(), "S".into(), "R".into(), "OE".into()];
         ff.setup = 5_000;
         ff.hold = 2_000;
         let c = circuit(4, vec![ff]);
@@ -1090,23 +1249,248 @@ mod tests {
             name: "n1".into(),
             wave: Wave::Clock { period: 100_000, high: 50_000, phase: 100_000 },
         };
-        let r = simulate(&c, &[clock.clone(), steps(0, &[(0, L), (50_000, H)])], 150_000);
+        let r = simulate(
+            &c,
+            &[clock.clone(), steps(0, &[(0, L), (50_000, H)])],
+            150_000,
+            OnViolation::X,
+        );
         assert_eq!(r.violations, 0);
         assert_eq!(at(&r, 2, 120_000), H);
-        let r = simulate(&c, &[clock.clone(), steps(0, &[(0, L), (197_000, H)])], 250_000);
+        let r = simulate(
+            &c,
+            &[clock.clone(), steps(0, &[(0, L), (197_000, H)])],
+            250_000,
+            OnViolation::X,
+        );
         assert_eq!(r.violations, 1);
         assert!(
             r.problems[0].starts_with("setup: U2 D changed 3ns before the CLK edge at 200ns"),
             "{}",
             r.problems[0]
         );
-        let r = simulate(&c, &[clock, steps(0, &[(0, L), (101_000, H)])], 150_000);
+        assert_eq!(at(&r, 2, 210_000), X);
+        assert_eq!(r.marks[0].0, 200_000);
+        assert_eq!(r.marks[0].1, MarkKind::Timing);
+        assert_eq!(r.marks[0].2, vec![0, 1]);
+        let kept = simulate(
+            &c,
+            &[clock.clone(), steps(0, &[(0, L), (197_000, H)])],
+            250_000,
+            OnViolation::Keep,
+        );
+        assert_eq!(kept.violations, 1);
+        assert_eq!(at(&kept, 2, 210_000), H);
+        let r = simulate(&c, &[clock, steps(0, &[(0, L), (101_000, H)])], 150_000, OnViolation::X);
         assert_eq!(r.violations, 1);
         assert!(
             r.problems[0].starts_with("hold: U2 D changed 1ns after the CLK edge at 100ns"),
             "{}",
             r.problems[0]
         );
+        assert_eq!(at(&r, 2, 120_000), X);
+    }
+
+    fn clock(net: usize, period: u64, phase: u64) -> Stimulus {
+        Stimulus {
+            net,
+            name: format!("n{net}"),
+            wave: Wave::Clock { period, high: period / 2, phase },
+        }
+    }
+
+    fn named(mut c: Cell, names: &[&str]) -> Cell {
+        c.input_names = names.iter().map(|n| n.to_string()).collect();
+        c
+    }
+
+    #[test]
+    fn reset_release_is_checked_for_recovery_and_removal() {
+        let mut ff = cell(Prim::Dff, &[0, 1], &[2, 3], 1_000);
+        ff.inputs.push(Input::Fixed(L));
+        ff.inputs.push(Input::Net { net: 4, invert: true });
+        ff.inputs.push(Input::Fixed(H));
+        let mut ff = named(ff, &["D", "CLK", "S", "R", "OE"]);
+        ff.recovery = 5_000;
+        ff.removal = 3_000;
+        let c = circuit(5, vec![ff]);
+        let d = steps(0, &[(0, H)]);
+        let run = |release: u64, keep: OnViolation| {
+            let r_n = steps(4, &[(0, L), (release, H)]);
+            simulate(&c, &[clock(1, 100_000, 100_000), d.clone(), r_n], 250_000, keep)
+        };
+        let r = run(50_000, OnViolation::X);
+        assert_eq!(r.violations, 0);
+        assert_eq!(at(&r, 2, 120_000), H);
+        let r = run(98_000, OnViolation::X);
+        assert_eq!(r.violations, 1);
+        assert!(
+            r.problems[0].starts_with("recovery: U2 R released 2ns before the CLK edge at 100ns"),
+            "{}",
+            r.problems[0]
+        );
+        assert_eq!(at(&r, 2, 120_000), X);
+        assert_eq!(at(&r, 2, 220_000), H);
+        let r = run(98_000, OnViolation::Keep);
+        assert_eq!(at(&r, 2, 120_000), H);
+        let r = run(101_000, OnViolation::X);
+        assert_eq!(r.violations, 1);
+        assert!(
+            r.problems[0].starts_with("removal: U2 R released 1ns after the CLK edge at 100ns"),
+            "{}",
+            r.problems[0]
+        );
+        assert_eq!(at(&r, 2, 150_000), X);
+        let r = run(100_000, OnViolation::X);
+        assert!(
+            r.problems[0].starts_with("recovery: U2 R released 0ns before"),
+            "{:?}",
+            r.problems
+        );
+    }
+
+    #[test]
+    fn latch_checks_setup_and_hold_on_the_closing_edge() {
+        let mut lt = cell(Prim::Dlatch, &[0, 1], &[2, 3], 1_000);
+        lt.inputs.extend([Input::Fixed(L), Input::Fixed(H)]);
+        let mut lt = named(lt, &["D", "LE", "R", "OE"]);
+        lt.setup = 5_000;
+        lt.hold = 2_000;
+        let c = circuit(4, vec![lt]);
+        let le = steps(1, &[(0, H), (100_000, L)]);
+        let r =
+            simulate(&c, &[le.clone(), steps(0, &[(0, L), (50_000, H)])], 150_000, OnViolation::X);
+        assert_eq!((r.violations, at(&r, 2, 120_000)), (0, H));
+        let r =
+            simulate(&c, &[le.clone(), steps(0, &[(0, L), (97_000, H)])], 150_000, OnViolation::X);
+        assert_eq!(r.violations, 1);
+        assert!(
+            r.problems[0]
+                .starts_with("setup: U2 D changed 3ns before the LE falling edge at 100ns"),
+            "{}",
+            r.problems[0]
+        );
+        assert_eq!(at(&r, 2, 120_000), X);
+        let r = simulate(&c, &[le, steps(0, &[(0, H), (101_000, L)])], 150_000, OnViolation::X);
+        assert!(r.problems[0].starts_with("hold: U2 D changed 1ns after the LE falling edge"));
+        assert_eq!(at(&r, 2, 120_000), X);
+        let open = steps(1, &[(0, H)]);
+        let r = simulate(&c, &[open, steps(0, &[(0, L), (50_000, H)])], 150_000, OnViolation::X);
+        assert_eq!(r.violations, 0);
+    }
+
+    #[test]
+    fn shift595_latch_clock_is_checked_against_the_shift_clock() {
+        let mut sr = cell(Prim::Shift595, &[0, 1, 2], &[3, 4, 5, 6, 7, 8, 9, 10, 11], 1_000);
+        sr.inputs.extend([Input::Fixed(L), Input::Fixed(H)]);
+        let mut sr = named(sr, &["D", "CLK", "LATCH", "R", "OE"]);
+        sr.setup = 5_000;
+        let c = circuit(12, vec![sr]);
+        let d = steps(0, &[(0, H)]);
+        let r = simulate(
+            &c,
+            &[d.clone(), clock(1, 100_000, 100_000), clock(2, 100_000, 100_000)],
+            450_000,
+            OnViolation::X,
+        );
+        assert_eq!(r.violations, 0, "{:?}", r.problems);
+        assert_eq!(at(&r, 3, 420_000), H);
+        let r = simulate(
+            &c,
+            &[d, clock(1, 100_000, 100_000), clock(2, 100_000, 103_000)],
+            950_000,
+            OnViolation::X,
+        );
+        assert_eq!(r.violations, 9);
+        assert!(
+            r.problems[0].starts_with("setup: U3 CLK edge 3ns before the LATCH edge at 103ns"),
+            "{}",
+            r.problems[0]
+        );
+        assert_eq!(at(&r, 3, 420_000), X);
+        assert_eq!(at(&r, 11, 920_000), H);
+    }
+
+    #[test]
+    fn open_drain_outputs_only_pull_low() {
+        let mut pull = cell(Prim::Const(H), &[], &[2], 0);
+        pull.weak = true;
+        let mut a = cell(Prim::Gate { op: GateOp::And, invert: true }, &[0, 0], &[2], 1_000);
+        a.open_drain = true;
+        let mut b = cell(Prim::Gate { op: GateOp::And, invert: true }, &[1, 1], &[2], 1_000);
+        b.open_drain = true;
+        let mut lone = cell(Prim::Gate { op: GateOp::And, invert: false }, &[0], &[3], 1_000);
+        lone.open_drain = true;
+        let c = circuit(4, vec![pull, a, b, lone]);
+        let sa = steps(0, &[(0, L), (10_000, H), (30_000, L)]);
+        let sb = steps(1, &[(0, L), (20_000, H), (40_000, L)]);
+        let r = simulate(&c, &[sa, sb], 50_000, OnViolation::X);
+        assert_eq!(at(&r, 2, 5_000), H);
+        assert_eq!(at(&r, 2, 15_000), L);
+        assert_eq!(at(&r, 2, 25_000), L);
+        assert_eq!(at(&r, 2, 35_000), L);
+        assert_eq!(at(&r, 2, 45_000), H);
+        assert_eq!(at(&r, 3, 15_000), Z);
+        assert_eq!(at(&r, 3, 35_000), L);
+        assert_eq!(r.contentions, 0);
+    }
+
+    #[test]
+    fn transceiver_drives_the_side_dir_picks() {
+        assert_eq!(eval(&Prim::Xcvr, &[H, L, H, H], &[L; 4], &mut []), vec![Z, H]);
+        assert_eq!(eval(&Prim::Xcvr, &[H, L, L, H], &[L; 4], &mut []), vec![L, Z]);
+        assert_eq!(eval(&Prim::Xcvr, &[H, L, H, L], &[L; 4], &mut []), vec![Z, Z]);
+        assert_eq!(eval(&Prim::Xcvr, &[H, L, X, H], &[L; 4], &mut []), vec![X, X]);
+        let x = cell(Prim::Xcvr, &[0, 1, 2, 3], &[0, 1], 1_000);
+        let c = circuit(4, vec![x]);
+        let dir = steps(2, &[(0, H), (50_000, L)]);
+        let oe = steps(3, &[(0, H)]);
+        let a = steps(0, &[(0, H), (40_000, Z)]);
+        let b = steps(1, &[(0, Z), (60_000, L)]);
+        let r = simulate(&c, &[dir, oe, a, b], 100_000, OnViolation::X);
+        assert_eq!(at(&r, 1, 20_000), H);
+        assert_eq!(at(&r, 0, 80_000), L);
+        assert_eq!(r.contentions, 0);
+        let mut s = initial_state(&Prim::Dff);
+        let q = eval(&Prim::Dff, &[H, H, L, L, L], &[H, L, L, L, L], &mut s);
+        assert_eq!((q, s), (vec![Z, Z], vec![H, L]));
+        let mut s = vec![H, L];
+        assert_eq!(eval(&Prim::Dlatch, &[L, L, L, L], &[L; 4], &mut s), vec![Z, Z]);
+    }
+
+    #[test]
+    fn run_marks_failures_and_violations_by_recorded_name() {
+        let mut ff = cell(Prim::Dff, &[0, 1], &[2, 3], 1_000);
+        ff.inputs.extend([Input::Fixed(L), Input::Fixed(L), Input::Fixed(H)]);
+        let mut ff = named(ff, &["D", "CLK", "S", "R", "OE"]);
+        ff.setup = 5_000;
+        let spec = LogicSpec {
+            duration: 250_000,
+            record: vec![("DATA".into(), 0), ("CLK".into(), 1), ("Q".into(), 2)],
+            buses: vec![agentee_core::logic::Bus {
+                name: "B".into(),
+                nets: vec!["Q".into(), "DATA".into()],
+            }],
+            stimuli: vec![clock(1, 100_000, 100_000), steps(0, &[(0, L), (197_000, H)])],
+            expects: vec![Expect {
+                label: "q".into(),
+                nets: vec![2],
+                names: vec!["Q".into()],
+                check: Check::At { time: 220_000, value: vec![Some(H)] },
+            }],
+            circuit: circuit(4, vec![ff]),
+            ..Default::default()
+        };
+        let (res, _) = run(&spec, "m", 0, "m.vcd");
+        let kinds: Vec<(u64, MarkKind)> = res.marks.iter().map(|m| (m.time, m.kind)).collect();
+        assert_eq!(kinds, vec![(200_000, MarkKind::Timing), (220_000, MarkKind::Assertion)]);
+        assert_eq!(res.marks[0].nets, vec!["DATA".to_string(), "CLK".into()]);
+        assert_eq!(res.marks[1].nets, vec!["Q".to_string()]);
+        assert!(res.marks[1].text.contains("expected 1 at 220ns, got x"), "{}", res.marks[1].text);
+        assert_eq!(res.buses, spec.buses);
+        let spec = LogicSpec { on_violation: OnViolation::Keep, ..spec };
+        let (res, _) = run(&spec, "m", 0, "m.vcd");
+        assert_eq!(res.passed, 1);
     }
 
     #[test]

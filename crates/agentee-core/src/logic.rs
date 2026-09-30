@@ -137,6 +137,25 @@ pub struct PartModelFile {
     pub setup: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hold: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removal: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RecordFile {
+    Net(String),
+    Bus { name: String, nets: Vec<String> },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnViolation {
+    #[default]
+    X,
+    Keep,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -160,29 +179,41 @@ pub enum Prim {
     Counter { sync_reset: bool },
     Shift164,
     Shift595,
+    Xcvr,
     Truth(Vec<(Vec<Option<bool>>, Vec<Level>)>),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Clocked {
     pub clock: usize,
+    pub falling: bool,
     pub data: &'static [usize],
     pub resets: &'static [usize],
+    pub lead: Option<usize>,
+    pub state: std::ops::Range<usize>,
 }
 
 impl Prim {
-    pub fn clocked(&self) -> Option<Clocked> {
+    pub fn clocked(&self) -> Vec<Clocked> {
+        let on = |clock, data, resets, state| Clocked {
+            clock,
+            falling: false,
+            data,
+            resets,
+            lead: None,
+            state,
+        };
         match self {
-            Prim::Dff => Some(Clocked { clock: 1, data: &[0], resets: &[2, 3] }),
-            Prim::Jk => Some(Clocked { clock: 2, data: &[0, 1], resets: &[3, 4] }),
-            Prim::Counter { sync_reset: false } => {
-                Some(Clocked { clock: 1, data: &[2, 3, 4, 5, 6, 7, 8], resets: &[0] })
+            Prim::Dff => vec![on(1, &[0], &[2, 3], 0..2)],
+            Prim::Jk => vec![on(2, &[0, 1], &[3, 4], 0..2)],
+            Prim::Dlatch => vec![Clocked { falling: true, ..on(1, &[0], &[2], 0..2) }],
+            Prim::Counter { sync_reset: false } => vec![on(1, &[2, 3, 4, 5, 6, 7, 8], &[0], 0..4)],
+            Prim::Counter { sync_reset: true } => vec![on(1, &[0, 2, 3, 4, 5, 6, 7, 8], &[], 0..4)],
+            Prim::Shift164 => vec![on(2, &[0, 1], &[3], 0..8)],
+            Prim::Shift595 => {
+                vec![on(1, &[0], &[3], 0..8), Clocked { lead: Some(1), ..on(2, &[], &[], 8..16) }]
             }
-            Prim::Counter { sync_reset: true } => {
-                Some(Clocked { clock: 1, data: &[0, 2, 3, 4, 5, 6, 7, 8], resets: &[] })
-            }
-            Prim::Shift164 => Some(Clocked { clock: 2, data: &[0, 1], resets: &[3] }),
-            Prim::Shift595 => Some(Clocked { clock: 1, data: &[0], resets: &[3] }),
-            _ => None,
+            _ => Vec::new(),
         }
     }
 }
@@ -208,8 +239,11 @@ pub struct Cell {
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
     pub weak: bool,
+    pub open_drain: bool,
     pub setup: u64,
     pub hold: u64,
+    pub recovery: u64,
+    pub removal: u64,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -254,11 +288,35 @@ pub struct Expect {
     pub check: Check,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bus {
+    pub name: String,
+    pub nets: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkKind {
+    Assertion,
+    Timing,
+    Contention,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mark {
+    pub time: u64,
+    pub kind: MarkKind,
+    pub nets: Vec<String>,
+    pub text: String,
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct LogicSpec {
     pub schematic: String,
     pub duration: u64,
     pub record: Vec<(String, usize)>,
+    pub buses: Vec<Bus>,
+    pub on_violation: OnViolation,
     pub stimuli: Vec<Stimulus>,
     pub expects: Vec<Expect>,
     pub circuit: Circuit,
@@ -280,6 +338,10 @@ pub struct LogicResult {
     pub duration_ps: u64,
     pub end_ps: u64,
     pub traces: Vec<Trace>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub buses: Vec<Bus>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub marks: Vec<Mark>,
     pub passed: usize,
     pub failures: Vec<String>,
     pub readings: Vec<Reading>,
@@ -379,12 +441,21 @@ pub struct Timing {
     pub delay: u64,
     pub setup: u64,
     pub hold: u64,
+    pub recovery: u64,
+    pub removal: u64,
 }
 
-pub const GENERIC_TIMING: Timing = Timing { delay: 1_000, setup: 0, hold: 0 };
+pub const GENERIC_TIMING: Timing =
+    Timing { delay: 1_000, setup: 0, hold: 0, recovery: 0, removal: 0 };
 
 pub fn family_timing(family: &str) -> Timing {
-    let t = |d: u64, s: u64, h: u64| Timing { delay: d * 1000, setup: s * 1000, hold: h * 1000 };
+    let t = |d: u64, s: u64, h: u64| Timing {
+        delay: d * 1000,
+        setup: s * 1000,
+        hold: h * 1000,
+        recovery: s * 1000,
+        removal: h * 1000,
+    };
     match family {
         "HC" | "HCT" => t(10, 15, 3),
         "AHC" | "AHCT" | "VHC" | "VHCT" => t(6, 5, 1),
@@ -405,11 +476,33 @@ fn units_of(prim: &'static str, keys: &[&'static str], table: &[&[&'static str]]
         .collect()
 }
 
+const QUAD00: &[&[&str]] =
+    &[&["1", "2", "3"], &["4", "5", "6"], &["9", "10", "8"], &["12", "13", "11"]];
+const QUAD02: &[&[&str]] =
+    &[&["2", "3", "1"], &["5", "6", "4"], &["8", "9", "10"], &["11", "12", "13"]];
+const AB: &[&str] = &["A", "B", "Y"];
+
+pub fn library_for(family: &str, code: &str) -> Option<Vec<Unit>> {
+    if code == "01" && matches!(family, "" | "LS" | "S" | "ALS") {
+        return Some(units_of("nand_od", AB, QUAD02));
+    }
+    library(code)
+}
+
+const OCT_IN: [&str; 8] = ["2", "3", "4", "5", "6", "7", "8", "9"];
+const OCT_OUT: [&str; 8] = ["19", "18", "17", "16", "15", "14", "13", "12"];
+const OCT_B: [&str; 8] = ["18", "17", "16", "15", "14", "13", "12", "11"];
+
+fn octal(keys: &[&'static str], shared: &[&'static str], high: [&'static str; 8]) -> Vec<Unit> {
+    (0..8)
+        .map(|i| {
+            let pins = shared.iter().copied().chain([OCT_IN[i], high[i]]);
+            (keys[0], keys[1..].iter().copied().zip(pins).collect())
+        })
+        .collect()
+}
+
 pub fn library(code: &str) -> Option<Vec<Unit>> {
-    const QUAD00: &[&[&str]] =
-        &[&["1", "2", "3"], &["4", "5", "6"], &["9", "10", "8"], &["12", "13", "11"]];
-    const QUAD02: &[&[&str]] =
-        &[&["2", "3", "1"], &["5", "6", "4"], &["8", "9", "10"], &["11", "12", "13"]];
     const HEX04: &[&[&str]] =
         &[&["1", "2"], &["3", "4"], &["5", "6"], &["9", "8"], &["11", "10"], &["13", "12"]];
     const TRIPLE3: &[&[&str]] =
@@ -439,7 +532,6 @@ pub fn library(code: &str) -> Option<Vec<Unit>> {
     const DUAL2: &[&[&str]] = &[&["1", "2", "7"], &["5", "6", "3"]];
     const DUAL1: &[&[&str]] = &[&["1", "6"], &["3", "4"]];
     const DUAL125: &[&[&str]] = &[&["1", "2", "6"], &["7", "5", "3"]];
-    const AB: &[&str] = &["A", "B", "Y"];
     const ABC: &[&str] = &["A", "B", "C", "Y"];
     const ABCD: &[&str] = &["A", "B", "C", "D", "Y"];
     const AY: &[&str] = &["A", "Y"];
@@ -469,6 +561,12 @@ pub fn library(code: &str) -> Option<Vec<Unit>> {
     };
     Some(match code {
         "00" | "132" => units_of("nand", AB, QUAD00),
+        "01" | "03" => units_of("nand_od", AB, QUAD00),
+        "05" | "06" => units_of("not_od", AY, HEX04),
+        "07" => units_of("buf_od", AY, HEX04),
+        "573" => octal(&["dlatch", "OE_N", "EN", "D", "Q"], &["1", "11"], OCT_OUT),
+        "574" => octal(&["dff", "OE_N", "CLK", "D", "Q"], &["1", "11"], OCT_OUT),
+        "245" => octal(&["xcvr", "DIR", "OE_N", "A", "B"], &["1", "19"], OCT_B),
         "08" => units_of("and", AB, QUAD00),
         "32" => units_of("or", AB, QUAD00),
         "86" => units_of("xor", AB, QUAD00),
@@ -564,6 +662,8 @@ pub fn library(code: &str) -> Option<Vec<Unit>> {
         "1G02" => units_of("nor", AB, SINGLE2),
         "1G04" | "1G14" => units_of("not", AY, SINGLE1),
         "1G34" | "1G17" => units_of("buf", AY, SINGLE1),
+        "1G06" => units_of("not_od", AY, SINGLE1),
+        "1G07" => units_of("buf_od", AY, SINGLE1),
         "1G125" => units_of("tri", TRI_N, SINGLE125),
         "1G126" => units_of("tri", TRI, SINGLE125),
         "1G79" => vec![("dff", vec![("D", "1"), ("CLK", "2"), ("Q", "4")])],
@@ -644,6 +744,7 @@ pub struct Template {
     pub prim: Prim,
     pub inputs: Vec<Slot>,
     pub outputs: Vec<Slot>,
+    pub open_drain: bool,
 }
 
 fn split_key(k: &str) -> (String, bool) {
@@ -665,7 +766,10 @@ fn signature(prim: &str) -> Option<(Prim, Sig)> {
         "tri" => (Prim::Tri, (&[("A", None), ("OE", None)], &["Y"])),
         "dff" => (
             Prim::Dff,
-            (&[("D", None), ("CLK", None), ("S", Some(L)), ("R", Some(L))], &["Q", "QN"]),
+            (
+                &[("D", None), ("CLK", None), ("S", Some(L)), ("R", Some(L)), ("OE", Some(H))],
+                &["Q", "QN"],
+            ),
         ),
         "jk" => (
             Prim::Jk,
@@ -675,7 +779,13 @@ fn signature(prim: &str) -> Option<(Prim, Sig)> {
             ),
         ),
         "sr" => (Prim::Sr, (&[("S", None), ("R", None)], &["Q", "QN"])),
-        "dlatch" => (Prim::Dlatch, (&[("D", None), ("EN", None), ("R", Some(L))], &["Q", "QN"])),
+        "dlatch" => (
+            Prim::Dlatch,
+            (&[("D", None), ("EN", None), ("R", Some(L)), ("OE", Some(H))], &["Q", "QN"]),
+        ),
+        "xcvr" => {
+            (Prim::Xcvr, (&[("A", None), ("B", None), ("DIR", None), ("OE", Some(H))], &["A", "B"]))
+        }
         "mux2" => {
             (Prim::Mux2, (&[("I0", None), ("I1", None), ("S", None), ("EN", Some(H))], &["Y"]))
         }
@@ -748,10 +858,15 @@ pub const PRIMITIVES: &[&str] = &[
     "counter163",
     "shift164",
     "shift595",
+    "xcvr",
 ];
 
 pub fn bind(prim: &str, keys: &[(String, String)]) -> Result<Template, String> {
     let prim = prim.trim().to_ascii_lowercase();
+    let (prim, open_drain) = match prim.strip_suffix("_od") {
+        Some(p) => (p.to_string(), true),
+        None => (prim, false),
+    };
     let mut seen: Vec<String> = Vec::new();
     for (k, _) in keys {
         let base = split_key(k).0;
@@ -787,7 +902,10 @@ pub fn bind(prim: &str, keys: &[(String, String)]) -> Result<Template, String> {
             let want = if single { "one input" } else { "at least one input" };
             return Err(format!("`{prim}` needs {want} besides `Y`"));
         }
-        return Ok(Template { prim: Prim::Gate { op, invert }, inputs, outputs });
+        return Ok(Template { prim: Prim::Gate { op, invert }, inputs, outputs, open_drain });
+    }
+    if open_drain {
+        return Err(format!("`{prim}_od`: only the gates, not and buf have an open-drain form"));
     }
     let Some((p, (ins, outs))) = signature(&prim) else {
         return Err(format!("no primitive `{prim}`; there is {}", PRIMITIVES.join(", ")));
@@ -802,14 +920,22 @@ pub fn bind(prim: &str, keys: &[(String, String)]) -> Result<Template, String> {
         .collect();
     for (k, pin) in keys {
         let (base, inv) = split_key(k);
-        let slot = inputs.iter_mut().chain(outputs.iter_mut()).find(|s| s.key == base);
-        let Some(slot) = slot else {
-            let all: Vec<&str> = ins.iter().map(|x| x.0).chain(outs.iter().copied()).collect();
+        let mut found = false;
+        for slot in inputs.iter_mut().chain(outputs.iter_mut()).filter(|s| s.key == base) {
+            slot.pin = Some(pin.clone());
+            slot.invert = inv;
+            slot.key = k.trim().to_ascii_uppercase();
+            found = true;
+        }
+        if !found {
+            let mut all: Vec<&str> = ins.iter().map(|x| x.0).collect();
+            for o in outs.iter() {
+                if !all.contains(o) {
+                    all.push(o);
+                }
+            }
             return Err(format!("`{prim}` has no pin `{k}`; it has {}", all.join(", ")));
-        };
-        slot.pin = Some(pin.clone());
-        slot.invert = inv;
-        slot.key = k.trim().to_ascii_uppercase();
+        }
     }
     let missing: Vec<&str> = inputs
         .iter()
@@ -819,7 +945,7 @@ pub fn bind(prim: &str, keys: &[(String, String)]) -> Result<Template, String> {
     if !missing.is_empty() {
         return Err(format!("`{prim}` needs pin(s) {}", missing.join(", ")));
     }
-    Ok(Template { prim: p, inputs, outputs })
+    Ok(Template { prim: p, inputs, outputs, open_drain: false })
 }
 
 pub fn truth_template(
@@ -867,6 +993,7 @@ pub fn truth_template(
         prim: Prim::Truth(table),
         inputs: inputs.iter().map(slot).collect(),
         outputs: outputs.iter().map(slot).collect(),
+        open_drain: false,
     })
 }
 
@@ -1017,6 +1144,9 @@ fn instantiate(
             (None, _) => Input::Fixed(s.default.unwrap_or(Level::X)),
         })
         .collect();
+    let collector = t.outputs.iter().filter_map(|s| s.pin.as_deref().and_then(|p| info.pin(p)));
+    let open_collector = collector.clone().count() > 0
+        && collector.clone().all(|p| p.kind == PinType::OpenCollector);
     let outputs = t
         .outputs
         .iter()
@@ -1033,14 +1163,17 @@ fn instantiate(
         inputs,
         outputs,
         weak: false,
+        open_drain: t.open_drain || open_collector,
         setup: timing.setup,
         hold: timing.hold,
+        recovery: timing.recovery,
+        removal: timing.removal,
     });
     Ok(())
 }
 
-fn library_templates(code: &str) -> Vec<Template> {
-    library(code)
+fn library_templates(family: &str, code: &str) -> Vec<Template> {
+    library_for(family, code)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(prim, keys)| {
@@ -1153,6 +1286,12 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
             if let Some(v) = m.hold.as_deref().and_then(|s| time(s, &at, d)) {
                 timing.hold = v;
             }
+            if let Some(v) = m.recovery.as_deref().and_then(|s| time(s, &at, d)) {
+                timing.recovery = v;
+            }
+            if let Some(v) = m.removal.as_deref().and_then(|s| time(s, &at, d)) {
+                timing.removal = v;
+            }
             for (k, v) in &m.delays {
                 if let Some(t) = time(v, &at, d) {
                     delays.insert(split_key(k).0, t);
@@ -1169,10 +1308,11 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
                     let p = m.primitive.clone().unwrap_or_default();
                     match part_code(&p) {
                         Some((f, code)) if m.pins.is_empty() => {
-                            if m.delay.is_none() && m.setup.is_none() && m.hold.is_none() {
+                            let custom = [&m.delay, &m.setup, &m.hold, &m.recovery, &m.removal];
+                            if custom.iter().all(|x| x.is_none()) {
                                 timing = family_timing(&f);
                             }
-                            Ok(library_templates(&code))
+                            Ok(library_templates(&f, &code))
                         }
                         _ => {
                             let keys: Vec<(String, String)> =
@@ -1234,8 +1374,8 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
         if PASSIVES.contains(&pre.as_str()) {
             continue;
         }
-        if let Some((_, code)) = &family {
-            for t in library_templates(code) {
+        if let Some((f, code)) = &family {
+            for t in library_templates(f, code) {
                 if let Err(e) = instantiate(info, &t, timing, &delays, true, &mut built) {
                     d.error(&at, e);
                 }
@@ -1385,8 +1525,11 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
             inputs: Vec::new(),
             outputs: vec![Output { net: Some(*id), invert: false, delay: 0 }],
             weak: false,
+            open_drain: false,
             setup: 0,
             hold: 0,
+            recovery: 0,
+            removal: 0,
         });
     }
     for (r, net, l) in &pulls {
@@ -1397,8 +1540,11 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
             inputs: Vec::new(),
             outputs: vec![Output { net: Some(map(&mut uf, *net)), invert: false, delay: 0 }],
             weak: true,
+            open_drain: false,
             setup: 0,
             hold: 0,
+            recovery: 0,
+            removal: 0,
         });
     }
     for mut c in built.cells {
@@ -1420,6 +1566,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
         }
     };
     let mut record = Vec::new();
+    let mut buses = Vec::new();
     if file.record.is_empty() {
         for (id, name) in names.iter().enumerate() {
             if !rail_level_of.contains_key(&id) {
@@ -1428,9 +1575,33 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
         }
     } else {
         for r in &file.record {
-            match find_net(r) {
-                Some(id) => record.push((r.clone(), id)),
-                None => d.error("record", format!("no net `{r}` in schematic {}", sch.name)),
+            let (nets, bus) = match r {
+                RecordFile::Net(n) => (std::slice::from_ref(n), None),
+                RecordFile::Bus { name, nets } => (nets.as_slice(), Some(name)),
+            };
+            if let Some(name) = bus
+                && nets.is_empty()
+            {
+                d.error("record", format!("bus `{name}` needs `nets`, MSB first"));
+                continue;
+            }
+            let mut ok = true;
+            for n in nets {
+                if record.iter().any(|x: &(String, usize)| &x.0 == n) {
+                    continue;
+                }
+                match find_net(n) {
+                    Some(id) => record.push((n.clone(), id)),
+                    None => {
+                        ok = false;
+                        d.error("record", format!("no net `{n}` in schematic {}", sch.name))
+                    }
+                }
+            }
+            if let Some(name) = bus
+                && ok
+            {
+                buses.push(Bus { name: name.clone(), nets: nets.to_vec() });
             }
         }
     }
@@ -1510,6 +1681,8 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
         schematic: sch.name.clone(),
         duration,
         record,
+        buses,
+        on_violation: file.on_violation.unwrap_or_default(),
         stimuli,
         expects,
         circuit: Circuit { nets: names, cells },
@@ -1540,11 +1713,69 @@ mod tests {
             "126", "132", "138", "157", "161", "163", "164", "244", "595", "1G00", "1G02", "1G04",
             "1G08", "1G14", "1G17", "1G32", "1G34", "1G74", "1G79", "1G80", "1G86", "1G125",
             "1G126", "1G157", "2G00", "2G02", "2G04", "2G08", "2G14", "2G17", "2G32", "2G34",
-            "2G74", "2G86", "2G125", "2G126",
+            "2G74", "2G86", "2G125", "2G126", "01", "03", "05", "06", "07", "245", "573", "574",
+            "1G06", "1G07",
         ] {
             let units = library(code).unwrap();
-            assert_eq!(library_templates(code).len(), units.len(), "{code}");
+            assert_eq!(library_templates("HC", code).len(), units.len(), "{code}");
         }
+    }
+
+    #[test]
+    fn octal_open_drain_and_schmitt_parts_bind() {
+        let pin = |s: &Slot| s.pin.clone().unwrap_or_default();
+        let latch = library_templates("HC", "573");
+        assert_eq!(latch.len(), 8);
+        assert_eq!(latch[0].prim, Prim::Dlatch);
+        let l0: Vec<(String, String, bool)> =
+            latch[0].inputs.iter().map(|s| (s.key.clone(), pin(s), s.invert)).collect();
+        assert_eq!(l0[0], ("D".into(), "2".into(), false));
+        assert_eq!(l0[1], ("EN".into(), "11".into(), false));
+        assert_eq!(l0[3], ("OE_N".into(), "1".into(), true));
+        assert_eq!(pin(&latch[0].outputs[0]), "19");
+        assert_eq!(
+            (pin(&latch[7].inputs[0]), pin(&latch[7].outputs[0])),
+            ("9".into(), "12".into())
+        );
+        let reg = library_templates("HC", "574");
+        assert_eq!(reg[3].prim, Prim::Dff);
+        assert_eq!((pin(&reg[3].inputs[1]), pin(&reg[3].outputs[0])), ("11".into(), "16".into()));
+        let x = library_templates("HC", "245");
+        assert_eq!(x.len(), 8);
+        assert_eq!(x[0].prim, Prim::Xcvr);
+        let ins: Vec<String> = x[0].inputs.iter().map(pin).collect();
+        assert_eq!(ins, ["2", "18", "1", "19"]);
+        assert!(x[0].inputs[3].invert);
+        let outs: Vec<String> = x[7].outputs.iter().map(pin).collect();
+        assert_eq!(outs, ["9", "11"]);
+        for code in ["01", "03", "05", "06", "07", "1G06", "1G07"] {
+            assert!(library_templates("HC", code).iter().all(|t| t.open_drain), "{code}");
+        }
+        assert!(!library_templates("HC", "00")[0].open_drain);
+        let nand = Prim::Gate { op: GateOp::And, invert: true };
+        assert_eq!(library_templates("HC", "03")[0].prim, nand);
+        assert_eq!(pin(&library_templates("HC", "01")[0].outputs[0]), "3");
+        assert_eq!(pin(&library_templates("LS", "01")[0].outputs[0]), "1");
+        assert_eq!(pin(&library_templates("", "01")[3].outputs[0]), "13");
+        let buf = &library_templates("LVC", "1G07")[0];
+        assert_eq!(buf.prim, Prim::Gate { op: GateOp::And, invert: false });
+        assert_eq!((pin(&buf.inputs[0]), pin(&buf.outputs[0])), ("2".into(), "4".into()));
+        let schmitt = library_templates("HC", "14");
+        assert_eq!(schmitt.len(), 6);
+        assert!(schmitt.iter().all(|t| t.prim == nand && !t.open_drain));
+        assert_eq!(part_code("SN74HC14N"), Some(("HC".into(), "14".into())));
+        assert_eq!(part_code("74LVC1G07GW"), Some(("LVC".into(), "1G07".into())));
+        assert_eq!(part_code("SN74HC573AN"), Some(("HC".into(), "573".into())));
+        let k = |v: &[(&str, &str)]| -> Vec<(String, String)> {
+            v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+        };
+        let od = bind("xor_od", &k(&[("A", "1"), ("B", "2"), ("Y", "3")])).unwrap();
+        assert!(od.open_drain);
+        assert!(
+            bind("dff_od", &k(&[("D", "1"), ("CLK", "2")])).unwrap_err().contains("open-drain")
+        );
+        let err = bind("xcvr", &k(&[("A", "1"), ("C", "2")])).unwrap_err();
+        assert!(err.ends_with("it has A, B, DIR, OE"), "{err}");
     }
 
     #[test]
@@ -1662,6 +1893,15 @@ right = [{ number = "3", name = "O", type = "output" }]
 "#,
         );
         w(
+            "OCNAND.sym.toml",
+            r#"name = "OCNAND"
+reference = "U"
+[[bodies]]
+left = [{ number = "1", name = "A", type = "input" }, { number = "2", name = "B", type = "input" }]
+right = [{ number = "3", name = "Y", type = "open_collector", shape = "inverted" }]
+"#,
+        );
+        w(
             "R.sym.toml",
             r#"name = "R"
 reference = "R"
@@ -1693,6 +1933,11 @@ symbol = "CHIP"
 value = "MYSTERY"
 at = [152.4, 101.6]
 [[parts]]
+ref = "U5"
+symbol = "OCNAND"
+value = "AND"
+at = [152.4, 50.8]
+[[parts]]
 ref = "R1"
 symbol = "R"
 value = "10k"
@@ -1712,16 +1957,16 @@ style = "power"
 pins = ["U1.7"]
 [[nets]]
 name = "A"
-pins = ["U1.1", "U2.1", "U3.1", "U4.1"]
+pins = ["U1.1", "U2.1", "U3.1", "U4.1", "U5.1"]
 [[nets]]
 name = "B_SRC"
 pins = ["R2.1"]
 [[nets]]
 name = "B"
-pins = ["R2.2", "U1.2", "U2.2", "U3.2", "U4.2"]
+pins = ["R2.2", "U1.2", "U2.2", "U3.2", "U4.2", "U5.2"]
 [[nets]]
 name = "PULLED"
-pins = ["R1.2", "U1.4", "U1.5"]
+pins = ["R1.2", "U1.4", "U1.5", "U5.3"]
 [[nets]]
 name = "Y"
 pins = ["U1.3"]
@@ -1819,6 +2064,11 @@ sequence = ["1-", 3]
         assert_eq!(xor.outputs[0].delay, 2_000);
         let u3 = l.circuit.cells.iter().find(|c| c.part == "U3").unwrap();
         assert_eq!(u3.outputs[0].net, Some(net("N")));
+        let u5 = l.circuit.cells.iter().find(|c| c.part == "U5").unwrap();
+        assert!(u5.open_drain && u5.outputs[0].invert);
+        assert!(!nands[0].open_drain);
+        assert_eq!(l.on_violation, OnViolation::X);
+        assert!(l.buses.is_empty());
         assert!(!l.circuit.cells.iter().any(|c| c.part == "U4"));
         assert_eq!(l.record.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["A", "B", "Y"]);
         assert_eq!(l.expects[0].check, Check::At { time: 200_000, value: vec![Some(Level::H)] });
@@ -1826,6 +2076,43 @@ sequence = ["1-", 3]
         assert_eq!((*edge, *from), (Edge::Falling, 100_000));
         assert_eq!(values[0], vec![Some(Level::H), None]);
         assert_eq!(values[1], vec![Some(Level::H), Some(Level::H)]);
+    }
+
+    #[test]
+    fn logic_sim_file_reads_buses_violation_mode_and_reset_timing() {
+        let sim = format!(
+            r#"name = "t"
+kind = "logic"
+duration = "1us"
+ignore = ["U4"]
+on_violation = "keep"
+record = ["A", {{ name = "OUT", nets = ["X", "N"] }}, "X", {{ name = "BAD", nets = ["A", "NOPE"] }}]
+
+[[parts]]
+ref = "U1"
+recovery = "7ns"
+removal = "2ns"
+{PARTS}"#
+        );
+        let p = fixture("bus", &sim);
+        let e = &p.sims[0];
+        let errors: Vec<&String> = e
+            .diags
+            .iter()
+            .filter(|d| d.severity == crate::Severity::Error)
+            .map(|d| &d.message)
+            .collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("no net `NOPE`"));
+        let l = e.item.logic.as_ref().unwrap();
+        assert_eq!(l.on_violation, OnViolation::Keep);
+        assert_eq!(l.buses, vec![Bus { name: "OUT".into(), nets: vec!["X".into(), "N".into()] }]);
+        let names: Vec<&str> = l.record.iter().map(|r| r.0.as_str()).collect();
+        assert_eq!(names, ["A", "X", "N"]);
+        let u1 = l.circuit.cells.iter().find(|c| c.part == "U1").unwrap();
+        assert_eq!((u1.setup, u1.hold, u1.recovery, u1.removal), (15_000, 3_000, 7_000, 2_000));
+        let u3 = l.circuit.cells.iter().find(|c| c.part == "U3").unwrap();
+        assert_eq!((u3.recovery, u3.removal), (0, 0));
     }
 
     #[test]

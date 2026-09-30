@@ -1508,6 +1508,8 @@ schematic = "counter"          # default: the only top-level schematic
 duration = "2us"
 ignore = ["J1", "J2"]           # parts with no logic model to leave out
 record = ["CLK", "Q3", "Q2", "Q1", "Q0"]   # default every net but the rails
+# record = ["CLK", { name = "COUNT", nets = ["Q3", "Q2", "Q1", "Q0"] }]   # a bus, MSB first
+# on_violation = "keep"         # default "x": a timing violation makes the flip-flop x
 
 [[stimulus]]
 net = "CLK"
@@ -1559,11 +1561,20 @@ The netlist becomes cells as follows:
   crystals (`C`, `L`, `FB`, `FL`, `D`, `LED`, `TP`, `H`, `MH`, `FID`, `Y`, `X`) are left out.
 - Parts whose value (or else symbol name) holds a 74 series number take the built-in model by
   pin number: `74HC00`, `SN74LVC1G08DBVR` and `CD74HCT04E` all match. The library covers 00,
-  02, 04, 08, 10, 11, 14, 20, 21, 27, 32, 74, 86, 125, 126, 132, 138, 157, 161, 163, 164, 244
-  and 595, the single gates 1G00, 1G02, 1G04, 1G08, 1G14, 1G17, 1G32, 1G34, 1G74, 1G79, 1G80,
-  1G86, 1G125, 1G126 and 1G157, and the dual gates 2G00, 2G02, 2G04, 2G08, 2G14, 2G17, 2G32,
-  2G34, 2G74, 2G86, 2G125 and 2G126. A unit of a multi-unit symbol that is not placed is left
-  out; a placed pin with no net reads as floating (z).
+  01, 02, 03, 04, 05, 06, 07, 08, 10, 11, 14, 20, 21, 27, 32, 74, 86, 125, 126, 132, 138, 157,
+  161, 163, 164, 244, 245, 573, 574 and 595, the single gates 1G00, 1G02, 1G04, 1G06, 1G07,
+  1G08, 1G14, 1G17, 1G32, 1G34, 1G74, 1G79, 1G80, 1G86, 1G125, 1G126 and 1G157, and the dual
+  gates 2G00, 2G02, 2G04, 2G08, 2G14, 2G17, 2G32, 2G34, 2G74, 2G86, 2G125 and 2G126. A unit of a
+  multi-unit symbol that is not placed is left out; a placed pin with no net reads as floating
+  (z).
+- The 14 (and 1G14, 2G14) Schmitt triggers are inverters; the sim has no slow analog edge for
+  the hysteresis to act on. The 573 is eight `dlatch` and the 574 eight `dff`, each with the shared `OE`
+  (pin 1, active low) floating the outputs. The 245 is eight `xcvr`: with `OE` (pin 19) low it
+  drives B from A while `DIR` (pin 1) is high and A from B while it is low. The 01, 03 (quad
+  NAND), 05, 06, 1G06 (inverters) and 07, 1G07 (buffers) are open drain: they pull low or let
+  go (z), and a pull-up resistor makes the 1. A 7401 or 74LS01 has the 7402 pinout (outputs on
+  1, 4, 10, 13); a CMOS 74HC01 has the 7400 one.
+- A gate whose output pins are all `open_collector` in its symbol is open drain as well.
 - Parts whose value or symbol is a primitive name (`AND`, `NAND3`, `OR`, `NOR`, `XOR`, `XNOR`,
   `NOT`, `INV`, `BUF`, `TRIBUF`, `DFF`, `JKFF`, `SRLATCH`, `DLATCH`, `MUX2`) map their pins by
   name: `D`, `CLK` (also `C`, `CP`, `CK`), `S` / `SET` / `PRE`, `R` / `RST` / `CLR`, `EN`, `OE`,
@@ -1595,7 +1606,7 @@ with only timing keeps the built-in model and changes its timing.
 ref = "U7"
 primitive = "nand"              # a primitive; pins map its pin keys to the part's pins
 pins = { A = "1", B = "2", Y = "3" }
-delay = "3ns"                   # every output; setup = "...", hold = "..." as well
+delay = "3ns"                   # every output; setup, hold, recovery and removal as well
 delays = { Y = "5ns" }          # or per output key
 
 [[parts]]
@@ -1616,11 +1627,13 @@ inverted output, and leave out an optional input to hold it inactive:
 |---|---|---|
 | `and`, `or`, `xor`, `nand`, `nor`, `xnor` | any keys but `Y` | `Y` |
 | `not`, `buf` | one key | `Y` |
+| any gate with `_od` (`nand_od`, `not_od`, `buf_od`) | as the gate | `Y`, open drain: 0 or z |
 | `tri` | `A`, `OE` | `Y` (z when `OE` is low) |
-| `dff` | `D`, `CLK`, optional `S`, `R` | `Q`, `QN` |
+| `dff` | `D`, `CLK`, optional `S`, `R`, `OE` | `Q`, `QN` (z when `OE` is low) |
 | `jk` | `J`, `K`, `CLK`, optional `S`, `R` | `Q`, `QN` |
 | `sr` | `S`, `R` | `Q`, `QN` |
-| `dlatch` | `D`, `EN`, optional `R` | `Q`, `QN` |
+| `dlatch` | `D`, `EN`, optional `R`, `OE` | `Q`, `QN` (z when `OE` is low) |
+| `xcvr` | `A`, `B`, `DIR`, optional `OE` | `A`, `B`: the same pins, driven from the other side by `DIR` |
 | `mux2` | `I0`, `I1`, `S`, optional `EN` | `Y` |
 | `dec138` | `A0`, `A1`, `A2`, `E1`, `E2`, `E3` | `Y0` to `Y7` |
 | `counter161`, `counter163` | optional `R`, `CLK`, optional `D0` to `D3`, `CEP`, `LOAD`, `CET` | `Q0` to `Q3`, `TC` |
@@ -1645,7 +1658,16 @@ reports the nets, and so does a run past 50 million events.
 Flip-flops, counters and shift registers check setup and hold on their clocked inputs against
 the model's timing: a data input that changed less than `setup` before a rising clock edge, or
 less than `hold` after it, is a violation (not checked while an asynchronous reset or set is
-active). The sampled value is kept.
+active). A D latch checks its `D` against the closing (falling) edge of `EN` the same way. An
+asynchronous reset or set released less than `recovery` before a clock edge, or less than
+`removal` after one, is a violation too; the family table's setup and hold are the defaults for
+recovery and removal. A 595 also wants its `LATCH` (RCLK) rising edge at least `setup` after
+the last `CLK` (SRCLK) rising edge; the two clocks tied together (the same instant) is fine and
+latches the value from before the shift.
+
+On a violation the flip-flop, latch or register the check covers goes to x, as the Verilog
+models do with their notifiers, until it is clocked, set or reset cleanly again. Set
+`on_violation = "keep"` on the sim to report the violation and keep the sampled value instead.
 
 Readings: assertions passed and failed, contentions, timing violations, cells and events. Check
 lists every failed assertion, contention, timing violation or stopped run as an error on the
