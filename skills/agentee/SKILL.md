@@ -102,6 +102,34 @@ datasheet. Use `[[bodies]]` with per-side pin lists for box symbols and pad rows
 - `side = "bottom"` on a footprint mirrors it and swaps F./B. layers; place its coordinates as
   seen from the top.
 
+## Placing for assembly, handling and test
+
+Check reports these as notices, not errors: they are practice, not fab limits. Follow them
+unless the design gives a reason not to, and say why in DESIGN.md when you don't.
+
+- **Keep bodies off the edge.** Every part body at least 1 mm from the outline, so handling,
+  depaneling and enclosures don't knock parts off. Edge-launch connectors, castellations and
+  mounting holes are the exceptions (`edge = true` pads, `overhang = true` footprints).
+- **Ceramic caps crack where the board bends.** Within about 5 mm of an edge, a corner, a
+  mounting hole or a V-cut the board flexes when it is broken out of the panel, screwed down or
+  handled (Knowles, Murata). Keep MLCCs out of that zone; one that has to be there lies with its
+  long axis parallel to the nearest edge. Never put 0805 and larger MLCCs in it.
+- **Tombstoning.** A small passive (0603 and down) lifts one end in reflow when its ends heat
+  unevenly. Give both pads the same size, the same copper (both on thin tracks, or both into
+  the pour through the same relief), and via-in-pad on both ends or neither. Keep small parts
+  at least a tall neighbour's height away from it, so it doesn't shade them in the oven.
+- **Test pads, always.** Every board needs probe access for bring-up and a pogo-pin fixture for
+  production test. Put a test pad on every power rail and ground, every reset, enable, power
+  good and boot or strap pin, every clock, and each low-speed bus line (UART, SPI, I2C, SWD,
+  JTAG where there is no connector). Keep them on one side (the bottom by default) so one
+  fixture reaches all of them: round pads of 1 mm or more, centres at least 1.27 mm apart (2.54 mm
+  for 100 mil pogo pins), 1 mm from parts and 3 mm from the edge and tooling holes, not under
+  parts, never on high-speed pairs or RF lines (the stub hurts them). Use `TestPoint_Pad_D1.0mm`
+  style footprints and name them `TP1...`.
+- **Fiducials and tooling holes.** Two or three fiducials per side that has fine-pitch parts,
+  and non-plated tooling holes if the board is tested in a fixture.
+- Every fab package carries `agentee vX.Y.Z-hash` in silk; leave room for it.
+
 ## Sizing traces
 
 ```sh
