@@ -702,6 +702,67 @@ mod tests {
     }
 
     #[test]
+    fn neck_rewrites_wide_track_ends_and_refreshes_fills() {
+        let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+        let dir = std::env::temp_dir().join(format!("agentee-neck-mcp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for f in ["symbols/R.sym.toml", "footprints/R_0402_1005Metric.fp.toml"] {
+            std::fs::create_dir_all(dir.join(f).parent().unwrap()).unwrap();
+            std::fs::copy(lna.join(f), dir.join(f)).unwrap();
+        }
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\nfab = \"jlcpcb\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n[[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\n[[netclasses]]\nname = \"Power\"\ntrack_width = \"0.8mm\"\nclearance = \"0.15mm\"\n",
+        )
+        .unwrap();
+        let mut sch = String::from("name = \"t\"\nboard = \"t\"\n");
+        let mut pcb = String::from("name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n");
+        for (i, (r, x)) in [("R1", 5.0), ("R2", 12.0)].iter().enumerate() {
+            sch += &format!(
+                "\n[[parts]]\nref = \"{r}\"\nsymbol = \"R\"\nvalue = \"x\"\nfootprint = \"R_0402_1005Metric\"\nat = [{}, 20.32]\n",
+                10.16 * (i + 1) as f64
+            );
+            pcb += &format!(
+                "\n[[footprints]]\nref = \"{r}\"\nat = [{x}, 5]\nlabel = {{ hide = true }}\n"
+            );
+        }
+        sch += "\n[[nets]]\nname = \"P\"\nclass = \"Power\"\npins = [\"R1.2\", \"R2.1\"]\n";
+        sch += "\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n[[nets]]\nname = \"GND\"\npins = [\"R2.2\"]\n";
+        pcb += "\n[[tracks]]\nnet = \"P\"\nlayer = \"F.Cu\"\npoints = [[5.51, 5], [11.49, 5]]\n";
+        pcb += "\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n";
+        std::fs::write(dir.join("t.sch.toml"), sch).unwrap();
+        std::fs::write(dir.join("t.pcb.toml"), &pcb).unwrap();
+        let call = |dry: bool| {
+            let c = json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": "neck", "arguments": { "name": "t", "dry_run": dry } } });
+            let r = handle(&dir, &c).unwrap();
+            assert_ne!(r["result"]["isError"], true, "{r}");
+            let v: Value =
+                serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+            v
+        };
+        let v = call(true);
+        assert_eq!(v["necked"].as_array().unwrap().len(), 2, "{v}");
+        assert_eq!(std::fs::read_to_string(dir.join("t.pcb.toml")).unwrap(), pcb);
+        let v = call(false);
+        assert_eq!(v["tracks_changed"], 1, "{v}");
+        assert_eq!(v["tracks_added"], 2, "{v}");
+        assert_eq!(v["fills"], 1, "{v}");
+        let text = std::fs::read_to_string(dir.join("t.pcb.toml")).unwrap();
+        assert_eq!(text.matches("[[tracks]]").count(), 3, "{text}");
+        assert!(text.contains("[[fills]]"), "{text}");
+        let p = ops::load(&dir).unwrap();
+        let errors: Vec<_> =
+            p.layouts[0].diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            p.layouts[0].diags.iter().filter(|d| d.rule.as_deref() == Some("neckdown")).count(),
+            2
+        );
+        assert!(p.layouts[0].item.fill_keys.iter().all(|k| k.stored));
+        assert!(call(false)["necked"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
     fn check_passes_on_the_demo() {
         let (_, v, ok) = ops::check_report(&ops::load(&demo()).unwrap(), None, Severity::Warning);
         assert!(ok, "{v}");
