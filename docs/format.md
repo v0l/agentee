@@ -1679,17 +1679,36 @@ The netlist becomes cells as follows:
   the pin active low.
 - Any other part is an error naming it, unless it is in `ignore` or has a `[[parts]]` model.
 
-Family timing, from the family letters after 74 (propagation delay, setup, hold):
+Family timing, from the family letters after 74 (propagation delay, setup, hold, and the
+recovery and removal of an asynchronous set or reset):
 
-| Family | Delay | Setup | Hold |
-|---|---|---|---|
-| HC, HCT | 10 ns | 15 ns | 3 ns |
-| AHC, AHCT, VHC, VHCT | 6 ns | 5 ns | 1 ns |
-| AC, ACT | 6 ns | 4 ns | 1 ns |
-| LVC, ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns |
-| AUP, LV, LVX | 6 ns | 3 ns | 1 ns |
-| LS and plain 74 | 15 ns | 20 ns | 5 ns |
-| others | 10 ns | 10 ns | 2 ns |
+| Family | Delay | Setup | Hold | Recovery | Removal |
+|---|---|---|---|---|---|
+| HC, HCT | 10 ns | 15 ns | 3 ns | 8 ns | 0 |
+| AHC, AHCT, VHC, VHCT | 6 ns | 5 ns | 1 ns | 3.5 ns | 0 |
+| AC, ACT | 6 ns | 4 ns | 1 ns | 2.4 ns | 0 |
+| LVC, ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns | 2 ns | 0 |
+| AUP, LV, LVX | 6 ns | 3 ns | 1 ns | 3 ns | 1 ns |
+| LS and plain 74 | 15 ns | 20 ns | 5 ns | 25 ns | 3 ns |
+| others | 10 ns | 10 ns | 2 ns | 10 ns | 2 ns |
+
+Recovery and removal are datasheet minimums over -40 to 85 C at 4.5 V (5 V families) or
+3.3 V (LVC), the larger of TI and Nexperia where both list one:
+
+- HC, HCT: 8 ns trec of `nSD`, `nRD` to `nCP`, Nexperia 74HC_HCT74 rev 9 (TI SN74HC74
+  SCLS094F gives 6 ns, TI CD74HC74 SCHS124E 8 ns, named trem there).
+- AHC, AHCT: 3.5 ns trec of `nRD` to `nCP` for the 74AHCT74 (3.0 ns for the 74AHC74), Nexperia
+  74AHC_AHCT74 rev 11 (TI SN74AHC74 SCLS255N gives 3 ns).
+- AC, ACT: 2.4 ns trec at 5 V, TI CD74AC74 SCHS231E and CD74ACT74 SCHS321A (TI SN74AC74
+  SCAS521H gives 0).
+- LVC: 2 ns setup of `PRE` or `CLR` inactive before `CLK`, TI SN74LVC74A SCAS287W (Nexperia
+  74LVC74A gives 1.0 ns).
+- LS: 25 ns setup of `CLR` inactive and 3 ns hold at any input, TI SN74LS161A SDLS060 (the
+  SN74LS74A in SDLS119 lists neither).
+
+None of the CMOS sheets above (nor TI SN74HC161 SCLS297D or Nexperia 74LVC161, whose hold
+covers the synchronous inputs only) lists a removal time, so it is 0 there. The AUP, LV, LVX
+and other rows take their setup and hold.
 
 Primitives by name and generic symbols take 1 ns and no setup or hold.
 
@@ -1756,10 +1775,10 @@ the model's timing: a data input that changed less than `setup` before a rising 
 less than `hold` after it, is a violation (not checked while an asynchronous reset or set is
 active). A D latch checks its `D` against the closing (falling) edge of `EN` the same way. An
 asynchronous reset or set released less than `recovery` before a clock edge, or less than
-`removal` after one, is a violation too; the family table's setup and hold are the defaults for
-recovery and removal. A 595 also wants its `LATCH` (RCLK) rising edge at least `setup` after
-the last `CLK` (SRCLK) rising edge; the two clocks tied together (the same instant) is fine and
-latches the value from before the shift.
+`removal` after one, is a violation too, with the family table's recovery and removal. A 595
+also wants its `LATCH` (RCLK) rising edge at least `setup` after the last `CLK` (SRCLK) rising
+edge; the two clocks tied together (the same instant) is fine and latches the value from before
+the shift.
 
 On a violation the flip-flop, latch or register the check covers goes to x, as the Verilog
 models do with their notifiers, until it is clocked, set or reset cleanly again. Set

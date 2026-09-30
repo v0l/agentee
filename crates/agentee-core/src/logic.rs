@@ -449,21 +449,21 @@ pub const GENERIC_TIMING: Timing =
     Timing { delay: 1_000, setup: 0, hold: 0, recovery: 0, removal: 0 };
 
 pub fn family_timing(family: &str) -> Timing {
-    let t = |d: u64, s: u64, h: u64| Timing {
+    let t = |d: u64, s: u64, h: u64, recovery: u64, removal: u64| Timing {
         delay: d * 1000,
         setup: s * 1000,
         hold: h * 1000,
-        recovery: s * 1000,
-        removal: h * 1000,
+        recovery,
+        removal,
     };
     match family {
-        "HC" | "HCT" => t(10, 15, 3),
-        "AHC" | "AHCT" | "VHC" | "VHCT" => t(6, 5, 1),
-        "AC" | "ACT" => t(6, 4, 1),
-        "LVC" | "ALVC" | "LVT" | "ALVT" | "AUC" | "AVC" => t(4, 2, 1),
-        "AUP" | "LV" | "LVX" => t(6, 3, 1),
-        "LS" | "" => t(15, 20, 5),
-        _ => t(10, 10, 2),
+        "HC" | "HCT" => t(10, 15, 3, 8_000, 0),
+        "AHC" | "AHCT" | "VHC" | "VHCT" => t(6, 5, 1, 3_500, 0),
+        "AC" | "ACT" => t(6, 4, 1, 2_400, 0),
+        "LVC" | "ALVC" | "LVT" | "ALVT" | "AUC" | "AVC" => t(4, 2, 1, 2_000, 0),
+        "AUP" | "LV" | "LVX" => t(6, 3, 1, 3_000, 1_000),
+        "LS" | "" => t(15, 20, 5, 25_000, 3_000),
+        _ => t(10, 10, 2, 10_000, 2_000),
     }
 }
 
@@ -1698,6 +1698,21 @@ mod tests {
         assert_eq!(part_code("7400"), Some(("".into(), "00".into())));
         assert_eq!(part_code("LM7805"), None);
         assert_eq!(part_code("STM32F074"), None);
+    }
+
+    #[test]
+    fn family_recovery_and_removal_follow_the_datasheets() {
+        for (family, recovery, removal, source) in [
+            ("HC", 8_000, 0, "Nexperia 74HC_HCT74 rev 9 trec at 4.5 V"),
+            ("HCT", 8_000, 0, "Nexperia 74HC_HCT74 rev 9 trec at 4.5 V"),
+            ("AHC", 3_500, 0, "Nexperia 74AHC_AHCT74 rev 11 trec, AHCT at 4.5 V"),
+            ("AC", 2_400, 0, "TI CD74AC74 SCHS231E trec at 5 V"),
+            ("LVC", 2_000, 0, "TI SN74LVC74A SCAS287W tsu PRE or CLR inactive at 3.3 V"),
+            ("LS", 25_000, 3_000, "TI SN74LS161A SDLS060 tsu CLR inactive, th any input"),
+        ] {
+            let t = family_timing(family);
+            assert_eq!((t.recovery, t.removal), (recovery, removal), "{family} per {source}");
+        }
     }
 
     #[test]
