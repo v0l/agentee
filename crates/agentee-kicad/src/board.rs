@@ -927,11 +927,11 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         let mut c = default_rules.clone().unwrap_or_else(|| json!({}));
         c["name"] = json!(name);
         c["description"] = json!(format!(
-            "{} with the rules of the KiCad Default class",
+            "{}; the rules of the KiCad Default class",
             match kind {
-                "Ground" => "ground nets by name",
-                "Power" => "supply rails by name and nets that own a pour",
-                _ => "the other nets KiCad leaves in Default",
+                "Ground" => "Ground nets by name",
+                "Power" => "Supply rails by name and nets that own a pour",
+                _ => "Nets KiCad leaves in Default that are not ground or supply",
             }
         ));
         classes.push(c);
