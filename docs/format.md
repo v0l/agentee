@@ -860,6 +860,7 @@ points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
 kind = "text"
 layer = "F.SilkS"              # F.SilkS, B.SilkS, F.Fab or B.Fab
 at = [7.4, 7.6]
+# locked = true                # `agentee place` never moves it
 text = "RF IN"
 size = 1.0                     # mm, the fab minimum is in the board rules
 
@@ -1082,9 +1083,14 @@ crossing), and the rules above as penalties. Eight starts (the eight reflections
 layout) are legalised on parallel threads, and the three cheapest go on to the cluster moves and
 the annealing, so the result depends on the files and `--seed` only, not on the number of threads.
 
-Parts keep off the board's own silk: `[[graphics]]` text and lines on a silk layer and silk
-`[[artwork]]` block the courtyards on their side (a part that fits nowhere else may still cover
-them). Each part's reference label needs room too: where the labels take at most a quarter of the
+Parts keep off the board's own silk: `[[graphics]]` lines on a silk layer, silk text with
+`locked = true` and silk `[[artwork]]` block the courtyards on their side (a part that fits
+nowhere else may still cover them). Silk text that is not locked does not block parts: after
+placing, each such text a part (or its reserved label) covers moves to the nearest clear spot on
+the board within 10 mm, clear of parts, labels, locked silk and the other texts; `texts_moved`
+lists the moves written back into `[[graphics]]` and `texts_stuck` the texts with no clear spot.
+Connectors, mounting holes and fiducials reserve a label too, on the outer side of the part or
+turned to the inner side, and go without one where neither fits at the spot the part takes. Each part's reference label needs room too: where the labels take at most a quarter of the
 free board area, a box the size of the reference text (0.2 mm around it, at the footprint's
 reference spot pushed clear of its own pads and silk) is kept clear like a courtyard, and place
 writes that spot as `label.at`; on a fuller board with room left the overlap of those boxes with
@@ -1887,7 +1893,8 @@ Shared by symbols and footprints. `kind` picks the shape and the fields it needs
 | `text` | `text`, `at`, `size`, `rotation`, `anchor` (`left` / `center` / `right`) |
 
 Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (footprints) or
-`unit` (symbols).
+`unit` (symbols). On layout `[[graphics]]`, `locked = true` keeps `agentee place` from moving a
+text.
 
 ## Workflow
 

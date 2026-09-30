@@ -2,7 +2,7 @@ use crate::board::Board;
 use crate::footprint::{Footprint, PadKind};
 use crate::geom::{self, P, Transform};
 use crate::graphic::{Anchor, Bounds, Graphic, Shape};
-use crate::layout::{Artwork, BoardSide, PlacementFile, glob};
+use crate::layout::{Artwork, BoardSide, PlacementFile, SilkText, glob};
 use crate::schematic::{PinRef, Schematic};
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ const SILK_ROOM: f64 = 0.2;
 const LABEL_SHARE: f64 = 0.25;
 const LABEL_REACH: usize = 60;
 const LABEL_WEIGHT: f64 = 0.2;
+const TEXT_REACH: f64 = 10.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -120,6 +121,7 @@ pub struct PlaceInput<'a> {
     pub fast_nets: Vec<String>,
     pub heat: Vec<(String, f64)>,
     pub silk: Vec<SilkArea>,
+    pub texts: Vec<SilkText>,
 }
 
 #[derive(Clone, Debug)]
@@ -128,9 +130,15 @@ pub struct SilkArea {
     pub poly: Vec<P>,
 }
 
+pub fn movable_texts(graphics: &[Graphic]) -> Vec<SilkText> {
+    let unlocked: Vec<Graphic> = graphics.iter().filter(|g| !g.locked).cloned().collect();
+    crate::layout::board_texts(&unlocked)
+}
+
 pub fn board_silk(graphics: &[Graphic], artwork: &[Artwork]) -> Vec<SilkArea> {
     let side = |layer: &str| layer.starts_with("B.");
-    let mut out: Vec<SilkArea> = crate::layout::board_texts(graphics)
+    let locked: Vec<Graphic> = graphics.iter().filter(|g| g.locked).cloned().collect();
+    let mut out: Vec<SilkArea> = crate::layout::board_texts(&locked)
         .iter()
         .filter(|t| t.part == usize::MAX && t.owner != "watermark")
         .map(|t| SilkArea { bottom: side(&t.layer), poly: grow(&t.outline(), SILK_ROOM) })
@@ -298,6 +306,16 @@ pub struct PlaceResult {
     pub after: Metrics,
     pub moves: usize,
     pub labels: LabelRoom,
+    pub texts_moved: Vec<TextMove>,
+    pub texts_stuck: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TextMove {
+    pub text: String,
+    pub layer: String,
+    pub from: P,
+    pub to: P,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -2344,7 +2362,20 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             members: c.members.iter().map(|m| pl.parts[*m].reference.clone()).collect(),
         })
         .collect();
-    Ok(PlaceResult { placements, kept, failed, edges, clusters, before, after, moves, labels })
+    let (texts_moved, texts_stuck) = pl.move_texts(&input.texts);
+    Ok(PlaceResult {
+        placements,
+        kept,
+        failed,
+        edges,
+        clusters,
+        before,
+        after,
+        moves,
+        labels,
+        texts_moved,
+        texts_stuck,
+    })
 }
 
 pub const DECOUPLING_DISTANCE: f64 = 3.0;
@@ -3262,6 +3293,72 @@ impl<'a> Placer<'a> {
             }
         }
         out
+    }
+
+    fn on_parts(&self, side: u8, poly: &[P]) -> bool {
+        let b = poly_bounds(poly);
+        self.grid.cells(&b).any(|c| {
+            self.grid.cells[c].iter().any(|&j| {
+                self.parts[j].placed
+                    && (self.cache[j].iter().any(|s| {
+                        s.side & side != 0
+                            && strict_overlap(&s.b, &b)
+                            && polys_overlap(&s.poly, poly)
+                    }) || self.label_at[j]
+                        .is_some_and(|(ls, lb)| ls & side != 0 && strict_overlap(&lb, &b)))
+            })
+        })
+    }
+
+    fn move_texts(&self, texts: &[SilkText]) -> (Vec<TextMove>, Vec<String>) {
+        let side = |t: &SilkText| if t.layer.starts_with("B.") { 2u8 } else { 1u8 };
+        let mut taken: Vec<Vec<P>> = texts.iter().map(|t| grow(&t.outline(), SILK_ROOM)).collect();
+        let edge = self.board_edge();
+        let mut moved = Vec::new();
+        let mut stuck = Vec::new();
+        for (k, t) in texts.iter().enumerate() {
+            let sd = side(t);
+            if !self.on_parts(sd, &taken[k]) {
+                continue;
+            }
+            let base = grow(&t.outline(), SILK_ROOM);
+            let clear = |poly: &[P]| {
+                let b = poly_bounds(poly);
+                poly.iter().all(|v| self.edge_clear(edge, *v, 0.0))
+                    && !self.on_parts(sd, poly)
+                    && !self.b.silk.iter().any(|a| {
+                        a.side & sd != 0 && strict_overlap(&a.b, &b) && polys_overlap(&a.poly, poly)
+                    })
+                    && texts.iter().zip(&taken).enumerate().all(|(x, (o, q))| {
+                        x == k
+                            || side(o) != sd
+                            || !(strict_overlap(&poly_bounds(q), &b) && polys_overlap(q, poly))
+                    })
+            };
+            let found = self
+                .offsets
+                .iter()
+                .take_while(|o| o[0].hypot(o[1]) <= TEXT_REACH)
+                .map(|o| (*o, base.iter().map(|q| [q[0] + o[0], q[1] + o[1]]).collect::<Vec<P>>()))
+                .find(|(_, poly)| clear(poly));
+            match found {
+                Some((o, poly)) => {
+                    taken[k] = poly;
+                    let to = [
+                        ((t.at[0] + o[0]) * 1e4).round() / 1e4,
+                        ((t.at[1] + o[1]) * 1e4).round() / 1e4,
+                    ];
+                    moved.push(TextMove {
+                        text: t.text.clone(),
+                        layer: t.layer.clone(),
+                        from: t.at,
+                        to,
+                    });
+                }
+                None => stuck.push(t.text.clone()),
+            }
+        }
+        (moved, stuck)
     }
 
     fn take_labels(&mut self, i: usize) -> (Option<LabelBox>, Option<LabelBox>) {

@@ -1677,6 +1677,37 @@ pub struct PlaceArgs {
     pub write: bool,
 }
 
+fn move_board_texts(doc: &mut toml_edit::DocumentMut, moves: &[agentee_core::place::TextMove]) {
+    let Some(graphics) = doc.get_mut("graphics").and_then(|v| v.as_array_of_tables_mut()) else {
+        return;
+    };
+    for m in moves {
+        let found = graphics.iter_mut().find(|t| {
+            let at: Vec<f64> = t
+                .get("at")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_float().or(x.as_integer().map(|i| i as f64)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            t.get("kind").and_then(|v| v.as_str()) == Some("text")
+                && t.get("text").and_then(|v| v.as_str()) == Some(m.text.as_str())
+                && t.get("layer").and_then(|v| v.as_str()).unwrap_or("F.SilkS") == m.layer
+                && at.len() == 2
+                && (at[0] - m.from[0]).abs() < 1e-6
+                && (at[1] - m.from[1]).abs() < 1e-6
+        });
+        if let Some(t) = found {
+            let mut pt = toml_edit::Array::new();
+            pt.push(m.to[0]);
+            pt.push(m.to[1]);
+            t["at"] = toml_edit::value(pt);
+        }
+    }
+}
+
 pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     use agentee_core::place as pl;
     let sides = match a.side.to_ascii_uppercase().as_str() {
@@ -1731,6 +1762,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         fast_nets: fast,
         heat,
         silk: pl::board_silk(&graphics, &artwork),
+        texts: pl::movable_texts(&graphics),
     };
     let opts = pl::PlaceOptions {
         parts: a.parts.clone(),
@@ -1756,6 +1788,8 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         "result": r.after,
         "annealing_moves_accepted": r.moves,
         "label_room": r.labels,
+        "texts_moved": r.texts_moved,
+        "texts_stuck": r.texts_stuck,
         "load_ms": load_ms,
         "solve_ms": solve_ms,
     });
@@ -1832,6 +1866,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
             }
         }
     }
+    move_board_texts(&mut doc, &r.texts_moved);
     std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
     let p = load(root)?;
     let i = layout_index(&p, &layout_name)?;
