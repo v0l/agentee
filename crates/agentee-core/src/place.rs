@@ -19,6 +19,7 @@ const FLEX_LARGE: f64 = 20.0;
 const FLEX_POINTING: f64 = 3.0;
 const FLEX_REACH: f64 = 12.0;
 const STARTS: u64 = 8;
+const KEPT_STARTS: usize = 3;
 const CENTRE_PULL: f64 = 2.0;
 const CENTRE_BLEND: f64 = 0.5;
 const MOVES_PER_PART: f64 = 1500.0;
@@ -437,6 +438,29 @@ fn dot(a: P, b: P) -> f64 {
 type Trial = (f64, Vec<(usize, St)>);
 
 type Start<'a> = (f64, Placer<'a>, Vec<String>, BTreeMap<String, Edge>, usize);
+
+type Rough<'a> = (f64, Placer<'a>, Vec<String>, BTreeMap<String, Edge>);
+
+fn in_parallel<T: Send, R: Send>(items: Vec<T>, f: impl Fn(T) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let threads = threads.clamp(1, items.len().max(1));
+    let mut lanes: Vec<Vec<(usize, T)>> = (0..threads).map(|_| Vec::new()).collect();
+    for (x, item) in items.into_iter().enumerate() {
+        lanes[x % threads].push((x, item));
+    }
+    let mut out: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = lanes
+            .into_iter()
+            .map(|lane| {
+                let f = &f;
+                scope.spawn(move || lane.into_iter().map(|(x, t)| (x, f(t))).collect::<Vec<_>>())
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    });
+    out.sort_by_key(|r| r.0);
+    out.into_iter().map(|r| r.1).collect()
+}
 
 struct Rng(u64);
 
@@ -1019,16 +1043,7 @@ impl<'a> Placer<'a> {
             {
                 continue;
             }
-            let moved: Vec<WShape> = rel
-                .iter()
-                .map(|s| {
-                    let mut b = s.b;
-                    b.min = [b.min[0] + at[0], b.min[1] + at[1]];
-                    b.max = [b.max[0] + at[0], b.max[1] + at[1]];
-                    WShape { side: s.side, b, rect: s.rect, poly: Vec::new() }
-                })
-                .collect();
-            if self.clashes_boxes(i, &moved) {
+            if self.clashes_boxes(i, &rel, at) {
                 continue;
             }
             let st = St { at, rot, bottom };
@@ -1046,15 +1061,18 @@ impl<'a> Placer<'a> {
         best.map(|b| b.1)
     }
 
-    fn clashes_boxes(&self, i: usize, sh: &[WShape]) -> bool {
-        for s in sh.iter().filter(|s| s.rect) {
-            for c in self.grid.cells(&s.b) {
+    fn clashes_boxes(&self, i: usize, rel: &[WShape], at: P) -> bool {
+        for s in rel.iter().filter(|s| s.rect) {
+            let mut b = s.b;
+            b.min = [b.min[0] + at[0], b.min[1] + at[1]];
+            b.max = [b.max[0] + at[0], b.max[1] + at[1]];
+            for c in self.grid.cells(&b) {
                 let v = &self.grid.cells[c];
                 for &j in v {
                     if j != i
                         && self.cache[j]
                             .iter()
-                            .any(|t| s.side & t.side != 0 && t.rect && strict_overlap(&s.b, &t.b))
+                            .any(|t| s.side & t.side != 0 && t.rect && strict_overlap(&b, &t.b))
                     {
                         return true;
                     }
@@ -1215,6 +1233,9 @@ impl<'a> Placer<'a> {
             }
         }
         for &(h, r) in &self.holes {
+            if geom::dist(h, c) - rad - r >= best.map_or(zone, |b| b.0.min(zone)) {
+                continue;
+            }
             let gap = rings
                 .iter()
                 .map(|o| geom::polyline_polygon_distance(&[h, h], o) - r)
@@ -1445,7 +1466,7 @@ fn rotation_for(u: P, n: P, bottom: bool) -> f64 {
     0.0
 }
 
-pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, String> {
+pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceResult, String> {
     let board = input.board;
     let sch = input.schematic;
     if input.outline.len() < 3 {
@@ -1749,15 +1770,21 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         .map(|i| pl.hole_of(i))
         .collect();
 
-    let run = |start: u64| -> Start {
+    let rough_in = |start: u64| -> Rough {
         let mut cand = pl.clone();
-        let mut rng = Rng(opts.seed.wrapping_mul(0x9e37_79b9).wrapping_add(start));
         let mut failed = Vec::new();
         cand.place_corners(&mut failed);
         let rough = cand.global(start, None);
         let edges = cand.place_connectors(&rough, &mut failed);
         let pos = cand.global(start, Some(&rough));
         cand.legalise(&pos, &mut failed);
+        let all: Vec<usize> = (0..n_parts).collect();
+        let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
+        (score, cand, failed, edges)
+    };
+    let finish = |start: u64, rough: Rough<'a>| -> Start<'a> {
+        let (_, mut cand, failed, edges) = rough;
+        let mut rng = Rng(opts.seed.wrapping_mul(0x9e37_79b9).wrapping_add(start));
         cand.rearrange_clusters();
         let mut moves = cand.refine(&mut rng, MOVES_PER_PART, ANNEAL_HEAT);
         cand.share_rotation();
@@ -1767,19 +1794,10 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
         (score, cand, failed, edges, moves)
     };
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-    let threads = threads.clamp(1, STARTS as usize);
-    let runs: Vec<(u64, Start)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..threads as u64)
-            .map(|t| {
-                let run = &run;
-                scope.spawn(move || {
-                    (t..STARTS).step_by(threads).map(|s| (s, run(s))).collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
-    });
+    let mut roughs = in_parallel((0..STARTS).collect(), |s| (s, rough_in(s)));
+    roughs.sort_by(|a, b| a.1.0.total_cmp(&b.1.0).then(a.0.cmp(&b.0)));
+    roughs.truncate(KEPT_STARTS);
+    let runs = in_parallel(roughs, |(s, r)| (s, finish(s, r)));
     let best =
         runs.into_iter().min_by(|a, b| a.1.0.total_cmp(&b.1.0).then(a.0.cmp(&b.0))).map(|r| r.1);
     let Some((_, mut pl, failed, edges, moves)) = best else {
@@ -3225,7 +3243,8 @@ impl<'a> Placer<'a> {
         }
     }
 
-    fn swap_clusters(&mut self, order: &[usize]) {
+    fn swap_clusters(&mut self, order: &[usize]) -> Vec<usize> {
+        let mut swapped = Vec::new();
         for (x, &c) in order.iter().enumerate() {
             for &d in &order[x + 1..] {
                 let (ac, ad) = (self.cluster_area(c), self.cluster_area(d));
@@ -3242,9 +3261,11 @@ impl<'a> Placer<'a> {
                     && t.0 < before - 1e-6
                 {
                     self.adopt(&t.1);
+                    swapped.extend([c, d]);
                 }
             }
         }
+        swapped
     }
 
     fn rearrange_clusters(&mut self) {
@@ -3259,7 +3280,8 @@ impl<'a> Placer<'a> {
             self.parts[b].area.total_cmp(&self.parts[a].area).then(x.cmp(y))
         });
         self.turn_clusters(&order);
-        self.swap_clusters(&order);
+        let swapped = self.swap_clusters(&order);
+        let order: Vec<usize> = order.iter().copied().filter(|c| swapped.contains(c)).collect();
         self.turn_clusters(&order);
     }
 
