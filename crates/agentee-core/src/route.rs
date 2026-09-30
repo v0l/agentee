@@ -607,6 +607,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     cost: s.cost,
                     in_pad: opts.via_in_pad
                         && s.drill.to_mm() <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
+                    controlled_depth: s.drill_kind == crate::board::DrillKind::ControlledDepth,
                 }
             })
             .collect();
@@ -971,6 +972,7 @@ struct ViaOption {
     drill_r: f64,
     cost: f64,
     in_pad: bool,
+    controlled_depth: bool,
 }
 
 impl ViaOption {
@@ -1109,12 +1111,21 @@ struct Found {
 fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize, ctx: &Ctx) -> Conn {
     let (tracks, vias) = geometry(grid, path, a, b, net);
     let hops = hops_of(grid, path);
-    let options =
-        vias.iter().zip(&hops).map(|(&at, &(l, nl))| via_at(grid, ctx, at, l, nl, net)).collect();
+    let stacked = |k: usize| {
+        [k.wrapping_sub(1), k + 1]
+            .iter()
+            .any(|&j| vias.get(j).is_some_and(|w| geom::dist(*w, vias[k]) < 1e-6))
+    };
+    let options = vias
+        .iter()
+        .zip(&hops)
+        .enumerate()
+        .map(|(k, (&at, &(l, nl)))| via_at(grid, ctx, at, l, nl, net, stacked(k)))
+        .collect();
     Conn { net, tracks, vias, options, hops, necks: Vec::new() }
 }
 
-fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize) -> usize {
+fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize, stacked: bool) -> usize {
     let (x, y) = grid.cell(at);
     let penalty = 20.0 * grid.g;
     (0..ctx.vias.len())
@@ -1122,7 +1133,7 @@ fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize) -> usi
         .map(|k| {
             let o = &ctx.vias[k];
             let (ok, clash) = grid.via_ok(k, o, x as usize, y as usize, net, true);
-            let misfit = if !ok {
+            let misfit = if !ok || (stacked && o.controlled_depth) {
                 1e9
             } else if clash {
                 penalty
@@ -1946,11 +1957,11 @@ fn search_between(
     let (sources, goals) = (sources.as_slice(), goals.as_slice());
     let plane = grid.w * grid.h;
     let unpack = |i: usize| (i / plane, (i % plane) % grid.w, (i % plane) / grid.w);
-    let hop = |x: usize, y: usize, l: usize, ul: usize, clash: bool| -> Option<f64> {
+    let hop = |x: usize, y: usize, l: usize, ul: usize, clash: bool, stacking: bool| {
         ctx.vias
             .iter()
             .enumerate()
-            .filter(|(_, o)| o.joins(l, ul))
+            .filter(|(_, o)| o.joins(l, ul) && !(stacking && o.controlled_depth))
             .filter_map(|(k, o)| {
                 let (ok, via_clash) = grid.via_ok(k, o, x, y, net, soft);
                 ok.then_some(
@@ -2057,7 +2068,7 @@ fn search_between(
                 if !grid.ok(u, net, soft).0 {
                     continue;
                 }
-                let Some(cost) = hop(x, y, ul, l, clash) else { continue };
+                let Some(cost) = hop(x, y, ul, l, clash, false) else { continue };
                 let c = f + cost;
                 let ku = local(u).unwrap();
                 if (c as f32) < rest[ku] {
@@ -2117,8 +2128,14 @@ fn search_between(
                         heap.push(Node { f: c + h, i: j * 9 + d });
                     }
                 }
+                let below = states.from(k, NODIR);
+                let stacking = d0 == NODIR && below != usize::MAX;
                 if !via_layers.contains(&l)
-                    || (!ctx.stack_vias && d0 == NODIR && states.from(k, NODIR) != usize::MAX)
+                    || (stacking && !ctx.stack_vias)
+                    || (stacking && {
+                        let bl = unpack(below / 9).0;
+                        !ctx.vias.iter().any(|o| !o.controlled_depth && o.joins(bl, l))
+                    })
                 {
                     continue;
                 }
@@ -2130,7 +2147,7 @@ fn search_between(
                     if !ok || h == f32::MAX as f64 {
                         continue;
                     }
-                    let Some(cost) = hop(x, y, l, nl, clash) else { continue };
+                    let Some(cost) = hop(x, y, l, nl, clash, stacking) else { continue };
                     let c = here + cost;
                     if (c as f32) < states.cost(kj, NODIR) {
                         states.set(kj, NODIR, c as f32, state);
@@ -2671,6 +2688,7 @@ mod tests {
             drill_r: 0.1,
             cost: 1.0,
             in_pad,
+            controlled_depth: false,
         }
     }
 
@@ -3001,6 +3019,7 @@ mod tests {
             drill_r: 0.05,
             cost,
             in_pad: false,
+            controlled_depth: false,
         };
         let vias =
             [option(&[0, 1], 0.1, 1.0), option(&[1, 2], 0.1, 1.0), option(&[0, 1, 2], 0.3, 0.5)];
@@ -3062,6 +3081,48 @@ mod tests {
     }
 
     #[test]
+    fn rip_up_counts_holes_closer_than_the_hole_gap() {
+        let option = |layers: &[usize]| ViaOption {
+            name: "v".into(),
+            layers: layers.to_vec(),
+            dielectrics: dielectrics(layers[0], layers[layers.len() - 1]),
+            via_r: 0.1,
+            drill_r: 0.05,
+            cost: 1.0,
+            in_pad: false,
+            controlled_depth: false,
+        };
+        let vias = [option(&[0, 1]), option(&[2, 3])];
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            hole_gap: 0.3,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            smd: &[],
+            widths: vec![0.1; 4],
+            clearance: 0.1,
+            via_layers: &[0, 1, 2, 3],
+            vias: &vias,
+            stack_vias: true,
+            routing: &[0, 1, 2, 3],
+            opts: &opts,
+            necking: None,
+        };
+        let one = |net: usize, at: P, k: usize| Conn {
+            net,
+            tracks: Vec::new(),
+            vias: vec![at],
+            options: vec![k],
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
+        let (a, b) = (one(1, [1.0, 1.0], 0), one(0, [1.35, 1.0], 0));
+        assert!(!conflicts(&a, &b, &ctx) && holes_crowd(&a, &b, &ctx));
+        assert!(!holes_crowd(&a, &one(0, [1.45, 1.0], 0), &ctx));
+        assert!(!holes_crowd(&a, &one(0, [1.35, 1.0], 1), &ctx));
+    }
+
+    #[test]
     fn each_via_option_blocks_by_its_own_size_and_span() {
         let micro = ViaOption {
             name: "uv".into(),
@@ -3071,6 +3132,7 @@ mod tests {
             drill_r: 0.05,
             cost: 1.0,
             in_pad: false,
+            controlled_depth: false,
         };
         let through = ViaOption {
             name: "std".into(),
@@ -3080,6 +3142,7 @@ mod tests {
             drill_r: 0.1,
             cost: 3.0,
             in_pad: false,
+            controlled_depth: false,
         };
         let vias = [micro, through];
         let mut grid = open_grid(60, 40, 4);

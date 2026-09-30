@@ -1413,6 +1413,46 @@ fn the_router_staggers_vias_unless_the_fab_stacks_them() {
 }
 
 #[test]
+fn the_router_never_stacks_on_a_controlled_depth_via() {
+    let walls = format!(
+        "{}{}",
+        track("B", "F.Cu", "[[12.0, 0.1], [12.0, 19.9]]"),
+        track("B", "In1.Cu", "[[12.0, 0.1], [12.0, 19.9]]")
+    );
+    let board =
+        format!("{HDI_VIAS}stacked_microvias = true\n{DEPTH_AND_SPLIT_VIAS}{HDI_VIA_TYPES}");
+    let p = load(&Fixture {
+        preset: "hdi-6l-1n1",
+        board: &board,
+        parts: &[("R1", "TWO", [5.0, 5.0]), ("R2", "TWO", [20.0, 5.0])],
+        nets: &[("A", &["R1.2", "R2.1"]), ("B", &["R1.1"])],
+        pcb: &walls,
+        ..Default::default()
+    });
+    let routed = |via: &[&str]| {
+        let mut b = p.boards[0].item.clone();
+        b.netclasses[0].via = via.iter().map(|s| s.to_string()).collect();
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: vec!["F.Cu".into(), "In1.Cu".into(), "In4.Cu".into()],
+            grid: 0.1,
+            ..Default::default()
+        };
+        let r = agentee_core::route::route(&p.layouts[0].item, &b, &opts).unwrap();
+        assert!(r.routed == 1, "{:?}", r.failed);
+        let stacked =
+            r.vias.iter().enumerate().any(|(i, a)| {
+                r.vias[..i].iter().any(|b| agentee_core::geom::dist(a.at, b.at) < 1e-6)
+            });
+        let kinds: std::collections::BTreeSet<String> =
+            r.vias.iter().map(|v| v.via.clone()).collect();
+        (stacked, kinds.into_iter().collect::<Vec<_>>())
+    };
+    assert_eq!(routed(&["uv", "bu"]), (true, vec!["bu".to_string(), "uv".to_string()]));
+    assert_eq!(routed(&["cd", "bu"]), (false, vec!["bu".to_string(), "cd".to_string()]));
+}
+
+#[test]
 fn a_fanout_takes_the_first_listed_via_that_reaches_the_pad() {
     let board = format!("{HDI_VIAS}{HDI_VIA_TYPES}");
     let fanout = |via: &str| {
