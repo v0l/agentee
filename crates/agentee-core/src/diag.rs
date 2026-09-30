@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Info,
@@ -19,6 +19,8 @@ pub struct Diagnostic {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub at: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 impl fmt::Display for Diagnostic {
@@ -36,7 +38,10 @@ impl fmt::Display for Diagnostic {
         if !self.at.is_empty() {
             write!(f, " {}", self.at)?;
         }
-        write!(f, ": {}", self.message)
+        match &self.rule {
+            Some(r) => write!(f, ": [{r}] {}", self.message),
+            None => write!(f, ": {}", self.message),
+        }
     }
 }
 
@@ -58,6 +63,24 @@ impl Diags {
             item: self.item.clone(),
             at: at.into(),
             message: message.into(),
+            rule: None,
+        });
+    }
+
+    pub fn push_rule(
+        &mut self,
+        severity: Severity,
+        rule: &str,
+        at: impl Into<String>,
+        message: impl Into<String>,
+    ) {
+        self.list.push(Diagnostic {
+            severity,
+            file: None,
+            item: self.item.clone(),
+            at: at.into(),
+            message: message.into(),
+            rule: Some(rule.to_string()),
         });
     }
 

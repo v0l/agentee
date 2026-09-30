@@ -1,4 +1,4 @@
 name = "sdr"
-description = "USB 3.2 Gen 2x2 SDR: AD9364 1x1 transceiver, Artix-7 XC7A50T, EZ-USB FX20, 61.44 MS/s each way"
+description = "USB 3.2 Gen 1 SDR: AD9364 1x1 transceiver, Artix-7 XC7A50T, EZ-USB FX5, 61.44 MS/s each way"
 board = "sdr"
 sheets = ["power", "fpga", "rf", "usb"]

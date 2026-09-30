@@ -233,6 +233,7 @@ pub fn run(name: &str, freqs: &[f64], h: &[Cx], p: &Params, spec_hash: u64) -> C
         name: name.into(),
         kind: "channel".into(),
         spec_hash,
+        layout_hash: None,
         bit_rate: p.bit_rate,
         ui_ps: ui * 1e12,
         rise_ps: rise * 1e12,

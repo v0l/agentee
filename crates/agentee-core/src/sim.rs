@@ -233,6 +233,8 @@ pub struct ChannelResult {
     pub name: String,
     pub kind: String,
     pub spec_hash: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_hash: Option<u64>,
     pub bit_rate: f64,
     pub ui_ps: f64,
     pub rise_ps: f64,
@@ -573,6 +575,8 @@ pub struct MapResult {
     pub seconds: f64,
     pub device: String,
     pub spec_hash: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_hash: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -644,6 +648,10 @@ pub struct Sim {
     #[serde(skip)]
     pub result: Option<SimResult>,
     pub stale: bool,
+    #[serde(skip)]
+    pub copper_now: Option<u64>,
+    #[serde(skip)]
+    pub copper_then: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -660,6 +668,8 @@ pub struct SimResult {
     pub seconds: f64,
     pub device: String,
     pub spec_hash: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout_hash: Option<u64>,
     #[serde(default)]
     pub maps: Vec<LayerMap>,
     #[serde(default)]
@@ -763,6 +773,83 @@ pub fn cascade_hash(src: u64, board: u64, devices: &[String]) -> u64 {
     let mut h = src ^ board.rotate_left(17);
     for d in devices {
         h = h.rotate_left(7) ^ hash(d);
+    }
+    h
+}
+
+pub fn copper_hash(
+    layout: &crate::layout::Layout,
+    board: &crate::board::Board,
+    region: Option<[f64; 4]>,
+) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |v: u64| {
+        for b in v.to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+        }
+    };
+    let near = |pts: &mut dyn Iterator<Item = [f64; 2]>| match region {
+        None => true,
+        Some([x0, y0, x1, y1]) => {
+            for p in pts {
+                if p[0] >= x0 - 1.0 && p[0] <= x1 + 1.0 && p[1] >= y0 - 1.0 && p[1] <= y1 + 1.0 {
+                    return true;
+                }
+            }
+            false
+        }
+    };
+    let f = |v: f64| (v * 1e4).round() as i64 as u64;
+    for l in &board.stackup.layers {
+        eat(f(l.thickness.to_mm()));
+        eat(f(l.er));
+        eat(f(l.loss_tangent));
+    }
+    for t in &layout.tracks {
+        if near(&mut t.points.iter().copied()) {
+            eat(t.net as u64);
+            eat(f(t.width));
+            t.layer.bytes().for_each(|b| eat(b as u64));
+            t.points.iter().for_each(|p| {
+                eat(f(p[0]));
+                eat(f(p[1]))
+            });
+        }
+    }
+    for v in &layout.vias {
+        if near(&mut std::iter::once(v.at)) {
+            eat(v.net as u64);
+            eat(f(v.at[0]));
+            eat(f(v.at[1]));
+            eat(f(v.drill));
+            eat(f(v.diameter));
+            eat(v.layers.len() as u64);
+        }
+    }
+    for p in &layout.parts {
+        for q in &p.pads {
+            if near(&mut q.outlines.iter().flatten().copied()) {
+                eat(q.net.map(|n| n as u64 + 1).unwrap_or(0));
+                q.outlines.iter().flatten().for_each(|c| {
+                    eat(f(c[0]));
+                    eat(f(c[1]))
+                });
+                eat(q.copper.len() as u64);
+            }
+        }
+    }
+    for z in &layout.zones {
+        eat(z.net as u64);
+        z.layer.bytes().for_each(|b| eat(b as u64));
+        for r in &z.rings {
+            if near(&mut r.iter().copied()) {
+                r.iter().for_each(|c| {
+                    eat(f(c[0]));
+                    eat(f(c[1]))
+                });
+            }
+        }
     }
     h
 }
@@ -1376,6 +1463,8 @@ impl SimFile {
             elements,
             result: None,
             stale: false,
+            copper_now: None,
+            copper_then: None,
         }
     }
 }

@@ -187,6 +187,14 @@ fn tag(mut d: Diags, path: &Path) -> Vec<Diagnostic> {
 
 impl Project {
     pub fn load(path: &Path) -> std::io::Result<Project> {
+        Self::load_kinds(path, |_| true)
+    }
+
+    pub fn load_footprints(path: &Path) -> std::io::Result<Project> {
+        Self::load_kinds(path, |k| matches!(k, Kind::Board | Kind::Footprint))
+    }
+
+    fn load_kinds(path: &Path, keep: fn(Kind) -> bool) -> std::io::Result<Project> {
         let (root, files) = if path.is_dir() {
             let mut v = Vec::new();
             walk(path, &mut v)?;
@@ -210,7 +218,7 @@ impl Project {
         let mut sch_files = Vec::new();
         let mut pcb_files = Vec::new();
         let mut sim_files = Vec::new();
-        for f in files {
+        for f in files.into_iter().filter(|f| Kind::of(f).is_some_and(keep)) {
             let src = match std::fs::read_to_string(&f) {
                 Ok(s) => s,
                 Err(e) => {
@@ -379,12 +387,58 @@ impl Project {
                 }
                 None => d.info("result", "not run yet, `agentee sim` runs it"),
             }
+            item.copper_then = fdtd
+                .as_ref()
+                .and_then(|r| r.layout_hash)
+                .or(maps.as_ref().and_then(|r| r.layout_hash))
+                .or(channel.as_ref().and_then(|r| r.layout_hash));
+            item.copper_now = if cascade(&file) {
+                p.sims.iter().find(|s| s.name == item.board).and_then(|s| s.item.copper_now)
+            } else {
+                p.boards
+                    .iter()
+                    .find(|b| b.name == layout.item.board)
+                    .map(|b| crate::sim::copper_hash(&layout.item, &b.item, item.region))
+            };
+            if item.copper_then.is_some() && item.copper_then != item.copper_now {
+                d.info(
+                    "result",
+                    "the layout changed since the last run, the result shown is stale",
+                );
+                item.stale = true;
+            }
             item.result = fdtd;
             item.maps = maps;
             item.channel = channel;
             p.sims.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
+        p.measure_interfaces();
         Ok(p)
+    }
+
+    fn measure_interfaces(&mut self) {
+        let sims: Vec<crate::interface::Measured> = self
+            .sims
+            .iter()
+            .map(|s| crate::interface::Measured {
+                name: &s.name,
+                stale: s.item.stale,
+                untracked: s.item.copper_then.is_none(),
+                fdtd: s.item.result.as_ref(),
+                channel: s.item.channel.as_ref(),
+            })
+            .collect();
+        let mut found = Vec::new();
+        for (i, l) in self.layouts.iter().enumerate() {
+            let mut d = Diags::new(l.name.clone());
+            for iface in &l.item.interfaces {
+                crate::interface::measure(iface, &sims, &mut d);
+            }
+            found.push((i, tag(d, &l.path)));
+        }
+        for (i, diags) in found {
+            self.layouts[i].diags.extend(diags);
+        }
     }
 
     fn check_pdn(&self, path: &Path, sim: &Sim, hash: u64, d: &mut Diags) -> u64 {
@@ -621,6 +675,7 @@ impl Project {
             item,
             at: at.to_string(),
             message,
+            rule: None,
         });
     }
 
@@ -767,5 +822,12 @@ impl Project {
 
 fn push<T>(e: &mut Entry<T>, severity: Severity, at: &str, message: String) {
     let item = e.name.clone();
-    e.diags.push(Diagnostic { severity, file: Some(e.path.clone()), item, at: at.into(), message });
+    e.diags.push(Diagnostic {
+        severity,
+        file: Some(e.path.clone()),
+        item,
+        at: at.into(),
+        message,
+        rule: None,
+    });
 }

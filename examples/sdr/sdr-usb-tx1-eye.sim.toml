@@ -1,0 +1,8 @@
+name = "sdr-usb-tx1-eye"
+kind = "channel"
+description = "5 Gbps PRBS through the board part of SuperSpeed lane TX1, from sdr-usb, no equalisation, against the USB 3.2 Gen 1 compliance eye of 100 mV and 68 ps."
+board = "sdr-usb"
+pair = ["TX1_FX+", "TX1_FX-", "TX1_J+", "TX1_J-"]
+bit_rate = "5Gbps"
+swing = "0.8V"
+prbs = 15

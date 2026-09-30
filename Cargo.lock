@@ -53,6 +53,7 @@ dependencies = [
  "ruststep",
  "truck-meshalgo",
  "truck-stepio",
+ "truck-topology",
  "ureq",
 ]
 

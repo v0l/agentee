@@ -108,6 +108,8 @@ pub struct PadFile {
     pub pitch: Option<Point>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub number_step: Option<i64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub edge: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -130,6 +132,8 @@ pub struct FootprintFile {
     pub model_scale: Option<[f64; 3]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask_web: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -149,6 +153,7 @@ pub struct Pad {
     pub drill_offset: Point,
     pub layers: Vec<String>,
     pub points: Vec<Point>,
+    pub edge: bool,
 }
 
 impl Pad {
@@ -218,6 +223,7 @@ pub struct Footprint {
     pub model_rotate: [f64; 3],
     pub model_scale: [f64; 3],
     pub height: Option<f64>,
+    pub mask_web: bool,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
 }
@@ -284,6 +290,7 @@ impl FootprintFile {
                     drill_offset: p.drill_offset.unwrap_or(Point::ZERO),
                     layers: p.layers.clone().unwrap_or_else(|| default_layers(p.kind)),
                     points: p.points.clone().unwrap_or_default(),
+                    edge: p.edge,
                 });
             }
         }
@@ -334,6 +341,7 @@ impl FootprintFile {
             model_rotate: self.model_rotate.unwrap_or([0.0; 3]),
             model_scale: self.model_scale.unwrap_or([1.0; 3]),
             height: self.height.map(Length::to_mm),
+            mask_web: self.mask_web.unwrap_or(true),
             pads,
             graphics,
         }
@@ -438,12 +446,12 @@ impl Footprint {
                         small_drills.push((&p.number, dr.min()));
                     }
                     let ring = ((p.size.0 - dr.size().0) / 2.0).min((p.size.1 - dr.size().1) / 2.0);
-                    if ring < rules.min_annular_ring {
+                    if ring < rules.min_pth_annular_ring {
                         d.error(
                             &at,
                             format!(
                                 "annular ring {ring} is under the fab minimum {}",
-                                rules.min_annular_ring
+                                rules.min_pth_annular_ring
                             ),
                         );
                     }
@@ -703,6 +711,21 @@ pitch = [0.8, 0]
         let mut d = Diags::new("bad");
         f.resolve(&mut d).check(&fab_rules("generic").unwrap(), &mut d);
         assert!(d.list.iter().any(|x| x.message.contains("overlap")), "{:?}", d.list);
+    }
+
+    #[test]
+    fn plated_pad_rings_use_the_pth_minimum() {
+        let f: FootprintFile = toml::from_str(
+            "name = \"t\"\n[[pads]]\nnumber = \"1\"\nkind = \"tht\"\nshape = \"circle\"\nat = [0, 0]\nsize = [1.32, 1.32]\ndrill = 1.0\n",
+        )
+        .unwrap();
+        let mut d = Diags::new("t");
+        f.resolve(&mut d).check(&fab_rules("jlcpcb").unwrap(), &mut d);
+        assert!(
+            d.list.iter().any(|x| x.message.contains("under the fab minimum 0.18mm")),
+            "{:?}",
+            d.list
+        );
     }
 
     #[test]

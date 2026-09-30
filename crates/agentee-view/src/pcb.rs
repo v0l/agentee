@@ -17,21 +17,27 @@ pub fn copper_color(layer: &str) -> Color32 {
     match layer {
         "F.Cu" => paint::F_CU,
         "B.Cu" => paint::B_CU,
-        "In1.Cu" => IN1,
-        "In2.Cu" => IN2,
-        _ => paint::PTH,
+        _ => match inner_index(layer) {
+            Some(i) if i % 2 == 1 => IN1,
+            Some(_) => IN2,
+            None => paint::PTH,
+        },
     }
 }
 
+fn inner_index(layer: &str) -> Option<u32> {
+    layer.strip_prefix("In")?.strip_suffix(".Cu")?.parse().ok()
+}
+
 pub fn default_layers() -> Layers {
-    Layers {
-        hidden: [
-            "F.Fab", "B.Fab", "F.CrtYd", "B.CrtYd", "F.Mask", "B.Mask", "F.Paste", "B.Paste",
-            "In1.Cu", "In2.Cu", "B.Cu", "B.SilkS",
-        ]
-        .map(String::from)
-        .to_vec(),
-    }
+    let mut hidden: Vec<String> = [
+        "F.Fab", "B.Fab", "F.CrtYd", "B.CrtYd", "F.Mask", "B.Mask", "F.Paste", "B.Paste", "B.Cu",
+        "B.SilkS",
+    ]
+    .map(String::from)
+    .to_vec();
+    hidden.extend((1..=30).map(|i| format!("In{i}.Cu")));
+    Layers { hidden }
 }
 
 pub fn zone_textures(ctx: &egui::Context, l: &Layout) -> Vec<TextureHandle> {
@@ -343,5 +349,26 @@ fn silk_text(p: &Painter, xf: &Xf, t: &agentee_core::layout::SilkText) {
         let pts: Vec<Pos2> = st.iter().map(|q| xf.world(*q)).collect();
         paint::round_joints(p, &pts, stroke);
         p.add(PathShape::line(pts, stroke));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_layers_hide_every_inner_layer() {
+        let layers = default_layers();
+        for l in ["In1.Cu", "In2.Cu", "In3.Cu", "In6.Cu", "In30.Cu", "B.Cu"] {
+            assert!(!layers.shows(l), "{l}");
+        }
+        assert!(layers.shows("F.Cu"));
+    }
+
+    #[test]
+    fn inner_layers_past_in2_get_inner_colors() {
+        assert_eq!(copper_color("In3.Cu"), IN1);
+        assert_eq!(copper_color("In6.Cu"), IN2);
+        assert_eq!(copper_color("B.Cu"), paint::B_CU);
     }
 }

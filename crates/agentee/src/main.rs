@@ -53,6 +53,17 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Design rule checks of a layout: its rule diagnostics, or every rule with --list
+    Drc {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Print every rule with its id, category, severity and whether it applies here
+        #[arg(long)]
+        list: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// List the items in a project
     List {
         #[arg(default_value = ".")]
@@ -201,8 +212,11 @@ enum Cmd {
         #[arg(long)]
         via: Option<String>,
         /// Cost of a via in mm of track
-        #[arg(long, default_value_t = 1.0)]
+        #[arg(long, default_value_t = 3.0)]
         via_cost: f64,
+        /// Cost of a 45 degree bend in mm of track, three times that for 90
+        #[arg(long, default_value_t = 0.1)]
+        bend_cost: f64,
         /// Route differential pairs as coupled pairs where they fit
         #[arg(long)]
         pairs: bool,
@@ -355,6 +369,16 @@ fn run(cli: Cli) -> Result<bool, String> {
                 print!("{text}");
             }
             Ok(ok)
+        }
+        Cmd::Drc { name, project, list, json } => {
+            let p = ops::load(&project)?;
+            let (text, v) = ops::drc(&p, &name, list)?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{text}");
+            }
+            Ok(true)
         }
         Cmd::List { path } => {
             print_json(&ops::list(&ops::load(&path)?));
@@ -553,7 +577,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             Ok(true)
         }
         Cmd::Models { path } => {
-            let p = ops::load(&path)?;
+            let p = ops::load_footprints(&path)?;
             print_json(&ops::fetch_models(&p)?);
             Ok(true)
         }
@@ -570,6 +594,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             grid,
             via,
             via_cost,
+            bend_cost,
             pairs,
             reroute,
             dry_run,
@@ -585,6 +610,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                 grid,
                 via,
                 via_cost,
+                bend_cost,
                 pairs,
                 ..Default::default()
             };

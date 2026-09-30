@@ -120,9 +120,140 @@ dielectric; mask, paste and silk sit outside the outer copper.
 ### Rules
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
-`min_annular_ring`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
-`min_silk_text_height`. Footprints are checked against the rules of the board when the project has
-exactly one board, otherwise against `generic`.
+`min_annular_ring` (vias), `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
+`min_silk_text_height`, `min_mask_web` (0.1 mm), `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
+`min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
+`min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
+`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`; plus
+`max_aspect_ratio`, a plain number (board thickness over via drill). Footprints are checked against
+the rules of the board when the project has exactly one board, otherwise against `generic`.
+
+The fab preset is a table keyed by the copper layer count, the outer copper weight (from the
+first copper layer's thickness) and the finish, so a 4 layer 1 oz board gets tighter track rules
+than a 2 layer 2 oz one. Anything in `[rules]` overrides the table. The `jlcpcb` values come from
+<https://jlcpcb.com/capabilities/pcb-capabilities>:
+
+| rule | 1 layer | 2 layers | 4+ layers | source line |
+|---|---|---|---|---|
+| `min_track_width`, `min_clearance`, 1 oz | 0.10 | 0.10 | 0.09 | min. track width and spacing (1 oz) |
+| same, 2 oz | 0.16 | 0.16 | 0.15 | min. track width and spacing (2 oz) |
+| same, 2.5 / 3.5 / 4.5 oz | | 0.2 / 0.25 / 0.3 | | 2 layer heavy copper |
+| `min_drill`, `min_via_drill` | 0.3 | 0.15 | 0.15 | drill diameter, min. via hole size |
+| `min_via_diameter` | 0.5 | 0.25 | 0.25 | min. via diameter |
+| `min_annular_ring` (via) | 0.05 | 0.05 | 0.05 | via diameter 0.1 mm over the hole |
+| `min_pth_annular_ring`, 1 oz | 0.18 | 0.18 | 0.15 | PTH annular ring, absolute minimum |
+| same, 2 oz | 0.254 | 0.254 | 0.254 | PTH annular ring, 2 oz |
+| `max_drill` | 6.3 | 6.3 | 6.3 | drill diameter, larger holes are routed |
+| `min_npth_drill` | 0.5 | 0.5 | 0.5 | min. non-plated holes |
+| `min_plated_slot_width` | 0.5 | 0.5 | 0.35 | min. plated slot width, slot at least 2 widths long |
+| `min_npth_slot_width` | 1.0 | 1.0 | 1.0 | min. non-plated slots |
+| `min_via_hole_to_copper` | 0.2 | 0.2 | 0.2 | via hole to track, inner layer via hole to copper |
+| `min_pth_hole_to_copper` | 0.28 | 0.28 | 0.28 | PTH to track |
+| `min_inner_pth_hole_to_copper` | | | 0.3 | inner layer PTH pad hole to copper |
+| `min_npth_to_copper` | 0.2 | 0.2 | 0.2 | NPTH to track |
+| `min_smd_pad_gap` | 0.15 | 0.15 | 0.15 | SMD pad to pad clearance, different nets |
+| `max_filled_via_drill` | 0.55 | 0.55 | 0.55 | via-in-pad epoxy or copper fill, 0.15 to 0.55 mm |
+| `min_bga_pad` | 0.25 (0.2 ENIG) | | | BGA pad, 0.2 to 0.25 mm needs ENIG |
+| `min_bga_pitch` | 0.3 | 0.3 | 0.3 | PCBA capabilities, standard: 0.3 mm BGA centre to centre |
+| `min_silk_width`, `min_silk_text_height` | 0.15, 1.0 | | | legend line width, text height |
+| `max_aspect_ratio` | 10.7 | 10.7 | 10.7 | the 0.15 mm drill on a 1.6 mm board |
+
+Where agentee is stricter than the page, on purpose: `min_copper_to_edge` stays 0.3 mm (the page
+allows 0.2 mm on a routed edge, which is milled to +/-0.2 mm, and 0.4 mm on a V-cut),
+`min_hole_to_hole` stays 0.5 mm (the page gives 0.45 mm between pad holes and 0.2 mm between
+vias), and `min_hole_to_smd_pad` (0.2 mm, the via hole to track figure) and `min_part_to_edge`
+(0.5 mm) are agentee's choices, not on the page.
+
+### Design rule checks
+
+Layout checks run from a registry of rules, each with a stable id, a category (`copper`,
+`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`), a default severity, and a condition on the
+board: a rule for inner layers runs only with 4 or more copper layers, a via fill rule only when
+vias sit in pads, a BGA rule only when there is a BGA. Every message of a rule starts with its id
+in brackets, e.g. `[via-cuts-pad]`. `agentee drc NAME --list` (MCP `drc` with `list = true`) prints
+every rule with its category, severity, and whether it applies to this board and why; `agentee
+drc NAME` prints the layout's rule messages alone.
+
+```toml
+[drc]                          # in the board file
+disable = ["silk-width"]       # rule ids to skip
+severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
+```
+
+| id | severity | runs when | checks |
+|---|---|---|---|
+| `via-cuts-pad` | error | always | a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad: solder wicks down the barrel and the pad edge is damaged. A via of another net touching a pad is reported as a `short` instead |
+| `via-annulus-past-pad` | warning | vias in pads | the drill sits in the pad but the via's annulus reaches past the pad edge under the mask |
+| `via-in-pad` | info | vias in pads | counts the vias in SMD pads of their own net (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
+| `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill` |
+| `hole-to-smd-pad` | warning | always | a via hole closer than `min_hole_to_smd_pad` to an SMD pad of its own net (or no net) that it does not touch; paste and solder can flow into it |
+| `drill-size` | error | always | pad holes under `min_drill` (plated) or `min_npth_drill` (non-plated), or over `max_drill` (larger holes are routed, draw them as cutouts). Via sizes are checked on the board's `[[vias]]` |
+| `slot-size` | error | slotted holes | slots narrower than `min_plated_slot_width` or `min_npth_slot_width`, or shorter than twice their width |
+| `aspect-ratio` | error | always | plated holes whose depth (the copper and dielectric they pass) over drill exceeds `max_aspect_ratio` |
+| `hole-to-copper` | error | always | a via or plated pad hole wall closer than `min_via_hole_to_copper` or `min_pth_hole_to_copper` to copper of another net on a layer the hole passes: tracks, pads, vias, pours |
+| `inner-hole-to-copper` | error | 4+ copper layers | a plated pad hole wall closer than `min_inner_pth_hole_to_copper` to another net's copper on an inner layer |
+| `npth-to-copper` | error | non-plated holes | a non-plated hole wall closer than `min_npth_to_copper` to any copper, its own net's pour included |
+| `hole-to-edge` | error | non-plated holes | a non-plated hole wall closer than `min_copper_to_edge` to the board outline, or through it |
+| `smd-pad-gap` | error | always | SMD pads of different nets closer than `min_smd_pad_gap`, one line per pair of parts with the closest pads |
+| `pad-to-edge` | error | always | pad copper closer than `min_copper_to_edge` to the board outline; pads marked `edge = true` are exempt |
+| `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
+| `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
+| `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
+| `fiducials` | info | parts | no footprint named like `Fiducial` on the board |
+| `tooling-holes` | info | parts | no non-plated hole of 1.5 mm or more |
+| `bga-pad` | error | a BGA | BGA pads (16 or more round SMD pads) smaller than `min_bga_pad` |
+| `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
+| `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
+| `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
+| `short` | error | always | copper of two different nets touches |
+| `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
+| `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
+| `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
+| `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
+| `copper-to-edge` | error | always | a track or via closer than `min_copper_to_edge` to the board outline, or off the board |
+| `pad-off-board` | error | always | pads outside the outline; pads marked `edge = true` are exempt |
+| `stitching` | info | always | counts the vias each `[[stitching]]` entry placed |
+| `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
+| `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
+| `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair |
+| `stacked-via` | error | always | a via on the same spot as another via of its net |
+| `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
+| `class-width` | error | always | a track narrower than its class width that is not a neck-down |
+| `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
+| `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
+| `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap |
+| `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |
+| `zone-to-zone` | error | zones | fills of two nets on one layer closer than their clearance |
+| `zone-clearance` | error | zones | a fill that covers or comes too close to copper of another net |
+| `zone-tips` | warning | zones | fill tips sharper than 30 degrees; raise the zone's `min_width` |
+| `copper-neck` | warning | zones | necks in a fill narrower than 90% of the zone's `min_width`, which the fill should have opened; counted by place with the narrowest |
+| `zone-islands` | info | always | fill islands that reach nothing of the zone's net and were removed |
+| `courtyard-overlap` | error | parts | courtyards of two parts on one side overlap by their outline |
+| `courtyard-hole` | error | parts | a courtyard that covers a mounting hole or a non-plated hole of another part |
+| `mask-web` | error | always | pads of different nets whose mask openings leave less than `min_mask_web`, one line per pair of parts; pads of one footprint with `mask_web = false` are skipped among themselves |
+| `silk-text` | error | always | silk text that crowds other text, sits on pads, prints over vias, crosses a silk outline or runs off the board; a reference gets a clear spot (`agentee silk` moves it there) |
+| `silk-hidden` | warning | always | silk text only hidden under another part's body |
+| `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
+| `silk-artwork` | error | always | silk artwork on pads, over silk text or off the board |
+| `silk-width` | warning | always | board silk lines (the layout's `[[graphics]]`, not text) thinner than `min_silk_width`, counted with the thinnest; footprint silk is checked with the footprint |
+| `pair-skew` | error | pairs | a pair skewed over its `max_skew` or the class `max_skew`, with the net to lengthen |
+| `pair-skew-info` | info | pairs | the skew of each pair within its limit |
+| `pair-gap` | error | pairs | a pair run side by side at another gap than the class `diff_gap`, beyond `max_uncoupled` |
+| `pair-coupling` | warning | pairs | less than 80% of a pair runs side by side at the pair gap |
+| `match-length` | error | match groups | a member of a match group off its target by more than the tolerance |
+| `interface-pair` | error | interfaces | a net of a differential interface with no pair partner |
+| `interface-impedance` | error | interfaces | an interface net whose class has no impedance target, one outside the window, or no pair gap on a differential interface |
+| `interface-skew` | error | interfaces | a pair skewed over the interface's `max_skew` |
+| `interface-bus-skew` | error | interfaces | the data signals spread more than `max_bus_skew` |
+| `interface-clock-window` | error | interfaces | a data signal arriving outside `clock_window` from the clock |
+| `interface-vias` | error | interfaces | a lane with more vias than `max_vias` |
+| `interface-stub` | error | interfaces | a via stub longer than `max_stub` |
+| `interface-return-via` | error | interfaces | a signal via with no reference via within `return_via` |
+| `interface-length` | error | interfaces | a lane longer than `max_length` |
+| `interface-reference` | error | interfaces | a lane running more than `max_unreferenced` with no reference plane next to it |
+
+An id that names no rule is a warning. Errors in the files themselves (a net that is not in the
+schematic, a layer that is not copper, a bad preset) are not rules and cannot be disabled.
 
 ### What check computes
 
@@ -242,6 +373,8 @@ model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step
 model_offset = ["0mm", "0mm", "0mm"]   # optional, as in KiCad: model frame, Y up
 model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
+# mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
+                               # window, so min_mask_web is not checked between its own pads
 
 [[pads]]
 number = "1"
@@ -271,6 +404,9 @@ size = [1.7, 1.7]
 drill = 1.0                    # round, or [w, h] for a slot
 # rotation = 90
 # layers = ["*.Cu", "*.Mask"]  # default by kind: smd F.Cu F.Paste F.Mask, tht *.Cu *.Mask
+# edge = true                  # the copper is meant to reach the board edge (edge-launch
+                               # connector, castellation, edge finger): exempt from the edge
+                               # clearance, listed in the fab notes
 
 [[graphics]]
 kind = "rect"
@@ -294,7 +430,8 @@ Layers: `F.Cu`, `B.Cu`, `F.SilkS`, `B.SilkS`, `F.Mask`, `B.Mask`, `F.Paste`, `B.
 `B.Fab`, `F.CrtYd`, `B.CrtYd`, `Edge.Cuts`, `*.Cu`, `*.Mask`.
 
 Check looks for overlapping pads, pads closer than the fab clearance, drills and annular rings
-under the rules, a courtyard that encloses the pads, and silk that runs over exposed copper.
+under the rules (`min_drill`, `min_pth_annular_ring`), a courtyard that encloses the pads, and
+silk that runs over exposed copper.
 
 ## Schematic (`*.sch.toml`)
 
@@ -403,6 +540,7 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # outline = [[x, y], ...]      # default: the board outline
 # clearance = 0.25             # default: the net class clearance
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
+# min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
 
 [[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin
 layers = ["In1.Cu"]
@@ -431,6 +569,11 @@ spot that passes every rule, as a `label = { at = [...] }` line to paste. `agent
 (MCP `silk`) pastes them all for you and repeats until the labels settle; `--hide` hides the
 references that have no clear spot, typically small passives under a BGA.
 
+A fill piece is kept only if it touches two items of its net, or one and is at least
+`min_island_area`; the rest reach nothing new and are removed. Check verifies every fill against
+other nets: a fill that overlaps another net's zone, track, via or pad, or comes closer than the
+clearance, is an error, and copper tips sharper than 30 degrees are flagged.
+
 Zones on the same layer fill in order of `priority`, then smallest first, and each keeps its
 clearance from the fills already placed, so a small switch-node or supply pour inside a
 board-wide ground pour is poured around rather than shorted to it.
@@ -442,11 +585,25 @@ zone of its net; check reports how many it placed. They are drilled and plotted 
 Zone fills are exact polygons: the zone outline less every other net's copper grown by its
 clearance, with round corners, so pours render and plot without stair steps. Necks and slivers
 narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fab would etch them.
+Where two clearance areas (antipads, track and pad clearances) come closer than `min_width`, the
+pour is cut back to the straight lines joining them, within about 1.5 `min_width` of the gap, so no
+stub or hairline waist is left pointing into it. The same holds between a clearance area and the
+board edge's clearance, a cutout, or the clearance around another zone's fill.
 
-A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad.
+A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad. Two
+segments of one net that lie on top of each other on a layer (parallel, overlapping by more
+than a track width) are an error, since the copper is doubled; a bend sharper than 90 degrees is
+flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
 (the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
+Two vias of one net at the same spot are an error too: the fab would drill the hole twice.
+Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
+different nets (or no net) that overlap or leave a mask web under `min_mask_web` are an error,
+counted per part pair with the first place named. Pads of one fine pitch part are checked too: fix
+it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it. A
+footprint with `mask_web = false` has its mask opened as one window over its pads (a gang
+opening), so pairs of its own pads are skipped; its pads are still checked against other parts.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and
@@ -459,10 +616,22 @@ ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the
 to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
 It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
 the board edge, keeps new vias `min_hole_to_hole` from every drill, uses the class via to change
-layer (`--via` to override, `--via-cost` in mm of track), and never moves what is already there
+layer (`--via` to override, `--via-cost` in mm of track, default 3), charges `--bend-cost` mm of track for
+each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
-it would cross, remembers the spot as congested, and those nets go back in the queue. Paths are
-pulled tight into straight runs afterwards. The second net of a pair is drawn toward its
+it would cross, remembers the spot as congested, and those nets go back in the queue. The search
+steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
+45 degree bends; afterwards runs are pulled tight with two-segment 45 degree doglegs and any 90
+degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
+at another angle. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+each routed connection that uses vias is tried again on one layer at a time with the rest held
+fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
+vias of neighbouring parallel connections that change layer near each other are slid along their
+own tracks onto a common row or column on the grid, where the spot is legal and the connection
+keeps its length (pair legs held by `--pairs` and nets with several connections stay put). A net in an
+interface with `max_vias` keeps the trace (every net of the lane, through series parts) within
+it: a route with too many vias is tried again with dearer vias, then on one layer, and fails with
+the reason if neither fits. The second net of a pair is drawn toward its
 partner at the pair gap; `--pairs` tries to route both halves together as one coupled track
 first. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
@@ -489,12 +658,82 @@ Match groups say which net is short or over and by how much. A pair that runs th
 two-pin parts, like the AC caps on a USB lane, is measured end to end: its skew is the sum over
 every pair it joins, reported as `FX_TX1_P+SS_TX1_P/FX_TX1_N+SS_TX1_N`.
 
+### Interfaces
+
+An interface says what a link must meet, and check measures the copper against it: impedance,
+skew, length, vias, via stubs, the reference plane under every track, the return vias, bus
+timing, and the S-parameters and eye of the sims that model it.
+
+```toml
+[[interfaces]]
+name = "usb-ss"
+preset = "usb3-gen2"           # usb3-gen1, usb3-gen2, usb2-hs, lvds, rf-50, cmos
+nets = ["SS_TX*", "SS_RX*"]    # globs; differential presets pair them up, through series parts
+# differential = true
+# impedance = "90ohm"          # the member classes' targets must sit inside this
+# impedance_tolerance = "7%"
+# max_skew = "5mil"            # within each pair, a length or a time ("1ps")
+# max_length = "3in"           # end to end, through series parts
+# max_vias = 2                 # per trace
+# max_stub = "15mil"           # the via barrel past the last layer the trace uses
+# max_unreferenced = "0.5mm"   # total run with no plane of `reference` under it
+# reference = ["GND"]
+# return_via = "200mil"        # a reference via this close to every signal via
+
+[[interfaces]]
+name = "ad-rx"
+preset = "cmos"
+nets = ["AD_P1_D*", "AD_RX_FRAME", "AD_DATA_CLK"]
+clock = "AD_DATA_CLK"          # a pair's clock is named by either leg
+max_bus_skew = "30ps"          # spread of arrival across the data lines
+clock_window = ["-50ps", "150ps"]   # data minus clock arrival, from the setup and hold budget
+
+[[interfaces.measure]]         # read from a finished sim; missing or stale results are errors
+sim = "sdr-usb"                # an FDTD run
+pair = ["TX1_FX+", "TX1_FX-", "TX1_J+", "TX1_J-"]   # IN+, IN-, OUT+, OUT-; or through = [IN, OUT]
+up_to = "5GHz"                 # Nyquist, the band the limits apply over
+max_loss = 1.5                 # dB, worst Sdd21 (or S21) in the band
+min_return_loss = 10.0         # dB, worst Sdd11
+max_mode_conversion = -30.0    # dB, worst Scd21
+
+[[interfaces.measure]]
+sim = "sdr-usb-eye"            # a channel sim
+min_eye_height = "70mV"
+min_eye_width = "0.47UI"       # or ps
+```
+
+| preset | impedance | skew | vias | stub | other |
+|---|---|---|---|---|---|
+| `usb3-gen1`, `usb3-gen2` | 90 ohm +/-7% diff | 5 mil | 2 | 15 mil | 3500 / 3000 mil long, GND return via within 200 mil, 0.5 mm unreferenced |
+| `usb2-hs` | 90 ohm +/-10% diff | 50 mil | 4 | | 12000 mil long, 1 mm unreferenced |
+| `lvds` | 100 ohm +/-10% diff | | | | 1 mm unreferenced |
+| `rf-50` | 50 ohm +/-10% | | 0 | | 0.5 mm unreferenced |
+| `cmos` | | | | | 2 mm unreferenced |
+
+The USB numbers are TI's High-Speed Interface Layout Guidelines (SPRAAR7J, Appendix A), the Gen 2
+length is congatec AN37. Anything a preset sets, the interface can override.
+
+Delays are the track delay from each layer's effective permittivity plus the via barrel the
+signal crosses. A plane counts as the reference where the first copper found walking away from
+the track, past cut-out layers, is a zone of a `reference` net that covers the track's full
+width; the antipad around the net's own vias does not count. Every sim result records a hash of the copper it saw (the sim's `region` only, plus the
+stackup); a result whose copper has changed since is stale, and a measure on it fails.
+
 `agentee tune NAME` (MCP `tune`) fixes these: for every pair over its skew limit and every match
 group member short of its target it meanders the short side, on its longest straight segments,
 anywhere along a series chain, with bumps that keep every other net's clearance and the board
 edge rule, and writes the new points into the tracks. `--nets` limits it, `--amplitude` caps the
 bump height and `--pitch` fixes the bump pitch (default three track widths, tighter where that is
-all that fits). A net that is over its group target is reported, not shortened. `agentee calc
+all that fits). On one leg of a pair it bumps the stretches where the legs already run apart
+first (breakouts and bends, where the mismatch comes from) and never leaves the leg running beside
+its partner off the class gap; a coupled stretch only takes bumps tall enough to clear the pair.
+Interfaces count too, in time as well as length: a pair over
+its `max_skew` in ps gets the short side lengthened by that delay; for `max_bus_skew` and
+`clock_window` the clock is lengthened until the latest data line falls inside its window and
+every data line short of the bus spread or the window's early edge is lengthened to the latest
+one (inside the window), both legs of a pair together. Delays turn into millimetres at each net's
+own ps per mm. When one leg of a pair cannot take all of it, the other leg is held to what it got.
+A net that is over its group target is reported, not shortened. `agentee calc
 serpentine --from x,y --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of one such
 meander on a segment you pick. Net lengths and delays are in `agentee show pcb:NAME`.
 
@@ -900,7 +1139,7 @@ imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 p
 | `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill |
+| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill, edge pads to keep |
 | `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |
 | `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |

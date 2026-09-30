@@ -356,15 +356,30 @@ fn notes(layout: &Layout, board: &Board) -> String {
             );
         }
     }
-    let in_pad = layout.vias.iter().filter(|v| {
-        layout.parts.iter().flat_map(|p| p.pads.iter()).any(|q| {
-            q.drill.is_none()
-                && q.outlines.iter().any(|o| agentee_core::geom::point_in_polygon(v.at, o))
-        })
-    });
-    let n = in_pad.count();
+    let mut in_pad: Vec<usize> =
+        agentee_core::drc::vias_in_pads(&layout.parts, &layout.vias).iter().map(|x| x.0).collect();
+    in_pad.dedup();
+    let n = in_pad.len();
     if n > 0 {
         let _ = writeln!(out, "\n{n} vias sit in SMD pads: fill and cap them (IPC-4761 type VII).");
+    }
+    let edge: Vec<String> = layout
+        .parts
+        .iter()
+        .flat_map(|p| {
+            p.pads
+                .iter()
+                .zip(&p.footprint.pads)
+                .filter(|(q, f)| f.edge && !q.copper.is_empty())
+                .map(move |(q, _)| format!("{}.{}", p.reference, q.number))
+        })
+        .collect();
+    if !edge.is_empty() {
+        let _ = writeln!(
+            out,
+            "\nEdge pads, copper meant to reach the board edge, do not pull it back: {}.",
+            edge.join(", ")
+        );
     }
     out += "\nCoordinates are mm, origin at the board's top-left corner, Y up in the Gerbers.\n";
     out

@@ -1,9 +1,9 @@
-name = "CYUSB4024"
+name = "CYUSB3084"
 reference = "U"
-value = "CYUSB4024-FCAXI"
-description = "EZ-USB FX20, USB 3.2 Gen 2x2 (20 Gbps) peripheral controller, LVDS RX and LVCMOS GPIF III ports, 169-ball FBGA"
-datasheet = "https://www.infineon.com/assets/row/public/documents/24/49/infineon-cyusb402x-ez-usb-fx20-usb-20-gbps-peripheral-controller-datasheet-en.pdf"
-keywords = ["USB", "USB3", "FX20"]
+value = "CYUSB3084-FCAXI"
+description = "EZ-USB FX5, USB 3.2 Gen 1 (5 Gbps) peripheral controller with Type-C flip mux, LVDS RX and LVCMOS GPIF III ports, 169-ball FBGA"
+datasheet = "https://www.infineon.com/assets/row/public/documents/24/49/infineon-cyusb308x-ez-usb-fx5-usb-5-gbps-peripheral-controller-datasheet-en.pdf"
+keywords = ["USB", "USB3", "FX5"]
 footprint = "Infineon_PG-TFBGA-169_10x10mm_P0.75mm"
 
 [[bodies]]
@@ -82,14 +82,14 @@ right = [
   { number = "B11", name = "P1D6", type = "bidirectional" },
   { number = "B12", name = "P1D7", type = "bidirectional" },
   { number = "A4", name = "P1D8", type = "bidirectional" },
-  { number = "A5", name = "P1D9", type = "bidirectional" },
+  { number = "A8", name = "P1D9", type = "bidirectional" },
   { number = "A6", name = "P1D10", type = "bidirectional" },
   { number = "A7", name = "P1D11", type = "bidirectional" },
   { number = "A9", name = "P1D12", type = "bidirectional" },
   { number = "A10", name = "P1D13", type = "bidirectional" },
   { number = "A11", name = "P1D14", type = "bidirectional" },
   { number = "A12", name = "P1D15", type = "bidirectional" },
-  { number = "A8", name = "P1CLK", type = "bidirectional" },
+  { number = "A5", name = "P1CLK", type = "bidirectional" },
   { number = "D5", name = "P1CTL0", type = "bidirectional" },
   { number = "D6", name = "P1CTL1", type = "bidirectional" },
   { number = "D7", name = "P1CTL2", type = "bidirectional" },

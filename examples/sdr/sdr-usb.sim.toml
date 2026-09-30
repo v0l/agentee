@@ -1,5 +1,5 @@
 name = "sdr-usb"
-description = "SuperSpeed lanes TX1 (F.Cu through the 0201 AC caps) and RX2, the two lanes on F.Cu, from the FX20 balls to the USB-C pads, 8 ports so the eye and the crosstalk between the lanes where they meet at the connector come from one run. The 220 nF caps are their ESL, which is all they are at these frequencies."
+description = "SuperSpeed lanes TX1 (F.Cu through the 0201 AC caps) and RX2, the two lanes on F.Cu, from the FX5 balls to the USB-C pads, 8 ports so the eye and the crosstalk between the lanes where they meet at the connector come from one run. The 220 nF caps are their ESL, which is all they are at these frequencies."
 layout = "sdr"
 cell = 0.05
 region = [57.5, 43.5, 69.5, 56.5]

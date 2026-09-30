@@ -1,7 +1,8 @@
 use crate::board::Board;
 use crate::footprint::PadKind;
 use crate::geom::{self, P};
-use crate::layout::{Layout, glob, serpentine};
+use crate::interface::{Interface, Limit};
+use crate::layout::{Layout, LayoutNet, glob, serpentine};
 use serde::Serialize;
 
 #[derive(Clone, Debug)]
@@ -93,6 +94,7 @@ struct Demand {
     nets: Vec<usize>,
     add: f64,
     why: String,
+    tie: Vec<usize>,
 }
 
 pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneResult, String> {
@@ -115,6 +117,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 nets: short,
                 add: pair.skew_mm.abs(),
                 why: format!("skew to {}", partner.join("+")),
+                tie: Vec::new(),
             });
         }
     }
@@ -129,6 +132,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                         nets: vec![n],
                         add: -off,
                         why: format!("match group {}", g.name),
+                        tie: Vec::new(),
                     });
                 }
             } else if off > g.tolerance_mm + 1e-9 && wanted(n) {
@@ -139,17 +143,65 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
             }
         }
     }
+    for (d, sum) in interface_demands(&layout.interfaces, &layout.nets) {
+        if !d.nets.iter().any(|&n| wanted(n)) {
+            continue;
+        }
+        match demands.iter_mut().find(|x| x.nets == d.nets) {
+            Some(x) if sum => {
+                x.add += d.add;
+                x.why = format!("{}, {}", x.why, d.why);
+            }
+            Some(x) => x.add = x.add.max(d.add),
+            None => demands.push(d),
+        }
+    }
 
     let mut obstacles = obstacles_of(layout);
     let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let floor = board.rules.min_clearance.to_mm();
 
-    for d in demands {
+    let partner_of = |n: usize| {
+        layout.pairs.iter().find_map(|p| {
+            if p.p == n {
+                Some(p.n)
+            } else if p.n == n {
+                Some(p.p)
+            } else {
+                None
+            }
+        })
+    };
+    let gap_of = |n: usize| {
+        board
+            .netclasses
+            .iter()
+            .find(|c| c.name == layout.nets[n].class)
+            .and_then(|c| c.diff_gap)
+            .map(|g| g.to_mm())
+    };
+
+    let mut shortfall: std::collections::HashMap<Vec<usize>, f64> =
+        std::collections::HashMap::new();
+    for mut d in demands {
+        if let Some(&cut) = shortfall.get(&d.tie).filter(|&&c| c > 1e-4) {
+            d.add = (d.add - cut).max(0.0);
+            let names: Vec<&str> = d.tie.iter().map(|&n| layout.nets[n].name.as_str()).collect();
+            d.why = format!("{}, {cut:.3} mm less to stay matched to {}", d.why, names.join("+"));
+        }
+        let legs: Vec<(usize, usize, f64)> = d
+            .nets
+            .iter()
+            .filter_map(|&n| {
+                let other = partner_of(n).filter(|o| !d.nets.contains(o))?;
+                Some((n, other, gap_of(n)?))
+            })
+            .collect();
         let mut left = d.add;
         let mut meanders = 0;
         'grow: while left > 1e-4 {
-            let mut segs: Vec<(usize, usize, f64)> = layout
+            let segs: Vec<(usize, usize, f64)> = layout
                 .tracks
                 .iter()
                 .enumerate()
@@ -162,7 +214,27 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                         .collect::<Vec<_>>()
                 })
                 .collect();
-            segs.sort_by(|a, b| b.2.total_cmp(&a.2));
+            let beside = |ti: usize, line: &[P]| {
+                let t = &layout.tracks[ti];
+                legs.iter()
+                    .filter(|l| l.0 == t.net)
+                    .map(|&(_, other, gap)| {
+                        pair_runs(line, t.width, gap, &t.layer, other, layout, &points)
+                    })
+                    .fold((false, false), |a, b| (a.0 || b.0, a.1 || b.1))
+            };
+            let coupled: Vec<bool> = segs
+                .iter()
+                .map(|&(ti, k, _)| {
+                    let (at_gap, off_gap) = beside(ti, &points[ti][k..k + 2]);
+                    at_gap || off_gap
+                })
+                .collect();
+            let mut order: Vec<usize> = (0..segs.len()).collect();
+            order.sort_by(|&i, &j| {
+                coupled[i].cmp(&coupled[j]).then(segs[j].2.total_cmp(&segs[i].2))
+            });
+            let segs: Vec<(usize, usize, f64)> = order.into_iter().map(|i| segs[i]).collect();
             for (ti, k, _) in segs {
                 let t = &layout.tracks[ti];
                 let net = &layout.nets[t.net];
@@ -176,17 +248,18 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 };
                 let Some((pts, added)) = pitches.iter().find_map(|&pitch| {
                     fit(a, b, left, pitch, opts.amplitude, |line| {
-                        legal(
-                            line,
-                            t.width,
-                            &t.layer,
-                            t.net,
-                            net.clearance,
-                            floor,
-                            edge,
-                            &obstacles,
-                            &layout.outline,
-                        )
+                        !beside(ti, line).1
+                            && legal(
+                                line,
+                                t.width,
+                                &t.layer,
+                                t.net,
+                                net.clearance,
+                                floor,
+                                edge,
+                                &obstacles,
+                                &layout.outline,
+                            )
                     })
                 }) else {
                     continue;
@@ -212,6 +285,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
             }
             break;
         }
+        shortfall.insert(d.nets.clone(), left.max(0.0));
         let t = Tuned {
             net: d.nets.iter().map(|&n| layout.nets[n].name.as_str()).collect::<Vec<_>>().join("+"),
             why: d.why,
@@ -228,6 +302,171 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
         e.track = layout.tracks[e.track].source;
     }
     Ok(out)
+}
+
+fn pair_runs(
+    line: &[P],
+    width: f64,
+    gap: f64,
+    layer: &str,
+    other: usize,
+    layout: &Layout,
+    points: &[Vec<P>],
+) -> (bool, bool) {
+    let (mut at_gap, mut off_gap) = (false, false);
+    for (ti, t) in layout.tracks.iter().enumerate() {
+        if t.net != other || t.layer != layer {
+            continue;
+        }
+        let want = gap + (width + t.width) / 2.0;
+        for s in line.windows(2) {
+            for o in points[ti].windows(2) {
+                let Some((overlap, sep)) = parallel_overlap(s[0], s[1], o[0], o[1]) else {
+                    continue;
+                };
+                if (sep - want).abs() <= 0.1 * gap + 0.005 {
+                    at_gap = true;
+                } else if sep < want + 2.0 * gap && overlap > 0.05 {
+                    off_gap = true;
+                }
+            }
+        }
+    }
+    (at_gap, off_gap)
+}
+
+fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
+    let la = geom::dist(a0, a1);
+    let lb = geom::dist(b0, b1);
+    if la < 1e-9 || lb < 1e-9 {
+        return None;
+    }
+    let u = [(a1[0] - a0[0]) / la, (a1[1] - a0[1]) / la];
+    let cross = (u[0] * (b1[1] - b0[1]) - u[1] * (b1[0] - b0[0])).abs() / lb;
+    if cross > 0.02 {
+        return None;
+    }
+    let proj = |p: P| (p[0] - a0[0]) * u[0] + (p[1] - a0[1]) * u[1];
+    let (s0, s1) = (proj(b0).min(proj(b1)), proj(b0).max(proj(b1)));
+    let overlap = s1.min(la) - s0.max(0.0);
+    if overlap <= 0.0 {
+        return None;
+    }
+    let mid = [b0[0] - a0[0], b0[1] - a0[1]];
+    Some((overlap, (u[0] * mid[1] - u[1] * mid[0]).abs()))
+}
+
+fn interface_demands(ifaces: &[Interface], nets: &[LayoutNet]) -> Vec<(Demand, bool)> {
+    let mut out = Vec::new();
+    for f in ifaces {
+        let members: Vec<Vec<usize>> = f
+            .lanes
+            .iter()
+            .map(|l| l.nets.iter().filter_map(|n| nets.iter().position(|x| &x.name == n)).collect())
+            .collect();
+        let rate = |lanes: &[usize]| {
+            let (ps, mm) = lanes
+                .iter()
+                .flat_map(|&l| &members[l])
+                .fold((0.0, 0.0), |(p, m), &n| (p + nets[n].delay_ps, m + nets[n].length_mm));
+            (mm > 1e-9 && ps > 1e-9).then(|| ps / mm)
+        };
+        let label = |lane: usize| f.lanes[lane].nets.join("+");
+        let mut lengthen = |lanes: &[usize], ps: f64, why: String, sum: bool| {
+            if let Some(r) = rate(lanes) {
+                for &lane in lanes {
+                    let tie = lanes.iter().find(|&&o| o != lane).map(|&o| members[o].clone());
+                    out.push((
+                        Demand {
+                            nets: members[lane].clone(),
+                            add: ps / r,
+                            why: why.clone(),
+                            tie: tie.unwrap_or_default(),
+                        },
+                        sum,
+                    ));
+                }
+            }
+        };
+        for &(a, b, skew_mm, skew_ps) in &f.pairs {
+            let (short, long) = if skew_mm > 0.0 { (b, a) } else { (a, b) };
+            match f.spec.max_skew {
+                Some(Limit::Ps(limit)) if skew_ps.abs() > limit + 1e-9 => {
+                    let (short, long) = if skew_ps > 0.0 { (b, a) } else { (a, b) };
+                    lengthen(
+                        &[short],
+                        skew_ps.abs(),
+                        format!(
+                            "skew {:.2} ps to {} (interface {})",
+                            skew_ps.abs(),
+                            label(long),
+                            f.name
+                        ),
+                        false,
+                    );
+                }
+                Some(Limit::Mm(limit)) if skew_mm.abs() > limit + 1e-9 => {
+                    if let Some(r) = rate(&[short]) {
+                        lengthen(
+                            &[short],
+                            skew_mm.abs() * r,
+                            format!("skew to {} (interface {})", label(long), f.name),
+                            false,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        let t = &f.timing;
+        let clock = t.iter().position(|x| x.clock);
+        let data: Vec<usize> = (0..t.len()).filter(|&k| Some(k) != clock).collect();
+        if data.is_empty() || (f.max_bus_skew_ps.is_none() && f.clock_window_ps.is_none()) {
+            continue;
+        }
+        let mut add = vec![0.0; t.len()];
+        let latest = data.iter().map(|&k| t[k].delay_ps).fold(f64::MIN, f64::max);
+        let window = clock.zip(f.clock_window_ps);
+        if let Some((k, [lo, hi])) = window {
+            let need = latest - hi - t[k].delay_ps;
+            if need > 1e-9 {
+                add[k] = need + (0.1 * (hi - lo)).min(2.0);
+            }
+        }
+        let edges = window.map(|(k, [lo, hi])| {
+            let c = t[k].delay_ps + add[k];
+            (c + lo, c + hi)
+        });
+        let top = edges.map_or(latest, |(lo, _)| latest.max(lo));
+        for &k in &data {
+            let d = t[k].delay_ps;
+            let low = f64::max(
+                f.max_bus_skew_ps.map_or(f64::MIN, |limit| top - limit),
+                edges.map_or(f64::MIN, |(lo, _)| lo),
+            );
+            if d >= low - 1e-9 {
+                continue;
+            }
+            let aim = match (f.max_bus_skew_ps, edges) {
+                (Some(_), Some((lo, hi))) => top.clamp(lo, hi),
+                (Some(_), None) => top,
+                (None, Some((lo, hi))) => (lo + 0.25 * (hi - lo)).min(hi),
+                (None, None) => continue,
+            };
+            add[k] = aim - d;
+        }
+        for (k, ps) in add.into_iter().enumerate() {
+            if ps > 1e-6 {
+                lengthen(
+                    &t[k].lanes,
+                    ps,
+                    format!("interface {} timing, {ps:.1} ps later", f.name),
+                    true,
+                );
+            }
+        }
+    }
+    out
 }
 
 fn fit(
@@ -395,6 +634,81 @@ fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn net(name: &str, length_mm: f64) -> LayoutNet {
+        LayoutNet {
+            name: name.into(),
+            class: "x".into(),
+            width: 0.1,
+            clearance: 0.1,
+            unrouted: 0,
+            length_mm,
+            delay_ps: length_mm * 6.0,
+        }
+    }
+
+    fn lane(n: &LayoutNet) -> crate::interface::Lane {
+        crate::interface::Lane {
+            nets: vec![n.name.clone()],
+            length_mm: n.length_mm,
+            delay_ps: n.delay_ps,
+            vias: 0,
+            stub_mm: 0.0,
+            unreferenced_mm: 0.0,
+        }
+    }
+
+    fn timing(lanes: Vec<usize>, clock: bool, delay_ps: f64) -> crate::interface::Timing {
+        crate::interface::Timing {
+            signal: String::new(),
+            lanes,
+            clock,
+            delay_ps,
+            to_clock_ps: None,
+        }
+    }
+
+    #[test]
+    fn interface_budgets_in_ps_become_lengths() {
+        let nets = vec![net("D0", 10.0), net("D1", 20.0), net("CLK", 10.0)];
+        let bus = Interface {
+            name: "bus".into(),
+            preset: None,
+            spec: Default::default(),
+            lanes: nets.iter().map(lane).collect(),
+            pairs: Vec::new(),
+            timing: vec![
+                timing(vec![0], false, 60.0),
+                timing(vec![1], false, 120.0),
+                timing(vec![2], true, 60.0),
+            ],
+            max_bus_skew_ps: Some(20.0),
+            clock_window_ps: Some([-10.0, 10.0]),
+            measure: Vec::new(),
+        };
+        let got = interface_demands(&[bus], &nets);
+        let add = |n: usize| got.iter().find(|d| d.0.nets == [n]).map(|d| d.0.add);
+        assert!((add(2).unwrap() - 52.0 / 6.0).abs() < 1e-9, "the clock moves into the window");
+        assert!((add(0).unwrap() - 10.0).abs() < 1e-9, "D0 matches the latest line");
+        assert_eq!(add(1), None);
+
+        let nets = vec![net("P", 10.0), net("N", 9.0)];
+        let pair = Interface {
+            name: "pair".into(),
+            preset: None,
+            spec: crate::interface::Spec { max_skew: Some(Limit::Ps(1.0)), ..Default::default() },
+            lanes: nets.iter().map(lane).collect(),
+            pairs: vec![(0, 1, 1.0, 6.0)],
+            timing: Vec::new(),
+            max_bus_skew_ps: None,
+            clock_window_ps: None,
+            measure: Vec::new(),
+        };
+        let got = interface_demands(&[pair], &nets);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0.nets, [1]);
+        assert!((got[0].0.add - 1.0).abs() < 1e-9);
+    }
 
     #[test]
     fn a_meander_fits_between_walls_and_adds_what_was_asked() {

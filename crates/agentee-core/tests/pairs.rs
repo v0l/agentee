@@ -150,3 +150,136 @@ target = "27mm"
     let m = messages(&p);
     assert!(m.iter().any(|(_, t)| t.contains("USB_DP is 26.700 mm, 0.300 mm short of the 27.000 mm target")), "{m:?}");
 }
+
+const PAIR: &str = r#"
+[[tracks]]
+net = "USB_DP"
+layer = "F.Cu"
+points = [[2.49, 4], [2.49, 4.85], [27.49, 4.85], [27.49, 4]]
+
+[[tracks]]
+net = "USB_DN"
+layer = "F.Cu"
+points = [[2.49, 6], [2.49, 5.15], [27.49, 5.15], [27.49, 6]]
+"#;
+
+fn interface_errors(p: &Project) -> Vec<String> {
+    p.layouts[0]
+        .diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error && d.at.starts_with("interface"))
+        .map(|d| d.message.clone())
+        .collect()
+}
+
+#[test]
+fn an_interface_wants_a_plane_under_the_pair() {
+    let spec = r#"
+[[interfaces]]
+name = "hs"
+preset = "usb2-hs"
+nets = ["USB_D?"]
+"#;
+    let e = interface_errors(&project(spec, PAIR));
+    assert!(e.iter().any(|t| t.contains("USB_DP runs") && t.contains("no GND plane")), "{e:?}");
+}
+
+#[test]
+fn an_interface_checks_pair_skew_in_time() {
+    let spec = r#"
+[[interfaces]]
+name = "hs"
+nets = ["USB_D?"]
+differential = true
+max_skew = "0.5ps"
+"#;
+    let skewed = PAIR.replace(
+        "[27.49, 5.15], [27.49, 6]",
+        "[27.49, 5.15], [27.49, 5.5], [26.0, 5.5], [26.0, 6], [27.49, 6]",
+    );
+    let e = interface_errors(&project(spec, &skewed));
+    assert!(e.iter().any(|t| t.contains("skew") && t.contains("0.50 ps")), "{e:?}");
+    assert!(interface_errors(&project(spec, PAIR)).is_empty());
+    let p = project(spec, &skewed);
+    let iface = &p.layouts[0].item.interfaces[0];
+    assert_eq!(iface.lanes.len(), 2);
+    assert!((iface.pairs[0].2 + 2.98).abs() < 0.01, "{:?}", iface.pairs);
+}
+
+#[test]
+fn a_bus_line_outside_its_clock_window_is_flagged() {
+    let spec = r#"
+[[interfaces]]
+name = "bus"
+nets = ["USB_D?"]
+differential = false
+clock = "USB_DP"
+clock_window = ["-1ps", "1ps"]
+"#;
+    let late = PAIR.replace(
+        "[27.49, 5.15], [27.49, 6]",
+        "[27.49, 5.15], [27.49, 5.5], [26.0, 5.5], [26.0, 6], [27.49, 6]",
+    );
+    let e = interface_errors(&project(spec, &late));
+    assert!(
+        e.iter().any(|t| t.contains("USB_DN arrives") && t.contains("after the clock")),
+        "{e:?}"
+    );
+    assert!(interface_errors(&project(spec, PAIR)).is_empty());
+}
+
+#[test]
+fn same_net_tracks_on_top_of_each_other_are_an_error() {
+    let doubled = format!(
+        "{PAIR}\n[[tracks]]\nnet = \"USB_DP\"\nlayer = \"F.Cu\"\npoints = [[5.0, 4.85], [12.0, 4.85]]\n"
+    );
+    let m = messages(&project("", &doubled));
+    assert!(m.iter().any(|(s, t)| *s == Severity::Error && t.contains("runs on top of")), "{m:?}");
+    let m = messages(&project("", PAIR));
+    assert!(!m.iter().any(|(_, t)| t.contains("runs on top of")), "{m:?}");
+    let folded = PAIR.replace(
+        "[[2.49, 4], [2.49, 4.85], [27.49, 4.85], [27.49, 4]]",
+        "[[2.49, 4], [2.49, 4.85], [20.0, 4.85], [15.0, 4.7], [27.49, 4.7], [27.49, 4]]",
+    );
+    let m = messages(&project("", &folded));
+    assert!(m.iter().any(|(_, t)| t.contains("turns back")), "{m:?}");
+}
+
+#[test]
+fn tuning_a_pair_leg_bumps_where_the_pair_is_uncoupled() {
+    let legs = [
+        ("USB_DP", "[[2.49, 4], [2.49, 1.5], [7, 1.5], [7, 4.85], [27.49, 4.85], [27.49, 4]]"),
+        ("USB_DN", "[[2.49, 6], [2.49, 5.15], [24, 5.15], [24, 8.65], [27.49, 8.65], [27.49, 6]]"),
+    ];
+    let tracks = |pts: &[String]| {
+        legs.iter()
+            .zip(pts)
+            .map(|((net, _), p)| {
+                format!("\n[[tracks]]\nnet = \"{net}\"\nlayer = \"F.Cu\"\npoints = {p}\n")
+            })
+            .collect::<String>()
+    };
+    let before: Vec<String> = legs.iter().map(|l| l.1.to_string()).collect();
+    let p = project("", &tracks(&before));
+    let m = messages(&p);
+    assert!(m.iter().any(|(s, t)| *s == Severity::Error && t.contains("lengthen USB_DP")), "{m:?}");
+    let opts = agentee_core::tune::TuneOptions::default();
+    let r = agentee_core::tune::tune(&p.layouts[0].item, &p.boards[0].item, &opts).unwrap();
+    assert!(r.failed.is_empty() && r.tuned.len() == 1, "{:?}", r.failed);
+    let mut after = before.clone();
+    for e in &r.edits {
+        let pts: Vec<String> = e.points.iter().map(|q| format!("[{}, {}]", q[0], q[1])).collect();
+        after[e.track] = format!("[{}]", pts.join(", "));
+    }
+    assert!(after[1] == before[1], "the long leg stays");
+    let added: Vec<&[f64; 2]> = r.edits[0]
+        .points
+        .iter()
+        .filter(|q| !before[0].contains(&format!("[{}, {}]", q[0], q[1])))
+        .collect();
+    assert!(!added.is_empty() && added.iter().all(|q| q[0] <= 7.0 + 1e-9), "{added:?}");
+    let p = project("", &tracks(&after));
+    let m = messages(&p);
+    assert!(!m.iter().any(|(_, t)| t.contains("gap, the class")), "{m:?}");
+    assert!(!m.iter().any(|(s, t)| *s == Severity::Error && t.contains("skew")), "{m:?}");
+}

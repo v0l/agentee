@@ -32,6 +32,14 @@ fn tools() -> Value {
             }), &[]),
         },
         {
+            "name": "drc",
+            "description": "Design rule checks of a layout. With list = true: every DRC rule with its id, category, severity, and whether it applies to this board and why. Without: the layout's diagnostics that carry a rule id. Rule ids go in the board's [drc] disable list or severity table.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout or board" },
+                "list": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "list_items",
             "description": "Every board, symbol and footprint in the project with its file and error counts.",
             "inputSchema": s(json!({}), &[]),
@@ -130,7 +138,8 @@ fn tools() -> Value {
                 "layers": { "type": "string", "description": "comma separated copper layers, default all" },
                 "grid": { "type": "number", "default": 0.05 },
                 "via": { "type": "string" },
-                "via_cost": { "type": "number", "default": 1.0 },
+                "via_cost": { "type": "number", "default": 3.0 },
+                "bend_cost": { "type": "number", "default": 0.1, "description": "mm of track per 45 degree bend, three times that for 90" },
                 "pairs": { "type": "boolean" },
                 "reroute": { "type": "boolean", "description": "remove these nets' tracks and vias first" },
                 "dry_run": { "type": "boolean" },
@@ -251,6 +260,11 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let item = arg(a, "item").map(|n| ops::find(&p, n)).transpose()?;
             let min = if flag(a, "include_info") { Severity::Info } else { Severity::Warning };
             let (t, _, _) = ops::check_report(&p, item, min);
+            Ok(ok(vec![text(t)]))
+        }
+        "drc" => {
+            let p = ops::load(root)?;
+            let (t, _) = ops::drc(&p, arg(a, "name").ok_or("name is required")?, flag(a, "list"))?;
             Ok(ok(vec![text(t)]))
         }
         "list_items" => Ok(ok(vec![text(pretty(&ops::list(&ops::load(root)?)))])),
@@ -406,7 +420,8 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 layers: split("layers"),
                 grid: a.get("grid").and_then(Value::as_f64).unwrap_or(0.05),
                 via: arg(a, "via").map(str::to_string),
-                via_cost: a.get("via_cost").and_then(Value::as_f64).unwrap_or(1.0),
+                via_cost: a.get("via_cost").and_then(Value::as_f64).unwrap_or(3.0),
+                bend_cost: a.get("bend_cost").and_then(Value::as_f64).unwrap_or(0.1),
                 pairs: flag(a, "pairs"),
                 ..Default::default()
             };
@@ -452,7 +467,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             )?))]))
         }
         "models" => {
-            let p = ops::load(root)?;
+            let p = ops::load_footprints(root)?;
             Ok(ok(vec![text(pretty(&ops::fetch_models(&p)?))]))
         }
         "fab" => {

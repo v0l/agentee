@@ -3,6 +3,10 @@ use agentee_core::diag::Severity;
 use std::path::Path;
 
 fn project(parts: &[(&str, &str)], nets: &str, pcb: &str) -> Project {
+    project_with(&[], parts, nets, pcb)
+}
+
+fn project_with(files: &[(&str, &str)], parts: &[(&str, &str)], nets: &str, pcb: &str) -> Project {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let k = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("agentee-drc-{}-{k}", std::process::id()));
@@ -17,6 +21,9 @@ fn project(parts: &[(&str, &str)], nets: &str, pcb: &str) -> Project {
     for s in ["R_0402_1005Metric", "MountingHole_2.2mm_M2_Pad_Via"] {
         let f = format!("footprints/{s}.fp.toml");
         std::fs::copy(lna.join(&f), dir.join(&f)).unwrap();
+    }
+    for (name, text) in files {
+        std::fs::write(dir.join(name), text).unwrap();
     }
     std::fs::write(
         dir.join("t.board.toml"),
@@ -142,4 +149,144 @@ fn a_courtyard_over_a_mounting_hole_is_an_error_on_either_side() {
     let clear = under.replace("[21, 10]", "[24, 10]");
     let e = errors(&project(parts, "", &format!("{clear}{hole}")));
     assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
+}
+
+const TIGHT: &str = r#"name = "Tight2"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-0.19, 0]
+size = [0.3, 0.3]
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.19, 0]
+size = [0.3, 0.3]
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-0.5, -0.3]
+end = [0.5, 0.3]
+"#;
+
+#[test]
+fn mask_openings_of_different_nets_need_a_web() {
+    let files = [("footprints/Tight2.fp.toml", TIGHT)];
+    let sch = |b: &str| {
+        format!(
+            "\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+             footprint = \"Tight2\"\n\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"{b}]\n"
+        )
+    };
+    let pcb = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\nlabel = { hide = true }\n";
+    let split = format!("{}\n[[nets]]\nname = \"B\"\npins = [\"R1.2\"]\n", sch(""));
+    let e = errors(&project_with(&files, &[], &split, pcb));
+    assert!(
+        e.iter().any(|t| t.contains("part R1 F.Mask: 1 pad pairs")
+            && t.contains("0.1mm mask web")
+            && t.contains("R1.1 leaves 0.08mm to R1.2 at [10.000, 10.000]")),
+        "{e:?}"
+    );
+    let e = errors(&project_with(&files, &[], &sch(", \"R1.2\""), pcb));
+    assert!(!e.iter().any(|t| t.contains("mask")), "{e:?}");
+}
+
+#[test]
+fn a_footprint_can_opt_out_of_the_mask_web_within_itself() {
+    let merged = format!("mask_web = false\n{TIGHT}");
+    let files = [("footprints/Tight2.fp.toml", merged.as_str())];
+    let sch = "\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+               footprint = \"Tight2\"\n\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n\
+               [[nets]]\nname = \"B\"\npins = [\"R1.2\"]\n";
+    let pcb = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\nlabel = { hide = true }\n";
+    let p = project_with(&files, &[], sch, pcb);
+    assert!(p.layouts[0].item.parts.iter().any(|q| !q.footprint.mask_web));
+    let e = errors(&p);
+    assert!(!e.iter().any(|t| t.contains("mask web")), "{e:?}");
+}
+
+const TWO_NETS: &str =
+    "\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n[[nets]]\nname = \"B\"\npins = [\"R2.1\"]\n";
+
+fn with_copper(copper: &str) -> Vec<String> {
+    errors(&project(RESISTORS, TWO_NETS, &placed([10.0, 10.0], [20.0, 10.0], copper)))
+}
+
+#[test]
+fn a_track_too_close_to_a_via_of_another_net_is_an_error() {
+    let track = "\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[5, 15], [10, 15]]\n";
+    let near = format!("{track}\n[[vias]]\nnet = \"B\"\nat = [7.5, 15.5]\n");
+    let e = with_copper(&near);
+    assert!(
+        e.iter().any(|t| t.starts_with("clearance")
+            && t.contains("track 0 (A) is 0.1mm from via at [7.500, 15.500] (B), needs 0.15mm")),
+        "{e:?}"
+    );
+    let far = format!("{track}\n[[vias]]\nnet = \"B\"\nat = [7.5, 15.6]\n");
+    let e = with_copper(&far);
+    assert!(!e.iter().any(|t| t.starts_with("clearance")), "{e:?}");
+}
+
+#[test]
+fn vias_of_different_nets_keep_clearance_and_hole_spacing() {
+    let e = with_copper(
+        "\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"B\"\nat = [5.7, 5]\n",
+    );
+    assert!(
+        e.iter().any(|t| t.starts_with("clearance")
+            && t.contains("via at [5.000, 5.000] (A) is 0.1mm from via at [5.700, 5.000] (B)")),
+        "{e:?}"
+    );
+    assert!(e.iter().any(|t| t.starts_with("drills") && t.contains("1 drill pairs")), "{e:?}");
+    let e = with_copper(
+        "\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"B\"\nat = [5, 5.3]\n",
+    );
+    assert!(e.iter().any(|t| t.starts_with("short") && t.contains("touches")), "{e:?}");
+}
+
+#[test]
+fn a_via_on_a_pad_of_another_net_is_a_short() {
+    let e = with_copper("\n[[vias]]\nnet = \"B\"\nat = [9.49, 10]\n");
+    assert!(
+        e.iter().any(
+            |t| t.starts_with("short") && t.contains("R1.1 touches via at [9.490, 10.000] (B)")
+        ),
+        "{e:?}"
+    );
+    let e = with_copper("\n[[vias]]\nnet = \"A\"\nat = [9.49, 10]\n");
+    assert!(!e.iter().any(|t| t.starts_with("short")), "{e:?}");
+}
+
+#[test]
+fn same_net_vias_on_the_same_spot_are_an_error() {
+    let e =
+        with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n");
+    assert!(e.iter().any(|t| t.starts_with("vias") && t.contains("[5.000, 5.000] (A)")), "{e:?}");
+    let e = with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\ncount = 2\npitch = [0, 0.1]\n");
+    assert!(e.iter().any(|t| t.starts_with("drills")), "{e:?}");
+    let e =
+        with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"A\"\nat = [6, 5]\n");
+    assert!(!e.iter().any(|t| t.starts_with("vias") || t.starts_with("drills")), "{e:?}");
+}
+
+#[test]
+#[ignore]
+fn sdr_in6_ground_has_no_stubs_between_the_u3_antipads() {
+    let sdr = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sdr");
+    let p = Project::load(&sdr).unwrap();
+    let layout = &p.layouts[0].item;
+    let gnd = layout.nets.iter().position(|n| n.name == "GND").unwrap();
+    let fill = layout.zones.iter().find(|z| z.layer == "In6.Cu" && z.net == gnd).unwrap();
+    let copper = |q: [f64; 2]| {
+        fill.rings.iter().filter(|r| agentee_core::geom::point_in_polygon(q, r)).count() % 2 == 1
+    };
+    let (m, across) = ([64.75, 43.15], [-0.196, 0.981]);
+    for k in -20..=20 {
+        let s = k as f64 * 0.01;
+        let q = [m[0] + across[0] * s, m[1] + across[1] * s];
+        assert!(!copper(q), "copper at {q:?}");
+    }
+    assert!(copper([64.7, 43.7]));
 }
