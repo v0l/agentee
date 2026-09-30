@@ -28,6 +28,8 @@ pub struct PlacementFile {
     pub side: Option<BoardSide>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<LabelFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mlcc: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -287,6 +289,7 @@ pub struct Placed {
     pub bottom: bool,
     pub pads: Vec<PlacedPad>,
     pub label: Option<Label>,
+    pub mlcc: Option<bool>,
 }
 
 impl Placed {
@@ -705,6 +708,7 @@ impl LayoutFile {
                     hide: l.hide,
                     moved: l.at.is_some(),
                 }),
+                mlcc: f.mlcc.or(fp.mlcc),
             });
         }
         for r in sch.references() {

@@ -124,7 +124,8 @@ All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `
 `min_silk_text_height`, `min_mask_web` (0.1 mm), `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
 `min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
 `min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
-`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`; plus
+`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`, `min_body_to_edge`,
+`flex_zone`; plus
 `max_aspect_ratio`, a plain number (board thickness over via drill). Footprints are checked against
 the rules of the board when the project has exactly one board, otherwise against `generic`.
 
@@ -162,7 +163,10 @@ Where agentee is stricter than the page, on purpose: `min_copper_to_edge` stays 
 allows 0.2 mm on a routed edge, which is milled to +/-0.2 mm, and 0.4 mm on a V-cut),
 `min_hole_to_hole` stays 0.5 mm (the page gives 0.45 mm between pad holes and 0.2 mm between
 vias), and `min_hole_to_smd_pad` (0.2 mm, the via hole to track figure) and `min_part_to_edge`
-(0.5 mm) are agentee's choices, not on the page.
+(0.5 mm) are agentee's choices, not on the page. `min_body_to_edge` (1.0 mm) follows assembly DFM
+guides, which keep every component 1 mm from the board edge for depaneling and handling.
+`flex_zone` (5 mm) follows Knowles on MLCC flex cracking: the stress zone is typically within
+5 mm of the PCB edge or fixing points.
 
 ### Design rule checks
 
@@ -199,12 +203,18 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
 | `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
 | `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
+| `part-body-to-edge` | info | parts | a part body closer than `min_body_to_edge` to the outline, or past it (assembly DFM guides: no component within 1 mm of the edge). The body is the fab outline, else the courtyard, else the pad copper, and the message names which; skips fiducials, mounting holes, parts with `edge` pads and footprints with `overhang = true` |
 | `fiducials` | info | parts | no footprint named like `Fiducial` on the board |
 | `tooling-holes` | info | parts | no non-plated hole of 1.5 mm or more |
 | `bga-pad` | error | a BGA | BGA pads (16 or more round SMD pads) smaller than `min_bga_pad` |
 | `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
 | `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
 | `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
+| `mlcc-flex-zone-case` | info | ceramic capacitors | a ceramic capacitor of case 0805 (2012 metric) or larger within `flex_zone` of the outline, a board corner, a mounting hole (a `MountingHole*` footprint) or a non-plated hole of 2 mm or more (Knowles: the stress zone is typically within 5 mm of the PCB edge or fixing points); the longer the chip, the more strain its ends see |
+| `mlcc-flex-zone` | info | ceramic capacitors | a smaller ceramic capacitor within `flex_zone` whose long axis points at the nearest edge, corner or hole (Murata FAQ: orient the chip horizontal to the stress direction, so its long axis runs along the edge) |
+| `mlcc-flex-zone-info` | info | ceramic capacitors | counts the smaller ceramic capacitors within `flex_zone` that already lie along the edge |
+| `tombstone-risk` | info | chips of 0603 or smaller | a two-pad SMD part of 0603 (1608 metric) or smaller whose pads differ in size or shape, that has a via in one pad and not the other, or whose copper within 0.3 mm of one pad on its layer (tracks, vias, pours of its net) is over three times that of the other; the end that heats first wets first and stands the part up (EMS DFM guides: symmetric lands and balanced copper on both ends) |
+| `tall-part-shadow` | info | footprint heights over 3 mm | a two-pad chip of 0603 or smaller closer to a part taller than 3 mm than that part's height, measured from the chip's pads to the tall part's body (EMS rule of thumb 1:1: shadowing in reflow and inspection); heights come from the footprint `height`, parts without one are skipped |
 | `short` | error | always | copper of two different nets touches |
 | `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
@@ -251,6 +261,14 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `interface-return-via` | error | interfaces | a signal via with no reference via within `return_via` |
 | `interface-length` | error | interfaces | a lane longer than `max_length` |
 | `interface-reference` | error | interfaces | a lane running more than `max_unreferenced` with no reference plane next to it |
+
+The mechanical rules (`part-body-to-edge`, the `mlcc-flex-zone` rules, `tombstone-risk`,
+`tall-part-shadow`) are guidance and default to info; raise them with `[drc] severity`. A ceramic
+capacitor is a part with exactly two SMD pads whose footprint is named `C_*` or contains
+`Capacitor`, or whose reference is `C` and a digit, unless the footprint name says `CP_`,
+`Tantal`, `Elec` or `Polymer`; `mlcc` on the footprint or the placement overrides the guess. The
+case comes from the footprint name (`1608Metric`, else an imperial code such as `0603`), else
+from the distance between the two pad centres, which is close to the body length.
 
 An id that names no rule is a warning. Errors in the files themselves (a net that is not in the
 schematic, a layer that is not copper, a bad preset) are not rules and cannot be disabled.
@@ -375,6 +393,10 @@ model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
 # mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
                                # window, so min_mask_web is not checked between its own pads
+# overhang = true              # a connector meant to hang over the board edge: part-body-to-edge
+                               # skips it, its SMD pads still keep min_part_to_edge
+# mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules
+                               # skip it; true marks one that the name does not give away
 
 [[pads]]
 number = "1"
@@ -501,6 +523,7 @@ at = [13.0, 8.05]
 rotation = 90                  # degrees, counter-clockwise
 # side = "bottom"              # mirrors the footprint and swaps F./B. layers
 label = { at = [9.9, 7.4], rotation = 90 }   # move the silk reference; size = 0.8, hide = true
+# mlcc = false                 # this part is not a ceramic capacitor, over the footprint's `mlcc`
 
 [[tracks]]
 net = "RF_OUT"

@@ -215,6 +215,8 @@ rules! {
     min_bga_pad: "smallest BGA pad",
     min_bga_pitch: "finest BGA pitch the assembler places",
     min_part_to_edge: "SMD part pads to board outline, for assembly",
+    min_body_to_edge: "part body (courtyard) to board outline, for depaneling",
+    flex_zone: "distance from the edge, corners and mounting holes where bending cracks MLCCs",
 }
 
 pub const FAB_PRESETS: &[&str] = &["generic", "jlcpcb"];
@@ -268,6 +270,8 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             min_bga_pad: mm(0.25),
             min_bga_pitch: mm(0.5),
             min_part_to_edge: mm(0.5),
+            min_body_to_edge: mm(1.0),
+            flex_zone: mm(5.0),
             max_aspect_ratio: 8.0,
         }),
         "jlcpcb" => {
@@ -317,6 +321,8 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
                 min_bga_pad: mm(if enig { 0.2 } else { 0.25 }),
                 min_bga_pitch: mm(0.3),
                 min_part_to_edge: mm(0.5),
+                min_body_to_edge: mm(1.0),
+                flex_zone: mm(5.0),
                 max_aspect_ratio: 10.7,
             })
         }

@@ -284,6 +284,8 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
         model_scale: model_xyz(root, "scale", 1.0),
         height: None,
         mask_web: None,
+        overhang: false,
+        mlcc: None,
         pads: collapse(pads),
         graphics,
     })

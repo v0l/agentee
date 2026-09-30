@@ -53,6 +53,9 @@ pub struct Setup {
     pub pairs: bool,
     pub match_groups: bool,
     pub interfaces: bool,
+    pub mlcc: bool,
+    pub small_chips: bool,
+    pub tall_parts: bool,
 }
 
 impl Setup {
@@ -88,6 +91,9 @@ impl Setup {
             pairs: !cx.pairs.is_empty(),
             match_groups: !cx.match_groups.is_empty(),
             interfaces: !cx.interfaces.is_empty(),
+            mlcc: !mechanical::mlcc_chips(cx.parts).is_empty(),
+            small_chips: mechanical::has_small_chips(cx.parts),
+            tall_parts: mechanical::has_tall_parts(cx.parts),
             ..Setup::of_board(cx.board)
         }
     }
@@ -606,6 +612,7 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(mask::RULES)
         .chain(silk::RULES)
         .chain(assembly::RULES)
+        .chain(mechanical::RULES)
         .chain(signal::RULES)
 }
 
@@ -689,6 +696,7 @@ mod copper;
 mod courtyard;
 mod drill;
 mod mask;
+mod mechanical;
 mod signal;
 mod silk;
 mod track;
