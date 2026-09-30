@@ -180,6 +180,14 @@ disable = ["silk-width"]       # rule ids to skip
 severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
 ```
 
+| id | severity | runs when | checks |
+|---|---|---|---|
+| `via-cuts-pad` | error | always | a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad: solder wicks down the barrel and the pad edge is damaged. Any net; one of another net is also a short |
+| `via-annulus-past-pad` | warning | vias in pads | the drill sits in the pad but the via's annulus reaches past the pad edge under the mask |
+| `via-in-pad` | info | vias in pads | counts the vias in SMD pads (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
+| `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill` |
+| `hole-to-smd-pad` | warning | always | a via hole closer than `min_hole_to_smd_pad` to an SMD pad of its own net (or no net) that it does not touch; paste and solder can flow into it |
+
 An id that names no rule is a warning. The older checks described under Layout (clearance,
 shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
 

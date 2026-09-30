@@ -260,6 +260,23 @@ pub fn is_smd(q: &PlacedPad) -> bool {
     q.drill.is_none() && !q.copper.is_empty()
 }
 
+pub struct PadRef<'a> {
+    pub part: usize,
+    pub pad: usize,
+    pub q: &'a PlacedPad,
+    pub bounds: Bounds,
+}
+
+pub fn pads_where<'a>(parts: &'a [Placed], keep: impl Fn(&PlacedPad) -> bool) -> Vec<PadRef<'a>> {
+    parts
+        .iter()
+        .enumerate()
+        .flat_map(|(pi, p)| p.pads.iter().enumerate().map(move |(k, q)| (pi, k, q)))
+        .filter(|(_, _, q)| keep(q))
+        .map(|(part, pad, q)| PadRef { part, pad, q, bounds: rings_bounds(&q.outlines) })
+        .collect()
+}
+
 pub fn outline_distance(outline: &[P], p: P) -> f64 {
     edge_distance(outline, p)
 }
@@ -433,21 +450,15 @@ pub fn status(board: &Board, setup: &Setup) -> Vec<RuleStatus> {
 }
 
 pub fn vias_in_pads(parts: &[Placed], vias: &[Via]) -> Vec<(usize, usize, usize)> {
-    let pads: Vec<(usize, usize, &PlacedPad, Bounds)> = parts
-        .iter()
-        .enumerate()
-        .flat_map(|(pi, p)| p.pads.iter().enumerate().map(move |(k, q)| (pi, k, q)))
-        .filter(|(_, _, q)| is_smd(q))
-        .map(|(pi, k, q)| (pi, k, q, rings_bounds(&q.outlines)))
-        .collect();
+    let pads = pads_where(parts, is_smd);
     let mut out = Vec::new();
     for (vi, v) in vias.iter().enumerate() {
-        for &(pi, k, q, b) in &pads {
-            if near(&b, v.at, v.diameter / 2.0)
-                && q.copper.iter().any(|l| v.layers.contains(l))
-                && via::via_on_pad(v, q) == Some(via::ViaOnPad::Inside)
+        for p in &pads {
+            if near(&p.bounds, v.at, v.diameter / 2.0)
+                && p.q.copper.iter().any(|l| v.layers.contains(l))
+                && via::via_on_pad(v, p.q).is_some_and(via::ViaOnPad::in_pad)
             {
-                out.push((vi, pi, k));
+                out.push((vi, p.part, p.pad));
             }
         }
     }

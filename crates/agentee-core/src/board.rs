@@ -1178,6 +1178,7 @@ severity = { "via-in-pad" = "error" }
         );
         assert_eq!(b.drc.severity["via-in-pad"], crate::diag::Severity::Error);
         assert!(d.list.iter().any(|x| x.message.contains("no DRC rule `no-such-rule`")));
+        assert!(!d.list.iter().any(|x| x.message.contains("`via-in-pad`")), "{:?}", d.list);
         assert!(
             toml::from_str::<BoardFile>(
                 "name = \"x\"\n[stackup]\npreset = \"a\"\n[drc]\nseverity = { a = \"loud\" }\n"
