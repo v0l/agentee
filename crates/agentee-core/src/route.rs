@@ -134,29 +134,47 @@ struct SmdPad {
 }
 
 impl SmdPad {
-    fn clears(&self, at: P, ctx: &Ctx) -> bool {
-        let reach = ctx.via_r.max(ctx.drill_r + ctx.hole_smd) + 1e-3;
+    fn clears(&self, at: P, ctx: &Ctx, via: &ViaOption) -> bool {
+        let reach = via.via_r.max(via.drill_r + ctx.hole_smd) + 1e-3;
         if at[0] < self.lo[0] - reach
             || at[1] < self.lo[1] - reach
             || at[0] > self.hi[0] + reach
             || at[1] > self.hi[1] + reach
-            || !self.layers.iter().any(|l| ctx.via_layers.contains(l))
+            || !self.layers.iter().any(|l| via.layers.contains(l))
         {
             return true;
         }
-        if self.outlines.iter().any(|o| pad_gap(o, at) <= -(ctx.via_r + 1e-3)) {
-            return ctx.in_pad;
+        if self.outlines.iter().any(|o| pad_gap(o, at) <= -(via.via_r + 1e-3)) {
+            return via.in_pad;
         }
         self.outlines.iter().all(|o| pad_gap(o, at) >= reach)
     }
 }
 
-fn via_clears_smd(at: P, ctx: &Ctx) -> bool {
-    ctx.smd.iter().all(|p| p.clears(at, ctx))
+fn via_clears_smd(at: P, ctx: &Ctx, via: &ViaOption) -> bool {
+    ctx.smd.iter().all(|p| p.clears(at, ctx, via))
 }
 
 const FREE: u16 = 0;
 const BLOCK: u16 = u16::MAX;
+
+struct ViaMap {
+    fixed: Vec<u16>,
+    routed: Vec<u16>,
+    holes: Vec<u32>,
+    routed_holes: Vec<u32>,
+}
+
+impl ViaMap {
+    fn new(layers: usize, w: usize, h: usize) -> Self {
+        ViaMap {
+            fixed: vec![FREE; layers * w * h],
+            routed: vec![FREE; layers * w * h],
+            holes: vec![0; w * h],
+            routed_holes: vec![0; w * h],
+        }
+    }
+}
 
 struct Grid {
     x0: f64,
@@ -165,36 +183,40 @@ struct Grid {
     w: usize,
     h: usize,
     track: Vec<u16>,
-    via: Vec<u16>,
+    vias: Vec<ViaMap>,
     rt: Vec<u16>,
-    rv: Vec<u16>,
     hist: Vec<f32>,
 }
 
 impl Grid {
-    fn add_drill(&mut self, c: P, reach: f64) {
+    fn add_drill(&mut self, c: P, r: f64, dielectrics: u32, vias: &[ViaOption], hole_gap: f64) {
         let shape = Shape::Circle(c, 0.0);
-        for (x, y) in self.cells_near(&shape, reach + self.g * 0.6) {
-            for l in 0..self.via.len() / (self.w * self.h) {
-                let i = self.idx(l, x, y);
-                self.via[i] = BLOCK;
+        for (k, v) in vias.iter().enumerate().filter(|(_, v)| v.dielectrics & dielectrics != 0) {
+            for (x, y) in self.cells_near(&shape, r + v.drill_r + hole_gap + self.g * 0.6) {
+                self.vias[k].holes[y * self.w + x] |= dielectrics;
             }
         }
     }
 
+    fn block_via(&mut self, k: usize, x: usize, y: usize) {
+        let layers = self.track.len() / (self.w * self.h);
+        for l in 0..layers {
+            let i = self.idx(l, x, y);
+            self.vias[k].fixed[i] = BLOCK;
+        }
+    }
+
     fn block_smd(&mut self, ctx: &Ctx) {
-        let reach = ctx.via_r.max(ctx.drill_r + ctx.hole_smd) + 1e-3;
-        let layers = self.via.len() / (self.w * self.h);
-        for pad in ctx.smd {
-            if !pad.layers.iter().any(|l| ctx.via_layers.contains(l)) {
-                continue;
-            }
-            for o in &pad.outlines {
-                for (x, y) in self.cells_near(&Shape::Poly(o.clone()), reach) {
-                    if !pad.clears(self.center(x, y), ctx) {
-                        for l in 0..layers {
-                            let i = self.idx(l, x, y);
-                            self.via[i] = BLOCK;
+        for (k, via) in ctx.vias.iter().enumerate() {
+            let reach = via.via_r.max(via.drill_r + ctx.hole_smd) + 1e-3;
+            for pad in ctx.smd {
+                if !pad.layers.iter().any(|l| via.layers.contains(l)) {
+                    continue;
+                }
+                for o in &pad.outlines {
+                    for (x, y) in self.cells_near(&Shape::Poly(o.clone()), reach) {
+                        if !pad.clears(self.center(x, y), ctx, via) {
+                            self.block_via(k, x, y);
                         }
                     }
                 }
@@ -202,14 +224,17 @@ impl Grid {
         }
     }
 
-    fn block_silk(&mut self, silk: &[crate::layout::SilkBox], via_r: f64) {
-        let layers = self.via.len() / (self.w * self.h);
-        let reach = via_r + self.g / 2.0;
-        for b in silk.iter().filter(|b| b.outline.len() >= 3) {
-            for (x, y) in self.cells_near(&Shape::Poly(b.outline.clone()), reach) {
-                for l in 0..layers {
-                    let i = self.idx(l, x, y);
-                    self.via[i] = BLOCK;
+    fn block_silk(&mut self, silk: &[crate::layout::SilkBox], vias: &[ViaOption]) {
+        let bottom = self.track.len() / (self.w * self.h) - 1;
+        for (k, via) in vias.iter().enumerate() {
+            let reach = via.via_r + self.g / 2.0;
+            for b in silk.iter().filter(|b| b.outline.len() >= 3) {
+                let outer = if b.layer.starts_with("B.") { bottom } else { 0 };
+                if !via.layers.contains(&outer) {
+                    continue;
+                }
+                for (x, y) in self.cells_near(&Shape::Poly(b.outline.clone()), reach) {
+                    self.block_via(k, x, y);
                 }
             }
         }
@@ -217,50 +242,55 @@ impl Grid {
 
     fn clear_routed(&mut self) {
         self.rt.iter_mut().for_each(|v| *v = FREE);
-        self.rv.iter_mut().for_each(|v| *v = FREE);
+        for m in &mut self.vias {
+            m.routed.iter_mut().for_each(|v| *v = FREE);
+            m.routed_holes.iter_mut().for_each(|v| *v = 0);
+        }
     }
 
     fn mark_routed(&mut self, c: &Conn, ctx: &Ctx) {
         let value = c.net as u16 + 1;
         let slack = self.g * 0.6;
-        let mut shapes: Vec<(Vec<usize>, Shape)> = Vec::new();
+        let mut shapes: Vec<(Vec<usize>, Shape, Option<&ViaOption>)> = Vec::new();
         for (l, pts) in &c.tracks {
             for s in pts.windows(2) {
-                shapes.push((vec![*l], Shape::Seg(s[0], s[1], ctx.widths[*l] / 2.0)));
+                shapes.push((vec![*l], Shape::Seg(s[0], s[1], ctx.widths[*l] / 2.0), None));
             }
         }
         for n in &c.necks {
-            shapes.push((vec![n.layer], Shape::Seg(n.from, n.to, n.width / 2.0)));
+            shapes.push((vec![n.layer], Shape::Seg(n.from, n.to, n.width / 2.0), None));
         }
-        for v in &c.vias {
-            shapes.push((ctx.via_layers.to_vec(), Shape::Circle(*v, ctx.via_r)));
+        for (v, &k) in c.vias.iter().zip(&c.options) {
+            let placed = &ctx.vias[k];
+            shapes.push((placed.layers.clone(), Shape::Circle(*v, placed.via_r), Some(placed)));
             let shape = Shape::Circle(*v, 0.0);
-            let reach = 2.0 * ctx.drill_r + ctx.hole_gap + self.g * 0.6;
-            for (x, y) in self.cells_near(&shape, reach) {
-                for l in 0..self.rv.len() / (self.w * self.h) {
-                    let i = self.idx(l, x, y);
-                    self.rv[i] = BLOCK;
+            for (f, other) in ctx.vias.iter().enumerate() {
+                if other.dielectrics & placed.dielectrics == 0 {
+                    continue;
+                }
+                let reach = placed.drill_r + other.drill_r + ctx.hole_gap + self.g * 0.6;
+                for (x, y) in self.cells_near(&shape, reach) {
+                    self.vias[f].routed_holes[y * self.w + x] |= placed.dielectrics;
                 }
             }
         }
         let widest = ctx.widths.iter().cloned().fold(0.0, f64::max);
-        let keep = ctx.via_keep();
-        for (layers, shape) in shapes {
-            let c = if matches!(shape, Shape::Circle(..)) { keep } else { ctx.clearance };
-            for is_via in [false, true] {
-                let reach = |l: usize| {
-                    (if is_via { ctx.via_r + keep } else { ctx.widths[l] / 2.0 + c }) + slack
-                };
-                let most = if is_via { ctx.via_r + keep } else { widest / 2.0 + c } + slack;
-                for (x, y) in self.cells_near(&shape, most) {
-                    let d = shape.dist(self.center(x, y));
-                    for &l in layers.iter().filter(|&&l| d <= reach(l)) {
+        for (layers, shape, placed) in shapes {
+            let c = placed.map(|p| ctx.keep(p)).unwrap_or(ctx.clearance);
+            let reach = |l: usize| ctx.widths[l] / 2.0 + c + slack;
+            for (x, y) in self.cells_near(&shape, widest / 2.0 + c + slack) {
+                let d = shape.dist(self.center(x, y));
+                for &l in layers.iter().filter(|&&l| d <= reach(l)) {
+                    let i = self.idx(l, x, y);
+                    Self::mark(&mut self.rt, i, value);
+                }
+            }
+            for (f, other) in ctx.vias.iter().enumerate() {
+                let keep = placed.map(|p| ctx.keep(p)).unwrap_or(0.0).max(ctx.keep(other));
+                for (x, y) in self.cells_near(&shape, other.via_r + keep + slack) {
+                    for &l in &layers {
                         let i = self.idx(l, x, y);
-                        if is_via {
-                            Self::mark(&mut self.rv, i, value);
-                        } else {
-                            Self::mark(&mut self.rt, i, value);
-                        }
+                        Self::mark(&mut self.vias[f].routed, i, value);
                     }
                 }
             }
@@ -283,12 +313,36 @@ impl Grid {
         n
     }
 
-    fn ok(&self, i: usize, net: usize, via: bool, soft: bool) -> (bool, bool) {
-        let (fixed, routed) = if via { (&self.via, &self.rv) } else { (&self.track, &self.rt) };
-        if !Self::free(fixed, i, net) {
+    fn ok(&self, i: usize, net: usize, soft: bool) -> (bool, bool) {
+        if !Self::free(&self.track, i, net) {
             return (false, false);
         }
-        let clash = !Self::free(routed, i, net);
+        let clash = !Self::free(&self.rt, i, net);
+        (soft || !clash, clash)
+    }
+
+    fn via_ok(
+        &self,
+        k: usize,
+        via: &ViaOption,
+        x: usize,
+        y: usize,
+        net: usize,
+        soft: bool,
+    ) -> (bool, bool) {
+        let m = &self.vias[k];
+        let cell = y * self.w + x;
+        if m.holes[cell] & via.dielectrics != 0 {
+            return (false, false);
+        }
+        let mut clash = m.routed_holes[cell] & via.dielectrics != 0;
+        for &l in &via.layers {
+            let i = self.idx(l, x, y);
+            if !Self::free(&m.fixed, i, net) {
+                return (false, false);
+            }
+            clash |= !Self::free(&m.routed, i, net);
+        }
         (soft || !clash, clash)
     }
 
@@ -333,30 +387,27 @@ impl Grid {
         &mut self,
         o: &Obstacle,
         half_widths: &[f64],
-        via_radius: f64,
         clearance: f64,
-        hole_reach: f64,
+        vias: &[ViaOption],
+        hole_cu: f64,
     ) {
         let value = o.net.map(|n| n as u16 + 1).unwrap_or(BLOCK);
         let c = clearance.max(o.clearance);
         let slack = self.g * 0.6;
         let widest = o.layers.iter().map(|&l| half_widths[l]).fold(0.0, f64::max);
-        let via_reach = (via_radius + c).max(hole_reach) + slack;
-        for is_via in [false, true] {
-            let most = if is_via { via_reach } else { widest + c + slack };
-            for (x, y) in self.cells_near(&o.shape, most) {
-                let d = o.shape.dist(self.center(x, y));
-                for &l in o
-                    .layers
-                    .iter()
-                    .filter(|&&l| d <= if is_via { via_reach } else { half_widths[l] + c + slack })
-                {
+        for (x, y) in self.cells_near(&o.shape, widest + c + slack) {
+            let d = o.shape.dist(self.center(x, y));
+            for &l in o.layers.iter().filter(|&&l| d <= half_widths[l] + c + slack) {
+                let i = self.idx(l, x, y);
+                Self::mark(&mut self.track, i, value);
+            }
+        }
+        for (k, via) in vias.iter().enumerate() {
+            let reach = (via.via_r + c).max(via.drill_r + hole_cu) + slack;
+            for (x, y) in self.cells_near(&o.shape, reach) {
+                for &l in &o.layers {
                     let i = self.idx(l, x, y);
-                    if is_via {
-                        Self::mark(&mut self.via, i, value);
-                    } else {
-                        Self::mark(&mut self.track, i, value);
-                    }
+                    Self::mark(&mut self.vias[k].fixed, i, value);
                 }
             }
         }
@@ -464,11 +515,19 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         });
     }
 
-    let mut drills: Vec<(P, f64)> = layout.vias.iter().map(|v| (v.at, v.drill / 2.0)).collect();
+    let through = dielectrics(0, copper.len().saturating_sub(1));
+    let mut drills: Vec<(P, f64, u32)> = layout
+        .vias
+        .iter()
+        .map(|v| {
+            let span = v.span_of(copper).map(|(a, b)| dielectrics(a, b)).unwrap_or(through);
+            (v.at, v.drill / 2.0, span)
+        })
+        .collect();
     for part in &layout.parts {
         for pad in &part.pads {
             if let Some((c, s, _)) = pad.drill {
-                drills.push((c, s[0].min(s[1]) / 2.0));
+                drills.push((c, s[0].min(s[1]) / 2.0, through));
             }
         }
     }
@@ -528,12 +587,18 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         }
         let options: Vec<ViaOption> = specs
             .iter()
-            .map(|s| ViaOption {
-                name: s.name.clone(),
-                layers: s.copper_layers(copper).iter().filter_map(|c| layer_of(c)).collect(),
-                via_r: s.diameter.to_mm() / 2.0,
-                drill_r: s.drill.to_mm() / 2.0,
-                cost: s.cost,
+            .map(|s| {
+                let (a, b) = s.span(copper);
+                ViaOption {
+                    name: s.name.clone(),
+                    layers: s.copper_layers(copper).iter().filter_map(|c| layer_of(c)).collect(),
+                    dielectrics: dielectrics(a, b),
+                    via_r: s.diameter.to_mm() / 2.0,
+                    drill_r: s.drill.to_mm() / 2.0,
+                    cost: s.cost,
+                    in_pad: opts.via_in_pad
+                        && s.drill.to_mm() <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
+                }
             })
             .collect();
         let width = layout.nets[nets[0]].width;
@@ -542,8 +607,6 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         let halves: Vec<f64> = widths.iter().map(|w| w / 2.0).collect();
         let clearance = layout.nets[nets[0]].clearance;
         let gap = nc.and_then(|c| c.diff_gap).map(|g| g.to_mm());
-        let via_r = options.iter().map(|o| o.via_r).fold(0.0, f64::max);
-        let drill_r = options.iter().map(|o| o.drill_r).fold(0.0, f64::max);
         let mut via_layers: Vec<usize> = options.iter().flat_map(|o| o.layers.clone()).collect();
         via_layers.sort_unstable();
         via_layers.dedup();
@@ -574,16 +637,12 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             board: layout.edge(),
         };
         let ctx = Ctx {
-            drill_r,
             hole_gap: board.rules.min_hole_to_hole.to_mm(),
             hole_cu,
             hole_smd: board.rules.min_hole_to_smd_pad.to_mm(),
-            in_pad: opts.via_in_pad
-                && 2.0 * drill_r <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
             smd: &smd,
             widths: widths.clone(),
             clearance,
-            via_r,
             via_layers: &via_layers,
             vias: &options,
             stack_vias: board.rules.stacked_microvias,
@@ -592,15 +651,15 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             necking: Some(&necking),
         };
 
-        let mut grid = build_grid(layout, opts.grid, &halves, via_r, edge);
+        let mut grid = build_grid(layout, opts.grid, &halves, &options, edge);
         for o in &obstacles {
-            grid.add(o, &halves, via_r, clearance, ctx.drill_r + hole_cu);
+            grid.add(o, &halves, clearance, &options, hole_cu);
         }
-        for &(c, r) in &drills {
-            grid.add_drill(c, r + ctx.drill_r + ctx.hole_gap);
+        for &(c, r, span) in &drills {
+            grid.add_drill(c, r, span, &options, ctx.hole_gap);
         }
         grid.block_smd(&ctx);
-        grid.block_silk(&layout.silk, via_r);
+        grid.block_silk(&layout.silk, &options);
 
         let conns: Vec<(P, P, usize)> =
             layout.ratsnest.iter().filter(|(_, _, n)| nets.contains(n)).cloned().collect();
@@ -707,11 +766,11 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     {
                         Ok(p) => {
                             for &i in &p.cells {
-                                if grid.ok(i, net, false, true).1 {
+                                if grid.ok(i, net, true).1 {
                                     grid.hist[i] += (grid.g * 10.0) as f32;
                                 }
                             }
-                            let conn = conn_found(&grid, &p, net);
+                            let conn = conn_found(&grid, &p, net, &ctx);
                             let mut hits: Vec<usize> = (0..routed.len())
                                 .filter(|&k| {
                                     routed[k]
@@ -751,7 +810,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                             for r in routed.iter().flatten() {
                                 grid.mark_routed(r, &ctx);
                             }
-                            if !p.cells.iter().all(|&i| grid.ok(i, net, false, false).0) {
+                            if !p.cells.iter().all(|&i| grid.ok(i, net, false).0) {
                                 ripped[ci] += 1;
                                 queue.push_back(ci);
                                 continue;
@@ -768,7 +827,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     }
                 }
             };
-            let mut conn = conn_found(&grid, &path, net);
+            let mut conn = conn_found(&grid, &path, net, &ctx);
             if let Some((left, iface)) = room(net, &routed, &[ci])
                 && conn.vias.len() > left
             {
@@ -834,7 +893,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         }
         for conn in routed.into_iter().flatten() {
             out.routed += 1;
-            let placed = placed_vias(&conn, &options);
+            let placed = placed_vias(&grid, &conn, &ctx);
             let name = layout.nets[conn.net].name.clone();
             for (l, pts) in conn.tracks {
                 for w in pts.windows(2) {
@@ -867,12 +926,12 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                 });
             }
             for (at, o) in placed {
-                drills.push((at, o.drill_r));
+                drills.push((at, o.drill_r, o.dielectrics));
                 obstacles.push(Obstacle {
                     net: Some(conn.net),
                     layers: o.layers.clone(),
                     shape: Shape::Circle(at, o.via_r),
-                    clearance: ctx.via_keep(),
+                    clearance: ctx.keep(o),
                 });
                 out.vias.push(RoutedVia { net: name.clone(), at, via: o.name.clone() });
             }
@@ -884,51 +943,63 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
 struct ViaOption {
     name: String,
     layers: Vec<usize>,
+    dielectrics: u32,
     via_r: f64,
     drill_r: f64,
     cost: f64,
+    in_pad: bool,
 }
 
 impl ViaOption {
     fn joins(&self, a: usize, b: usize) -> bool {
         self.layers.contains(&a) && self.layers.contains(&b)
     }
+
+    fn shares_dielectric(&self, other: &ViaOption) -> bool {
+        self.dielectrics & other.dielectrics != 0
+    }
 }
 
-fn cheapest(options: &[ViaOption], a: usize, b: usize) -> Option<&ViaOption> {
-    options
-        .iter()
-        .filter(|o| o.joins(a, b))
-        .min_by(|x, y| x.cost.total_cmp(&y.cost).then(x.layers.len().cmp(&y.layers.len())))
+fn dielectrics(a: usize, b: usize) -> u32 {
+    (a.min(b)..a.max(b)).filter(|&k| k < 32).fold(0, |m, k| m | 1 << k)
 }
 
-fn placed_vias<'o>(c: &Conn, options: &'o [ViaOption]) -> Vec<(P, &'o ViaOption)> {
-    let mut out: Vec<(P, &ViaOption, usize, usize)> = Vec::new();
+fn cheapest_fit(grid: &Grid, ctx: &Ctx, at: P, a: usize, b: usize, net: usize) -> Option<usize> {
+    let (x, y) = grid.cell(at);
+    let inside = x >= 0 && y >= 0 && (x as usize) < grid.w && (y as usize) < grid.h;
+    (0..ctx.vias.len())
+        .filter(|&k| ctx.vias[k].joins(a, b))
+        .filter(|&k| inside && grid.via_ok(k, &ctx.vias[k], x as usize, y as usize, net, true).0)
+        .min_by(|&i, &j| {
+            let (x, y) = (&ctx.vias[i], &ctx.vias[j]);
+            x.cost.total_cmp(&y.cost).then(x.layers.len().cmp(&y.layers.len()))
+        })
+}
+
+fn placed_vias<'o>(grid: &Grid, c: &Conn, ctx: &Ctx<'o>) -> Vec<(P, &'o ViaOption)> {
+    let mut out: Vec<(P, usize, usize, usize)> = Vec::new();
     for (k, &at) in c.vias.iter().enumerate() {
         let (a, b) = c.hops.get(k).copied().unwrap_or((usize::MAX, usize::MAX));
         if let Some(last) = out.last_mut()
             && geom::dist(last.0, at) < 1e-6
-            && let Some(o) = cheapest(options, last.2.min(a).min(b), last.3.max(a).max(b))
+            && let Some(o) =
+                cheapest_fit(grid, ctx, at, last.2.min(a).min(b), last.3.max(a).max(b), c.net)
         {
             *last = (at, o, last.2.min(a).min(b), last.3.max(a).max(b));
             continue;
         }
-        let o = cheapest(options, a, b).unwrap_or(&options[0]);
-        out.push((at, o, a.min(b), a.max(b)));
+        out.push((at, c.options[k], a.min(b), a.max(b)));
     }
-    out.into_iter().map(|(at, o, _, _)| (at, o)).collect()
+    out.into_iter().map(|(at, o, _, _)| (at, &ctx.vias[o])).collect()
 }
 
 struct Ctx<'a> {
-    drill_r: f64,
     hole_gap: f64,
     hole_cu: f64,
     hole_smd: f64,
-    in_pad: bool,
     smd: &'a [SmdPad],
     widths: Vec<f64>,
     clearance: f64,
-    via_r: f64,
     via_layers: &'a [usize],
     vias: &'a [ViaOption],
     stack_vias: bool,
@@ -945,8 +1016,8 @@ struct Necking<'a> {
 }
 
 impl Ctx<'_> {
-    fn via_keep(&self) -> f64 {
-        self.clearance.max(self.drill_r + self.hole_cu - self.via_r)
+    fn keep(&self, via: &ViaOption) -> f64 {
+        self.clearance.max(via.drill_r + self.hole_cu - via.via_r)
     }
 }
 
@@ -955,6 +1026,7 @@ struct Conn {
     net: usize,
     tracks: Vec<(usize, Vec<P>)>,
     vias: Vec<P>,
+    options: Vec<usize>,
     hops: Vec<(usize, usize)>,
     necks: Vec<Neck>,
 }
@@ -974,13 +1046,38 @@ struct Found {
     necks: Vec<Neck>,
 }
 
-fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Conn {
+fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize, ctx: &Ctx) -> Conn {
     let (tracks, vias) = geometry(grid, path, a, b, net);
-    Conn { net, tracks, vias, hops: hops_of(grid, path), necks: Vec::new() }
+    let hops = hops_of(grid, path);
+    let options =
+        vias.iter().zip(&hops).map(|(&at, &(l, nl))| via_at(grid, ctx, at, l, nl, net)).collect();
+    Conn { net, tracks, vias, options, hops, necks: Vec::new() }
 }
 
-fn conn_found(grid: &Grid, f: &Found, net: usize) -> Conn {
-    Conn { necks: f.necks.clone(), ..conn_of(grid, &f.cells, f.a, f.b, net) }
+fn via_at(grid: &Grid, ctx: &Ctx, at: P, l: usize, nl: usize, net: usize) -> usize {
+    let (x, y) = grid.cell(at);
+    let penalty = 20.0 * grid.g;
+    (0..ctx.vias.len())
+        .filter(|&k| ctx.vias[k].joins(l, nl))
+        .map(|k| {
+            let o = &ctx.vias[k];
+            let (ok, clash) = grid.via_ok(k, o, x as usize, y as usize, net, true);
+            let misfit = if !ok {
+                1e9
+            } else if clash {
+                penalty
+            } else {
+                0.0
+            };
+            (ctx.opts.via_cost * o.cost + o.layers.len() as f64 * 1e-4 + misfit, k)
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, k)| k)
+        .unwrap_or(0)
+}
+
+fn conn_found(grid: &Grid, f: &Found, net: usize, ctx: &Ctx) -> Conn {
+    Conn { necks: f.necks.clone(), ..conn_of(grid, &f.cells, f.a, f.b, net, ctx) }
 }
 
 fn wires(c: &Conn, ctx: &Ctx) -> Vec<(usize, P, P, f64)> {
@@ -1019,7 +1116,7 @@ fn one_layer(
         let layer = [l];
         let one = Ctx { widths: ctx.widths.clone(), routing: &layer, ..*ctx };
         if let Ok(p) = search(grid, obstacles, fresh, net, a, b, &one, false, None) {
-            let c = conn_found(grid, &p, net);
+            let c = conn_found(grid, &p, net, ctx);
             if c.vias.is_empty() && best.as_ref().is_none_or(|x| track_length(&c) < track_length(x))
             {
                 best = Some(c);
@@ -1050,7 +1147,7 @@ fn fewer_vias(
         };
         let wary = Ctx { widths: ctx.widths.clone(), opts: &dear, ..*ctx };
         if let Ok(p) = search(grid, obstacles, fresh, net, a, b, &wary, false, None) {
-            let c = conn_found(grid, &p, net);
+            let c = conn_found(grid, &p, net, ctx);
             if c.vias.len() <= left {
                 return Some(c);
             }
@@ -1090,7 +1187,7 @@ fn slides(c: &Conn, vi: usize, ctx: &Ctx, reach: f64) -> Vec<Slide> {
         } else {
             continue;
         };
-        let keep = 2.0 * ctx.via_r + ctx.clearance;
+        let keep = 2.0 * ctx.vias[c.options[vi]].via_r + ctx.clearance;
         let n = back.len();
         let Some(dir) = heading(back[n - 1], back[n - 2]) else { continue };
         let last = geom::dist(back[n - 2], back[n - 1]);
@@ -1177,25 +1274,30 @@ fn via_fits(
     ctx: &Ctx,
 ) -> bool {
     let to = c.vias[vi];
-    let drills = 2.0 * ctx.drill_r + ctx.hole_gap - 1e-6;
+    let k = c.options[vi];
+    let via = &ctx.vias[k];
+    let apart = |r: &Conn| {
+        r.vias.iter().zip(&r.options).all(|(w, &j)| {
+            let other = &ctx.vias[j];
+            !via.shares_dielectric(other)
+                || geom::dist(*w, to) >= via.drill_r + other.drill_r + ctx.hole_gap - 1e-6
+        })
+    };
     let (x, y) = grid.cell(to);
     if x < 0 || y < 0 || x as usize >= grid.w || y as usize >= grid.h {
         return false;
     }
-    let cell_ok = ctx
-        .via_layers
-        .iter()
-        .all(|&l| grid.ok(grid.idx(l, x as usize, y as usize), c.net, true, false).0);
-    let own_ok = c.vias.iter().enumerate().all(|(k, w)| k == vi || geom::dist(*w, to) >= drills);
+    let cell_ok = grid.via_ok(k, via, x as usize, y as usize, c.net, false).0;
+    let mut rest = c.clone();
+    rest.vias.remove(vi);
+    rest.options.remove(vi);
     let lines_ok =
         run_layers.iter().all(|&l| run.windows(2).all(|w| clear_line(grid, l, w[0], w[1], c.net)));
     cell_ok
-        && via_clears_smd(to, ctx)
-        && own_ok
+        && via_clears_smd(to, ctx, via)
+        && apart(&rest)
         && lines_ok
-        && others
-            .iter()
-            .all(|r| !conflicts(r, c, ctx) && r.vias.iter().all(|w| geom::dist(*w, to) >= drills))
+        && others.iter().all(|r| !conflicts(r, c, ctx) && apart(r))
 }
 
 fn pad_gap(pad: &[P], p: P) -> f64 {
@@ -1212,7 +1314,7 @@ fn snap_vias(
     locked: &[bool],
     ctx: &Ctx,
 ) {
-    let reach = (10.0 * ctx.via_r).max(2.5);
+    let reach = (10.0 * ctx.vias.iter().map(|o| o.via_r).fold(0.0, f64::max)).max(2.5);
     let pads: Vec<&Vec<P>> = obstacles
         .iter()
         .filter(|o| o.layers.iter().any(|l| ctx.via_layers.contains(l)))
@@ -1221,10 +1323,10 @@ fn snap_vias(
             _ => None,
         })
         .collect();
-    let clear_of_pads = |from: P, to: P| {
+    let clear_of_pads = |from: P, to: P, via_r: f64| {
         pads.iter().all(|pad| {
             let after = pad_gap(pad, to);
-            after >= ctx.via_r || after >= pad_gap(pad, from) - 1e-6
+            after >= via_r || after >= pad_gap(pad, from) - 1e-6
         })
     };
     let lone = |ci: usize, routed: &[Option<Conn>]| {
@@ -1335,7 +1437,7 @@ fn snap_vias(
                         .filter_map(|(_, r)| r.as_ref())
                         .collect();
                     if track_length(&moved) <= track_length(&old) + 1e-6
-                        && clear_of_pads(v, to)
+                        && clear_of_pads(v, to, ctx.vias[old.options[vi]].via_r)
                         && via_fits(grid, &moved, vi, &run, &run_layers, &others, ctx)
                     {
                         trial[ci] = Some(moved);
@@ -1363,22 +1465,23 @@ fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
             clearance: ctx.clearance,
         });
     }
-    for v in &c.vias {
+    for (v, &k) in c.vias.iter().zip(&c.options) {
+        let via = &ctx.vias[k];
         out.push(Obstacle {
             net: Some(c.net),
-            layers: ctx.via_layers.to_vec(),
-            shape: Shape::Circle(*v, ctx.via_r),
-            clearance: ctx.via_keep(),
+            layers: via.layers.clone(),
+            shape: Shape::Circle(*v, via.via_r),
+            clearance: ctx.keep(via),
         });
     }
     out
 }
 
 fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
-    let keep = ctx.via_keep();
-    let via_need = |w: f64| ctx.via_r + w / 2.0 + keep - 1e-6;
-    let vv_need = 2.0 * ctx.via_r + keep - 1e-6;
+    let via_need = |via: &ViaOption, w: f64| via.via_r + w / 2.0 + ctx.keep(via) - 1e-6;
     let (rw, cw) = (wires(r, ctx), wires(c, ctx));
+    let c_vias: Vec<(P, &ViaOption)> =
+        c.vias.iter().zip(&c.options).map(|(v, &k)| (*v, &ctx.vias[k])).collect();
     for &(la, a0, a1, wa) in &rw {
         for &(lb, b0, b1, wb) in &cw {
             if la == lb
@@ -1388,19 +1491,24 @@ fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
                 return true;
             }
         }
-        if ctx.via_layers.contains(&la)
-            && c.vias.iter().any(|v| geom::point_segment_distance(*v, a0, a1) < via_need(wa))
-        {
-            return true;
-        }
-    }
-    for v in &r.vias {
-        if cw.iter().any(|&(lb, b0, b1, wb)| {
-            ctx.via_layers.contains(&lb) && geom::point_segment_distance(*v, b0, b1) < via_need(wb)
+        if c_vias.iter().any(|(v, via)| {
+            via.layers.contains(&la) && geom::point_segment_distance(*v, a0, a1) < via_need(via, wa)
         }) {
             return true;
         }
-        if c.vias.iter().any(|w| geom::dist(*v, *w) < vv_need) {
+    }
+    for (v, &k) in r.vias.iter().zip(&r.options) {
+        let via = &ctx.vias[k];
+        if cw.iter().any(|&(lb, b0, b1, wb)| {
+            via.layers.contains(&lb) && geom::point_segment_distance(*v, b0, b1) < via_need(via, wb)
+        }) {
+            return true;
+        }
+        if c_vias.iter().any(|(w, other)| {
+            via.layers.iter().any(|l| other.layers.contains(l))
+                && geom::dist(*v, *w)
+                    < via.via_r + other.via_r + ctx.keep(via).max(ctx.keep(other)) - 1e-6
+        }) {
             return true;
         }
     }
@@ -1432,7 +1540,7 @@ fn attraction(
     out
 }
 
-fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) -> Grid {
+fn build_grid(layout: &Layout, g: f64, halves: &[f64], vias: &[ViaOption], edge: f64) -> Grid {
     let layers = halves.len();
     let b = layout.bounds();
     let snap = |v: f64| ((v / g).floor() - 1.5) * g;
@@ -1446,9 +1554,8 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
         w,
         h,
         track: vec![FREE; layers * w * h],
-        via: vec![FREE; layers * w * h],
+        vias: vias.iter().map(|_| ViaMap::new(layers, w, h)).collect(),
         rt: vec![FREE; layers * w * h],
-        rv: vec![FREE; layers * w * h],
         hist: vec![0.0; layers * w * h],
     };
     let board = layout.edge();
@@ -1469,7 +1576,9 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
                 for l in 0..layers {
                     let i = grid.idx(l, x, y);
                     grid.track[i] = BLOCK;
-                    grid.via[i] = BLOCK;
+                }
+                for k in 0..vias.len() {
+                    grid.block_via(k, x, y);
                 }
             }
         }
@@ -1477,17 +1586,16 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
     for &(a, b) in &edges {
         let seg = Shape::Seg(a, b, 0.0);
         let widest = halves.iter().cloned().fold(0.0, f64::max);
-        for (reach, via) in [(edge + widest, false), (edge + via_r, true)] {
-            for (x, y) in grid.cells_near(&seg, reach) {
-                let d = seg.dist(grid.center(x, y));
-                for l in (0..layers).filter(|&l| via || d <= edge + halves[l]) {
-                    let k = grid.idx(l, x, y);
-                    if via {
-                        grid.via[k] = BLOCK;
-                    } else {
-                        grid.track[k] = BLOCK;
-                    }
-                }
+        for (x, y) in grid.cells_near(&seg, edge + widest) {
+            let d = seg.dist(grid.center(x, y));
+            for l in (0..layers).filter(|&l| d <= edge + halves[l]) {
+                let k = grid.idx(l, x, y);
+                grid.track[k] = BLOCK;
+            }
+        }
+        for (k, via) in vias.iter().enumerate() {
+            for (x, y) in grid.cells_near(&seg, edge + via.via_r) {
+                grid.block_via(k, x, y);
             }
         }
     }
@@ -1634,7 +1742,7 @@ fn end_of(
         .filter(|l| ctx.routing.contains(l))
         .filter(|&l| {
             ctx.widths[l] > pad_w + 1e-6
-                || !cells.iter().any(|&i| i / plane == l && grid.ok(i, net, false, soft).0)
+                || !cells.iter().any(|&i| i / plane == l && grid.ok(i, net, soft).0)
         })
         .collect();
     let stubs: Vec<(usize, Neck)> = layers
@@ -1718,7 +1826,7 @@ fn stubs(
                 && edges
                     .iter()
                     .all(|e| geom::point_segment_distance(q, e.0, e.1) >= nk.edge + wide / 2.0);
-            let Some(i) = cell(q).filter(|&i| cap && grid.ok(i, net, false, soft).0) else {
+            let Some(i) = cell(q).filter(|&i| cap && grid.ok(i, net, soft).0) else {
                 continue;
             };
             let steps = (len / (grid.g * 0.25)).ceil() as usize;
@@ -1755,7 +1863,7 @@ fn search_between(
         return Err("an end has no copper on the routing layers".into());
     }
     let legal = |v: &[usize]| -> Vec<usize> {
-        v.iter().copied().filter(|&i| grid.ok(i, net, false, soft).0).collect()
+        v.iter().copied().filter(|&i| grid.ok(i, net, soft).0).collect()
     };
     let (sources, goals) = (legal(sources), legal(goals));
     if sources.is_empty() || goals.is_empty() {
@@ -1767,37 +1875,23 @@ fn search_between(
     let (sources, goals) = (sources.as_slice(), goals.as_slice());
     let plane = grid.w * grid.h;
     let unpack = |i: usize| (i / plane, (i % plane) % grid.w, (i % plane) / grid.w);
-    let via_here = |x: usize, y: usize, layers: &[usize]| -> Option<bool> {
-        let mut clash = false;
-        for &vl in layers {
-            let (ok, c) = grid.ok(grid.idx(vl, x, y), net, true, soft);
-            if !ok {
-                return None;
-            }
-            clash |= c;
-        }
-        Some(clash)
-    };
     let hop = |x: usize, y: usize, l: usize, ul: usize, clash: bool| -> Option<f64> {
-        let price = |cost: f64, layers: &[usize]| {
-            let via_clash = via_here(x, y, layers)?;
-            Some(
-                opts.via_cost * cost
-                    + layers.len() as f64 * 1e-4
-                    + if clash || via_clash { penalty } else { 0.0 },
-            )
-        };
-        if ctx.vias.is_empty() {
-            return price(1.0, via_layers);
-        }
         ctx.vias
             .iter()
-            .filter(|o| o.joins(l, ul))
-            .filter_map(|o| price(o.cost, &o.layers))
+            .enumerate()
+            .filter(|(_, o)| o.joins(l, ul))
+            .filter_map(|(k, o)| {
+                let (ok, via_clash) = grid.via_ok(k, o, x, y, net, soft);
+                ok.then_some(
+                    opts.via_cost * o.cost
+                        + o.layers.len() as f64 * 1e-4
+                        + if clash || via_clash { penalty } else { 0.0 },
+                )
+            })
             .min_by(f64::total_cmp)
     };
     let enter = |j: usize, diagonal: bool| -> Option<f64> {
-        let (ok, clash) = grid.ok(j, net, false, soft);
+        let (ok, clash) = grid.ok(j, net, soft);
         if !ok {
             return None;
         }
@@ -1810,8 +1904,8 @@ fn search_between(
     };
     let corner_ok = |l: usize, x: usize, y: usize, nx: usize, ny: usize| {
         (nx == x || ny == y)
-            || (grid.ok(grid.idx(l, nx, y), net, false, soft).0
-                && grid.ok(grid.idx(l, x, ny), net, false, soft).0)
+            || (grid.ok(grid.idx(l, nx, y), net, soft).0
+                && grid.ok(grid.idx(l, x, ny), net, soft).0)
     };
     let mut margin = opts.margin;
     loop {
@@ -1867,7 +1961,7 @@ fn search_between(
                 }
                 let (px, py) = (px as usize, py as usize);
                 let u = grid.idx(l, px, py);
-                if !grid.ok(u, net, false, soft).0 || !corner_ok(l, px, py, x, y) {
+                if !grid.ok(u, net, soft).0 || !corner_ok(l, px, py, x, y) {
                     continue;
                 }
                 let diagonal = dx != 0 && dy != 0;
@@ -1886,10 +1980,10 @@ fn search_between(
             if !via_layers.contains(&l) {
                 continue;
             }
-            let clash = grid.ok(i, net, false, soft).1;
+            let clash = grid.ok(i, net, soft).1;
             for &ul in routing.iter().filter(|&&ul| ul != l && via_layers.contains(&ul)) {
                 let u = grid.idx(ul, x, y);
-                if !grid.ok(u, net, false, soft).0 {
+                if !grid.ok(u, net, soft).0 {
                     continue;
                 }
                 let Some(cost) = hop(x, y, ul, l, clash) else { continue };
@@ -1959,7 +2053,7 @@ fn search_between(
                 }
                 for &nl in routing.iter().filter(|&&nl| nl != l && via_layers.contains(&nl)) {
                     let j = grid.idx(nl, x, y);
-                    let (ok, clash) = grid.ok(j, net, false, soft);
+                    let (ok, clash) = grid.ok(j, net, soft);
                     let kj = local(j).unwrap();
                     let h = heur(kj);
                     if !ok || h == f32::MAX as f64 {
@@ -2093,7 +2187,7 @@ fn clear_line(grid: &Grid, l: usize, p: P, q: P, net: usize) -> bool {
             && y >= 0
             && (x as usize) < grid.w
             && (y as usize) < grid.h
-            && grid.ok(grid.idx(l, x as usize, y as usize), net, false, false).0
+            && grid.ok(grid.idx(l, x as usize, y as usize), net, false).0
     };
     (0..=n).all(|k| {
         let t = k as f64 / n as f64;
@@ -2268,6 +2362,7 @@ fn route_pair(
             net: p,
             tracks: vec![(l, pp.clone())],
             vias: Vec::new(),
+            options: Vec::new(),
             hops: Vec::new(),
             necks: Vec::new(),
         };
@@ -2275,6 +2370,7 @@ fn route_pair(
             net: n,
             tracks: vec![(l, np.clone())],
             vias: Vec::new(),
+            options: Vec::new(),
             hops: Vec::new(),
             necks: Vec::new(),
         };
@@ -2315,7 +2411,7 @@ fn route_pair(
                 Some(&repel),
             ) {
                 Ok(path) => {
-                    let c = conn_of(grid, &path, pad, end, net);
+                    let c = conn_of(grid, &path, pad, end, net, ctx);
                     grid.mark_routed(&c, ctx);
                     parts.push(c);
                 }
@@ -2335,6 +2431,7 @@ fn route_pair(
             net,
             tracks: a.tracks.iter().chain(b.tracks.iter()).cloned().chain([(l, main)]).collect(),
             vias: a.vias.iter().chain(b.vias.iter()).cloned().collect(),
+            options: a.options.iter().chain(b.options.iter()).cloned().collect(),
             hops: a.hops.iter().chain(b.hops.iter()).cloned().collect(),
             necks: Vec::new(),
         };
@@ -2494,6 +2591,18 @@ fn band(grid: &Grid, geo: &[&Conn], gap: f64, widths: &[f64]) -> std::collection
 mod tests {
     use super::*;
 
+    fn test_via(layers: &[usize], in_pad: bool) -> ViaOption {
+        ViaOption {
+            name: "v".into(),
+            layers: layers.to_vec(),
+            dielectrics: dielectrics(layers[0], layers[layers.len() - 1]),
+            via_r: 0.2,
+            drill_r: 0.1,
+            cost: 1.0,
+            in_pad,
+        }
+    }
+
     fn open_grid(w: usize, h: usize, layers: usize) -> Grid {
         Grid {
             x0: 0.0,
@@ -2502,9 +2611,8 @@ mod tests {
             w,
             h,
             track: vec![FREE; layers * w * h],
-            via: vec![FREE; layers * w * h],
+            vias: vec![ViaMap::new(layers, w, h)],
             rt: vec![FREE; layers * w * h],
-            rv: vec![FREE; layers * w * h],
             hist: vec![0.0; layers * w * h],
         }
     }
@@ -2514,7 +2622,7 @@ mod tests {
             for xx in x.clone() {
                 let i = grid.idx(l, xx, yy);
                 grid.track[i] = BLOCK;
-                grid.via[i] = BLOCK;
+                grid.vias[0].fixed[i] = BLOCK;
             }
         }
     }
@@ -2522,17 +2630,14 @@ mod tests {
     fn route_one(grid: &Grid, layers: &[usize], a: (usize, usize), b: (usize, usize)) -> Geometry {
         let opts = RouteOptions { margin: 10.0, ..Default::default() };
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.1; 2],
             clearance: 0.1,
-            via_r: 0.2,
             via_layers: layers,
-            vias: &[],
+            vias: &[test_via(layers, false)],
             stack_vias: true,
             routing: layers,
             opts: &opts,
@@ -2596,17 +2701,14 @@ mod tests {
         block(&mut grid, 0, 30..31, 0..36);
         let opts = RouteOptions { via_cost: 0.1, ..Default::default() };
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.1; 2],
             clearance: 0.1,
-            via_r: 0.2,
             via_layers: &[0, 1],
-            vias: &[],
+            vias: &[test_via(&[0, 1], false)],
             stack_vias: true,
             routing: &[0, 1],
             opts: &opts,
@@ -2621,7 +2723,7 @@ mod tests {
         };
         let pads = [pad(a), pad(b)];
         let path = search(&grid, &pads, &[], 0, a, b, &ctx, false, None).unwrap();
-        assert_eq!(conn_found(&grid, &path, 0).vias.len(), 2);
+        assert_eq!(conn_found(&grid, &path, 0, &ctx).vias.len(), 2);
         let c = fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 0).unwrap();
         assert!(c.vias.is_empty() && c.tracks.iter().all(|t| t.0 == 0));
         assert!(fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 2).unwrap().vias.len() <= 2);
@@ -2632,17 +2734,14 @@ mod tests {
         let grid = open_grid(80, 40, 2);
         let opts = RouteOptions::default();
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.1; 2],
             clearance: 0.1,
-            via_r: 0.2,
             via_layers: &[0, 1],
-            vias: &[],
+            vias: &[test_via(&[0, 1], false)],
             stack_vias: true,
             routing: &[0, 1],
             opts: &opts,
@@ -2652,6 +2751,7 @@ mod tests {
             net,
             tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
             vias: vec![[x, y]],
+            options: vec![0],
             hops: Vec::new(),
             necks: Vec::new(),
         };
@@ -2691,17 +2791,14 @@ mod tests {
         let opts = RouteOptions::default();
         for in_pad in [false, true] {
             let ctx = Ctx {
-                drill_r: 0.1,
                 hole_gap: 0.2,
                 hole_cu: 0.0,
                 hole_smd: 0.2,
-                in_pad,
                 smd: &smd,
                 widths: vec![0.1; 2],
                 clearance: 0.1,
-                via_r: 0.2,
                 via_layers: &[0, 1],
-                vias: &[],
+                vias: &[test_via(&[0, 1], in_pad)],
                 stack_vias: true,
                 routing: &[0, 1],
                 opts: &opts,
@@ -2711,8 +2808,8 @@ mod tests {
             grid.block_smd(&ctx);
             let via_ok = |x: usize| {
                 let at = grid.center(x, 20);
-                let cell = [0, 1].iter().all(|&l| grid.ok(grid.idx(l, x, 20), 0, true, false).0);
-                assert_eq!(cell, via_clears_smd(at, &ctx), "{at:?}");
+                let cell = grid.via_ok(0, &ctx.vias[0], x, 20, 0, false).0;
+                assert_eq!(cell, via_clears_smd(at, &ctx, &ctx.vias[0]), "{at:?}");
                 cell
             };
             assert_eq!(via_ok(20), in_pad, "centred in the pad");
@@ -2740,17 +2837,14 @@ mod tests {
         };
         let smd = [pad([3.05, 2.35]), pad([4.05, 0.75])];
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.2,
-            in_pad: false,
             smd: &smd,
             widths: vec![0.1; 2],
             clearance: 0.1,
-            via_r: 0.2,
             via_layers: &[0, 1],
-            vias: &[],
+            vias: &[test_via(&[0, 1], false)],
             stack_vias: true,
             routing: &[0, 1],
             opts: &opts,
@@ -2760,13 +2854,14 @@ mod tests {
             net,
             tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
             vias: vec![[x, y]],
+            options: vec![0],
             hops: Vec::new(),
             necks: Vec::new(),
         };
         let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
         snap_vias(&grid, &[], &mut routed, &[false, false], &ctx);
         for c in routed.iter().flatten() {
-            assert!(via_clears_smd(c.vias[0], &ctx), "{:?}", c.vias[0]);
+            assert!(via_clears_smd(c.vias[0], &ctx, &ctx.vias[0]), "{:?}", c.vias[0]);
         }
     }
 
@@ -2774,17 +2869,14 @@ mod tests {
     fn vias_keep_hole_to_copper_from_other_nets() {
         let opts = RouteOptions::default();
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.4,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.1],
             clearance: 0.1,
-            via_r: 0.2,
             via_layers: &[0],
-            vias: &[],
+            vias: &[test_via(&[0], false)],
             stack_vias: true,
             routing: &[0],
             opts: &opts,
@@ -2797,13 +2889,14 @@ mod tests {
             shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.0),
             clearance: 0.1,
         };
-        grid.add(&track, &[0.05], ctx.via_r, ctx.clearance, ctx.drill_r + ctx.hole_cu);
-        assert!(!grid.ok(grid.idx(0, 14, 20), 0, true, false).0, "hole 0.35 mm from the track");
-        assert!(grid.ok(grid.idx(0, 17, 20), 0, true, false).0, "hole 0.65 mm from the track");
+        grid.add(&track, &[0.05], ctx.clearance, ctx.vias, ctx.hole_cu);
+        assert!(!grid.via_ok(0, &ctx.vias[0], 14, 20, 0, false).0, "hole 0.35 mm from the track");
+        assert!(grid.via_ok(0, &ctx.vias[0], 17, 20, 0, false).0, "hole 0.65 mm from the track");
         let via = Conn {
             net: 0,
             tracks: Vec::new(),
             vias: vec![[1.45, 2.05]],
+            options: vec![0],
             hops: Vec::new(),
             necks: Vec::new(),
         };
@@ -2811,6 +2904,7 @@ mod tests {
             net: 1,
             tracks: vec![(0, vec![[1.0, 0.5], [1.0, 3.5]])],
             vias: Vec::new(),
+            options: Vec::new(),
             hops: Vec::new(),
             necks: Vec::new(),
         };
@@ -2819,10 +2913,74 @@ mod tests {
             net: 0,
             tracks: Vec::new(),
             vias: vec![[1.65, 2.05]],
+            options: vec![0],
             hops: Vec::new(),
             necks: Vec::new(),
         };
         assert!(!conflicts(&near, &far, &ctx));
+    }
+
+    #[test]
+    fn each_via_option_blocks_by_its_own_size_and_span() {
+        let micro = ViaOption {
+            name: "uv".into(),
+            layers: vec![0, 1],
+            dielectrics: dielectrics(0, 1),
+            via_r: 0.125,
+            drill_r: 0.05,
+            cost: 1.0,
+            in_pad: false,
+        };
+        let through = ViaOption {
+            name: "std".into(),
+            layers: vec![0, 1, 2, 3],
+            dielectrics: dielectrics(0, 3),
+            via_r: 0.225,
+            drill_r: 0.1,
+            cost: 3.0,
+            in_pad: false,
+        };
+        let vias = [micro, through];
+        let mut grid = open_grid(60, 40, 4);
+        grid.vias.push(ViaMap::new(4, 60, 40));
+        let wall = Obstacle {
+            net: Some(1),
+            layers: vec![0],
+            shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.05),
+            clearance: 0.1,
+        };
+        grid.add(&wall, &[0.05; 4], 0.1, &vias, 0.15);
+        let fits = |grid: &Grid, k: usize, x: usize| grid.via_ok(k, &vias[k], x, 20, 0, false).0;
+        assert!(fits(&grid, 0, 13) && !fits(&grid, 1, 13), "0.3 mm from the wall centre");
+        assert!(fits(&grid, 1, 15), "0.5 mm from the wall centre");
+        grid.add_drill([4.05, 2.05], 0.1, dielectrics(2, 3), &vias, 0.2);
+        assert!(fits(&grid, 0, 40), "a buried hole leaves the microvia dielectric free");
+        assert!(!fits(&grid, 1, 40) && fits(&grid, 1, 45));
+        let placed = Conn {
+            net: 1,
+            tracks: Vec::new(),
+            vias: vec![[4.05, 3.05]],
+            options: vec![1],
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
+        let ctx = Ctx {
+            hole_gap: 0.2,
+            hole_cu: 0.15,
+            hole_smd: 0.0,
+            smd: &[],
+            widths: vec![0.1; 4],
+            clearance: 0.1,
+            via_layers: &[0, 1, 2, 3],
+            vias: &vias,
+            stack_vias: true,
+            routing: &[0, 1, 2, 3],
+            opts: &RouteOptions::default(),
+            necking: None,
+        };
+        grid.mark_routed(&placed, &ctx);
+        let routed = |k: usize, y: usize| grid.via_ok(k, &vias[k], 40, y, 0, false).0;
+        assert!(routed(0, 36) && !routed(1, 36), "0.6 mm from a routed through via");
     }
 
     #[test]
@@ -2831,17 +2989,14 @@ mod tests {
         block(&mut grid, 0, 20..21, 0..20);
         let opts = RouteOptions::default();
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.1],
             clearance: 0.1,
-            via_r: 0.2,
             via_layers: &[0],
-            vias: &[],
+            vias: &[test_via(&[0], false)],
             stack_vias: true,
             routing: &[0],
             opts: &opts,
@@ -2870,17 +3025,14 @@ mod tests {
     fn necked_route(pitch: f64, necking: Option<&Necking>) -> Result<(Found, Conn), String> {
         let opts = RouteOptions { margin: 10.0, ..Default::default() };
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.4],
             clearance: 0.15,
-            via_r: 0.2,
             via_layers: &[0],
-            vias: &[],
+            vias: &[test_via(&[0], false)],
             stack_vias: true,
             routing: &[0],
             opts: &opts,
@@ -2901,10 +3053,10 @@ mod tests {
         ];
         let mut grid = open_grid(60, 40, 1);
         for o in &obstacles {
-            grid.add(o, &[0.2], ctx.via_r, ctx.clearance, 0.0);
+            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0);
         }
         let found = search(&grid, &obstacles, &[], 0, a, b, &ctx, false, None)?;
-        let conn = conn_found(&grid, &found, 0);
+        let conn = conn_found(&grid, &found, 0, &ctx);
         Ok((found, conn))
     }
 
@@ -2947,17 +3099,14 @@ mod tests {
         };
         let opts = RouteOptions { margin: 10.0, ..Default::default() };
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.4],
             clearance: 0.15,
-            via_r: 0.2,
             via_layers: &[0],
-            vias: &[],
+            vias: &[test_via(&[0], false)],
             stack_vias: true,
             routing: &[0],
             opts: &opts,
@@ -2974,7 +3123,7 @@ mod tests {
         let joined = [pad(a, 0.15), pad([a[0], a[1] + 0.3], 0.15), pad(b, 0.5)];
         let mut grid = open_grid(60, 40, 1);
         for o in &joined {
-            grid.add(o, &[0.2], ctx.via_r, ctx.clearance, 0.0);
+            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0);
         }
         let found = search(&grid, &single, &[], 0, a, b, &ctx, false, None).unwrap();
         assert_eq!(found.necks.len(), 1);
@@ -2986,17 +3135,14 @@ mod tests {
     fn necks_count_at_their_own_width_in_conflicts() {
         let opts = RouteOptions::default();
         let ctx = Ctx {
-            drill_r: 0.1,
             hole_gap: 0.2,
             hole_cu: 0.0,
             hole_smd: 0.0,
-            in_pad: false,
             smd: &[],
             widths: vec![0.4],
             clearance: 0.15,
-            via_r: 0.2,
             via_layers: &[0],
-            vias: &[],
+            vias: &[test_via(&[0], false)],
             stack_vias: true,
             routing: &[0],
             opts: &opts,
@@ -3006,6 +3152,7 @@ mod tests {
             net,
             tracks: Vec::new(),
             vias: Vec::new(),
+            options: Vec::new(),
             hops: Vec::new(),
             necks: vec![Neck { layer: 0, from: [0.0, y], to: [0.5, y], width: 0.2 }],
         };
@@ -3015,6 +3162,7 @@ mod tests {
             net: 1,
             tracks: vec![(0, vec![[0.0, 0.46], [0.5, 0.46]])],
             vias: Vec::new(),
+            options: Vec::new(),
             hops: Vec::new(),
             necks: Vec::new(),
         };

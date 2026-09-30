@@ -962,7 +962,9 @@ Four such starts run and the cheapest is kept. The 168 parts of `examples/sdr` p
 ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the tracks and vias
 to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
 It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
-the board edge, keeps new vias `min_hole_to_hole` from every drill and their holes
+the board edge, sizes the room for each class via by its own pad, drill and layers (a microvia fits
+where a through via does not, and a microvia may sit beside a buried via on other layers), keeps new
+vias `min_hole_to_hole` from every drill whose span shares a dielectric with theirs and their holes
 `min_via_hole_to_copper` from other nets' pads, tracks and vias, keeps them off SMD pads of every
 net, its own too (the via copper may not touch one, `via-cuts-pad`, and the hole stays
 `min_hole_to_smd_pad` from it, `hole-to-smd-pad`, unless `--via-in-pad`, MCP `via_in_pad`, lets it sit
