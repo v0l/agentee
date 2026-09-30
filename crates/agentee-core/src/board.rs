@@ -380,6 +380,8 @@ pub struct DrcFile {
     pub severity: std::collections::BTreeMap<String, crate::diag::Severity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tombstone_ratio: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<crate::place::PlacementLimits>,
 }
 
 pub const STACKUP_PRESETS: &[(&str, &str)] = &[

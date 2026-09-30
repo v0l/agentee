@@ -40,6 +40,8 @@ pub struct PlacementFile {
     pub label: Option<LabelFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mlcc: Option<bool>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -195,6 +197,8 @@ pub struct LayoutFile {
     pub watermark: Option<WatermarkFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test: Option<crate::testpoint::TestFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<crate::place::PlaceFile>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

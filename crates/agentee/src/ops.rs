@@ -1623,3 +1623,174 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     out["fills"] = json!(refilled);
     Ok(out)
 }
+
+pub struct PlaceArgs {
+    pub parts: Vec<String>,
+    pub keep_placed: bool,
+    pub side: String,
+    pub seed: u64,
+    pub write: bool,
+}
+
+fn watts(v: &str) -> Option<f64> {
+    let s = v.trim().to_ascii_lowercase();
+    if let Some(x) = s.strip_suffix("mw") {
+        return x.trim().parse::<f64>().ok().map(|x| x * 1e-3);
+    }
+    s.strip_suffix('w').unwrap_or(&s).trim().parse().ok()
+}
+
+pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
+    use agentee_core::place as pl;
+    let sides = match a.side.to_ascii_uppercase().as_str() {
+        "F" | "TOP" => pl::Sides::Top,
+        "B" | "BOTTOM" => pl::Sides::Bottom,
+        "BOTH" => pl::Sides::Both,
+        other => return Err(format!("side `{other}` is not F, B or both")),
+    };
+    let started = std::time::Instant::now();
+    let p = load(root)?;
+    let i = layout_index(&p, name)?;
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let sch = &p
+        .schematics
+        .iter()
+        .find(|s| s.name == layout.schematic)
+        .ok_or("the layout's schematic is missing")?
+        .item;
+    let text = std::fs::read_to_string(&entry.path)
+        .map_err(|e| format!("{}: {e}", entry.path.display()))?;
+    let file: agentee_core::layout::LayoutFile = agentee_core::project::parse(&text)
+        .map_err(|(at, m)| format!("{}: {at}: {m}", entry.path.display()))?;
+    let mut fast: Vec<String> = file.interfaces.iter().flat_map(|f| f.nets.clone()).collect();
+    for pr in &file.pairs {
+        fast.push(pr.p.clone());
+        fast.push(pr.n.clone());
+    }
+    let mut heat: Vec<(String, f64)> = Vec::new();
+    for s in &p.sims {
+        let Ok(src) = std::fs::read_to_string(&s.path) else { continue };
+        let Ok(f) = agentee_core::project::parse::<agentee_core::sim::SimFile>(&src) else {
+            continue;
+        };
+        let mine = f.layout.as_deref().is_none_or(|l| l == entry.name);
+        if f.kind == Some(agentee_core::sim::SimKind::Thermal) && mine {
+            for h in &f.sources {
+                if let Some(w) = watts(&h.power)
+                    && !heat.iter().any(|(r, _)| *r == h.reference)
+                {
+                    heat.push((h.reference.clone(), w));
+                }
+            }
+        }
+    }
+    let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
+        p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect();
+    let spec = file.place.clone().unwrap_or_default();
+    let input = pl::PlaceInput {
+        board,
+        outline: &layout.outline,
+        schematic: sch,
+        footprints: &footprints,
+        placements: &file.footprints,
+        spec: &spec,
+        fast_nets: fast,
+        heat,
+    };
+    let opts = pl::PlaceOptions {
+        parts: a.parts.clone(),
+        keep_placed: a.keep_placed,
+        sides,
+        seed: a.seed,
+    };
+    let load_ms = started.elapsed().as_millis();
+    let r = pl::place(&input, &opts)?;
+    let solve_ms = started.elapsed().as_millis() - load_ms;
+    let stale_copper = file.tracks.len() + file.vias.len();
+    let path = entry.path.clone();
+    let layout_name = entry.name.clone();
+    drop(p);
+    let mut out = json!({
+        "layout": layout_name,
+        "written": false,
+        "placed": r.placements.len(),
+        "kept": r.kept,
+        "failed": r.failed,
+        "edges": r.edges,
+        "clusters": r.clusters,
+        "hand_placement": r.before,
+        "result": r.after,
+        "annealing_moves_accepted": r.moves,
+        "load_ms": load_ms,
+        "solve_ms": solve_ms,
+    });
+    if stale_copper > 0 {
+        out["note"] = json!(format!(
+            "{stale_copper} tracks and vias in the file were left alone and may no longer reach their pads"
+        ));
+    }
+    if !a.write {
+        out["placements"] = json!(r.placements);
+        return Ok(out);
+    }
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    if doc.get("footprints").and_then(|v| v.as_array_of_tables()).is_none() {
+        doc["footprints"] = toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
+    }
+    let parts = doc
+        .get_mut("footprints")
+        .and_then(|v| v.as_array_of_tables_mut())
+        .ok_or("[[footprints]] is not an array of tables")?;
+    for pm in &r.placements {
+        let mut pt = toml_edit::Array::new();
+        pt.push(pm.at[0]);
+        pt.push(pm.at[1]);
+        let found = parts
+            .iter_mut()
+            .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(pm.reference.as_str()));
+        let t = match found {
+            Some(t) => t,
+            None => {
+                let mut t = toml_edit::Table::new();
+                t["ref"] = toml_edit::value(pm.reference.as_str());
+                parts.push(t);
+                parts.iter_mut().last().ok_or("could not add a footprint")?
+            }
+        };
+        t["at"] = toml_edit::value(pt);
+        if pm.rotation != 0.0 {
+            t["rotation"] = toml_edit::value(pm.rotation);
+        } else {
+            t.remove("rotation");
+        }
+        if pm.bottom {
+            t["side"] = toml_edit::value("bottom");
+        } else {
+            t.remove("side");
+        }
+        let hidden = t
+            .get("label")
+            .and_then(|v| v.as_inline_table())
+            .and_then(|l| l.get("hide"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if let Some(mut label) = t.get("label").and_then(|v| v.as_inline_table()).cloned() {
+            label.remove("at");
+            label.remove("rotation");
+            if label.is_empty() && !hidden {
+                t.remove("label");
+            } else {
+                t["label"] = toml_edit::value(label);
+            }
+        }
+    }
+    std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
+    let p = load(root)?;
+    let fills = write_fills(&p, &layout_name)?;
+    out["written"] = json!(true);
+    out["fills"] = fills["fills"].clone();
+    out["total_ms"] = json!(started.elapsed().as_millis());
+    Ok(out)
+}

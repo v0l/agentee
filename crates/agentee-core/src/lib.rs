@@ -14,6 +14,7 @@ pub mod interface;
 pub mod layout;
 pub mod logic;
 pub mod neck;
+pub mod place;
 pub mod project;
 pub mod rf;
 pub mod route;
