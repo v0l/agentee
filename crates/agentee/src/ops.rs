@@ -1677,14 +1677,6 @@ pub struct PlaceArgs {
     pub write: bool,
 }
 
-fn watts(v: &str) -> Option<f64> {
-    let s = v.trim().to_ascii_lowercase();
-    if let Some(x) = s.strip_suffix("mw") {
-        return x.trim().parse::<f64>().ok().map(|x| x * 1e-3);
-    }
-    s.strip_suffix('w').unwrap_or(&s).trim().parse().ok()
-}
-
 pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     use agentee_core::place as pl;
     let sides = match a.side.to_ascii_uppercase().as_str() {
@@ -1714,29 +1706,20 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         fast.push(pr.p.clone());
         fast.push(pr.n.clone());
     }
-    let mut heat: Vec<(String, f64)> = Vec::new();
-    for s in &p.sims {
-        let Ok(src) = std::fs::read_to_string(&s.path) else { continue };
-        let Ok(f) = agentee_core::project::parse::<agentee_core::sim::SimFile>(&src) else {
-            continue;
-        };
-        let mine = f.layout.as_deref().is_none_or(|l| l == entry.name);
-        if f.kind == Some(agentee_core::sim::SimKind::Thermal) && mine {
-            for h in &f.sources {
-                if let Some(w) = watts(&h.power)
-                    && !heat.iter().any(|(r, _)| *r == h.reference)
-                {
-                    heat.push((h.reference.clone(), w));
-                }
-            }
-        }
-    }
+    let sims: Vec<agentee_core::sim::SimFile> = p
+        .sims
+        .iter()
+        .filter_map(|s| std::fs::read_to_string(&s.path).ok())
+        .filter_map(|src| agentee_core::project::parse(&src).ok())
+        .collect();
+    let heat = pl::thermal_heat(&sims, &entry.name);
     let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
         p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect();
     let spec = file.place.clone().unwrap_or_default();
     let input = pl::PlaceInput {
         board,
         outline: &layout.outline,
+        cutouts: &layout.board_cutouts,
         schematic: sch,
         footprints: &footprints,
         placements: &file.footprints,
@@ -1833,6 +1816,41 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     }
     std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
     let p = load(root)?;
+    let i = layout_index(&p, &layout_name)?;
+    let layout = &p.layouts[i].item;
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let (moved, failing) = layout.settle_labels(board);
+    if !moved.is_empty() {
+        let parts = doc
+            .get_mut("footprints")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .ok_or("[[footprints]] is not an array of tables")?;
+        for f in &moved {
+            let (Some(at), Some(t)) = (
+                f.at,
+                parts
+                    .iter_mut()
+                    .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(f.reference.as_str())),
+            ) else {
+                continue;
+            };
+            let mut label =
+                t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
+            let mut pt = toml_edit::Array::new();
+            pt.push(at[0]);
+            pt.push(at[1]);
+            label.insert("at", pt.into());
+            if f.rotation != 0.0 {
+                label.insert("rotation", f.rotation.into());
+            } else {
+                label.remove("rotation");
+            }
+            t["label"] = toml_edit::value(label);
+        }
+        std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    out["labels_moved"] = json!(moved.len());
+    out["labels_failing"] = json!(failing);
     let fills = write_fills(&p, &layout_name)?;
     out["written"] = json!(true);
     out["fills"] = fills["fills"].clone();

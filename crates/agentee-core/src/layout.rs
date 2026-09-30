@@ -569,6 +569,52 @@ impl Layout {
         geom::BoardEdge::new(&self.outline, &self.board_cutouts)
     }
 
+    pub fn settle_labels(&self, board: &Board) -> (Vec<LabelFix>, Vec<String>) {
+        let mut parts = self.parts.clone();
+        let mut moved: BTreeMap<String, LabelFix> = BTreeMap::new();
+        let mut tries: HashMap<String, usize> = HashMap::new();
+        let rule_on = |id: &str| crate::drc::id_enabled(board, id);
+        let mut failing = Vec::new();
+        let mut stuck: Vec<String> = Vec::new();
+        for _ in 0..LABEL_PASSES {
+            let fixes = check_silk(
+                &parts,
+                &self.vias,
+                &self.tracks,
+                &self.graphics,
+                &self.artwork,
+                self.edge(),
+                board.rules.min_silk_text_height.to_mm(),
+                &rule_on,
+                &|r| stuck.iter().any(|s| s == r),
+                &mut crate::drc::Findings::default(),
+            );
+            failing = fixes.iter().map(|f| f.reference.clone()).collect();
+            let mut changed = 0;
+            for f in fixes {
+                let n = tries.entry(f.reference.clone()).or_default();
+                *n += 1;
+                let Some(at) = f.at.filter(|_| *n <= LABEL_TRIES) else {
+                    if !stuck.contains(&f.reference) {
+                        stuck.push(f.reference.clone());
+                    }
+                    continue;
+                };
+                let Some(p) = parts.iter_mut().find(|p| p.reference == f.reference) else {
+                    continue;
+                };
+                let size = p.label.as_ref().map_or(1.0, |l| l.size);
+                p.label = Some(Label { at, rotation: f.rotation, size, hide: false, moved: true });
+                moved.insert(f.reference.clone(), f);
+                changed += 1;
+            }
+            if changed == 0 {
+                break;
+            }
+        }
+        (moved.into_values().collect(), failing)
+    }
+
     pub fn unrouted(&self) -> usize {
         self.nets.iter().map(|n| n.unrouted).sum()
     }
@@ -703,6 +749,7 @@ pub struct Context<'a> {
     pub board: &'a Board,
     pub schematic: &'a Schematic,
     pub footprints: HashMap<&'a str, &'a Footprint>,
+    pub heat: Vec<(String, f64)>,
 }
 
 fn max_clear_of(nets: &[LayoutNet], default: f64) -> f64 {
@@ -1650,6 +1697,7 @@ impl LayoutFile {
             geom::BoardEdge::new(&outline, &board_cutouts),
             board.rules.min_silk_text_height.to_mm(),
             &rule_on,
+            &|_| false,
             &mut found,
         );
 
@@ -1717,6 +1765,7 @@ impl LayoutFile {
             )
             .with_signals(&graphics, &pairs, &match_groups, &interfaces)
             .with_test(&test)
+            .with_heat(&cx.heat)
             .with_found(&found),
             d,
         );
@@ -2088,6 +2137,7 @@ fn check_silk(
     board_edge: geom::BoardEdge,
     min_height: f64,
     rule_on: &dyn Fn(&str) -> bool,
+    stuck: &dyn Fn(&str) -> bool,
     d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
     let mut fixes = Vec::new();
@@ -2101,6 +2151,7 @@ fn check_silk(
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
     texts.extend(board_texts(graphics));
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
+    let spans = part_spans(parts);
     for a in artwork.iter().filter(|a| artwork_on && a.layer.ends_with(".SilkS")) {
         let at = format!("silk {}", a.name);
         let cu = format!("{}.Cu", a.layer.trim_end_matches(".SilkS"));
@@ -2155,13 +2206,18 @@ fn check_silk(
         if !texts_on {
             continue;
         }
-        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, board_edge);
+        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, &spans, vias, board_edge);
         if found.is_empty() {
             continue;
         }
         let hint = match (t.part != usize::MAX).then(|| parts.get(t.part)).flatten() {
             Some(p) if t.text == p.reference => {
-                let spot = free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, board_edge);
+                let spot = if stuck(&p.reference) {
+                    None
+                } else {
+                    let scene = (parts, spans.as_slice(), vias, tracks);
+                    free_spot(t, p, &texts, &boxes, i, scene, board_edge)
+                };
                 fixes.push(LabelFix {
                     reference: p.reference.clone(),
                     at: spot.map(|s| s.0),
@@ -2184,6 +2240,8 @@ fn check_silk(
 }
 
 const SILK_GAP: f64 = 0.4;
+const LABEL_PASSES: usize = 8;
+const LABEL_TRIES: usize = 3;
 pub(crate) const NECKDOWN: f64 = 0.5;
 
 #[allow(clippy::too_many_arguments)]
@@ -2194,6 +2252,7 @@ fn silk_issues(
     texts: &[SilkText],
     boxes: &[Vec<P>],
     parts: &[Placed],
+    spans: &[Bounds],
     vias: &[Via],
     board_edge: geom::BoardEdge,
 ) -> Vec<(bool, String)> {
@@ -2217,11 +2276,22 @@ fn silk_issues(
             out.push((true, format!("crowds `{}` of {}", u.text, u.owner)));
         }
     }
+    let close = |k: usize| {
+        let b = &spans[k];
+        let m = SILK_GAP + 0.1;
+        !b.is_empty()
+            && b.max[0] + m >= reach.min[0]
+            && b.min[0] - m <= reach.max[0]
+            && b.max[1] + m >= reach.min[1]
+            && b.min[1] - m <= reach.max[1]
+    };
     let side = t.layer.trim_end_matches(".SilkS");
     let cu = format!("{side}.Cu");
     let pads: Vec<String> = parts
         .iter()
-        .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
+        .enumerate()
+        .filter(|(k, _)| close(*k))
+        .flat_map(|(_, p)| p.pads.iter().map(move |q| (p, q)))
         .filter(|(_, q)| {
             (q.copper.contains(&cu) || q.drill.is_some())
                 && q.outlines.iter().any(|o| {
@@ -2252,6 +2322,9 @@ fn silk_issues(
     let flipped = flip(&t.layer, true);
     let crossed: Vec<&str> = parts
         .iter()
+        .enumerate()
+        .filter(|(k, _)| close(*k))
+        .map(|(_, p)| p)
         .filter(|p| {
             let tf = p.transform();
             let layer = if p.bottom { &flipped } else { &t.layer };
@@ -2288,6 +2361,7 @@ fn silk_issues(
         .enumerate()
         .filter(|(k, p)| {
             *k != t.part
+                && close(*k)
                 && body_box(p, side).is_some_and(|b| {
                     near(&mut b.iter().copied(), 0.0) && geom::polygon_distance(&b, bx) <= 0.0
                 })
@@ -2298,6 +2372,28 @@ fn silk_issues(
         out.push((false, format!("hides under the body of {}", hidden.join(", "))));
     }
     out
+}
+
+fn part_spans(parts: &[Placed]) -> Vec<Bounds> {
+    parts
+        .iter()
+        .map(|p| {
+            let mut b = Bounds::EMPTY;
+            p.pads.iter().flat_map(|q| q.outlines.iter().flatten()).for_each(|q| b.add(*q));
+            let tf = p.transform();
+            for g in &p.footprint.graphics {
+                let gb = g.bounds();
+                if gb.is_empty() {
+                    continue;
+                }
+                let w = g.width.to_mm() / 2.0;
+                for c in [gb.min, [gb.max[0], gb.min[1]], gb.max, [gb.min[0], gb.max[1]]] {
+                    b.add_circle(tf.apply(c), w);
+                }
+            }
+            b
+        })
+        .collect()
 }
 
 pub(crate) fn body_box(p: &Placed, side: &str) -> Option<Vec<P>> {
@@ -2331,11 +2427,10 @@ fn free_spot(
     texts: &[SilkText],
     boxes: &[Vec<P>],
     me: usize,
-    parts: &[Placed],
-    vias: &[Via],
-    tracks: &[Track],
+    scene: (&[Placed], &[Bounds], &[Via], &[Track]),
     board_edge: geom::BoardEdge,
 ) -> Option<(P, f64)> {
+    let (parts, spans, vias, tracks) = scene;
     let mut b = Bounds::EMPTY;
     for q in &part.pads {
         q.outlines.iter().flatten().for_each(|p| b.add(*p));
@@ -2392,7 +2487,7 @@ fn free_spot(
             ..t.clone()
         };
         let bx = trial.outline();
-        silk_issues(&trial, &bx, me, texts, boxes, parts, vias, board_edge).is_empty()
+        silk_issues(&trial, &bx, me, texts, boxes, parts, spans, vias, board_edge).is_empty()
             && !tracks.iter().any(|tr| {
                 tr.layer == cu
                     && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
@@ -2609,6 +2704,7 @@ fn place_watermark(
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
     texts.extend(board_texts(graphics));
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
+    let spans = part_spans(parts);
     let make = |at: P, rotation: f64, layer: &str| SilkText {
         owner: "watermark".into(),
         part: usize::MAX,
@@ -2622,7 +2718,7 @@ fn place_watermark(
     let problems = |t: &SilkText| -> Vec<String> {
         let bx = t.outline();
         let mut out: Vec<String> =
-            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, vias, board_edge)
+            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, &spans, vias, board_edge)
                 .into_iter()
                 .map(|(_, s)| s)
                 .collect();

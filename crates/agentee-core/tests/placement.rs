@@ -20,6 +20,10 @@ fn lna() -> PathBuf {
 }
 
 fn small_project(drc: &str, pcb: &str) -> Project {
+    Project::load(&small_dir(drc, pcb)).unwrap()
+}
+
+fn small_dir(drc: &str, pcb: &str) -> PathBuf {
     let dir = temp_dir("drc");
     for s in ["C", "SPF5189Z", "Conn_Coaxial"] {
         let f = format!("symbols/{s}.sym.toml");
@@ -94,7 +98,7 @@ pins = ["U1.1", "J1.1"]
         format!("name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n{pcb}"),
     )
     .unwrap();
-    Project::load(&dir).unwrap()
+    dir
 }
 
 fn placed(u1: [f64; 2], c1: [f64; 2], j1: [f64; 2], j1_rot: f64) -> String {
@@ -180,6 +184,7 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
     let input = PlaceInput {
         board,
         outline: &layout.outline,
+        cutouts: &layout.board_cutouts,
         schematic: sch,
         footprints: &footprints,
         placements: &file.footprints,
@@ -240,6 +245,8 @@ fn place_lna_is_legal_and_deterministic() {
         .collect();
     assert!(bad.is_empty(), "{bad:#?}");
     assert!(rule(&p, "placement-connector-not-at-edge").is_empty());
+    assert!(rule(&p, "mlcc-flex-zone").is_empty());
+    assert!(rule(&p, "mlcc-flex-zone-case").is_empty());
     let holes: Vec<_> =
         p.layouts[0].item.parts.iter().filter(|q| q.reference.starts_with('H')).collect();
     for h in holes {
@@ -265,4 +272,170 @@ fn locked_parts_and_pinned_edges_are_kept() {
     assert_eq!(r.edges.get("J2"), Some(&place::Edge::Right));
     let j1 = r.placements.iter().find(|p| p.reference == "J1").unwrap();
     assert!(j1.at[0] < 5.0, "{:?}", j1.at);
+}
+
+fn courtyards(p: &agentee_core::layout::Placed) -> Vec<Vec<[f64; 2]>> {
+    let t = p.transform();
+    ["F.CrtYd", "B.CrtYd"]
+        .iter()
+        .flat_map(|l| place::courtyard_loops(&p.footprint, l))
+        .map(|l| l.into_iter().map(|q| t.apply(q)).collect())
+        .collect()
+}
+
+#[test]
+fn placement_keeps_parts_out_of_board_cutouts() {
+    let dir = temp_dir("cutout");
+    copy_dir(&lna(), &dir, false);
+    let board = std::fs::read_to_string(dir.join("lna.board.toml")).unwrap();
+    std::fs::write(
+        dir.join("lna.board.toml"),
+        format!("{board}\n[[outline.cutouts]]\npoints = [[14, 7], [22, 7], [22, 15], [14, 15]]\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.after.overlaps, 0);
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let layout = &p.layouts[0].item;
+    assert_eq!(layout.board_cutouts.len(), 1);
+    let cutout = &layout.board_cutouts[0];
+    let body = p.boards[0].item.rules.min_body_to_edge.to_mm();
+    for part in &layout.parts {
+        for c in courtyards(part) {
+            let gap = agentee_core::geom::polygon_distance(&c, cutout);
+            assert!(gap >= body - 1e-6, "{} is {gap:.2} mm from the cutout", part.reference);
+        }
+    }
+}
+
+#[test]
+fn fiducials_go_to_corners_clear_of_the_edge_and_parts() {
+    let dir = temp_dir("fid");
+    copy_dir(&lna(), &dir, false);
+    let hackrf = lna().join("../hackrf-pro");
+    std::fs::copy(
+        hackrf.join("footprints/Fiducial_1mm_Mask2mm.fp.toml"),
+        dir.join("footprints/Fiducial_1mm_Mask2mm.fp.toml"),
+    )
+    .unwrap();
+    std::fs::copy(
+        hackrf.join("symbols/KiCad_Fiducial_1mm_Mask2mm.sym.toml"),
+        dir.join("symbols/KiCad_Fiducial_1mm_Mask2mm.sym.toml"),
+    )
+    .unwrap();
+    let sch = std::fs::read_to_string(dir.join("lna.sch.toml")).unwrap();
+    let (head, tail) = sch.split_at(sch.find("\n[[nets]]").unwrap_or(sch.len()));
+    let mut fids = String::new();
+    for k in 1..=3 {
+        fids += &format!(
+            "\n[[parts]]\nref = \"FID{k}\"\nsymbol = \"KiCad_Fiducial_1mm_Mask2mm\"\nvalue = \"Fiducial\"\nfootprint = \"Fiducial_1mm_Mask2mm\"\nat = [{}, 80]\n",
+            20 * k
+        );
+    }
+    std::fs::write(dir.join("lna.sch.toml"), format!("{head}{fids}{tail}")).unwrap();
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.after.overlaps, 0);
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let layout = &p.layouts[0].item;
+    let edge = layout.edge();
+    let fids: Vec<_> = layout.parts.iter().filter(|q| q.reference.starts_with("FID")).collect();
+    assert_eq!(fids.len(), 3);
+    let mut corners = Vec::new();
+    for f in &fids {
+        let [x, y] = f.at.to_mm();
+        for pad in f.pads.iter().flat_map(|q| q.outlines.iter().flatten()) {
+            assert!(
+                edge.distance(*pad) >= place::FIDUCIAL_TO_EDGE - 1e-6,
+                "{} at {x}, {y}",
+                f.reference
+            );
+        }
+        assert!(x.min(36.0 - x) < 9.0 && y.min(24.0 - y) < 9.0, "{} at {x}, {y}", f.reference);
+        corners.push((x < 18.0, y < 12.0));
+        let mine = courtyards(f);
+        for other in layout.parts.iter().filter(|q| q.reference != f.reference) {
+            for c in courtyards(other) {
+                for m in &mine {
+                    let gap = agentee_core::geom::polygon_distance(m, &c);
+                    assert!(gap > 0.0, "{} touches {}", f.reference, other.reference);
+                }
+            }
+        }
+    }
+    corners.sort();
+    corners.dedup();
+    assert_eq!(corners.len(), 3, "{corners:?}");
+}
+
+#[test]
+fn settled_labels_clear_the_silk_errors_of_a_fresh_placement() {
+    let dir = temp_dir("labels");
+    copy_dir(&lna(), &dir, false);
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let before = rule(&p, "silk-text").len();
+    let (moved, failing) = p.layouts[0].item.settle_labels(&p.boards[0].item);
+    assert!(before > 0 && !moved.is_empty());
+    assert!(failing.is_empty(), "{failing:?}");
+    let mut text = std::fs::read_to_string(dir.join("lna.pcb.toml")).unwrap();
+    for f in &moved {
+        let at = f.at.unwrap();
+        let from = format!("ref = \"{}\"\n", f.reference);
+        let to =
+            format!("{from}label = {{ at = [{}, {}], rotation = {} }}\n", at[0], at[1], f.rotation);
+        text = text.replacen(&from, &to, 1);
+    }
+    std::fs::write(dir.join("lna.pcb.toml"), text).unwrap();
+    let p = Project::load(&dir).unwrap();
+    let after = rule(&p, "silk-text");
+    assert!(after.len() < before, "{after:#?}");
+    let labels: Vec<_> = after
+        .iter()
+        .filter(|(_, m)| r.placements.iter().any(|q| m.starts_with(&format!("`{}`", q.reference))))
+        .collect();
+    assert!(labels.is_empty(), "{labels:#?}");
+}
+
+#[test]
+fn hot_parts_come_from_the_thermal_sims_of_the_layout() {
+    let pcb = placed([10.0, 10.0], [13.0, 10.0], [0.9, 20.0], 180.0);
+    let dir = small_dir("", &pcb);
+    let p = Project::load(&dir).unwrap();
+    assert!(rule(&p, "placement-hot-parts-close").is_empty());
+    std::fs::write(
+        dir.join("t-thermal.sim.toml"),
+        "name = \"t-thermal\"\nkind = \"thermal\"\nlayout = \"t\"\nambient = 25.0\n\n[[sources]]\nref = \"U1\"\npower = \"0.5W\"\n\n[[sources]]\nref = \"C1\"\npower = \"300mW\"\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    let hot = rule(&p, "placement-hot-parts-close");
+    assert_eq!(hot.len(), 1, "{hot:?}");
+    assert!(hot[0].1.contains("U1") && hot[0].1.contains("C1"), "{hot:?}");
+    std::fs::write(
+        dir.join("t-thermal.sim.toml"),
+        "name = \"t-thermal\"\nkind = \"thermal\"\nlayout = \"other\"\nambient = 25.0\n\n[[sources]]\nref = \"U1\"\npower = \"0.5W\"\n\n[[sources]]\nref = \"C1\"\npower = \"300mW\"\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    assert!(rule(&p, "placement-hot-parts-close").is_empty());
 }

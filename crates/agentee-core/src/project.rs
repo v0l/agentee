@@ -316,6 +316,7 @@ impl Project {
                 board: &board,
                 schematic: &schematic,
                 footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+                heat: crate::place::thermal_heat(sim_files.iter().map(|s| &s.1), &file.name),
             };
             let item = file.resolve(&cx, &mut d);
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });

@@ -37,7 +37,7 @@ pub static RULES: &[Rule] = &[
         id: "placement-hot-parts-close",
         category: Category::Placement,
         severity: Severity::Info,
-        summary: "two large packages (courtyard 49 mm2 or more) whose courtyards are closer than hot_distance, so their heat adds up",
+        summary: "two hot parts whose courtyards are closer than hot_distance, so their heat adds up: the [[sources]] of this layout's thermal sims at 0.25 W or more, and large packages (courtyard 49 mm2 or more) those sims do not list",
         when: "placed parts",
         applies: with_parts,
         check: hot_parts_close,
@@ -289,9 +289,12 @@ fn hot_parts_close(cx: &Ctx, r: &mut Report) {
         .parts
         .iter()
         .enumerate()
-        .filter(|(_, p)| role(p) == Role::Chip && is_large(p))
-        .map(|(i, p)| (i, rings_bounds(&courtyard(p))))
-        .filter(|(_, b)| b.size()[0] * b.size()[1] >= 49.0)
+        .map(|(i, p)| (i, p, rings_bounds(&courtyard(p))))
+        .filter(|(_, p, b)| match cx.heat.iter().find(|h| h.0 == p.reference) {
+            Some(h) => h.1 >= place::HOT_WATTS,
+            None => role(p) == Role::Chip && is_large(p) && b.size()[0] * b.size()[1] >= 49.0,
+        })
+        .map(|(i, _, b)| (i, b))
         .collect();
     for (x, (i, a)) in hot.iter().enumerate() {
         for (j, b) in &hot[x + 1..] {

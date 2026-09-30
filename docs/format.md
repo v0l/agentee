@@ -385,7 +385,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `placement-decoupling-distance` | info | parts | a capacitor between a supply and ground whose supply pad is farther than `decoupling_distance` (3 mm) from the nearest pin of an IC on that supply, 2.5 times that for bulk capacitors over 1 uF |
 | `placement-crystal-distance` | info | parts | a crystal or oscillator (reference `Y`, or a footprint named like a crystal or oscillator) whose signal pad is farther than `crystal_distance` (5 mm) from the IC pin on its net |
 | `placement-large-part-off-centre` | info | parts | a large chip (a BGA, a package of 16 or more pins over 25 mm2, else the parts with the most pins) whose courtyard centre is more than `off_centre` (0.6) of the way from the board centre to the edge |
-| `placement-hot-parts-close` | info | parts | two large packages (courtyard of 49 mm2 or more) whose courtyards are closer than `hot_distance` (5 mm) |
+| `placement-hot-parts-close` | info | parts | two hot parts whose courtyards are closer than `hot_distance` (5 mm): the `[[sources]]` of this layout's thermal sims at 0.25 W or more, and the large packages (courtyard of 49 mm2 or more) those sims do not list |
 | `placement-cluster-spread` | info | parts | a two-pin passive whose signal nets reach one IC and nothing else, farther than `cluster_spread` (10 mm) from that IC's pin |
 | `placement-connector-not-at-edge` | info | parts | a connector (edge pads, `overhang = true`, or a `J`/`P` reference that is not a Tag-Connect, U.FL or test pad) whose courtyard is farther than `connector_edge` (3 mm) from the outline |
 | `short` | error | always | copper of two different nets touches |
@@ -933,7 +933,8 @@ artwork get the same checks as reference labels: overlap, pads, silk outlines, b
 `agentee place NAME [--parts 'U*,C1?'] [--keep-placed] [--side F|B|both] [--seed N] [--dry-run]`
 (MCP `place`) places the parts of the layout's schematic inside the board outline and writes each
 one's `at`, `rotation` and `side` into its `[[footprints]]` entry (adding entries for new parts,
-dropping a moved label's `at`), then refreshes the stored fills. It is a quick start for a whole
+dropping a moved label's `at`), moves the reference labels that now fail a silk check, then
+refreshes the stored fills. It is a quick start for a whole
 board: place, look at it, then move what matters by hand and lock it. `--parts` places only the
 matching parts and leaves the rest where they are; `--keep-placed` leaves every part that already
 has a placement; `locked = true` on a `[[footprints]]` entry is never moved. `--side both` lets
@@ -943,8 +944,11 @@ so a different seed is a different start. It reports the half-perimeter wireleng
 signal nets and of every net, ratsnest crossings, courtyard overlaps and the mean and worst
 decoupling distance, for the placement it started from (when every part had one) and for its own,
 plus the clusters it built and the edge each connector went to. Tracks and vias already in the
-file stay where they are; place an unrouted board, or `route --reroute` after. Run `agentee silk
-NAME` afterwards to move the reference labels.
+file stay where they are; place an unrouted board, or `route --reroute` after. The labels are
+moved with the same search as `agentee silk` (a clear spot beside the part, up to 8 passes and 3
+tries a label), run on the placed layout in memory, so the project is loaded once more, not once
+a pass; `labels_moved` counts them and `labels_failing` names the ones left without a clear spot,
+for `agentee silk NAME --hide` or a hand move.
 
 What goes where, strongest first, and why:
 
@@ -959,7 +963,7 @@ What goes where, strongest first, and why:
   (diagonal first), fiducials in the free corners with their pads 3 mm or more from the edge,
   clear of the conveyor rails and clamps (SMEMA Fiducial Mark Standard 3.1).
 - Large chips (BGA, 16+ pin packages over 25 mm2, else the highest pin count part) are pulled to
-  the board centre, where they have room to escape their pins on every side (Xilinx UG1099,
+  the board centre and kept within `off_centre` of it, where they have room to escape their pins on every side (Xilinx UG1099,
   Recommended Design Rules and Strategies for BGA Devices) and away from the edges and
   mounting holes, where handling and depaneling bend the board and crack BGA joints
   (IPC/JEDEC-9704A strain guidelines).
@@ -981,23 +985,43 @@ What goes where, strongest first, and why:
   49 mm2) are pushed 10 mm apart so their heat does not stack (TI SNVA419, AN-2020 Thermal Design
   by Insight, not Hindsight; IPC-2221B, thermal management).
 - Ceramic capacitors of 0805 or larger stay out of `flex_zone`, and smaller ones inside it lie
-  along the edge (Murata and TDK MLCC mounting guidance on board flexure; Knowles). Every body
-  keeps `min_body_to_edge` from the outline, courtyards never overlap on a side (through-hole
-  parts block both sides), and nothing enters a `[place] keepouts` polygon (IPC-7351B courtyards:
-  the courtyard is the least area a part and its land pattern need).
+  along the edge, corner or mounting hole they are nearest (Murata and TDK MLCC mounting guidance
+  on board flexure; Knowles). The zone is measured as the `mlcc-flex-zone` checks measure it,
+  from the two pads to the outline, the board cutouts and the mounting hole drills; a last pass
+  turns or moves (up to 12 mm) any capacitor still in the wrong spot. Every body keeps
+  `min_body_to_edge` from the outline and from each `[[outline.cutouts]]` hole of the board file,
+  which is off the board, courtyards never overlap on a side (through-hole parts block both
+  sides), and nothing enters a `[place] keepouts` polygon (IPC-7351B courtyards: the courtyard is
+  the least area a part and its land pattern need).
 - Rotation follows the main nets: each part takes the quarter turn that brings its pads nearest
   the other ends of its nets, and the passives of a cluster share one axis.
 
-The method: a force-directed pass over the clusters (a clique model of the weighted nets, a pull
-to the centre for large chips, and a spreading force that grows over 300 steps) gives each
-cluster a spot; connectors are then assigned to edges (every assignment tried up to seven
-connectors, greedy past that) and slid along them; each large chip, anchor and member is then
-legalised at the nearest spot on a 0.05 mm grid where its courtyards clear everything and it
-keeps the edge rules, searching outward in rings. A simulated annealing refinement follows
-(shifts, quarter turns, swaps of same-size parts, whole cluster moves, side flips with `--side
-both`), scored by weighted HPWL, crossings of two-pin nets, and the rules above as penalties.
-Four such starts run and the cheapest is kept. The 168 parts of `examples/sdr` place in about 2 s
-(plus loading the project); results vary between seeds, so try a few and keep the best.
+The method: each cluster (an IC and its members) and each loose part becomes a block with the
+area of its parts. A spectral layout of the weighted clique graph of the blocks (its two lowest
+non-trivial eigenvectors, by rank) orders them on the board. Then 24 rounds alternate a quadratic
+wirelength solve and a spreading step: the solve pulls pins, not centres, for chips, and picks
+each chip's quarter turn every round (by wirelength, and in the later rounds by the crossings of
+its two-pin nets too); connectors are pulled onto their nearest edge and large chips to the
+centre; the spreading step bisects the free board area (inside the outline and clear of cutouts,
+keepouts and placed parts) in turn along its longer side, giving each block a region the size of
+its area, and each round pulls the blocks harder to their regions. Connectors are then assigned
+to edges (every assignment tried up to seven connectors, greedy past that) and slid along them,
+and the solve runs again with them fixed. Legalisation places each cluster as a whole: its anchor
+at each quarter turn (for chips) and five nudges of a third of the cluster's width, its members
+around it, keeping the cheapest by wirelength and crossings; each part goes to the nearest spot on
+a 0.05 mm grid where its courtyards clear everything and it keeps the edge rules. Whole clusters
+are then placed again turned or nudged, and pairs of chip clusters of a similar size swapped,
+where that lowers the cost. A simulated annealing refinement follows (shifts, quarter turns,
+swaps of same-size parts, whole cluster moves, side flips with `--side both`; 1500 moves a part,
+then 500 more at a low temperature), scored by weighted HPWL, crossings of two-pin nets (4 per
+crossing), and the rules above as penalties. Eight starts (the eight reflections of the spectral
+layout) run on parallel threads and the cheapest is kept, so the result depends on the files and
+`--seed` only, not on the number of threads.
+
+On a copy of `examples/sdr` with the tracks and vias removed (168 parts, 65 x 45 mm), top only:
+the hand placement has 1898 mm of signal HPWL and 305 crossings; seeds 1 to 4 give 1860 to 1887 mm
+and 266 to 276 crossings, in about 3.5 s of solve on 8 threads (about 25 s of CPU) plus loading
+and the label pass. With `--side both` they give about 1210 to 1270 mm and 135 to 155 crossings.
 
 ### Autorouting
 
