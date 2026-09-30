@@ -4097,1191 +4097,1429 @@ at = [127.0, 1244.6]
 
 [[nets]]
 name = "!VAA_ENABLE"
+class = "Signal"
 style = "label"
 pins = ["R60.2", "U23.G4"]
 
 [[nets]]
 name = "+1V2"
+class = "Power"
 style = "label"
 pins = ["C125.1", "C126.1", "C127.1", "C172.1", "FB7.1", "L10.2", "R47.1", "R53.1", "TP18.1"]
 
 [[nets]]
 name = "+2V5"
+class = "Power"
 style = "label"
 pins = ["C175.1", "FB8.1", "TP1.1", "U22.2"]
 
 [[nets]]
 name = "+5V"
+class = "Power"
 style = "label"
 pins = ["C147.1", "FB1.1", "R52.1", "U21.3"]
 
 [[nets]]
 name = "/ADC, DAC/AA_BYPASS_I+"
+class = "Signal"
 style = "label"
 pins = ["U34.4", "U35.7"]
 
 [[nets]]
 name = "/ADC, DAC/AA_BYPASS_I-"
+class = "Signal"
 style = "label"
 pins = ["U34.5", "U35.6"]
 
 [[nets]]
 name = "/ADC, DAC/AA_BYPASS_Q+"
+class = "Signal"
 style = "label"
 pins = ["U3.6", "U8.5"]
 
 [[nets]]
 name = "/ADC, DAC/AA_BYPASS_Q-"
+class = "Signal"
 style = "label"
 pins = ["U3.7", "U8.4"]
 
 [[nets]]
 name = "/ADC, DAC/AA_EN"
+class = "Signal"
 style = "label"
 pins = ["TP55.1", "U23.K7", "U34.10", "U36.2", "U8.10"]
 
 [[nets]]
 name = "/ADC, DAC/AFE_CLK"
+class = "Signal"
 style = "label"
 pins = ["R31.1", "TP29.1", "U16.35", "U18.6"]
 
 [[nets]]
 name = "/ADC, DAC/COM"
+class = "Signal"
 style = "label"
 pins = ["C97.1", "U18.47"]
 
 [[nets]]
 name = "/ADC, DAC/DA0"
+class = "Signal"
 style = "label"
 pins = ["RN5.8", "U18.13"]
 
 [[nets]]
 name = "/ADC, DAC/DA1"
+class = "Signal"
 style = "label"
 pins = ["RN5.7", "U18.14"]
 
 [[nets]]
 name = "/ADC, DAC/DA2"
+class = "Signal"
 style = "label"
 pins = ["RN5.6", "U18.15"]
 
 [[nets]]
 name = "/ADC, DAC/DA3"
+class = "Signal"
 style = "label"
 pins = ["RN5.5", "U18.16"]
 
 [[nets]]
 name = "/ADC, DAC/DA4"
+class = "Signal"
 style = "label"
 pins = ["RN4.8", "U18.19"]
 
 [[nets]]
 name = "/ADC, DAC/DA5"
+class = "Signal"
 style = "label"
 pins = ["RN4.7", "U18.20"]
 
 [[nets]]
 name = "/ADC, DAC/DA6"
+class = "Signal"
 style = "label"
 pins = ["RN4.6", "U18.21"]
 
 [[nets]]
 name = "/ADC, DAC/DA7"
+class = "Signal"
 style = "label"
 pins = ["RN4.5", "U18.22"]
 
 [[nets]]
 name = "/ADC, DAC/DD0"
+class = "Signal"
 style = "label"
 pins = ["RN3.7", "U18.23"]
 
 [[nets]]
 name = "/ADC, DAC/DD1"
+class = "Signal"
 style = "label"
 pins = ["RN3.6", "U18.24"]
 
 [[nets]]
 name = "/ADC, DAC/DD2"
+class = "Signal"
 style = "label"
 pins = ["RN3.5", "U18.25"]
 
 [[nets]]
 name = "/ADC, DAC/DD3"
+class = "Signal"
 style = "label"
 pins = ["RN2.7", "U18.26"]
 
 [[nets]]
 name = "/ADC, DAC/DD4"
+class = "Signal"
 style = "label"
 pins = ["RN2.6", "U18.27"]
 
 [[nets]]
 name = "/ADC, DAC/DD5"
+class = "Signal"
 style = "label"
 pins = ["RN2.5", "U18.28"]
 
 [[nets]]
 name = "/ADC, DAC/DD6"
+class = "Signal"
 style = "label"
 pins = ["RN1.8", "U18.29"]
 
 [[nets]]
 name = "/ADC, DAC/DD7"
+class = "Signal"
 style = "label"
 pins = ["RN1.7", "U18.30"]
 
 [[nets]]
 name = "/ADC, DAC/DD8"
+class = "Signal"
 style = "label"
 pins = ["RN1.6", "U18.31"]
 
 [[nets]]
 name = "/ADC, DAC/DD9"
+class = "Signal"
 style = "label"
 pins = ["RN1.5", "U18.32"]
 
 [[nets]]
 name = "/ADC, DAC/IA+"
+class = "Signal"
 style = "label"
 pins = ["U18.3", "U34.2"]
 
 [[nets]]
 name = "/ADC, DAC/IA-"
+class = "Signal"
 style = "label"
 pins = ["U18.4", "U34.1"]
 
 [[nets]]
 name = "/ADC, DAC/ID+"
+class = "Signal"
 style = "label"
 pins = ["R13.1", "U18.45"]
 
 [[nets]]
 name = "/ADC, DAC/ID-"
+class = "Signal"
 style = "label"
 pins = ["R10.1", "U18.44"]
 
 [[nets]]
 name = "/ADC, DAC/QA+"
+class = "Signal"
 style = "label"
 pins = ["U18.10", "U8.1"]
 
 [[nets]]
 name = "/ADC, DAC/QA-"
+class = "Signal"
 style = "label"
 pins = ["U18.9", "U8.2"]
 
 [[nets]]
 name = "/ADC, DAC/QD+"
+class = "Signal"
 style = "label"
 pins = ["R8.1", "U18.40"]
 
 [[nets]]
 name = "/ADC, DAC/QD-"
+class = "Signal"
 style = "label"
 pins = ["R9.1", "U18.41"]
 
 [[nets]]
 name = "/ADC, DAC/REFN"
+class = "Signal"
 style = "label"
 pins = ["C98.1", "U18.48"]
 
 [[nets]]
 name = "/ADC, DAC/REFP"
+class = "Signal"
 style = "label"
 pins = ["C100.1", "U18.1"]
 
 [[nets]]
 name = "/ADC, DAC/RXBB.I+"
+class = "Signal"
 style = "label"
 pins = ["TP62.1", "U17.38", "U35.1"]
 
 [[nets]]
 name = "/ADC, DAC/RXBB.I-"
+class = "Signal"
 style = "label"
 pins = ["TP63.1", "U17.37", "U35.2"]
 
 [[nets]]
 name = "/ADC, DAC/RXBB.Q+"
+class = "Signal"
 style = "label"
 pins = ["TP60.1", "U17.36", "U3.1"]
 
 [[nets]]
 name = "/ADC, DAC/RXBB.Q-"
+class = "Signal"
 style = "label"
 pins = ["TP61.1", "U17.35", "U3.2"]
 
 [[nets]]
 name = "/ADC, DAC/TXBB.I+"
+class = "Signal"
 style = "label"
 pins = ["R119.2", "R17.1", "R8.2", "TP57.1", "U17.45"]
 
 [[nets]]
 name = "/ADC, DAC/TXBB.I-"
+class = "Signal"
 style = "label"
 pins = ["R119.1", "R16.1", "R9.2", "TP56.1", "U17.44"]
 
 [[nets]]
 name = "/ADC, DAC/TXBB.Q+"
+class = "Signal"
 style = "label"
 pins = ["R10.2", "R118.2", "R15.1", "TP58.1", "U17.43"]
 
 [[nets]]
 name = "/ADC, DAC/TXBB.Q-"
+class = "Signal"
 style = "label"
 pins = ["R118.1", "R13.2", "R14.1", "TP59.1", "U17.42"]
 
 [[nets]]
 name = "/ADC, DAC/~{AA_EN}"
+class = "Signal"
 style = "label"
 pins = ["TP54.1", "U3.10", "U35.10", "U36.4"]
 
 [[nets]]
 name = "/ADC, DAC/~{BB_EN}"
+class = "Signal"
 style = "label"
 pins = ["R113.1", "U3.8", "U34.8", "U35.8", "U8.8"]
 
 [[nets]]
 name = "/Clock Generator/AUX_CLK1"
+class = "Signal"
 style = "label"
 pins = ["R84.1", "U33.14"]
 
 [[nets]]
 name = "/Clock Generator/AUX_CLK2"
+class = "Signal"
 style = "label"
 pins = ["P22.25", "R34.1", "U33.4"]
 
 [[nets]]
 name = "/Clock Generator/CLK0"
+class = "Signal"
 style = "label"
 pins = ["R31.2", "U19.13"]
 
 [[nets]]
 name = "/Clock Generator/CLK1"
+class = "Signal"
 style = "label"
 pins = ["R12.2", "R41.2", "U19.12"]
 
 [[nets]]
 name = "/Clock Generator/CLK2"
+class = "Signal"
 style = "label"
 pins = ["R139.2", "U19.9"]
 
 [[nets]]
 name = "/Clock Generator/CLK3"
+class = "Signal"
 style = "label"
 pins = ["U19.8", "U31.3"]
 
 [[nets]]
 name = "/Clock Generator/CLK4"
+class = "Signal"
 style = "label"
 pins = ["R32.2", "U19.19"]
 
 [[nets]]
 name = "/Clock Generator/CLK5"
+class = "Signal"
 style = "label"
 pins = ["R23.2", "U19.17"]
 
 [[nets]]
 name = "/Clock Generator/CLK6"
+class = "Signal"
 style = "label"
 pins = ["R84.2", "U19.16"]
 
 [[nets]]
 name = "/Clock Generator/CLK7"
+class = "Signal"
 style = "label"
 pins = ["R34.2", "U19.15"]
 
 [[nets]]
 name = "/Clock Generator/CLKIN"
+class = "Signal"
 style = "label"
 pins = ["R85.2", "U19.6", "U37.4"]
 
 [[nets]]
 name = "/Clock Generator/CLKIN_CTRL"
+class = "Signal"
 style = "label"
 pins = ["U23.J10", "U37.6"]
 
 [[nets]]
 name = "/Clock Generator/FPGA_CLK"
+class = "Signal"
 style = "label"
 pins = ["R12.1", "TP65.1", "U16.47"]
 
 [[nets]]
 name = "/Clock Generator/INTR"
+class = "Signal"
 style = "label"
 pins = ["R104.2", "U19.3"]
 
 [[nets]]
 name = "/Clock Generator/MCU_CLK"
+class = "Signal"
 style = "label"
 pins = ["R139.1", "TP36.1", "U23.F4"]
 
 [[nets]]
 name = "/Clock Generator/MIX_CLK"
+class = "Signal"
 style = "label"
 pins = ["R150.2", "R151.1", "R23.1", "TP34.1"]
 
 [[nets]]
 name = "/Clock Generator/OEB"
+class = "Signal"
 style = "label"
 pins = ["R105.2", "U19.7"]
 
 [[nets]]
 name = "/Clock Generator/P1"
+class = "Signal"
 style = "label"
 pins = ["D3.1", "P1.1", "R33.2"]
 
 [[nets]]
 name = "/Clock Generator/P1_CLKIN"
+class = "Signal"
 style = "label"
 pins = ["U33.15", "U37.3"]
 
 [[nets]]
 name = "/Clock Generator/P1_CTRL0"
+class = "Signal"
 style = "label"
 pins = ["U23.F14", "U33.11"]
 
 [[nets]]
 name = "/Clock Generator/P1_CTRL1"
+class = "Signal"
 style = "label"
 pins = ["U23.F12", "U33.10"]
 
 [[nets]]
 name = "/Clock Generator/P1_CTRL2"
+class = "Signal"
 style = "label"
 pins = ["U23.H13", "U33.9"]
 
 [[nets]]
 name = "/Clock Generator/P2"
+class = "Signal"
 style = "label"
 pins = ["D9.1", "P2.1", "P22.1", "R108.1"]
 
 [[nets]]
 name = "/Clock Generator/P22_CLKIN"
+class = "Signal"
 style = "label"
 pins = ["P22.2", "U33.1", "U37.1"]
 
 [[nets]]
 name = "/Clock Generator/P2_5"
+class = "Signal"
 style = "label"
 pins = ["U23.J12", "U33.5"]
 
 [[nets]]
 name = "/Clock Generator/P2_CTRL0"
+class = "Signal"
 style = "label"
 pins = ["U23.K10", "U30.6"]
 
 [[nets]]
 name = "/Clock Generator/P2_CTRL1"
+class = "Signal"
 style = "label"
 pins = ["U23.J11", "U31.6"]
 
 [[nets]]
 name = "/Clock Generator/SCT_CLK"
+class = "Signal"
 style = "label"
 pins = ["R41.1", "TP32.1", "U23.M14"]
 
 [[nets]]
 name = "/Clock Generator/TRIGGER.IN"
+class = "Signal"
 style = "label"
 pins = ["P28.16", "R127.1", "U16.48", "U30.3", "U33.13"]
 
 [[nets]]
 name = "/Clock Generator/TRIGGER.OUT"
+class = "Signal"
 style = "label"
 pins = ["P28.15", "R6.2", "U16.2", "U30.1", "U33.12"]
 
 [[nets]]
 name = "/Clock Generator/XA"
+class = "Signal"
 style = "label"
 pins = ["C155.1", "U19.1"]
 
 [[nets]]
 name = "/Clock Generator/XCVR_CLK"
+class = "Signal"
 style = "label"
 pins = ["R148.1", "R149.2", "R32.1", "TP33.1"]
 
 [[nets]]
 name = "/FPGA/CAPTURE_EN"
+class = "Signal"
 style = "label"
 pins = ["RN7.3", "U16.11"]
 
 [[nets]]
 name = "/FPGA/DIRECTION"
+class = "Signal"
 style = "label"
 pins = ["RN7.2", "U16.12"]
 
 [[nets]]
 name = "/FPGA/DISABLE"
+class = "Signal"
 style = "label"
 pins = ["RN8.1", "U16.23"]
 
 [[nets]]
 name = "/FPGA/FPGA_CONFIG.CDONE"
+class = "Signal"
 style = "label"
 pins = ["R45.1", "TP48.1", "U16.7", "U23.L3"]
 
 [[nets]]
 name = "/FPGA/FPGA_CONFIG.~{CRESET}"
+class = "Signal"
 style = "label"
 pins = ["R40.1", "TP50.1", "U16.8", "U23.M3"]
 
 [[nets]]
 name = "/FPGA/FPGA_CONFIG.~{SPI_CS}"
+class = "Signal"
 style = "label"
 pins = ["R44.1", "TP49.1", "U16.16", "U23.M1"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA0"
+class = "Signal"
 style = "label"
 pins = ["RN5.1", "U16.46"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA1"
+class = "Signal"
 style = "label"
 pins = ["RN5.2", "U16.45"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA2"
+class = "Signal"
 style = "label"
 pins = ["RN5.3", "U16.44"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA3"
+class = "Signal"
 style = "label"
 pins = ["RN5.4", "U16.43"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA4"
+class = "Signal"
 style = "label"
 pins = ["RN4.1", "U16.42"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA5"
+class = "Signal"
 style = "label"
 pins = ["RN4.2", "U16.41"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA6"
+class = "Signal"
 style = "label"
 pins = ["RN4.3", "U16.40"]
 
 [[nets]]
 name = "/FPGA/FPGA_DA7"
+class = "Signal"
 style = "label"
 pins = ["RN4.4", "U16.39"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD0"
+class = "Signal"
 style = "label"
 pins = ["RN3.2", "U16.38"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD1"
+class = "Signal"
 style = "label"
 pins = ["RN3.3", "U16.37"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD2"
+class = "Signal"
 style = "label"
 pins = ["RN3.4", "U16.36"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD3"
+class = "Signal"
 style = "label"
 pins = ["RN2.2", "U16.34"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD4"
+class = "Signal"
 style = "label"
 pins = ["RN2.3", "U16.32"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD5"
+class = "Signal"
 style = "label"
 pins = ["RN2.4", "U16.31"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD6"
+class = "Signal"
 style = "label"
 pins = ["RN1.1", "U16.28"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD7"
+class = "Signal"
 style = "label"
 pins = ["RN1.2", "U16.27"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD8"
+class = "Signal"
 style = "label"
 pins = ["RN1.3", "U16.26"]
 
 [[nets]]
 name = "/FPGA/FPGA_DD9"
+class = "Signal"
 style = "label"
 pins = ["RN1.4", "U16.25"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO0"
+class = "Signal"
 style = "label"
 pins = ["RN8.2", "U16.21"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO1"
+class = "Signal"
 style = "label"
 pins = ["RN8.4", "U16.19"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO2"
+class = "Signal"
 style = "label"
 pins = ["RN6.2", "U16.6"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO3"
+class = "Signal"
 style = "label"
 pins = ["RN7.1", "U16.13"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO4"
+class = "Signal"
 style = "label"
 pins = ["RN7.4", "U16.10"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO5"
+class = "Signal"
 style = "label"
 pins = ["RN6.4", "U16.3"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO6"
+class = "Signal"
 style = "label"
 pins = ["RN6.3", "U16.4"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO7"
+class = "Signal"
 style = "label"
 pins = ["R21.1", "U16.18"]
 
 [[nets]]
 name = "/FPGA/FPGA_SGPIO8"
+class = "Signal"
 style = "label"
 pins = ["RN8.3", "U16.20"]
 
 [[nets]]
 name = "/FPGA/Q_INVERT"
+class = "Signal"
 style = "label"
 pins = ["RN6.1", "U16.9"]
 
 [[nets]]
 name = "/FPGA/SGPIO0"
+class = "Signal"
 style = "label"
 pins = ["RN8.7", "U23.K3"]
 
 [[nets]]
 name = "/FPGA/SGPIO1"
+class = "Signal"
 style = "label"
 pins = ["RN8.5", "U23.K2"]
 
 [[nets]]
 name = "/FPGA/SGPIO10"
+class = "Signal"
 style = "label"
 pins = ["RN8.8", "U23.J4"]
 
 [[nets]]
 name = "/FPGA/SGPIO11"
+class = "Signal"
 style = "label"
 pins = ["RN7.7", "U23.L6"]
 
 [[nets]]
 name = "/FPGA/SGPIO12"
+class = "Signal"
 style = "label"
 pins = ["RN6.8", "U23.N10"]
 
 [[nets]]
 name = "/FPGA/SGPIO2"
+class = "Signal"
 style = "label"
 pins = ["RN6.7", "U23.P11"]
 
 [[nets]]
 name = "/FPGA/SGPIO3"
+class = "Signal"
 style = "label"
 pins = ["RN7.8", "U23.L5"]
 
 [[nets]]
 name = "/FPGA/SGPIO4"
+class = "Signal"
 style = "label"
 pins = ["RN7.5", "U23.M8"]
 
 [[nets]]
 name = "/FPGA/SGPIO5"
+class = "Signal"
 style = "label"
 pins = ["RN6.5", "U23.K12"]
 
 [[nets]]
 name = "/FPGA/SGPIO6"
+class = "Signal"
 style = "label"
 pins = ["RN6.6", "U23.L13"]
 
 [[nets]]
 name = "/FPGA/SGPIO7"
+class = "Signal"
 style = "label"
 pins = ["R21.2", "U23.L1"]
 
 [[nets]]
 name = "/FPGA/SGPIO8"
+class = "Signal"
 style = "label"
 pins = ["RN8.6", "U23.E4"]
 
 [[nets]]
 name = "/FPGA/SGPIO9"
+class = "Signal"
 style = "label"
 pins = ["RN7.6", "U23.P5"]
 
 [[nets]]
 name = "/FPGA/VCCPLL"
+class = "Power"
 style = "label"
 pins = ["C176.1", "FB6.1", "U16.29"]
 
 [[nets]]
 name = "/IF Transceiver/CPOUT"
+class = "Signal"
 style = "label"
 pins = ["C44.2", "R25.2", "R26.2", "U17.24"]
 
 [[nets]]
 name = "/IF Transceiver/IF"
+class = "Signal"
 style = "label"
 pins = ["FL3.3", "U7.5"]
 
 [[nets]]
 name = "/IF Transceiver/MIX_BYPASS"
+class = "Signal"
 style = "label"
 pins = ["FL2.3", "U9.5"]
 
 [[nets]]
 name = "/IF Transceiver/RXIF"
+class = "Signal"
 style = "label"
 pins = ["T3.2", "U2.7"]
 
 [[nets]]
 name = "/IF Transceiver/RXIF+"
+class = "Signal"
 style = "label"
 pins = ["C99.1", "U17.4"]
 
 [[nets]]
 name = "/IF Transceiver/RXIF-"
+class = "Signal"
 style = "label"
 pins = ["C102.1", "U17.5"]
 
 [[nets]]
 name = "/IF Transceiver/RXIF_BALUN+"
+class = "Signal"
 style = "label"
 pins = ["C102.2", "L7.1", "T3.3"]
 
 [[nets]]
 name = "/IF Transceiver/RXIF_BALUN-"
+class = "Signal"
 style = "label"
 pins = ["C99.2", "L7.2", "T3.4"]
 
 [[nets]]
 name = "/IF Transceiver/RX_EN"
+class = "Signal"
 style = "label"
 pins = ["C16.2", "C20.2", "C9.2", "Q1.2", "Q1.5", "TP35.1", "U10.1", "U11.1", "U26.3", "U26.9", "U5.6", "U6.6", "U7.6"]
 
 [[nets]]
 name = "/IF Transceiver/RX_MIX_OUT"
+class = "Signal"
 style = "label"
 pins = ["U5.1", "U7.1"]
 
 [[nets]]
 name = "/IF Transceiver/RX_XOR_MIX"
+class = "Signal"
 style = "label"
 pins = ["C18.2", "TP39.1", "U10.4", "U2.3"]
 
 [[nets]]
 name = "/IF Transceiver/TUNE"
+class = "Signal"
 style = "label"
 pins = ["C47.2", "R25.1", "U17.32"]
 
 [[nets]]
 name = "/IF Transceiver/TXIF"
+class = "Signal"
 style = "label"
 pins = ["T4.2", "U2.5"]
 
 [[nets]]
 name = "/IF Transceiver/TXIF+"
+class = "Signal"
 style = "label"
 pins = ["C104.1", "U17.9"]
 
 [[nets]]
 name = "/IF Transceiver/TXIF-"
+class = "Signal"
 style = "label"
 pins = ["C111.1", "U17.10"]
 
 [[nets]]
 name = "/IF Transceiver/TXIF_BALUN+"
+class = "Signal"
 style = "label"
 pins = ["C111.2", "L9.1", "T4.3"]
 
 [[nets]]
 name = "/IF Transceiver/TXIF_BALUN-"
+class = "Signal"
 style = "label"
 pins = ["C104.2", "L9.2", "T4.4"]
 
 [[nets]]
 name = "/IF Transceiver/TX_MIX_IN"
+class = "Signal"
 style = "label"
 pins = ["U6.3", "U7.3"]
 
 [[nets]]
 name = "/IF Transceiver/XCVR.LD"
+class = "Signal"
 style = "label"
 pins = ["U17.22", "U23.M9"]
 
 [[nets]]
 name = "/IF Transceiver/XCVR.RSSI"
+class = "Signal"
 style = "label"
 pins = ["U17.16", "U23.C4"]
 
 [[nets]]
 name = "/IF Transceiver/XCVR.RXHP"
+class = "Signal"
 style = "label"
 pins = ["U17.40", "U23.P13"]
 
 [[nets]]
 name = "/IF Transceiver/XCVR.RXTX"
+class = "Signal"
 style = "label"
 pins = ["U17.48", "U23.L12"]
 
 [[nets]]
 name = "/IF Transceiver/XCVR.~{CS}"
+class = "Signal"
 style = "label"
 pins = ["U17.15", "U23.L11"]
 
 [[nets]]
 name = "/IF Transceiver/XCVR.~{SHDN}"
+class = "Signal"
 style = "label"
 pins = ["R109.1", "U17.12", "U23.M12"]
 
 [[nets]]
 name = "/IF Transceiver/XTAL"
+class = "Signal"
 style = "label"
 pins = ["C115.2", "C116.1", "U17.28"]
 
 [[nets]]
 name = "/Image Reject Filters/LPF_OR_MIX_BYPASS"
+class = "Signal"
 style = "label"
 pins = ["C19.2", "TP40.1", "U27.4", "U9.8"]
 
 [[nets]]
 name = "/Image Reject Filters/MIX_EN"
+class = "Signal"
 style = "label"
 pins = ["C29.2", "TP37.1", "U10.2", "U26.6", "U39.1", "U9.1"]
 
 [[nets]]
 name = "/Image Reject Filters/RF"
+class = "Signal"
 style = "label"
 pins = ["U12.4", "U9.4"]
 
 [[nets]]
 name = "/Image Reject Filters/RX_MIX_IN"
+class = "Signal"
 style = "label"
 pins = ["U1.5", "U6.1"]
 
 [[nets]]
 name = "/Image Reject Filters/RX_XOR_LPF"
+class = "Signal"
 style = "label"
 pins = ["C11.2", "TP38.1", "U1.3", "U11.4"]
 
 [[nets]]
 name = "/Image Reject Filters/TX_MIX_OUT"
+class = "Signal"
 style = "label"
 pins = ["C189.1", "U1.7"]
 
 [[nets]]
 name = "/Microcontroller/1V2_EN"
+class = "Signal"
 style = "label"
 pins = ["R54.2", "U21.9", "U23.J1"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_0"
+class = "Signal"
 style = "label"
 pins = ["P20.20", "U23.B6", "U23.C5"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_2"
+class = "Signal"
 style = "label"
 pins = ["P20.16", "U23.B3", "U23.C2"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_3"
+class = "Signal"
 style = "label"
 pins = ["R38.2", "R39.1", "U23.B4"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_4"
+class = "Signal"
 style = "label"
 pins = ["R106.1", "R157.1", "U23.A5"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_5"
+class = "Signal"
 style = "label"
 pins = ["P20.18", "U23.A1", "U23.C3"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_6"
+class = "Signal"
 style = "label"
 pins = ["P20.14", "U23.A4", "U23.D6"]
 
 [[nets]]
 name = "/Microcontroller/ADC0_7"
+class = "Signal"
 style = "label"
 pins = ["R103.1", "R156.1", "U23.B5"]
 
 [[nets]]
 name = "/Microcontroller/CPLD_TCK"
+class = "Signal"
 style = "label"
 pins = ["P28.17", "U23.P14"]
 
 [[nets]]
 name = "/Microcontroller/DBGEN"
+class = "Signal"
 style = "label"
 pins = ["R64.1", "TP24.1", "U23.K4"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_10"
+class = "Signal"
 style = "label"
 pins = ["P20.7", "U23.A14"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_11"
+class = "Signal"
 style = "label"
 pins = ["P20.8", "U23.C12"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_12"
+class = "Signal"
 style = "label"
 pins = ["P20.9", "U23.C6"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_13"
+class = "Signal"
 style = "label"
 pins = ["P20.10", "U23.A7"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_14"
+class = "Signal"
 style = "label"
 pins = ["P20.11", "U23.F5"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_15"
+class = "Signal"
 style = "label"
 pins = ["P20.12", "U23.D5"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_8"
+class = "Signal"
 style = "label"
 pins = ["P20.5", "U23.B14"]
 
 [[nets]]
 name = "/Microcontroller/GPIO3_9"
+class = "Signal"
 style = "label"
 pins = ["P20.6", "U23.C13"]
 
 [[nets]]
 name = "/Microcontroller/I2C1_SCL"
+class = "Signal"
 style = "label"
 pins = ["P22.5", "U23.L9"]
 
 [[nets]]
 name = "/Microcontroller/I2C1_SDA"
+class = "Signal"
 style = "label"
 pins = ["P22.6", "U23.G11"]
 
 [[nets]]
 name = "/Microcontroller/I2S0_RX_SDA"
+class = "Signal"
 style = "label"
 pins = ["P28.19", "U23.K11"]
 
 [[nets]]
 name = "/Microcontroller/I2S0_RX_WS"
+class = "Signal"
 style = "label"
 pins = ["P22.15", "U23.D10"]
 
 [[nets]]
 name = "/Microcontroller/I2S0_TX_MCLK"
+class = "Signal"
 style = "label"
 pins = ["P22.17", "U23.P10"]
 
 [[nets]]
 name = "/Microcontroller/I2S0_TX_SCK"
+class = "Signal"
 style = "label"
 pins = ["P22.16", "U23.D12"]
 
 [[nets]]
 name = "/Microcontroller/I2S0_TX_SDA"
+class = "Signal"
 style = "label"
 pins = ["P22.13", "U23.D9"]
 
 [[nets]]
 name = "/Microcontroller/ISP"
+class = "Signal"
 style = "label"
 pins = ["R59.2", "U23.G12"]
 
 [[nets]]
 name = "/Microcontroller/LPF_EN"
+class = "Signal"
 style = "label"
 pins = ["R98.1", "TP45.1", "U23.H12"]
 
 [[nets]]
 name = "/Microcontroller/MIXER.ENBL"
+class = "Signal"
 style = "label"
 pins = ["C109.1", "U23.P1", "U4.1"]
 
 [[nets]]
 name = "/Microcontroller/MIXER.LD"
+class = "Signal"
 style = "label"
 pins = ["U23.M7", "U4.26"]
 
 [[nets]]
 name = "/Microcontroller/MIXER.SCLK"
+class = "Signal"
 style = "label"
 pins = ["C36.1", "U23.L7", "U4.31"]
 
 [[nets]]
 name = "/Microcontroller/MIXER.SDATA"
+class = "Signal"
 style = "label"
 pins = ["C37.1", "U23.M6", "U4.32"]
 
 [[nets]]
 name = "/Microcontroller/MIXER.~{EN}"
+class = "Signal"
 style = "label"
 pins = ["C35.1", "U23.N7", "U4.30"]
 
 [[nets]]
 name = "/Microcontroller/MIXER.~{RESET}"
+class = "Signal"
 style = "label"
 pins = ["C34.1", "R5.2", "U23.N8", "U4.29"]
 
 [[nets]]
 name = "/Microcontroller/MODE"
+class = "Signal"
 style = "label"
 pins = ["R51.1", "U21.2", "U23.J2"]
 
 [[nets]]
 name = "/Microcontroller/P1_1"
+class = "Signal"
 style = "label"
 pins = ["R67.1", "U23.N1"]
 
 [[nets]]
 name = "/Microcontroller/P1_2"
+class = "Signal"
 style = "label"
 pins = ["R68.1", "U23.N2"]
 
 [[nets]]
 name = "/Microcontroller/P1_7"
+class = "Signal"
 style = "label"
 pins = ["P28.22", "U23.N4"]
 
 [[nets]]
 name = "/Microcontroller/P2_13"
+class = "Signal"
 style = "label"
 pins = ["P22.22", "U23.E14"]
 
 [[nets]]
 name = "/Microcontroller/P2_8"
+class = "Signal"
 style = "label"
 pins = ["P22.23", "R30.1", "U23.H14"]
 
 [[nets]]
 name = "/Microcontroller/P2_9"
+class = "Signal"
 style = "label"
 pins = ["P22.21", "R93.1", "U23.G14"]
 
 [[nets]]
 name = "/Microcontroller/P5_3"
+class = "Signal"
 style = "label"
 pins = ["P28.21", "U23.P6"]
 
 [[nets]]
 name = "/Microcontroller/P5_6"
+class = "Signal"
 style = "label"
 pins = ["P28.13", "U23.M11"]
 
 [[nets]]
 name = "/Microcontroller/P5_7"
+class = "Signal"
 style = "label"
 pins = ["P28.14", "U23.N11"]
 
 [[nets]]
 name = "/Microcontroller/P9_1"
+class = "Signal"
 style = "label"
 pins = ["P28.20", "U23.P4"]
 
 [[nets]]
 name = "/Microcontroller/PA_3"
+class = "Signal"
 style = "label"
 pins = ["P22.12", "U23.E10"]
 
 [[nets]]
 name = "/Microcontroller/PA_4"
+class = "Signal"
 style = "label"
 pins = ["P22.9", "U23.E12"]
 
 [[nets]]
 name = "/Microcontroller/PB_0"
+class = "Signal"
 style = "label"
 pins = ["P22.14", "U23.D14"]
 
 [[nets]]
 name = "/Microcontroller/PB_1"
+class = "Signal"
 style = "label"
 pins = ["P22.7", "U23.A13"]
 
 [[nets]]
 name = "/Microcontroller/PB_3"
+class = "Signal"
 style = "label"
 pins = ["P22.8", "U23.A12"]
 
 [[nets]]
 name = "/Microcontroller/PB_5"
+class = "Signal"
 style = "label"
 pins = ["P20.2", "U23.A11"]
 
 [[nets]]
 name = "/Microcontroller/PE_0"
+class = "Signal"
 style = "label"
 pins = ["P28.18", "U23.N12"]
 
 [[nets]]
 name = "/Microcontroller/RF_AMP_EN"
+class = "Signal"
 style = "label"
 pins = ["R96.1", "TP46.1", "U23.J13"]
 
 [[nets]]
 name = "/Microcontroller/RREF"
+class = "Signal"
 style = "label"
 pins = ["R69.1", "U23.G1"]
 
 [[nets]]
 name = "/Microcontroller/RTCX1"
+class = "Signal"
 style = "label"
 pins = ["C118.1", "U23.A8", "X3.2"]
 
 [[nets]]
 name = "/Microcontroller/RTCX2"
+class = "Signal"
 style = "label"
 pins = ["C164.1", "U23.B7", "X3.1"]
 
 [[nets]]
 name = "/Microcontroller/SD_CD"
+class = "Signal"
 style = "label"
 pins = ["P28.3", "U23.L8"]
 
 [[nets]]
 name = "/Microcontroller/SD_CLK"
+class = "Signal"
 style = "label"
 pins = ["P28.11", "U23.M4"]
 
 [[nets]]
 name = "/Microcontroller/SD_CMD"
+class = "Signal"
 style = "label"
 pins = ["P28.9", "U23.P3"]
 
 [[nets]]
 name = "/Microcontroller/SD_DAT0"
+class = "Signal"
 style = "label"
 pins = ["P28.7", "U23.N5"]
 
 [[nets]]
 name = "/Microcontroller/SD_DAT1"
+class = "Signal"
 style = "label"
 pins = ["P28.6", "U23.N6"]
 
 [[nets]]
 name = "/Microcontroller/SD_DAT2"
+class = "Signal"
 style = "label"
 pins = ["P28.5", "U23.P8"]
 
 [[nets]]
 name = "/Microcontroller/SD_DAT3"
+class = "Signal"
 style = "label"
 pins = ["P28.4", "U23.P7"]
 
 [[nets]]
 name = "/Microcontroller/SD_POW"
+class = "Signal"
 style = "label"
 pins = ["P28.10", "U23.N3"]
 
 [[nets]]
 name = "/Microcontroller/SD_VOLT0"
+class = "Signal"
 style = "label"
 pins = ["P28.8", "U23.M5"]
 
 [[nets]]
 name = "/Microcontroller/SPIFI_CIPO"
+class = "Signal"
 style = "label"
 pins = ["U20.2", "U23.B12"]
 
 [[nets]]
 name = "/Microcontroller/SPIFI_COPI"
+class = "Signal"
 style = "label"
 pins = ["U20.5", "U23.C10"]
 
 [[nets]]
 name = "/Microcontroller/SPIFI_SCK"
+class = "Signal"
 style = "label"
 pins = ["U20.6", "U23.B13"]
 
 [[nets]]
 name = "/Microcontroller/SPIFI_SIO2"
+class = "Signal"
 style = "label"
 pins = ["U20.3", "U23.C11"]
 
 [[nets]]
 name = "/Microcontroller/SPIFI_SIO3"
+class = "Signal"
 style = "label"
 pins = ["U20.7", "U23.C14"]
 
 [[nets]]
 name = "/Microcontroller/SPIFI_~{CS}"
+class = "Signal"
 style = "label"
 pins = ["TP64.1", "U20.1", "U23.C9"]
 
 [[nets]]
 name = "/Microcontroller/TCK"
+class = "Signal"
 style = "label"
 pins = ["P26.4", "R66.2", "TP25.1", "U23.G5"]
 
 [[nets]]
 name = "/Microcontroller/TDI"
+class = "Signal"
 style = "label"
 pins = ["P26.8", "TP28.1", "U23.H4"]
 
 [[nets]]
 name = "/Microcontroller/TDO"
+class = "Signal"
 style = "label"
 pins = ["P26.6", "R63.1", "TP27.1", "U23.J5"]
 
 [[nets]]
 name = "/Microcontroller/TMS"
+class = "Signal"
 style = "label"
 pins = ["P26.2", "TP26.1", "U23.K5"]
 
 [[nets]]
 name = "/Microcontroller/TX_EN"
+class = "Signal"
 style = "label"
 pins = ["JP1.2", "R24.1", "TP43.1", "U39.2"]
 
 [[nets]]
 name = "/Microcontroller/U0_RXD"
+class = "Signal"
 style = "label"
 pins = ["P22.19", "U23.M13"]
 
 [[nets]]
 name = "/Microcontroller/U0_TXD"
+class = "Signal"
 style = "label"
 pins = ["P22.20", "U23.N14"]
 
 [[nets]]
 name = "/Microcontroller/USB0_VBUS"
+class = "Signal"
 style = "label"
 pins = ["R62.1", "R65.2", "U23.E1"]
 
@@ -5299,101 +5537,121 @@ pins = ["FL1.1", "U23.F2"]
 
 [[nets]]
 name = "/Microcontroller/VBAT"
+class = "Power"
 style = "label"
 pins = ["C136.1", "P20.1", "U23.B9"]
 
 [[nets]]
 name = "/Microcontroller/VBUSCTRL"
+class = "Signal"
 style = "label"
 pins = ["P20.17", "R37.2"]
 
 [[nets]]
 name = "/Microcontroller/VBUS_SAFE"
+class = "Power"
 style = "label"
 pins = ["D12.2", "Q4.3", "R62.2"]
 
 [[nets]]
 name = "/Microcontroller/WAKEUP"
+class = "Signal"
 style = "label"
 pins = ["P20.4", "R48.2", "U23.A9"]
 
 [[nets]]
 name = "/Microcontroller/XTAL1"
+class = "Signal"
 style = "label"
 pins = ["C157.1", "U23.C1", "X2.1"]
 
 [[nets]]
 name = "/Microcontroller/XTAL2"
+class = "Signal"
 style = "label"
 pins = ["C158.1", "U23.D1", "X2.3"]
 
 [[nets]]
 name = "/Microcontroller/~{3V3AUX_EN}"
+class = "Signal"
 style = "label"
 pins = ["R100.1", "U23.H11", "U28.3"]
 
 [[nets]]
 name = "/Microcontroller/~{3V3AUX_OC}"
+class = "Signal"
 style = "label"
 pins = ["U23.F11", "U28.4"]
 
 [[nets]]
 name = "/Microcontroller/~{BIAS_EN}"
+class = "Signal"
 style = "label"
 pins = ["R36.1", "U23.D13", "U24.3"]
 
 [[nets]]
 name = "/Microcontroller/~{BIAS_OC}"
+class = "Signal"
 style = "label"
 pins = ["U23.E13", "U24.4"]
 
 [[nets]]
 name = "/Microcontroller/~{LED1}"
+class = "Signal"
 style = "label"
 pins = ["D4.2", "D4.4", "U23.D3"]
 
 [[nets]]
 name = "/Microcontroller/~{LED2}"
+class = "Signal"
 style = "label"
 pins = ["D5.1", "U23.A2"]
 
 [[nets]]
 name = "/Microcontroller/~{LED3}"
+class = "Signal"
 style = "label"
 pins = ["D6.4", "U23.F13"]
 
 [[nets]]
 name = "/Microcontroller/~{LED4}"
+class = "Signal"
 style = "label"
 pins = ["D7.2", "D7.4", "U23.J3"]
 
 [[nets]]
 name = "/Microcontroller/~{MIX_EN}"
+class = "Signal"
 style = "label"
 pins = ["R94.1", "TP44.1", "U23.N13"]
 
 [[nets]]
 name = "/Microcontroller/~{RESET}"
+class = "Signal"
 style = "label"
 pins = ["P22.3", "P26.10", "R19.1", "U23.C7"]
 
 [[nets]]
 name = "/Microcontroller/~{TRST}"
+class = "Signal"
 style = "label"
 pins = ["TP5.1", "U23.L4"]
 
 [[nets]]
 name = "/Microcontroller/~{VBUS_IN_EN}"
+class = "Signal"
 style = "label"
 pins = ["R77.2", "U23.H2"]
 
 [[nets]]
 name = "/Microcontroller/~{VIN_IN_EN}"
+class = "Signal"
 style = "label"
 pins = ["R78.2", "U23.H1"]
 
 [[nets]]
 name = "/Mixer/MIX_IN"
+class = "Signal"
 style = "label"
 pins = ["C28.2", "U6.5"]
 
@@ -5411,6 +5669,7 @@ pins = ["L1.2", "T1.3", "U4.24"]
 
 [[nets]]
 name = "/Mixer/MIX_OUT"
+class = "Signal"
 style = "label"
 pins = ["C46.1", "U5.5"]
 
@@ -5428,76 +5687,91 @@ pins = ["C114.1", "C198.1", "L30.2", "R43.2", "T2.4", "U4.27"]
 
 [[nets]]
 name = "/Mixer/REF_IN"
+class = "Signal"
 style = "label"
 pins = ["C67.2", "C70.1", "U4.10"]
 
 [[nets]]
 name = "/Mixer/TX_MIX_EN"
+class = "Signal"
 style = "label"
 pins = ["TP66.1", "U38.5", "U39.4"]
 
 [[nets]]
 name = "/Power/VBUS"
+class = "Power"
 style = "label"
 pins = ["D18.1", "J1.A4", "J1.A9", "J1.B4", "J1.B9", "P20.21", "Q4.2", "Q9.1", "R58.1", "R88.1", "TP20.1"]
 
 [[nets]]
 name = "/Power/VIN"
+class = "Power"
 style = "label"
 pins = ["P20.22", "Q5.2", "Q9.4", "R70.1", "R90.1", "TP21.1"]
 
 [[nets]]
 name = "/RF Front End/AMP_BYPASS"
+class = "Signal"
 style = "label"
 pins = ["U12.2", "U14.2"]
 
 [[nets]]
 name = "/RF Front End/BIAS"
+class = "Signal"
 style = "label"
 pins = ["D10.1", "L19.1", "R126.2", "R35.1", "TP47.1"]
 
 [[nets]]
 name = "/RF Front End/RX_AMP_EN"
+class = "Signal"
 style = "label"
 pins = ["U13.4", "U40.5"]
 
 [[nets]]
 name = "/RF Front End/RX_AMP_IN"
+class = "Signal"
 style = "label"
 pins = ["C58.1", "U14.5"]
 
 [[nets]]
 name = "/RF Front End/RX_AMP_OUT"
+class = "Signal"
 style = "label"
 pins = ["C209.1", "C50.1", "U12.3"]
 
 [[nets]]
 name = "/RF Front End/TX_AMP_IN"
+class = "Signal"
 style = "label"
 pins = ["C59.1", "U12.5"]
 
 [[nets]]
 name = "/RF Front End/TX_AMP_OUT"
+class = "Signal"
 style = "label"
 pins = ["C62.2", "U14.3"]
 
 [[nets]]
 name = "/RF Front End/~{RX_AMP_EN}"
+class = "Signal"
 style = "label"
 pins = ["C57.2", "C6.2", "C65.2", "TP41.1", "U12.8", "U13.2", "U14.1", "U26.8"]
 
 [[nets]]
 name = "/RF Front End/~{TX_AMP_EN}"
+class = "Signal"
 style = "label"
 pins = ["C4.2", "C55.2", "C63.2", "TP42.1", "U12.1", "U14.8", "U25.5", "U26.11"]
 
 [[nets]]
 name = "/USB/CC1"
+class = "Signal"
 style = "label"
 pins = ["C152.1", "J1.A5", "R106.2", "U15.1", "U15.10"]
 
 [[nets]]
 name = "/USB/CC2"
+class = "Signal"
 style = "label"
 pins = ["C151.1", "J1.B5", "R103.2", "U15.2", "U15.9"]
 
@@ -5515,740 +5789,888 @@ pins = ["FL1.2", "J1.A7", "J1.B7", "U15.5", "U15.6"]
 
 [[nets]]
 name = "1V2FPGA"
+class = "Power"
 style = "label"
 pins = ["C117.1", "C178.1", "C179.1", "C184.1", "C196.1", "C205.1", "FB6.2", "FB7.2", "TP22.1", "U16.30", "U16.5"]
 
 [[nets]]
 name = "2V5FPGA"
+class = "Power"
 style = "label"
 pins = ["C177.1", "FB8.2", "U16.24"]
 
 [[nets]]
 name = "2V5RF"
+class = "Power"
 style = "label"
 pins = ["C10.1", "C17.1", "C21.1", "C23.1", "C24.1", "C26.1", "C27.1", "C30.1", "C31.1", "C60.1", "C66.1", "C7.1", "C8.1", "C95.1", "Q1.4", "TP3.1", "U1.1", "U10.5", "U11.5", "U12.7", "U14.7", "U2.1", "U26.1", "U26.14", "U26.4", "U27.5", "U32.2", "U5.4", "U6.4", "U7.4", "U9.7"]
 
 [[nets]]
 name = "3V3AUX"
+class = "Power"
 style = "label"
 pins = ["C32.1", "P20.3", "P22.11", "P28.1", "TP17.1", "U28.6"]
 
 [[nets]]
 name = "3V3CLK"
+class = "Power"
 style = "label"
 pins = ["C113.1", "C119.1", "C120.1", "C121.1", "C122.1", "C167.1", "C168.2", "C199.1", "FB2.2", "R104.1", "R105.1", "TP16.1", "U19.10", "U19.11", "U19.14", "U19.18", "U19.20", "U37.5", "X1.4"]
 
 [[nets]]
 name = "3V3FPGA"
+class = "Power"
 style = "label"
 pins = ["C123.1", "C140.1", "C148.1", "C149.1", "C150.1", "C166.1", "C173.1", "C174.1", "C181.1", "C182.1", "C183.1", "C185.1", "C186.1", "C187.1", "C197.1", "FB2.1", "FB4.2", "R44.2", "R45.2", "R76.2", "TP2.1", "U16.1", "U16.22", "U16.33", "U18.18", "U22.3"]
 
 [[nets]]
 name = "3V3LED"
+class = "Power"
 style = "label"
 pins = ["C110.1", "C124.1", "C163.1", "C170.1", "C80.1", "C81.1", "FB5.2", "Q3.2", "R11.1", "R125.2", "R49.1", "R50.2", "R72.2", "R73.2", "R74.2", "R75.2", "SW1.2", "TP15.1"]
 
 [[nets]]
 name = "CS_AD"
+class = "Signal"
 style = "label"
 pins = ["U18.36", "U23.P12"]
 
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "label"
 pins = ["C1.2", "C10.2", "C100.2", "C105.2", "C106.2", "C109.2", "C11.1", "C110.2", "C113.2", "C116.2", "C117.2", "C118.2", "C119.2", "C12.2", "C120.2", "C121.2", "C122.2", "C123.2", "C124.2", "C126.2", "C127.2", "C128.2", "C129.2", "C13.2", "C130.2", "C131.2", "C132.2", "C133.2", "C134.2", "C135.2", "C136.2", "C137.2", "C138.2", "C140.2", "C141.2", "C142.2", "C143.2", "C144.2", "C145.1", "C146.1", "C147.2", "C148.2", "C149.2", "C150.2", "C151.2", "C152.2", "C154.2", "C156.2", "C157.2", "C158.2", "C159.2", "C16.1", "C160.2", "C161.2", "C162.2", "C163.2", "C164.2", "C165.2", "C166.2", "C167.2", "C168.1", "C169.2", "C17.2", "C170.2", "C171.2", "C172.2", "C173.2", "C174.2", "C175.2", "C176.2", "C177.2", "C178.2", "C179.2", "C18.1", "C181.2", "C182.2", "C183.2", "C184.2", "C185.2", "C186.2", "C187.2", "C188.2", "C19.1", "C190.2", "C193.2", "C194.2", "C196.2", "C197.2", "C199.2", "C2.2", "C20.1", "C200.2", "C201.2", "C204.2", "C205.2", "C206.2", "C208.2", "C209.2", "C21.2", "C212.2", "C22.2", "C23.2", "C24.2", "C25.2", "C26.2", "C27.2", "C29.1", "C3.2", "C30.2", "C31.2", "C32.2", "C33.2", "C34.2", "C35.2", "C36.2", "C37.2", "C39.2", "C4.1", "C40.2", "C41.2", "C42.2", "C43.2", "C44.1", "C45.1", "C47.1", "C48.2", "C49.1", "C5.2", "C51.2", "C52.2", "C53.2", "C54.2", "C55.1", "C56.2", "C57.1", "C6.1", "C60.2", "C61.2", "C63.1", "C65.1", "C66.2", "C69.2", "C7.2", "C70.2", "C71.2", "C72.2", "C73.2", "C75.2", "C77.2", "C79.2", "C8.2", "C80.2", "C81.2", "C82.2", "C83.2", "C84.2", "C85.2", "C86.2", "C87.2", "C88.2", "C89.2", "C9.1", "C90.2", "C92.2", "C93.2", "C94.2", "C95.2", "C97.2", "C98.2", "D1.2", "D11.2", "D14.2", "D18.2", "D2.1", "D3.2", "D8.2", "D9.2", "FL2.2", "FL2.4", "FL3.2", "FL3.4", "H1.1", "H2.1", "H3.1", "H4.1", "H5.1", "H6.1", "H7.1", "H8.1", "J1.A1", "J1.A12", "J1.B1", "J1.B12", "J1.S1", "J3.1", "L16.2", "L17.2", "L18.2", "P1.2", "P2.2", "P20.13", "P20.15", "P20.19", "P22.10", "P22.18", "P22.4", "P26.3", "P26.5", "P26.9", "P28.12", "P28.2", "P3.2", "Q1.1", "Q10.1", "Q10.4", "Q7.1", "R101.2", "R107.2", "R109.2", "R113.2", "R122.2", "R126.1", "R130.1", "R131.1", "R136.1", "R14.2", "R143.1", "R146.1", "R147.2", "R148.2", "R15.2", "R151.2", "R156.2", "R157.2", "R16.2", "R17.2", "R20.2", "R22.2", "R39.2", "R4.1", "R40.2", "R42.1", "R46.1", "R51.2", "R54.1", "R55.1", "R57.2", "R65.1", "R68.2", "R69.2", "R7.2", "R79.2", "R80.2", "R82.1", "R85.1", "R89.2", "R91.2", "R92.2", "R93.2", "R95.2", "R97.2", "R99.2", "SW1.SH", "SW2.2", "SW2.SH", "T3.1", "T4.1", "TP23.1", "TP6.1", "U1.10", "U1.12", "U1.13", "U1.4", "U1.6", "U10.3", "U11.3", "U12.6", "U12.9", "U13.3", "U14.6", "U14.9", "U15.3", "U15.8", "U16.49", "U17.2", "U17.26", "U17.31", "U17.47", "U17.49", "U18.12", "U18.17", "U18.37", "U18.42", "U18.49", "U18.5", "U18.7", "U19.21", "U2.10", "U2.12", "U2.13", "U2.4", "U2.6", "U20.4", "U21.11", "U21.8", "U22.1", "U23.A3", "U23.D7", "U23.E6", "U23.E7", "U23.E9", "U23.F1", "U23.F10", "U23.G3", "U23.K6", "U23.K9", "U24.2", "U25.3", "U25.4", "U25.6", "U25.8", "U25.9", "U26.7", "U27.3", "U28.2", "U3.3", "U30.2", "U31.2", "U32.1", "U33.6", "U33.7", "U33.8", "U34.3", "U35.3", "U36.3", "U37.2", "U38.7", "U39.3", "U4.12", "U4.33", "U40.7", "U5.2", "U6.2", "U7.2", "U8.3", "U9.6", "U9.9", "X1.2", "X2.2", "X2.4"]
 
 [[nets]]
 name = "Net-(C101-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C101.1", "C91.2", "L16.1"]
 
 [[nets]]
 name = "Net-(C101-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C101.2", "C103.1", "L18.1"]
 
 [[nets]]
 name = "Net-(C103-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C103.2", "C96.1", "L17.1"]
 
 [[nets]]
 name = "Net-(C112-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C112.1", "R35.2"]
 
 [[nets]]
 name = "Net-(C112-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C112.2", "L13.1", "L19.2"]
 
 [[nets]]
 name = "Net-(C115-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C115.1", "R149.1"]
 
 [[nets]]
 name = "Net-(C13-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C13.1", "R1.1", "R2.2"]
 
 [[nets]]
 name = "Net-(C139-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C139.1", "L12.1", "L26.2", "R128.1", "R129.2"]
 
 [[nets]]
 name = "Net-(C139-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C139.2", "R131.2"]
 
 [[nets]]
 name = "Net-(C15-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C15.2", "R3.2"]
 
 [[nets]]
 name = "Net-(C188-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C188.1", "C189.2", "R155.2"]
 
 [[nets]]
 name = "Net-(C191-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C191.1", "L27.2", "L28.1", "R132.1", "R133.2"]
 
 [[nets]]
 name = "Net-(C191-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C191.2", "R130.2"]
 
 [[nets]]
 name = "Net-(C192-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C192.2", "R134.2"]
 
 [[nets]]
 name = "Net-(C195-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C195.1", "L33.2", "L34.1", "R137.1", "R138.2"]
 
 [[nets]]
 name = "Net-(C195-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C195.2", "R136.2"]
 
 [[nets]]
 name = "Net-(C198-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C198.2", "R142.2"]
 
 [[nets]]
 name = "Net-(C202-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C202.1", "R147.1"]
 
 [[nets]]
 name = "Net-(C202-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C202.2", "L2.2", "L3.1", "R124.1", "R144.1"]
 
 [[nets]]
 name = "Net-(C203-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C203.1", "L29.2", "L30.1", "R142.1", "R43.1"]
 
 [[nets]]
 name = "Net-(C203-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C203.2", "R143.2"]
 
 [[nets]]
 name = "Net-(C207-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C207.1", "L32.1", "L5.2", "R117.1", "R154.2"]
 
 [[nets]]
 name = "Net-(C207-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C207.2", "R146.2"]
 
 [[nets]]
 name = "Net-(C210-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C210.1", "L31.1", "L4.2", "R116.1", "R153.2"]
 
 [[nets]]
 name = "Net-(C210-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C210.2", "R42.2"]
 
 [[nets]]
 name = "Net-(C211-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C211.2", "R123.2"]
 
 [[nets]]
 name = "Net-(C45-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C45.2", "R26.1"]
 
 [[nets]]
 name = "Net-(C50-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C50.2", "R152.1"]
 
 [[nets]]
 name = "Net-(C54-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C54.1", "L14.2", "L8.1"]
 
 [[nets]]
 name = "Net-(C56-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C56.1", "L14.1", "L15.2"]
 
 [[nets]]
 name = "Net-(C67-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["C67.1", "R150.1"]
 
 [[nets]]
 name = "Net-(C78-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["C78.2", "R115.2"]
 
 [[nets]]
 name = "Net-(D1-A1)"
+class = "Signal"
 style = "label"
 pins = ["C64.2", "D1.1", "L13.2", "P3.1"]
 
 [[nets]]
 name = "Net-(D10-A)"
+class = "Signal"
 style = "label"
 pins = ["C171.1", "D10.2", "U24.6"]
 
 [[nets]]
 name = "Net-(D11-K)"
+class = "Power"
 style = "label"
 pins = ["C143.1", "D11.1", "D12.1", "D13.1", "FB1.2"]
 
 [[nets]]
 name = "Net-(D13-A)"
+class = "Power"
 style = "label"
 pins = ["D13.2", "Q5.3"]
 
 [[nets]]
 name = "Net-(D14-K)"
+class = "Signal"
 style = "label"
 pins = ["C64.1", "C68.2", "D14.1", "D15.2"]
 
 [[nets]]
 name = "Net-(D15-K)"
+class = "Signal"
 style = "label"
 pins = ["C69.1", "D15.1", "Q1.6", "R29.1"]
 
 [[nets]]
 name = "Net-(D16-A)"
+class = "Signal"
 style = "label"
 pins = ["D16.2", "R89.1"]
 
 [[nets]]
 name = "Net-(D16-K)"
+class = "Signal"
 style = "label"
 pins = ["D16.1", "R81.2", "R86.1", "R88.2"]
 
 [[nets]]
 name = "Net-(D17-A)"
+class = "Signal"
 style = "label"
 pins = ["D17.2", "R91.1"]
 
 [[nets]]
 name = "Net-(D17-K)"
+class = "Signal"
 style = "label"
 pins = ["D17.1", "R83.2", "R87.1", "R90.2"]
 
 [[nets]]
 name = "Net-(D2-A)"
+class = "Signal"
 style = "label"
 pins = ["D2.2", "R18.1", "TP10.1"]
 
 [[nets]]
 name = "Net-(D4-A1)"
+class = "Signal"
 style = "label"
 pins = ["D4.1", "R72.1", "TP12.1"]
 
 [[nets]]
 name = "Net-(D4-A2)"
+class = "Signal"
 style = "label"
 pins = ["D4.3", "R125.1", "TP11.1"]
 
 [[nets]]
 name = "Net-(D5-A)"
+class = "Signal"
 style = "label"
 pins = ["D5.2", "R73.1", "TP13.1"]
 
 [[nets]]
 name = "Net-(D6-A2)"
+class = "Signal"
 style = "label"
 pins = ["D6.3", "R74.1", "TP14.1"]
 
 [[nets]]
 name = "Net-(D7-A1)"
+class = "Signal"
 style = "label"
 pins = ["D7.1", "R75.1", "TP8.1"]
 
 [[nets]]
 name = "Net-(D7-A2)"
+class = "Signal"
 style = "label"
 pins = ["D7.3", "R50.1", "TP7.1"]
 
 [[nets]]
 name = "Net-(D8-A1)"
+class = "Signal"
 style = "label"
 pins = ["D8.1", "R76.1", "TP9.1"]
 
 [[nets]]
 name = "Net-(FL2-IN)"
+class = "Signal"
 style = "label"
 pins = ["FL2.1", "U2.11"]
 
 [[nets]]
 name = "Net-(FL3-IN)"
+class = "Signal"
 style = "label"
 pins = ["FL3.1", "U2.9"]
 
 [[nets]]
 name = "Net-(JP1-A)"
+class = "Signal"
 style = "label"
 pins = ["JP1.1", "U23.L14"]
 
 [[nets]]
 name = "Net-(L21-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["L21.1", "R110.2"]
 
 [[nets]]
 name = "Net-(L22-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["L22.1", "R111.2"]
 
 [[nets]]
 name = "Net-(L23-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["L23.1", "R102.2"]
 
 [[nets]]
 name = "Net-(L24-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["L24.1", "R112.2"]
 
 [[nets]]
 name = "Net-(L6-Pad1)"
+class = "Signal"
 style = "label"
 pins = ["L6.1", "R144.2"]
 
 [[nets]]
 name = "Net-(Q10A-B1)"
+class = "Signal"
 style = "label"
 pins = ["Q10.2", "R77.1", "R79.1"]
 
 [[nets]]
 name = "Net-(Q10A-C1)"
+class = "Signal"
 style = "label"
 pins = ["Q10.6", "R86.2"]
 
 [[nets]]
 name = "Net-(Q10B-B2)"
+class = "Signal"
 style = "label"
 pins = ["Q10.5", "R78.1", "R80.1"]
 
 [[nets]]
 name = "Net-(Q10B-C2)"
+class = "Signal"
 style = "label"
 pins = ["Q10.3", "R87.2"]
 
 [[nets]]
 name = "Net-(Q1B-D)"
+class = "Signal"
 style = "label"
 pins = ["Q1.3", "R29.2"]
 
 [[nets]]
 name = "Net-(Q3-D)"
+class = "Signal"
 style = "label"
 pins = ["C153.2", "FB3.1", "Q3.3"]
 
 [[nets]]
 name = "Net-(Q3-G)"
+class = "Signal"
 style = "label"
 pins = ["C153.1", "Q3.1", "R11.2", "R60.1"]
 
 [[nets]]
 name = "Net-(Q4-G)"
+class = "Signal"
 style = "label"
 pins = ["Q4.1", "Q9.6", "R22.1", "R58.2"]
 
 [[nets]]
 name = "Net-(Q5-G)"
+class = "Signal"
 style = "label"
 pins = ["Q5.1", "Q9.3", "R57.1", "R70.2"]
 
 [[nets]]
 name = "Net-(Q6-D)"
+class = "Signal"
 style = "label"
 pins = ["C180.2", "FB4.1", "Q6.3"]
 
 [[nets]]
 name = "Net-(Q6-G)"
+class = "Signal"
 style = "label"
 pins = ["C180.1", "Q6.1", "R61.2", "R71.1"]
 
 [[nets]]
 name = "Net-(Q7A-B1)"
+class = "Signal"
 style = "label"
 pins = ["Q7.2", "R53.2"]
 
 [[nets]]
 name = "Net-(Q7A-C1)"
+class = "Signal"
 style = "label"
 pins = ["Q7.6", "R71.2"]
 
 [[nets]]
 name = "Net-(Q9A-B1)"
+class = "Signal"
 style = "label"
 pins = ["Q9.2", "R81.1"]
 
 [[nets]]
 name = "Net-(Q9B-B2)"
+class = "Signal"
 style = "label"
 pins = ["Q9.5", "R83.1"]
 
 [[nets]]
 name = "Net-(R108-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R108.2", "U31.4"]
 
 [[nets]]
 name = "Net-(R19-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R19.2", "R49.2", "SW2.1", "TP30.1"]
 
 [[nets]]
 name = "Net-(R24-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R24.2", "R92.1", "U26.12", "U26.2"]
 
 [[nets]]
 name = "Net-(R30-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R30.2", "R7.1", "SW1.1", "TP31.1"]
 
 [[nets]]
 name = "Net-(R94-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R94.2", "R95.1", "U26.5", "U27.1"]
 
 [[nets]]
 name = "Net-(R96-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R96.2", "R97.1", "U26.10", "U26.13"]
 
 [[nets]]
 name = "Net-(R98-Pad2)"
+class = "Signal"
 style = "label"
 pins = ["R98.2", "R99.1", "U11.2", "U27.2"]
 
 [[nets]]
 name = "Net-(T1-S1)"
+class = "Signal"
 style = "label"
 pins = ["C28.1", "T1.1"]
 
 [[nets]]
 name = "Net-(T1-S2)"
+class = "Signal"
 style = "label"
 pins = ["C25.1", "T1.2"]
 
 [[nets]]
 name = "Net-(T2-S1)"
+class = "Signal"
 style = "label"
 pins = ["C46.2", "T2.1"]
 
 [[nets]]
 name = "Net-(T2-S2)"
+class = "Signal"
 style = "label"
 pins = ["C49.2", "T2.2"]
 
 [[nets]]
 name = "Net-(U1-RF3)"
+class = "Signal"
 style = "label"
 pins = ["C51.1", "L8.2", "U1.11"]
 
 [[nets]]
 name = "Net-(U1-RF4)"
+class = "Signal"
 style = "label"
 pins = ["C91.1", "U1.9"]
 
 [[nets]]
 name = "Net-(U14-ANT)"
+class = "Signal"
 style = "label"
 pins = ["C68.1", "U14.4"]
 
 [[nets]]
 name = "Net-(U16B-IOB_32a_SPI_SO)"
+class = "Signal"
 style = "label"
 pins = ["R145.2", "U16.14"]
 
 [[nets]]
 name = "Net-(U17-BYPASS)"
+class = "Signal"
 style = "label"
 pins = ["C106.1", "U17.33"]
 
 [[nets]]
 name = "Net-(U18-REFIN)"
+class = "Signal"
 style = "label"
 pins = ["C83.1", "R121.2", "R122.1", "U18.46"]
 
 [[nets]]
 name = "Net-(U21-ADJ2)"
+class = "Signal"
 style = "label"
 pins = ["C125.2", "R46.2", "R47.2", "U21.1"]
 
 [[nets]]
 name = "Net-(U21-DEF_1)"
+class = "Signal"
 style = "label"
 pins = ["R55.2", "R56.2", "U21.5"]
 
 [[nets]]
 name = "Net-(U21-EN1)"
+class = "Signal"
 style = "label"
 pins = ["R52.2", "U21.7"]
 
 [[nets]]
 name = "Net-(U21-SW1)"
+class = "Signal"
 style = "label"
 pins = ["L11.2", "U21.6"]
 
 [[nets]]
 name = "Net-(U21-SW2)"
+class = "Signal"
 style = "label"
 pins = ["L10.1", "U21.10"]
 
 [[nets]]
 name = "Net-(U23-P1_19)"
+class = "Signal"
 style = "label"
 pins = ["R141.1", "U23.N9"]
 
 [[nets]]
 name = "Net-(U23-P1_4)"
+class = "Signal"
 style = "label"
 pins = ["R140.1", "U23.P2"]
 
 [[nets]]
 name = "Net-(U23-P2_6)"
+class = "Signal"
 style = "label"
 pins = ["R6.1", "U23.J14"]
 
 [[nets]]
 name = "Net-(U23-P4_3)"
+class = "Signal"
 style = "label"
 pins = ["R37.1", "R82.2", "U23.B2"]
 
 [[nets]]
 name = "Net-(U23-P4_6)"
+class = "Signal"
 style = "label"
 pins = ["R107.1", "U23.B1"]
 
 [[nets]]
 name = "Net-(U23-PD_12)"
+class = "Signal"
 style = "label"
 pins = ["R127.2", "U23.P9"]
 
 [[nets]]
 name = "Net-(U24-ILIM)"
+class = "Signal"
 style = "label"
 pins = ["R20.1", "U24.5"]
 
 [[nets]]
 name = "Net-(U25-RFIN)"
+class = "Signal"
 style = "label"
 pins = ["C59.2", "U25.2"]
 
 [[nets]]
 name = "Net-(U25-RFOUT)"
+class = "Signal"
 style = "label"
 pins = ["C62.1", "L12.2", "R129.1", "U25.7"]
 
 [[nets]]
 name = "Net-(U28-ILIM)"
+class = "Signal"
 style = "label"
 pins = ["R101.1", "U28.5"]
 
 [[nets]]
 name = "Net-(U3-D1+)"
+class = "Signal"
 style = "label"
 pins = ["C107.2", "L22.2", "U3.5"]
 
 [[nets]]
 name = "Net-(U3-D1-)"
+class = "Signal"
 style = "label"
 pins = ["C107.1", "L21.2", "U3.4"]
 
 [[nets]]
 name = "Net-(U30-Pad4)"
+class = "Signal"
 style = "label"
 pins = ["U30.4", "U31.1"]
 
 [[nets]]
 name = "Net-(U33-A)"
+class = "Signal"
 style = "label"
 pins = ["R33.1", "U33.3"]
 
 [[nets]]
 name = "Net-(U34-D2+)"
+class = "Signal"
 style = "label"
 pins = ["C74.1", "R102.1", "U34.7"]
 
 [[nets]]
 name = "Net-(U34-D2-)"
+class = "Signal"
 style = "label"
 pins = ["C74.2", "R112.1", "U34.6"]
 
 [[nets]]
 name = "Net-(U35-D1+)"
+class = "Signal"
 style = "label"
 pins = ["C76.2", "L24.2", "U35.5"]
 
 [[nets]]
 name = "Net-(U35-D1-)"
+class = "Signal"
 style = "label"
 pins = ["C76.1", "L23.2", "U35.4"]
 
 [[nets]]
 name = "Net-(U38-ADJ)"
+class = "Signal"
 style = "label"
 pins = ["R135.1", "U38.6"]
 
 [[nets]]
 name = "Net-(U38-BIAS)"
+class = "Signal"
 style = "label"
 pins = ["C194.1", "L33.1", "R137.2", "U38.2"]
 
 [[nets]]
 name = "Net-(U38-RFIN)"
+class = "Signal"
 style = "label"
 pins = ["L34.2", "R123.1", "R134.1", "R138.1", "U38.3"]
 
 [[nets]]
 name = "Net-(U38-RFOUT)"
+class = "Signal"
 style = "label"
 pins = ["C192.1", "L28.2", "R133.1", "R155.1", "U38.4"]
 
 [[nets]]
 name = "Net-(U4-LFILT1)"
+class = "Signal"
 style = "label"
 pins = ["C14.2", "R3.1", "U4.6"]
 
 [[nets]]
 name = "Net-(U4-LFILT2)"
+class = "Signal"
 style = "label"
 pins = ["C14.1", "C15.1", "R2.1", "U4.7"]
 
 [[nets]]
 name = "Net-(U4-LFILT3)"
+class = "Signal"
 style = "label"
 pins = ["C12.1", "R1.2", "U4.8"]
 
 [[nets]]
 name = "Net-(U4-MODE{slash}GPO6)"
+class = "Signal"
 style = "label"
 pins = ["R120.2", "U4.9"]
 
 [[nets]]
 name = "Net-(U4-REXT)"
+class = "Signal"
 style = "label"
 pins = ["R4.2", "U4.4"]
 
 [[nets]]
 name = "Net-(U40-ADJ)"
+class = "Signal"
 style = "label"
 pins = ["R114.1", "U40.6"]
 
 [[nets]]
 name = "Net-(U40-BIAS)"
+class = "Signal"
 style = "label"
 pins = ["C53.1", "L4.1", "R116.2", "U40.2"]
 
 [[nets]]
 name = "Net-(U40-RFIN)"
+class = "Signal"
 style = "label"
 pins = ["C58.2", "L31.2", "R115.1", "R153.1", "U40.3"]
 
 [[nets]]
 name = "Net-(U40-RFOUT)"
+class = "Signal"
 style = "label"
 pins = ["C78.1", "L32.2", "R152.2", "R154.1", "U40.4"]
 
 [[nets]]
 name = "Net-(U5-RF1)"
+class = "Signal"
 style = "label"
 pins = ["C211.1", "U5.3"]
 
 [[nets]]
 name = "Net-(U8-D2+)"
+class = "Signal"
 style = "label"
 pins = ["C108.1", "R110.1", "U8.7"]
 
 [[nets]]
 name = "Net-(U8-D2-)"
+class = "Signal"
 style = "label"
 pins = ["C108.2", "R111.1", "U8.6"]
 
 [[nets]]
 name = "Net-(U9-RF1)"
+class = "Signal"
 style = "label"
 pins = ["C96.2", "U9.3"]
 
 [[nets]]
 name = "Net-(U9-RF3)"
+class = "Signal"
 style = "label"
 pins = ["C61.1", "L15.1", "U9.2"]
 
 [[nets]]
 name = "Net-(X1-OUT)"
+class = "Signal"
 style = "label"
 pins = ["C155.2", "X1.3"]
 
 [[nets]]
 name = "SCL"
+class = "Signal"
 style = "label"
 pins = ["P22.26", "R28.2", "U19.4", "U23.K13"]
 
 [[nets]]
 name = "SDA"
+class = "Signal"
 style = "label"
 pins = ["P22.24", "R27.2", "U19.5", "U23.K14"]
 
 [[nets]]
 name = "SSP1_CIPO"
+class = "Signal"
 style = "label"
 pins = ["R145.1", "TP53.1", "U23.M2"]
 
 [[nets]]
 name = "SSP1_COPI"
+class = "Signal"
 style = "label"
 pins = ["R140.2", "TP52.1", "U16.17", "U17.19", "U18.34"]
 
 [[nets]]
 name = "SSP1_SCK"
+class = "Signal"
 style = "label"
 pins = ["R141.2", "TP51.1", "U16.15", "U17.18", "U18.35"]
 
 [[nets]]
 name = "VAA"
+class = "Power"
 style = "label"
 pins = ["C1.1", "C105.1", "C141.1", "C142.1", "C154.1", "C156.1", "C159.1", "C160.1", "C161.1", "C162.1", "C190.1", "C193.1", "C2.1", "C200.1", "C201.1", "C204.1", "C206.1", "C208.1", "C212.1", "C22.1", "C3.1", "C41.1", "C42.1", "C48.1", "C5.1", "C52.1", "C71.1", "C72.1", "C73.1", "C75.1", "C77.1", "C79.1", "C82.1", "C84.1", "C85.1", "C86.1", "C87.1", "C88.1", "C89.1", "C90.1", "C92.1", "C93.1", "C94.1", "FB3.2", "L2.1", "L26.1", "L27.1", "L29.1", "L5.1", "R114.2", "R117.2", "R120.1", "R121.1", "R128.2", "R132.2", "R135.2", "R18.2", "R36.2", "R5.1", "TP4.1", "U13.1", "U13.5", "U17.1", "U17.13", "U17.17", "U17.20", "U17.25", "U17.27", "U17.30", "U17.39", "U17.41", "U17.46", "U17.7", "U18.11", "U18.2", "U18.33", "U18.39", "U18.43", "U18.8", "U24.1", "U25.1", "U3.9", "U32.3", "U34.9", "U35.9", "U36.1", "U36.5", "U38.1", "U39.5", "U4.19", "U4.22", "U4.5", "U40.1", "U8.9"]
 
 [[nets]]
 name = "VCC"
+class = "Power"
 style = "label"
 pins = ["C128.1", "C129.1", "C130.1", "C131.1", "C132.1", "C133.1", "C134.1", "C135.1", "C137.1", "C138.1", "C144.1", "C145.2", "C146.2", "C165.1", "C169.1", "C33.1", "C39.1", "C40.1", "C43.1", "FB5.1", "L11.1", "P26.1", "Q6.2", "R100.2", "R27.1", "R28.1", "R38.1", "R48.1", "R56.1", "R59.1", "R61.1", "R63.2", "R64.2", "R66.1", "R67.2", "TP19.1", "U20.8", "U21.4", "U23.A6", "U23.D8", "U23.E3", "U23.E8", "U23.F3", "U23.G10", "U23.H10", "U23.H5", "U23.K8", "U28.1", "U30.5", "U31.5", "U33.16"]

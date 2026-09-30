@@ -78,6 +78,7 @@ shape = "rect"
 at = [0.0, 0.0]
 size = [1.0, 1.5]
 layers = ["F.Cu", "F.Mask"]
+zone_connect = "solid"
 
 [[graphics]]
 kind = "line"

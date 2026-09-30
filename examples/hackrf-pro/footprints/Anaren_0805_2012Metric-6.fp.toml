@@ -4,6 +4,7 @@ description = "https://cdn.anaren.com/product-documents/Xinger/DirectionalCouple
 tags = ["coupler", "rf"]
 mount = "smd"
 model = "${KICAD9_3DMODEL_DIR}/RF_Converter.3dshapes/Balun_Johanson_0896BM15A0001.step"
+clearance = 0.04
 
 [[pads]]
 number = "1"

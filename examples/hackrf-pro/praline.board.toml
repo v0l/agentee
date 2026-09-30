@@ -10,6 +10,14 @@ finish = "ENIG"
 mask_color = "green"
 
 [[stackup.layers]]
+kind = "silk"
+name = "F.SilkS"
+
+[[stackup.layers]]
+kind = "paste"
+name = "F.Paste"
+
+[[stackup.layers]]
 kind = "mask"
 name = "F.Mask"
 thickness = 0.0152
@@ -90,6 +98,14 @@ material = "LPI"
 er = 3.8
 loss_tangent = 0.0
 
+[[stackup.layers]]
+kind = "paste"
+name = "B.Paste"
+
+[[stackup.layers]]
+kind = "silk"
+name = "B.SilkS"
+
 [rules]
 min_track_width = 0.127
 min_clearance = 0.127
@@ -125,6 +141,7 @@ diff_gap = 0.175
 
 [[netclasses]]
 name = "diff100"
+description = "KiCad diff100, 0.3 mm; narrowed to the narrowest routed track 0.25 mm"
 track_width = 0.25
 clearance = 0.127
 via = "v0.3-0.45"
@@ -132,9 +149,34 @@ diff_gap = 0.4
 
 [[netclasses]]
 name = "diff90"
+description = "KiCad diff90, 0.25 mm; narrowed to the narrowest routed track 0.127 mm"
 track_width = 0.127
 clearance = 0.127
 via = "v0.3-0.45"
 diff_gap = 0.127
+
+[[netclasses]]
+name = "Ground"
+description = "Ground nets by name; the rules of the KiCad Default class"
+track_width = 0.127
+clearance = 0.127
+via = "v0.3-0.45"
+diff_gap = 0.175
+
+[[netclasses]]
+name = "Power"
+description = "Supply rails by name and nets that own a pour; the rules of the KiCad Default class"
+track_width = 0.127
+clearance = 0.127
+via = "v0.3-0.45"
+diff_gap = 0.175
+
+[[netclasses]]
+name = "Signal"
+description = "Nets KiCad leaves in Default that are not ground or supply; the rules of the KiCad Default class"
+track_width = 0.127
+clearance = 0.127
+via = "v0.3-0.45"
+diff_gap = 0.175
 
 [drc]

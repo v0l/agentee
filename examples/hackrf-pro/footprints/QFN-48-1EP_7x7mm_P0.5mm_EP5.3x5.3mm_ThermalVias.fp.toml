@@ -185,6 +185,7 @@ at = [-2.4, -2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -194,6 +195,7 @@ at = [-2.4, -1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -203,6 +205,7 @@ at = [-2.4, 0.0]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -212,6 +215,7 @@ at = [-2.4, 1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -221,6 +225,7 @@ at = [-2.4, 2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -230,6 +235,7 @@ at = [-1.2, -2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -239,6 +245,7 @@ at = [-1.2, -1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -248,6 +255,7 @@ at = [-1.2, 0.0]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -257,6 +265,7 @@ at = [-1.2, 1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -266,6 +275,7 @@ at = [-1.2, 2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -275,6 +285,7 @@ at = [0.0, -2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -284,6 +295,7 @@ at = [0.0, -1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -293,6 +305,7 @@ at = [0.0, 0.0]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -301,6 +314,7 @@ shape = "rect"
 at = [0.0, 0.0]
 size = [5.3, 5.3]
 layers = ["F.Cu", "F.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -309,6 +323,7 @@ shape = "rect"
 at = [0.0, 0.0]
 size = [5.3, 5.3]
 layers = ["B.Cu"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -318,6 +333,7 @@ at = [0.0, 1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -327,6 +343,7 @@ at = [0.0, 2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -336,6 +353,7 @@ at = [1.2, -2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -345,6 +363,7 @@ at = [1.2, -1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -354,6 +373,7 @@ at = [1.2, 0.0]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -363,6 +383,7 @@ at = [1.2, 1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -372,6 +393,7 @@ at = [1.2, 2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -381,6 +403,7 @@ at = [2.4, -2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -390,6 +413,7 @@ at = [2.4, -1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -399,6 +423,7 @@ at = [2.4, 0.0]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -408,6 +433,7 @@ at = [2.4, 1.2]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "49"
@@ -417,6 +443,7 @@ at = [2.4, 2.4]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[graphics]]
 kind = "line"

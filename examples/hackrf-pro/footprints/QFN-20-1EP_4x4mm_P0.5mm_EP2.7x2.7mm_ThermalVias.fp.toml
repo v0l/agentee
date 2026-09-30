@@ -89,6 +89,7 @@ at = [-1.1, -1.1]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "21"
@@ -98,6 +99,7 @@ at = [-1.1, 1.1]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "21"
@@ -106,6 +108,7 @@ shape = "rect"
 at = [0.0, 0.0]
 size = [2.7, 2.7]
 layers = ["F.Cu", "F.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "21"
@@ -114,6 +117,7 @@ shape = "rect"
 at = [0.0, 0.0]
 size = [2.7, 2.7]
 layers = ["B.Cu"]
+zone_connect = "solid"
 
 [[pads]]
 number = "21"
@@ -123,6 +127,7 @@ at = [1.1, -1.1]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "21"
@@ -132,6 +137,7 @@ at = [1.1, 1.1]
 size = [0.5, 0.5]
 drill = 0.3
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[graphics]]
 kind = "line"

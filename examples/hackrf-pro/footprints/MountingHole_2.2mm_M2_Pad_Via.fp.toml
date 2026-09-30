@@ -11,6 +11,7 @@ at = [-1.65, 0.0]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -20,6 +21,7 @@ at = [-1.166726, -1.166726]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -29,6 +31,7 @@ at = [-1.166726, 1.166726]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -38,6 +41,7 @@ at = [0.0, -1.65]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -47,6 +51,7 @@ at = [0.0, 0.0]
 size = [4.4, 4.4]
 drill = 2.2
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -56,6 +61,7 @@ at = [0.0, 1.65]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -65,6 +71,7 @@ at = [1.166726, -1.166726]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -74,6 +81,7 @@ at = [1.166726, 1.166726]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[pads]]
 number = "1"
@@ -83,6 +91,7 @@ at = [1.65, 0.0]
 size = [0.7, 0.7]
 drill = 0.4
 layers = ["*.Cu", "*.Mask"]
+zone_connect = "solid"
 
 [[graphics]]
 kind = "circle"
