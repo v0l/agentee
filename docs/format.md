@@ -234,6 +234,7 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `silk-hidden` | warning | always | silk text only hidden under another part's body |
 | `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
 | `silk-artwork` | error | always | silk artwork on pads, over silk text or off the board |
+| `silk-width` | warning | always | board silk lines (the layout's `[[graphics]]`, not text) thinner than `min_silk_width`, counted with the thinnest; footprint silk is checked with the footprint |
 | `pair-skew` | error | pairs | a pair skewed over its `max_skew` or the class `max_skew`, with the net to lengthen |
 | `pair-skew-info` | info | pairs | the skew of each pair within its limit |
 | `pair-gap` | error | pairs | a pair run side by side at another gap than the class `diff_gap`, beyond `max_uncoupled` |

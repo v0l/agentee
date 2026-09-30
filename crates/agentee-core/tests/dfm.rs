@@ -544,3 +544,15 @@ fn pads_that_share_a_number_are_starved_once() {
     let w = hits(&p, "starved-thermal");
     assert!(w.len() == 1 && w[0].1.contains("by 1 spoke"), "{w:?}");
 }
+
+#[test]
+fn thin_board_silk_lines_are_flagged() {
+    let pcb = "\n[[graphics]]\nkind = \"line\"\nlayer = \"F.SilkS\"\nstart = [10, 12]\nend = [20, 12]\n\
+               width = \"0.1mm\"\n\n[[graphics]]\nkind = \"line\"\nlayer = \"F.SilkS\"\n\
+               start = [10, 14]\nend = [20, 14]\nwidth = \"0.2mm\"\n";
+    let w = hits(&load(&Fixture { pcb, ..Default::default() }), "silk-width");
+    assert!(w.len() == 1 && w[0].1.contains("1 board silk lines under"), "{w:?}");
+    assert!(w[0].1.contains("thinnest 0.1mm, at [10.000, 12.000] on F.SilkS"), "{w:?}");
+    let wide = pcb.replace("0.1mm", "0.15mm");
+    assert!(hits(&load(&Fixture { pcb: &wide, ..Default::default() }), "silk-width").is_empty());
+}

@@ -1,5 +1,6 @@
-use super::{Category, Rule, every, recorded};
+use super::{Category, Ctx, Report, Rule, every, recorded};
 use crate::diag::Severity;
+use crate::graphic::{Fill, Shape};
 
 pub static RULES: &[Rule] = &[
     Rule {
@@ -38,4 +39,36 @@ pub static RULES: &[Rule] = &[
         applies: every,
         check: recorded,
     },
+    Rule {
+        id: "silk-width",
+        category: Category::Silk,
+        severity: Severity::Warning,
+        summary: "board silk lines of the layout thinner than min_silk_width (footprint silk is checked with the footprint)",
+        when: "every board",
+        applies: every,
+        check: silk_width,
+    },
 ];
+
+fn silk_width(cx: &Ctx, r: &mut Report) {
+    let min = cx.board.rules.min_silk_width;
+    let thin: Vec<_> = cx
+        .graphics
+        .iter()
+        .filter(|g| g.layer.ends_with(".SilkS") && !matches!(g.shape, Shape::Text { .. }))
+        .filter(|g| g.width < min && !(g.fill != Fill::None && g.width.to_mm() <= 0.0))
+        .collect();
+    let Some(worst) = thin.iter().min_by_key(|g| g.width) else { return };
+    let at = crate::footprint::graphic_path(worst)
+        .first()
+        .map(|p| format!(", at [{:.3}, {:.3}] on {}", p[0], p[1], worst.layer))
+        .unwrap_or_default();
+    r.emit(
+        "graphics",
+        format!(
+            "{} board silk lines under the fab minimum width {min}, thinnest {}{at}",
+            thin.len(),
+            worst.width
+        ),
+    );
+}
