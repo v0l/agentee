@@ -192,6 +192,7 @@ fn label_room(
     reference: &str,
     placed: Option<&PlacementFile>,
     centre: P,
+    inward: bool,
 ) -> Option<LabelBox> {
     let file = placed.and_then(|f| f.label.as_ref());
     if file.is_some_and(|l| l.hide) {
@@ -249,6 +250,7 @@ fn label_room(
     let d = [c0[0] - centre[0], c0[1] - centre[1]];
     let l = d[0].hypot(d[1]);
     let dir = if l < 1e-6 { [0.0, -1.0] } else { [d[0] / l, d[1] / l] };
+    let dir = if inward { [-dir[0], -dir[1]] } else { dir };
     let at = (0..=LABEL_REACH)
         .map(|k| [c0[0] + dir[0] * k as f64 * GRID, c0[1] + dir[1] * k as f64 * GRID])
         .find(|c| clear(*c))?;
@@ -708,6 +710,7 @@ struct Part<'a> {
     local: Bounds,
     extent: Bounds,
     label: Option<LabelBox>,
+    label_inward: Option<LabelBox>,
     over_silk: bool,
     area: f64,
     pins: usize,
@@ -1848,6 +1851,30 @@ fn edge_geom(p: &Part, part_edge: f64, body_edge: f64) -> EdgeGeom {
     EdgeGeom { u, e_loc: snap_up(e_loc) }
 }
 
+fn edge_level(o: &[P], n: P, tg: P, lo: f64, hi: f64) -> Option<f64> {
+    let mut samples = vec![lo, hi];
+    samples.extend(o.iter().map(|q| dot(*q, tg)).filter(|t| *t > lo && *t < hi));
+    let mut level = f64::MAX;
+    for t in samples {
+        let mut out = f64::MIN;
+        for k in 0..o.len() {
+            let (a, b) = (o[k], o[(k + 1) % o.len()]);
+            let (ta, tb) = (dot(a, tg), dot(b, tg));
+            if (ta - t).abs() < EPS && (tb - t).abs() < EPS {
+                out = out.max(dot(a, n)).max(dot(b, n));
+            } else if (ta - t) * (tb - t) <= 0.0 {
+                let f = (t - ta) / (tb - ta);
+                out = out.max(dot([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], n));
+            }
+        }
+        if out == f64::MIN {
+            return None;
+        }
+        level = level.min(out);
+    }
+    Some(level)
+}
+
 fn rotation_for(u: P, n: P, bottom: bool) -> f64 {
     for r in [0.0, 90.0, 180.0, 270.0] {
         let t = Transform { at: [0.0, 0.0], rotation: r, mirror: bottom };
@@ -1982,12 +2009,14 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         let mut extent = local;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| extent.add(*q));
         let role = role_of(r, &fp_name, fp);
-        let label = if matches!(role, Role::Connector | Role::Hole | Role::Fiducial) {
-            None
+        let placed = input.placements.iter().find(|f| f.reference == *r);
+        let label = label_room(fp, r, placed, local.center(), false);
+        let label_inward = if matches!(role, Role::Connector | Role::Hole | Role::Fiducial) {
+            label_room(fp, r, placed, local.center(), true)
         } else {
-            label_room(fp, r, input.placements.iter().find(|f| f.reference == *r), local.center())
+            None
         };
-        label.iter().flat_map(|l| l.poly.iter()).for_each(|q| extent.add(*q));
+        label.iter().chain(&label_inward).flat_map(|l| l.poly.iter()).for_each(|q| extent.add(*q));
         let through = fp.pads.iter().any(|q| q.kind == PadKind::Tht || q.kind == PadKind::Npth);
         let mut pad_box = Bounds::EMPTY;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| pad_box.add(*q));
@@ -2027,6 +2056,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             local,
             extent,
             label,
+            label_inward,
             over_silk: false,
             area,
             pins,
@@ -2162,6 +2192,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
     let soft_labels = !label_room && label_area <= room - used;
     for p in parts.iter_mut().filter(|p| !p.active || !(label_room || soft_labels)) {
         p.label = None;
+        p.label_inward = None;
     }
     let labels = LabelRoom {
         reserved: label_room,
@@ -2234,6 +2265,8 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         let edges = cand.place_connectors(&rough, &mut failed);
         let pos = cand.global(start, Some(&rough));
         cand.legalise(&pos, &mut failed);
+        let mut seen = std::collections::HashSet::new();
+        failed.retain(|r| seen.insert(r.clone()));
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
         (score, cand, failed, edges)
@@ -2603,6 +2636,7 @@ impl<'a> Placer<'a> {
                 let lc = self.parts[i].local.center();
                 let target = [c[0] + d[0] * inset - lc[0], c[1] + d[1] * inset - lc[1]];
                 let fid_bottom = bottom && role == Role::Fiducial;
+                let labels = self.take_labels(i);
                 let found =
                     self.nearest(i, target, 0.0, fid_bottom, 40.0, &|_| 0.0).or_else(|| {
                         self.parts[i].over_silk = true;
@@ -2611,6 +2645,7 @@ impl<'a> Placer<'a> {
                 match found {
                     Some(st) => {
                         self.parts[i].st = st;
+                        self.label_where_it_fits(i, st, labels);
                         self.insert(i);
                         if role == Role::Hole {
                             let hole = self.hole_of(i);
@@ -3166,23 +3201,34 @@ impl<'a> Placer<'a> {
                 coords[y] = coords[y].min(ceil);
             }
             let level = self.b.outline.iter().map(|q| dot(*q, e.normal())).fold(f64::MIN, f64::max);
+            let outline = self.b.outline.clone();
             for (y, &x) in on.iter().enumerate() {
                 let i = list[x];
                 let rot = rotation_for(geo[x].u, e.normal(), bottom);
-                let depth = level - geo[x].e_loc;
                 let nrm = e.normal();
+                let (s0, s1) = spans[y];
                 let base = |t: f64| -> P {
                     let t = snap(t);
+                    let depth = level - geo[x].e_loc;
                     [tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth]
                 };
+                let flush = |t: f64| -> Option<P> {
+                    let t = snap(t);
+                    let depth = edge_level(&outline, nrm, tg, t + s0, t + s1)? - geo[x].e_loc;
+                    Some([tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth])
+                };
+                let labels = self.take_labels(i);
                 let mut done = false;
                 let mut steps = 0i64;
                 while !done && (steps as f64) * GRID < (hi - lo) {
                     for sgn in [1.0, -1.0] {
-                        let at = base(coords[y] + sgn * steps as f64 * GRID);
+                        let Some(at) = flush(coords[y] + sgn * steps as f64 * GRID) else {
+                            continue;
+                        };
                         let st = St { at, rot, bottom };
                         if self.legal(i, st, &[]) {
                             self.parts[i].st = st;
+                            self.label_where_it_fits(i, st, labels.clone());
                             self.insert(i);
                             done = true;
                             break;
@@ -3203,15 +3249,42 @@ impl<'a> Placer<'a> {
                     match found {
                         Some(st) => {
                             self.parts[i].st = st;
+                            self.label_where_it_fits(i, st, labels);
                             self.insert(i);
                         }
-                        None => failed.push(self.parts[i].reference.clone()),
+                        None => {
+                            self.parts[i].label = labels.0;
+                            failed.push(self.parts[i].reference.clone());
+                        }
                     }
                 }
                 out.insert(self.parts[i].reference.clone(), e);
             }
         }
         out
+    }
+
+    fn take_labels(&mut self, i: usize) -> (Option<LabelBox>, Option<LabelBox>) {
+        (self.parts[i].label.take(), self.parts[i].label_inward.take())
+    }
+
+    fn label_where_it_fits(
+        &mut self,
+        i: usize,
+        st: St,
+        labels: (Option<LabelBox>, Option<LabelBox>),
+    ) {
+        if self.soft_labels {
+            self.parts[i].label = labels.0;
+            return;
+        }
+        for l in [labels.0, labels.1].into_iter().flatten() {
+            self.parts[i].label = Some(l);
+            if self.legal(i, st, &[]) {
+                return;
+            }
+        }
+        self.parts[i].label = None;
     }
 
     fn other_ends(&self, i: usize, n: usize, est: &[P]) -> Option<P> {
