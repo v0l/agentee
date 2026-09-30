@@ -925,6 +925,9 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
             continue;
         }
         let mut c = default_rules.clone().unwrap_or_else(|| json!({}));
+        if let Some(o) = c.as_object_mut() {
+            o.remove("diff_gap");
+        }
         c["name"] = json!(name);
         c["description"] = json!(format!(
             "{}; the rules of the KiCad Default class",
@@ -1322,8 +1325,11 @@ mod tests {
             let c = nc(n);
             assert_eq!(c.track_width, Some(agentee_core::units::Length::mm(0.3)), "{n}");
             assert_eq!(c.clearance, Some(agentee_core::units::Length::mm(0.15)), "{n}");
-            assert_eq!(c.diff_gap, Some(agentee_core::units::Length::mm(0.2)), "{n}");
             assert_eq!(c.via, nc("usb").via, "{n}");
+        }
+        assert_eq!(nc("Default").diff_gap, Some(agentee_core::units::Length::mm(0.2)));
+        for n in ["Ground", "Power", "Signal"] {
+            assert_eq!(nc(n).diff_gap, None, "{n}");
         }
         let signal = nc("Signal");
         assert_eq!(signal.track_width, Some(agentee_core::units::Length::mm(0.25)));
