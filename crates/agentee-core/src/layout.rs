@@ -541,6 +541,7 @@ struct Item {
     layers: Vec<String>,
     shape: Shape,
     bounds: Bounds,
+    pour_gap: f64,
 }
 
 pub struct Context<'a> {
@@ -882,6 +883,10 @@ impl LayoutFile {
             }
         }
 
+        let hole_to_copper = board.rules.min_via_hole_to_copper.to_mm();
+        let smd_gap = board.rules.min_hole_to_smd_pad.to_mm();
+        let npth_gap = board.rules.min_npth_to_copper.to_mm();
+        let via_pour_gap = |v: &Via| (v.drill / 2.0 + hole_to_copper - v.diameter / 2.0).max(0.0);
         let mut items: Vec<Item> = Vec::new();
         for (pi, p) in parts.iter().enumerate() {
             for (k, pad) in p.pads.iter().enumerate() {
@@ -893,6 +898,7 @@ impl LayoutFile {
                         layers: pad.copper.clone(),
                         bounds: shape.bounds(),
                         shape,
+                        pour_gap: 0.0,
                     });
                 }
                 if pad.kind == PadKind::Npth
@@ -905,6 +911,7 @@ impl LayoutFile {
                         layers: copper.clone(),
                         bounds: shape.bounds(),
                         shape,
+                        pour_gap: npth_gap,
                     });
                 }
             }
@@ -920,6 +927,7 @@ impl LayoutFile {
                     layers: vec![t.layer.clone()],
                     bounds: shape.bounds(),
                     shape,
+                    pour_gap: 0.0,
                 });
             }
         }
@@ -931,6 +939,7 @@ impl LayoutFile {
                 layers: v.layers.clone(),
                 bounds: shape.bounds(),
                 shape,
+                pour_gap: via_pour_gap(v),
             });
         }
 
@@ -1052,7 +1061,17 @@ impl LayoutFile {
                     continue;
                 }
                 let probe = Shape::Circle(c, r);
-                let reach = r + max_clear_of(&nets, default_clearance);
+                let reach = r + max_clear_of(&nets, default_clearance).max(smd_gap);
+                let near_smd = items.iter().any(|it| {
+                    let Owner::Pad(pi, k) = it.owner else { return false };
+                    parts[pi].pads[k].kind == PadKind::Smd
+                        && it.layers.iter().any(|l| layers.contains(l))
+                        && it.shape.point_distance(c) < (drill / 2.0 + smd_gap).max(r) - 1e-9
+                });
+                if near_smd {
+                    continue;
+                }
+                let self_gap = (drill / 2.0 + hole_to_copper - r).max(0.0);
                 let blocked = items.iter().any(|it| {
                     it.net != Some(net)
                         && it.layers.iter().any(|l| layers.contains(l))
@@ -1063,6 +1082,8 @@ impl LayoutFile {
                         && it.shape.distance(&probe)
                             < own
                                 .max(it.net.map(|n| nets[n].clearance).unwrap_or(default_clearance))
+                                .max(self_gap)
+                                .max(it.pour_gap)
                                 - 1e-9
                 });
                 if blocked {
@@ -1075,6 +1096,7 @@ impl LayoutFile {
                     layers: layers.clone(),
                     bounds: probe.bounds(),
                     shape: probe,
+                    pour_gap: via_pour_gap(vias.last().unwrap()),
                 });
                 drills.push((c, drill / 2.0));
                 placed += 1;
@@ -2112,7 +2134,7 @@ fn fill_zone(
         if it.net == Some(net) && it.owner != Owner::Hole {
             continue;
         }
-        let gap = clearance.max(clearance_of(it.net));
+        let gap = clearance.max(clearance_of(it.net)).max(it.pour_gap);
         let shape = &it.shape;
         clear_near(&mut mask, it.bounds, gap, &|p| shape.point_distance(p) < gap + margin);
     }
@@ -2337,6 +2359,7 @@ fn arc_steps(r: f64) -> usize {
 
 fn capsule(a: P, b: P, r: f64) -> Vec<P> {
     let n = arc_steps(r);
+    let r = r / (std::f64::consts::PI / (n / 2 * 2) as f64).cos();
     let ang = (b[1] - a[1]).atan2(b[0] - a[0]);
     let mut out = Vec::with_capacity(n + 2);
     for (c, start) in
@@ -2355,6 +2378,7 @@ fn inflated(shape: &Shape, gap: f64) -> Vec<Vec<P>> {
         Shape::Circle(c, r) => {
             let r = r + gap;
             let n = arc_steps(r);
+            let r = r / (std::f64::consts::PI / n as f64).cos();
             vec![
                 (0..n)
                     .map(|k| {
@@ -2419,7 +2443,7 @@ fn vector_fill(
         .iter()
         .filter(|it| it.layers.iter().any(|l| l == &raster.layer))
         .filter(|it| it.net != Some(raster.net) || it.owner == Owner::Hole)
-        .map(|it| (&it.shape, clearance.max(clearance_of(it.net))))
+        .map(|it| (&it.shape, clearance.max(clearance_of(it.net)).max(it.pour_gap)))
         .collect();
     for (shape, gap) in &keepouts {
         clip.extend(inflated(shape, *gap));
@@ -2901,7 +2925,7 @@ fn check_zones(
         for it in items.iter().filter(|it| {
             it.net != Some(a.net) && it.owner != Owner::Hole && it.layers.contains(&a.layer)
         }) {
-            let need = clearance_of(Some(a.net)).max(clearance_of(it.net));
+            let need = clearance_of(Some(a.net)).max(clearance_of(it.net)).max(it.pour_gap);
             let mut hit: Option<(f64, P)> = None;
             let probe = match &it.shape {
                 Shape::Seg(p, q, _) => [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
@@ -3015,6 +3039,7 @@ mod pair_tests {
             layers: vec!["In6.Cu".into()],
             bounds: shape.bounds(),
             shape,
+            pour_gap: 0.0,
         }
     }
 

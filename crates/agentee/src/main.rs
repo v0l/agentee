@@ -220,6 +220,9 @@ enum Cmd {
         /// Route differential pairs as coupled pairs where they fit
         #[arg(long)]
         pairs: bool,
+        /// Allow vias fully inside SMD pads (filled and capped), default keep them off every pad
+        #[arg(long)]
+        via_in_pad: bool,
         /// Remove the existing tracks and vias of these nets first and route them again
         #[arg(long)]
         reroute: bool,
@@ -596,6 +599,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             via_cost,
             bend_cost,
             pairs,
+            via_in_pad,
             reroute,
             dry_run,
         } => {
@@ -612,6 +616,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                 via_cost,
                 bend_cost,
                 pairs,
+                via_in_pad,
                 ..Default::default()
             };
             let r = ops::route(&p, &name, &opts, !dry_run)?;

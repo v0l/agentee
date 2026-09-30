@@ -141,6 +141,7 @@ fn tools() -> Value {
                 "via_cost": { "type": "number", "default": 3.0 },
                 "bend_cost": { "type": "number", "default": 0.1, "description": "mm of track per 45 degree bend, three times that for 90" },
                 "pairs": { "type": "boolean" },
+                "via_in_pad": { "type": "boolean", "description": "allow vias fully inside SMD pads (filled and capped); by default vias keep off every SMD pad" },
                 "reroute": { "type": "boolean", "description": "remove these nets' tracks and vias first" },
                 "dry_run": { "type": "boolean" },
             }), &["name", "nets"]),
@@ -423,6 +424,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 via_cost: a.get("via_cost").and_then(Value::as_f64).unwrap_or(3.0),
                 bend_cost: a.get("bend_cost").and_then(Value::as_f64).unwrap_or(0.1),
                 pairs: flag(a, "pairs"),
+                via_in_pad: flag(a, "via_in_pad"),
                 ..Default::default()
             };
             Ok(ok(vec![text(pretty(&ops::route(&ops::load(root)?, name, &opts, !dry_run)?))]))
