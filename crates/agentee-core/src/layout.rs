@@ -118,6 +118,8 @@ pub struct ZoneFile {
     pub clearance: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_width: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<i32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1315,7 +1317,23 @@ impl LayoutFile {
             .collect();
         let mut zones = Vec::new();
         let mut island_nodes: Vec<Vec<usize>> = Vec::new();
-        for (zi, z) in self.zones.iter().enumerate() {
+        let zone_area = |z: &ZoneFile| {
+            let pts: Vec<P> = match &z.outline {
+                Some(p) => p.iter().map(|q| q.to_mm()).collect(),
+                None => outline.clone(),
+            };
+            geom::signed_area(&pts).abs()
+        };
+        let mut order: Vec<usize> = (0..self.zones.len()).collect();
+        order.sort_by(|&a, &b| {
+            let (za, zb) = (&self.zones[a], &self.zones[b]);
+            zb.priority
+                .unwrap_or(0)
+                .cmp(&za.priority.unwrap_or(0))
+                .then(zone_area(za).total_cmp(&zone_area(zb)))
+        });
+        for zi in order {
+            let z = &self.zones[zi];
             let at = format!("zones[{zi}] {}", z.net);
             let Some(net) = net_index(&z.net) else {
                 d.error(&at, format!("net `{}` is not in the schematic", z.net));
@@ -1337,6 +1355,10 @@ impl LayoutFile {
                 }
                 let layer_cutouts: Vec<&Vec<P>> =
                     cutouts.iter().filter(|(ls, _)| ls.contains(layer)).map(|(_, p)| p).collect();
+                let blockers: Vec<&ZoneFill> = zones
+                    .iter()
+                    .filter(|f: &&ZoneFill| &f.layer == layer && f.net != net)
+                    .collect();
                 let (fill, touched) = fill_zone(
                     net,
                     layer,
@@ -1347,6 +1369,7 @@ impl LayoutFile {
                     &items,
                     &clearance_of,
                     &layer_cutouts,
+                    &blockers,
                     z.min_width.map(Length::to_mm).unwrap_or(0.25),
                 );
                 if fill.islands_removed > 0 {
@@ -2157,6 +2180,7 @@ fn fill_zone(
     items: &[Item],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
     cutouts: &[&Vec<P>],
+    blockers: &[&ZoneFill],
     min_width: f64,
 ) -> (ZoneFill, Vec<Vec<usize>>) {
     let mut b = Bounds::EMPTY;
@@ -2241,6 +2265,20 @@ fn fill_zone(
         let gap = clearance.max(clearance_of(it.net));
         let shape = &it.shape;
         clear_near(&mut mask, it.bounds, gap, &|p| shape.point_distance(p) < gap + margin);
+    }
+    for z in blockers {
+        let gap = clearance.max(clearance_of(Some(z.net)));
+        let mut bb = Bounds::EMPTY;
+        z.rings.iter().flatten().for_each(|p| bb.add(*p));
+        if bb.is_empty() {
+            continue;
+        }
+        clear_near(&mut mask, bb, gap, &|p| {
+            z.filled(p)
+                || z.rings.iter().any(|r| {
+                    edges(r).any(|(a, c)| geom::point_segment_distance(p, a, c) < gap + margin)
+                })
+        });
     }
 
     let mut label = vec![0u32; w * h];
@@ -2334,6 +2372,7 @@ fn fill_zone(
         items,
         clearance_of,
         cutouts,
+        blockers,
         min_width,
     );
     fill.triangles = crate::contour::triangles(&fill.rings);
@@ -2401,6 +2440,7 @@ fn vector_fill(
     items: &[Item],
     clearance_of: &dyn Fn(Option<usize>) -> f64,
     cutouts: &[&Vec<P>],
+    blockers: &[&ZoneFill],
     min_width: f64,
 ) -> Vec<Vec<P>> {
     use i_overlay::core::fill_rule::FillRule;
@@ -2431,6 +2471,15 @@ fn vector_fill(
         }
         let gap = clearance.max(clearance_of(it.net));
         clip.extend(inflated(&it.shape, gap));
+    }
+    for z in blockers {
+        let gap = clearance.max(clearance_of(Some(z.net)));
+        for r in &z.rings {
+            clip.push(r.clone());
+            for (a, b) in edges(r) {
+                clip.push(capsule(a, b, gap));
+            }
+        }
     }
     let mut shapes = subject.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
     if min_width > 0.0 {
