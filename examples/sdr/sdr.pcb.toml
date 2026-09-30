@@ -4663,3 +4663,101 @@ via = "std"
 net = "VSYS"
 at = [83.15, 44.4]
 via = "std"
+
+# Interfaces: what each link must meet, checked against the copper and the sims by agentee check.
+# Where a device datasheet sets no board number, the budget is an allocation noted beside it.
+
+[[interfaces]]
+name = "usb-ss"
+preset = "usb3-gen2"
+nets = ["SS_TX*", "SS_RX*", "FX_TX?_?"]
+
+[[interfaces.measure]]
+sim = "sdr-usb"
+pair = ["TX1_FX+", "TX1_FX-", "TX1_J+", "TX1_J-"]
+up_to = "5GHz"
+max_loss = 1.5
+min_return_loss = 10.0
+max_mode_conversion = -25.0
+
+[[interfaces.measure]]
+sim = "sdr-usb"
+pair = ["RX2_J+", "RX2_J-", "RX2_FX+", "RX2_FX-"]
+up_to = "5GHz"
+max_loss = 1.5
+min_return_loss = 10.0
+max_mode_conversion = -25.0
+
+# USB 3.2 Electrical Compliance Test Specification, Gen 2 data eye: 70 mV, 48 ps
+[[interfaces.measure]]
+sim = "sdr-usb-tx1-eye"
+min_eye_height = "70mV"
+min_eye_width = "48ps"
+
+[[interfaces.measure]]
+sim = "sdr-usb-rx2-eye"
+min_eye_height = "70mV"
+min_eye_width = "48ps"
+
+[[interfaces]]
+name = "usb-hs"
+preset = "usb2-hs"
+nets = ["USB_DP", "USB_DN"]
+
+# FPGA to FX20 LVDS receive port, source synchronous; 50 ps of lane and clock skew is an
+# allocation, a tenth of the 500 ps UI at 1 Gbps per lane
+[[interfaces]]
+name = "fx-lvds"
+preset = "lvds"
+nets = ["FX_LVDS_*"]
+max_skew = "0.15mm"
+clock = "FX_LVDS_CLK_P"
+max_bus_skew = "50ps"
+clock_window = ["-50ps", "50ps"]
+
+# FX20 GPIF to FPGA bank 14, 16 bit DDR on FX_PCLK; 250 ps is an allocation
+[[interfaces]]
+name = "fx-gpif"
+preset = "cmos"
+nets = ["FX_D*", "FX_CTL*", "FX_PCLK"]
+clock = "FX_PCLK"
+max_bus_skew = "250ps"
+clock_window = ["-250ps", "250ps"]
+
+# AD9364 CMOS at 61.44 MHz DDR, VDD_INTERFACE 2.5 V: tCP 16.276 ns, TX setup 1 ns and hold 0 ns
+# to FB_CLK, RX data 0 to 1.2 ns after DATA_CLK. The 7.3 ns half period at 45% duty leaves
+# about 4 ns once both chips take theirs; the board gets 0.5 ns either way
+[[interfaces]]
+name = "ad-tx"
+preset = "cmos"
+nets = ["AD_P0_D*", "AD_TX_FRAME", "AD_FB_CLK"]
+clock = "AD_FB_CLK"
+max_bus_skew = "500ps"
+clock_window = ["-500ps", "500ps"]
+
+[[interfaces]]
+name = "ad-rx"
+preset = "cmos"
+nets = ["AD_P1_D*", "AD_RX_FRAME", "AD_DATA_CLK"]
+clock = "AD_DATA_CLK"
+max_bus_skew = "500ps"
+clock_window = ["-500ps", "500ps"]
+
+[[interfaces]]
+name = "rf"
+preset = "rf-50"
+nets = ["RX_RF", "TX_RF", "RXA_?", "TXA_?", "RXT_?", "TXT_?"]
+
+[[interfaces.measure]]
+sim = "sdr-rf"
+through = ["RX_SMA", "RX_BALUN"]
+up_to = "6GHz"
+max_loss = 1.0
+min_return_loss = 12.0
+
+[[interfaces.measure]]
+sim = "sdr-rf"
+through = ["TX_SMA", "TX_BALUN"]
+up_to = "6GHz"
+max_loss = 1.0
+min_return_loss = 12.0
