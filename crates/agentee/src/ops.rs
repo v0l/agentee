@@ -252,6 +252,35 @@ pub fn import_footprint(spec: &str, dir: &Path, force: bool) -> Result<PathBuf, 
     write_new(dir, &f.name, Kind::Footprint, &(header + &text), force)
 }
 
+pub fn import_board(
+    path: &Path,
+    dir: &Path,
+    force: bool,
+) -> Result<(Vec<PathBuf>, Vec<String>), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let pro = std::fs::read_to_string(path.with_extension("kicad_pro")).ok();
+    let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("board");
+    let name = agentee_kicad::file_stem(name);
+    let b = agentee_kicad::board::import_board(&text, pro.as_deref(), &name)?;
+    let header = format!("# imported from KiCad {}\n", path.display());
+    let mut written = Vec::new();
+    let emit = |stem: &str, kind: Kind, body: String, sub: &str, written: &mut Vec<PathBuf>| {
+        let d = if sub.is_empty() { dir.to_path_buf() } else { dir.join(sub) };
+        write_new(&d, stem, kind, &(header.clone() + &body), force).map(|p| written.push(p))
+    };
+    let t = |r: Result<String, toml::ser::Error>| r.map_err(|e| e.to_string());
+    emit(&name, Kind::Board, t(toml::to_string(&b.board))?, "", &mut written)?;
+    emit(&name, Kind::Schematic, t(toml::to_string(&b.schematic))?, "", &mut written)?;
+    emit(&name, Kind::Layout, t(toml::to_string(&b.layout))?, "", &mut written)?;
+    for f in &b.footprints {
+        emit(&f.name, Kind::Footprint, t(toml::to_string(f))?, "footprints", &mut written)?;
+    }
+    for s in &b.symbols {
+        emit(&s.name, Kind::Symbol, t(toml::to_string(s))?, "symbols", &mut written)?;
+    }
+    Ok((written, b.notes))
+}
+
 pub enum FootprintPick {
     None,
     Default,

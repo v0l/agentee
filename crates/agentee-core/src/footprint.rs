@@ -97,6 +97,8 @@ pub struct PadFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drill: Option<Drill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drill_offset: Option<Point>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layers: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub points: Option<Vec<Point>>,
@@ -144,6 +146,7 @@ pub struct Pad {
     pub rotation: f64,
     pub roundrect_ratio: f64,
     pub drill: Option<Drill>,
+    pub drill_offset: Point,
     pub layers: Vec<String>,
     pub points: Vec<Point>,
 }
@@ -278,6 +281,7 @@ impl FootprintFile {
                     rotation: p.rotation.unwrap_or(0.0),
                     roundrect_ratio: p.roundrect_ratio.unwrap_or(0.25),
                     drill: p.drill,
+                    drill_offset: p.drill_offset.unwrap_or(Point::ZERO),
                     layers: p.layers.clone().unwrap_or_else(|| default_layers(p.kind)),
                     points: p.points.clone().unwrap_or_default(),
                 });

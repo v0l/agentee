@@ -8,6 +8,8 @@ use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
+const DRC_EPSILON: f64 = 5e-4;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoardSide {
@@ -676,7 +678,9 @@ impl LayoutFile {
                             .collect(),
                         drill: pad.drill.map(|dr| {
                             let s = dr.size().to_mm();
-                            (t.apply(pad.at.to_mm()), s, pad.rotation + rotation)
+                            let o = geom::rotate(pad.drill_offset.to_mm(), pad.rotation);
+                            let at = pad.at.to_mm();
+                            (t.apply([at[0] + o[0], at[1] + o[1]]), s, pad.rotation + rotation)
                         }),
                     }
                 })
@@ -1174,7 +1178,7 @@ impl LayoutFile {
                 let need = clearance_of(a.net).max(clearance_of(b.net));
                 if dist <= 1e-6 {
                     shorts.push(format!("{} touches {}", name_of(a), name_of(b)));
-                } else if dist + 1e-6 < need {
+                } else if dist + DRC_EPSILON < need {
                     tight.push(format!(
                         "{} is {} from {}, needs {}",
                         name_of(a),
@@ -1247,7 +1251,7 @@ impl LayoutFile {
                     .fold(f64::MAX, f64::min);
                 if !inside {
                     d.error("edge", format!("{} leaves the board", name_of(it)));
-                } else if to_edge + 1e-6 < edge_clear {
+                } else if to_edge + DRC_EPSILON < edge_clear {
                     d.error(
                         "edge",
                         format!(

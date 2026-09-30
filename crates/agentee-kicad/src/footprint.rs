@@ -169,6 +169,18 @@ fn pad(n: &Node) -> Option<PadFile> {
         .find("layers")
         .map(|l| l.items().iter().skip(1).filter_map(Node::text).map(layer_name).collect());
     let rotation = at.num(2).filter(|r| *r != 0.0);
+    let offset = n
+        .find("drill")
+        .and_then(|d| d.find("offset"))
+        .and_then(|o| Some([o.num(0)?, o.num(1)?]))
+        .filter(|o| o[0] != 0.0 || o[1] != 0.0);
+    let shape_at = match offset {
+        Some(o) => {
+            let r = geom::rotate(o, rotation.unwrap_or(0.0));
+            [at.num(0)? + r[0], at.num(1)? + r[1]]
+        }
+        None => [at.num(0)?, at.num(1)?],
+    };
     let points = (shape == PadShape::Custom)
         .then(|| n.find("primitives").and_then(|p| p.find("gr_poly")).map(|g| g.pts()))
         .flatten()
@@ -185,11 +197,12 @@ fn pad(n: &Node) -> Option<PadFile> {
         number: n.arg(0).unwrap_or("").to_string(),
         kind,
         shape,
-        at: Point::mm(at.num(0)?, at.num(1)?),
+        at: Point::mm(shape_at[0], shape_at[1]),
         size,
         rotation,
         roundrect_ratio: n.find("roundrect_rratio").and_then(|r| r.num(0)),
         drill,
+        drill_offset: offset.map(|o| Point::mm(-o[0], -o[1])),
         layers,
         points,
         count: None,

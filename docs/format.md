@@ -855,6 +855,24 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 5. `agentee view` keeps a live window open for a human.
 6. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
 
+## Importing a KiCad board
+
+`agentee import board path/to/NAME.kicad_pcb --dir DIR` turns a whole KiCad board into a project:
+
+| file | from |
+|---|---|
+| `NAME.board.toml` | the Edge.Cuts outline (inner loops become cutouts), the stackup with thickness, er and loss tangent, the copper finish and mask colour, the design rules and net classes from `NAME.kicad_pro` |
+| `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones |
+| `NAME.sch.toml` | every part with its value, and each net as a list of pins, drawn with net labels |
+| `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept |
+| `symbols/` | one box symbol per footprint with a pin per pad number |
+
+Coordinates move so the outline starts at 0, 0. Teardrops and keepout areas are left out and
+reported. A class whose tracks run narrower than its width takes the narrowest one, since KiCad
+treats the class width as a default and agentee as a minimum. Clearances are checked with
+KiCad's 0.5 um tolerance. On KiCad's `video` and `complex_hierarchy` demos every pad of the
+imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 pads).
+
 ## Fab package
 
 `agentee fab pcb:NAME -o DIR` (MCP `fab`) writes:

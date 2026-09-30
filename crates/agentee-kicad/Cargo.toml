@@ -10,6 +10,7 @@ description = "KiCad symbol and footprint importer for agentee"
 agentee-core.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 toml.workspace = true

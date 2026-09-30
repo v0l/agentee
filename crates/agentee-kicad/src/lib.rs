@@ -1,3 +1,4 @@
+pub mod board;
 pub mod footprint;
 pub mod sexpr;
 pub mod symbol;

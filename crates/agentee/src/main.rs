@@ -34,6 +34,8 @@ enum NewKind {
 enum LibKind {
     Symbol,
     Footprint,
+    /// A whole .kicad_pcb: board, layout, a netlist schematic, footprints and pin symbols
+    Board,
 }
 
 #[derive(Subcommand)]
@@ -440,6 +442,11 @@ fn run(cli: Cli) -> Result<bool, String> {
                     )?],
                     Vec::new(),
                 ),
+                LibKind::Board => ops::import_board(
+                    std::path::Path::new(&spec),
+                    &dir.unwrap_or_else(|| ".".into()),
+                    force,
+                )?,
             };
             for w in written {
                 println!("{}", w.display());
@@ -454,6 +461,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             let hits = match kind {
                 LibKind::Symbol => agentee_kicad::search_symbols(&q, limit),
                 LibKind::Footprint => agentee_kicad::search_footprints(&q, limit),
+                LibKind::Board => return Err("search covers symbols and footprints".into()),
             };
             for h in &hits {
                 println!("{}:{}", h.library, h.name);
