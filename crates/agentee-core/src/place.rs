@@ -1,8 +1,8 @@
 use crate::board::Board;
 use crate::footprint::{Footprint, PadKind};
 use crate::geom::{self, P, Transform};
-use crate::graphic::{Bounds, Shape};
-use crate::layout::{BoardSide, PlacementFile, glob};
+use crate::graphic::{Anchor, Bounds, Shape};
+use crate::layout::{BoardSide, Layout, PlacementFile, glob};
 use crate::schematic::{PinRef, Schematic};
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,9 @@ const ANNEAL_HEAT: f64 = 1.0 / 3.0;
 const QUENCH_PER_PART: f64 = 500.0;
 const QUENCH_HEAT: f64 = 0.03;
 const CROSSING_WEIGHT: f64 = 4.0;
+const SILK_ROOM: f64 = 0.2;
+const LABEL_SHARE: f64 = 0.25;
+const LABEL_REACH: usize = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,6 +118,146 @@ pub struct PlaceInput<'a> {
     pub spec: &'a PlaceFile,
     pub fast_nets: Vec<String>,
     pub heat: Vec<(String, f64)>,
+    pub silk: Vec<SilkArea>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SilkArea {
+    pub bottom: bool,
+    pub poly: Vec<P>,
+}
+
+pub fn board_silk(layout: &Layout) -> Vec<SilkArea> {
+    let side = |layer: &str| layer.starts_with("B.");
+    let mut out: Vec<SilkArea> = layout
+        .board_texts()
+        .iter()
+        .filter(|t| t.part == usize::MAX && t.owner != "watermark")
+        .map(|t| SilkArea { bottom: side(&t.layer), poly: grow(&t.outline(), SILK_ROOM) })
+        .collect();
+    for g in layout.graphics.iter().filter(|g| g.layer.ends_with(".SilkS")) {
+        if matches!(g.shape, Shape::Text { .. }) {
+            continue;
+        }
+        let half = g.width.to_mm() / 2.0 + SILK_ROOM;
+        let path = crate::footprint::graphic_path(g);
+        for w in path.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let l = geom::dist(a, b);
+            let (u, n) = if l < 1e-9 {
+                ([half, 0.0], [0.0, half])
+            } else {
+                let d = [(b[0] - a[0]) / l * half, (b[1] - a[1]) / l * half];
+                (d, [-d[1], d[0]])
+            };
+            let poly = vec![
+                [a[0] - u[0] - n[0], a[1] - u[1] - n[1]],
+                [b[0] + u[0] - n[0], b[1] + u[1] - n[1]],
+                [b[0] + u[0] + n[0], b[1] + u[1] + n[1]],
+                [a[0] - u[0] + n[0], a[1] - u[1] + n[1]],
+            ];
+            out.push(SilkArea { bottom: side(&g.layer), poly });
+        }
+    }
+    for a in layout.artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
+        for poly in &a.polygons {
+            out.push(SilkArea { bottom: side(&a.layer), poly: poly.clone() });
+        }
+    }
+    out
+}
+
+fn grow(rect: &[P], by: f64) -> Vec<P> {
+    let unit = |a: P, b: P| {
+        let l = geom::dist(a, b).max(1e-9);
+        [(b[0] - a[0]) / l * by, (b[1] - a[1]) / l * by]
+    };
+    let (u, v) = (unit(rect[0], rect[1]), unit(rect[0], rect[3]));
+    let signs = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)];
+    rect.iter()
+        .zip(signs)
+        .map(|(q, (a, b))| [q[0] + a * u[0] + b * v[0], q[1] + a * u[1] + b * v[1]])
+        .collect()
+}
+
+#[derive(Clone)]
+struct LabelBox {
+    poly: Vec<P>,
+    at: P,
+    rotation: f64,
+}
+
+fn label_room(
+    fp: &Footprint,
+    reference: &str,
+    placed: Option<&PlacementFile>,
+    centre: P,
+) -> Option<LabelBox> {
+    let file = placed.and_then(|f| f.label.as_ref());
+    if file.is_some_and(|l| l.hide) {
+        return None;
+    }
+    let (layer, at, text, size, rotation, anchor) =
+        fp.graphics.iter().find_map(|g| match &g.shape {
+            Shape::Text { at, text, size, rotation, anchor }
+                if g.layer.ends_with(".SilkS") && text.contains("${REFERENCE}") =>
+            {
+                Some((&g.layer, at.to_mm(), text, size.to_mm(), *rotation, *anchor))
+            }
+            _ => None,
+        })?;
+    let size = file.and_then(|l| l.size).map_or(size, |s| s.to_mm());
+    let text = text.replace("${REFERENCE}", reference);
+    let pen = crate::font::default_thickness(size);
+    let (w, h) = (crate::font::ink_width(&text, size) + pen, size + pen);
+    let shift = match anchor {
+        Anchor::Left => w / 2.0,
+        Anchor::Center => 0.0,
+        Anchor::Right => -w / 2.0,
+    };
+    let c0 = geom::rotate([shift, 0.0], rotation);
+    let c0 = [at[0] + c0[0], at[1] + c0[1]];
+    let rect = |c: P, m: f64| -> Vec<P> {
+        [
+            [-w / 2.0 - m, -h / 2.0 - m],
+            [w / 2.0 + m, -h / 2.0 - m],
+            [w / 2.0 + m, h / 2.0 + m],
+            [-w / 2.0 - m, h / 2.0 + m],
+        ]
+        .into_iter()
+        .map(|q| {
+            let [x, y] = geom::rotate(q, rotation);
+            [x + c[0], y + c[1]]
+        })
+        .collect()
+    };
+    let pads: Vec<Vec<P>> = fp.pads.iter().flat_map(|q| q.outlines()).collect();
+    let silk: Vec<(Vec<P>, f64)> = fp
+        .graphics
+        .iter()
+        .filter(|g| g.layer == *layer && !matches!(g.shape, Shape::Text { .. }))
+        .map(|g| (crate::footprint::graphic_path(g), g.width.to_mm() / 2.0 + SILK_ROOM))
+        .filter(|(path, _)| path.len() >= 2)
+        .collect();
+    let clear = |c: P| {
+        let bx = rect(c, 0.0);
+        pads.iter().all(|o| geom::polygon_distance(o, &bx) > GRID)
+            && silk
+                .iter()
+                .all(|(path, gap)| geom::polyline_polygon_distance(path, &bx) > gap + GRID)
+    };
+    let d = [c0[0] - centre[0], c0[1] - centre[1]];
+    let l = d[0].hypot(d[1]);
+    let dir = if l < 1e-6 { [0.0, -1.0] } else { [d[0] / l, d[1] / l] };
+    let at = (0..=LABEL_REACH)
+        .map(|k| [c0[0] + dir[0] * k as f64 * GRID, c0[1] + dir[1] * k as f64 * GRID])
+        .find(|c| clear(*c))?;
+    Some(LabelBox { poly: rect(at, SILK_ROOM), at, rotation })
+}
+
+fn upright(deg: f64) -> f64 {
+    let a = deg.rem_euclid(360.0);
+    if a > 90.0 && a <= 270.0 { a - 180.0 } else { a }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -123,6 +266,7 @@ pub struct Placement {
     pub at: P,
     pub rotation: f64,
     pub bottom: bool,
+    pub label: Option<(P, f64)>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -151,6 +295,14 @@ pub struct PlaceResult {
     pub before: Option<Metrics>,
     pub after: Metrics,
     pub moves: usize,
+    pub labels: LabelRoom,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct LabelRoom {
+    pub reserved: bool,
+    pub label_mm2: f64,
+    pub free_mm2: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -518,6 +670,7 @@ struct WShape {
     poly: Vec<P>,
     b: Bounds,
     rect: bool,
+    label: bool,
 }
 
 #[derive(Clone)]
@@ -534,6 +687,8 @@ struct Part<'a> {
     pads_in_court: bool,
     local: Bounds,
     extent: Bounds,
+    label: Option<LabelBox>,
+    over_silk: bool,
     area: f64,
     pins: usize,
     large: bool,
@@ -601,6 +756,7 @@ struct Board2 {
     crystal: f64,
     spread: f64,
     depth: EdgeDepth,
+    silk: Vec<WShape>,
 }
 
 #[derive(Clone)]
@@ -745,6 +901,10 @@ impl EdgeDepth {
         (k >= 0.0 && k < n as f64).then_some(k as usize)
     }
 
+    fn placeable(&self, margin: f64) -> f64 {
+        self.depth.iter().filter(|d| **d > margin).count() as f64 * DEPTH_CELL * DEPTH_CELL
+    }
+
     fn at(&self, p: P) -> f64 {
         match (self.cell(p[0], 0), self.cell(p[1], 1)) {
             (Some(x), Some(y)) => self.depth[y * self.nx + x],
@@ -860,10 +1020,14 @@ impl<'a> Placer<'a> {
     fn shapes(&self, i: usize, st: St) -> Vec<WShape> {
         let p = &self.parts[i];
         let t = st.transform();
-        p.loops
+        let shape = |poly: &[P], side: u8, label: bool| {
+            let world: Vec<P> = poly.iter().map(|q| t.apply(*q)).collect();
+            WShape { side, b: poly_bounds(&world), rect: is_axis_rect(&world), poly: world, label }
+        };
+        let mut out: Vec<WShape> = p
+            .loops
             .iter()
             .map(|(back, poly)| {
-                let world: Vec<P> = poly.iter().map(|q| t.apply(*q)).collect();
                 let side = if p.through {
                     3
                 } else if *back != st.bottom {
@@ -871,9 +1035,13 @@ impl<'a> Placer<'a> {
                 } else {
                     1
                 };
-                WShape { side, b: poly_bounds(&world), rect: is_axis_rect(&world), poly: world }
+                shape(poly, side, false)
             })
-            .collect()
+            .collect();
+        if let Some(label) = &p.label {
+            out.push(shape(&label.poly, if st.bottom { 2 } else { 1 }, true));
+        }
+        out
     }
 
     fn insert(&mut self, i: usize) {
@@ -957,7 +1125,7 @@ impl<'a> Placer<'a> {
             })
         };
         let body_in = |min: f64| {
-            sh.iter().all(|s| {
+            sh.iter().filter(|s| !s.label).all(|s| {
                 s.poly.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
                     && !o.iter().any(|v| geom::point_in_polygon(*v, &s.poly))
                     && self.clear_of_cutouts(&s.poly, min)
@@ -985,12 +1153,23 @@ impl<'a> Placer<'a> {
                             || pads_in(self.b.part_edge, true))
                 }
             };
-        ok && !sh.iter().any(|s| {
-            self.b
-                .keepouts
-                .iter()
-                .any(|k| strict_overlap(&s.b, &poly_bounds(k)) && polys_overlap(&s.poly, k))
-        })
+        let label_in = deep
+            || sh.iter().filter(|s| s.label).all(|s| {
+                s.poly.iter().all(|v| edge.contains(*v)) && self.clear_of_cutouts(&s.poly, 0.0)
+            });
+        ok && label_in
+            && !sh.iter().any(|s| {
+                (!s.label
+                    && self.b.keepouts.iter().any(|k| {
+                        strict_overlap(&s.b, &poly_bounds(k)) && polys_overlap(&s.poly, k)
+                    }))
+                    || !part.over_silk
+                        && self.b.silk.iter().any(|k| {
+                            s.side & k.side != 0
+                                && strict_overlap(&s.b, &k.b)
+                                && ((s.rect && k.rect) || polys_overlap(&s.poly, &k.poly))
+                        })
+            })
     }
 
     fn clashes(&self, i: usize, sh: &[WShape], skip: &[usize]) -> bool {
@@ -1032,7 +1211,7 @@ impl<'a> Placer<'a> {
         let target = snap_p(target);
         let rel = self.shapes(i, St { at: [0.0, 0.0], rot, bottom });
         let mut hull = Bounds::EMPTY;
-        rel.iter().for_each(|s| hull.union(&s.b));
+        rel.iter().filter(|s| !s.label).for_each(|s| hull.union(&s.b));
         let bb = &self.b.bounds;
         let loose = !matches!(self.parts[i].role, Role::Connector | Role::Hole | Role::Fiducial);
         let margin = if loose { self.b.body_edge } else { 0.0 };
@@ -1330,8 +1509,8 @@ impl<'a> Placer<'a> {
                 if !self.parts[j].placed {
                     continue;
                 }
-                let hit = self.cache[i].iter().any(|s| {
-                    self.cache[j].iter().any(|t| {
+                let hit = self.cache[i].iter().filter(|s| !s.label).any(|s| {
+                    self.cache[j].iter().filter(|t| !t.label).any(|t| {
                         s.side & t.side != 0
                             && strict_overlap(&s.b, &t.b)
                             && ((s.rect && t.rect) || polys_overlap(&s.poly, &t.poly))
@@ -1504,6 +1683,18 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         crystal: pd.crystal_distance.map(|l| l.to_mm()).unwrap_or(CRYSTAL_DISTANCE),
         spread: pd.cluster_spread.map(|l| l.to_mm()).unwrap_or(CLUSTER_SPREAD),
         depth: EdgeDepth::new(input.outline, input.cutouts, &ob),
+        silk: input
+            .silk
+            .iter()
+            .filter(|a| a.poly.len() >= 3)
+            .map(|a| WShape {
+                side: if a.bottom { 2 } else { 1 },
+                b: poly_bounds(&a.poly),
+                rect: is_axis_rect(&a.poly),
+                poly: a.poly.clone(),
+                label: false,
+            })
+            .collect(),
     };
 
     let mut refs: Vec<&str> = Vec::new();
@@ -1568,11 +1759,17 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         loops.iter().flat_map(|l| l.1.iter()).for_each(|q| local.add(*q));
         let mut extent = local;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| extent.add(*q));
+        let role = role_of(r, &fp_name, fp);
+        let label = if matches!(role, Role::Connector | Role::Hole | Role::Fiducial) {
+            None
+        } else {
+            label_room(fp, r, input.placements.iter().find(|f| f.reference == *r), local.center())
+        };
+        label.iter().flat_map(|l| l.poly.iter()).for_each(|q| extent.add(*q));
         let through = fp.pads.iter().any(|q| q.kind == PadKind::Tht || q.kind == PadKind::Npth);
         let mut pad_box = Bounds::EMPTY;
         pads.iter().flat_map(|q| q.outline.iter().flatten()).for_each(|q| pad_box.add(*q));
         let pads_in_court = pad_box.is_empty() || local.contains(&pad_box);
-        let role = role_of(r, &fp_name, fp);
         let pins = copper_pad_numbers(fp);
         let s = local.size();
         let area = s[0] * s[1];
@@ -1607,6 +1804,8 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             pads_in_court,
             local,
             extent,
+            label,
+            over_silk: false,
             area,
             pins,
             large,
@@ -1725,6 +1924,28 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         }
     }
 
+    let sides = if opts.sides == Sides::Both { 2.0 } else { 1.0 };
+    let room = b.depth.placeable(b.body_edge) * sides;
+    let used: f64 = parts.iter().map(|p| p.area).sum();
+    let label_area: f64 = parts
+        .iter()
+        .filter(|p| p.active)
+        .filter_map(|p| p.label.as_ref())
+        .map(|l| {
+            let s = poly_bounds(&l.poly).size();
+            s[0] * s[1]
+        })
+        .sum();
+    let label_room = label_area <= LABEL_SHARE * (room - used);
+    for p in parts.iter_mut().filter(|p| !p.active || !label_room) {
+        p.label = None;
+    }
+    let labels = LabelRoom {
+        reserved: label_room,
+        label_mm2: (label_area * 10.0).round() / 10.0,
+        free_mm2: ((room - used) * 10.0).round() / 10.0,
+    };
+
     let n_parts = parts.len();
     let mut two_pin_at = vec![usize::MAX; nets.len()];
     two_pin.iter().enumerate().for_each(|(x, n)| two_pin_at[*n] = x);
@@ -1835,6 +2056,13 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             at: [(p.st.at[0] * 1e4).round() / 1e4, (p.st.at[1] * 1e4).round() / 1e4],
             rotation: p.st.rot,
             bottom: p.st.bottom,
+            label: p.label.as_ref().filter(|_| p.placed).map(|l| {
+                let at = p.st.transform().apply(l.at);
+                (
+                    [(at[0] * 1e4).round() / 1e4, (at[1] * 1e4).round() / 1e4],
+                    upright(l.rotation + p.st.rot),
+                )
+            }),
         })
         .collect();
     let clusters = pl
@@ -1846,7 +2074,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             members: c.members.iter().map(|m| pl.parts[*m].reference.clone()).collect(),
         })
         .collect();
-    Ok(PlaceResult { placements, kept, failed, edges, clusters, before, after, moves })
+    Ok(PlaceResult { placements, kept, failed, edges, clusters, before, after, moves, labels })
 }
 
 pub const DECOUPLING_DISTANCE: f64 = 3.0;
@@ -2138,7 +2366,12 @@ impl<'a> Placer<'a> {
                 let lc = self.parts[i].local.center();
                 let target = [c[0] + d[0] * inset - lc[0], c[1] + d[1] * inset - lc[1]];
                 let fid_bottom = bottom && role == Role::Fiducial;
-                match self.nearest(i, target, 0.0, fid_bottom, 40.0, &|_| 0.0) {
+                let found =
+                    self.nearest(i, target, 0.0, fid_bottom, 40.0, &|_| 0.0).or_else(|| {
+                        self.parts[i].over_silk = true;
+                        self.nearest(i, target, 0.0, fid_bottom, 40.0, &|_| 0.0)
+                    });
+                match found {
                     Some(st) => {
                         self.parts[i].st = st;
                         self.insert(i);
@@ -2725,7 +2958,12 @@ impl<'a> Placer<'a> {
                 }
                 if !done {
                     let target = base(coords[y]);
-                    match self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0) {
+                    let found =
+                        self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0).or_else(|| {
+                            self.parts[i].over_silk = true;
+                            self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0)
+                        });
+                    match found {
                         Some(st) => {
                             self.parts[i].st = st;
                             self.insert(i);
@@ -2805,6 +3043,14 @@ impl<'a> Placer<'a> {
                 self.parts[i].st = st;
                 self.insert(i);
                 true
+            }
+            None if self.parts[i].label.is_some() => {
+                self.parts[i].label = None;
+                self.try_place(i, target, rot, prefer_bottom)
+            }
+            None if !self.parts[i].over_silk => {
+                self.parts[i].over_silk = true;
+                self.try_place(i, target, rot, prefer_bottom)
             }
             None => false,
         }

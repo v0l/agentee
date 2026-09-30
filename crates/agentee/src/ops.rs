@@ -1726,6 +1726,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         spec: &spec,
         fast_nets: fast,
         heat,
+        silk: pl::board_silk(layout),
     };
     let opts = pl::PlaceOptions {
         parts: a.parts.clone(),
@@ -1751,6 +1752,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         "hand_placement": r.before,
         "result": r.after,
         "annealing_moves_accepted": r.moves,
+        "label_room": r.labels,
         "load_ms": load_ms,
         "solve_ms": solve_ms,
     });
@@ -1804,7 +1806,20 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
             .and_then(|l| l.get("hide"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        if let Some(mut label) = t.get("label").and_then(|v| v.as_inline_table()).cloned() {
+        if let Some((at, rotation)) = pm.label {
+            let mut label =
+                t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
+            let mut pt = toml_edit::Array::new();
+            pt.push(at[0]);
+            pt.push(at[1]);
+            label.insert("at", pt.into());
+            if rotation != 0.0 {
+                label.insert("rotation", rotation.into());
+            } else {
+                label.remove("rotation");
+            }
+            t["label"] = toml_edit::value(label);
+        } else if let Some(mut label) = t.get("label").and_then(|v| v.as_inline_table()).cloned() {
             label.remove("at");
             label.remove("rotation");
             if label.is_empty() && !hidden {
