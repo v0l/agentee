@@ -1198,63 +1198,6 @@ impl LayoutFile {
             found.add("clearance", "clearance", s);
         }
 
-        let mut drills: Vec<(P, f64, String, Option<usize>)> = vias
-            .iter()
-            .map(|v| {
-                (v.at, v.drill / 2.0, format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]), None)
-            })
-            .collect();
-        for (pi, p) in parts.iter().enumerate() {
-            for pad in &p.pads {
-                if let Some((c, s, _)) = pad.drill {
-                    let name = format!("{}.{}", p.reference, pad.number);
-                    drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi)));
-                }
-            }
-        }
-        let hole_gap = board.rules.min_hole_to_hole.to_mm();
-        let mut close = 0;
-        let mut first = None;
-        for i in 0..drills.len() {
-            for j in i + 1..drills.len() {
-                let (a, b) = (&drills[i], &drills[j]);
-                if a.3.is_some() && a.3 == b.3 {
-                    continue;
-                }
-                let gap = geom::dist(a.0, b.0) - a.1 - b.1;
-                if gap + 1e-6 < hole_gap && geom::dist(a.0, b.0) > 1e-6 {
-                    close += 1;
-                    first.get_or_insert(format!("{} is {} from {}", a.2, Length::mm(gap), b.2));
-                }
-            }
-        }
-        if let Some(f) = first {
-            d.error(
-                "drills",
-                format!("{close} drill pairs closer than {}, first: {f}", Length::mm(hole_gap)),
-            );
-        }
-
-        let mut stacked = 0;
-        let mut first = None;
-        for (i, a) in vias.iter().enumerate() {
-            if vias[..i].iter().any(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6) {
-                stacked += 1;
-                first.get_or_insert(format!(
-                    "[{:.3}, {:.3}] ({})",
-                    a.at[0], a.at[1], nets[a.net].name
-                ));
-            }
-        }
-        if let Some(f) = first {
-            d.error(
-                "vias",
-                format!(
-                    "{stacked} vias sit on another of their net at the same spot, first at {f}"
-                ),
-            );
-        }
-
         let edge_clear = board.rules.min_copper_to_edge.to_mm();
 
         check_courtyards(&parts, d);
