@@ -824,6 +824,7 @@ pub fn copper_hash(
         }
     };
     let f = |v: f64| (v * 1e4).round() as i64 as u64;
+    let fill = |v: f64| (v * 1e3).round() as i64 as u64;
     for l in &board.stackup.layers {
         eat(f(l.thickness.to_mm()));
         eat(f(l.er));
@@ -868,8 +869,8 @@ pub fn copper_hash(
         for r in &z.rings {
             if near(&mut r.iter().copied()) {
                 r.iter().for_each(|c| {
-                    eat(f(c[0]));
-                    eat(f(c[1]))
+                    eat(fill(c[0]));
+                    eat(fill(c[1]))
                 });
             }
         }

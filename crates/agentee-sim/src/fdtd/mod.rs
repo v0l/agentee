@@ -702,6 +702,28 @@ mod tests {
     }
 
     #[test]
+    fn a_square_ended_line_is_matched_at_fine_cells() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let (len, w) = (30.0, 0.95);
+        let r = run_line_with(len, w, 0.5, 4.5, 0.0, 0.0, (1e9, 5e9), 0.025, false, &|m| {
+            m.copper[0] = (
+                0,
+                Copper::Poly(vec![
+                    [0.5, -w / 2.0],
+                    [len - 0.5, -w / 2.0],
+                    [len - 0.5, w / 2.0],
+                    [0.5, w / 2.0],
+                ]),
+            );
+            m.ports.iter_mut().for_each(|p| p.r = 50.0);
+        });
+        eprintln!("S11 {:?}", r.db(0, 0));
+        assert!(r.db(0, 0).iter().all(|v| *v < -25.0), "{:?}", r.db(0, 0));
+    }
+
+    #[test]
     fn dispersive_lossy_line_stays_reciprocal() {
         if crate::gpu::gpu().is_none() {
             return;
