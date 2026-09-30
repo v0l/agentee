@@ -726,6 +726,26 @@ fn footprint_copper(p: &Placed, copper: &[String]) -> Vec<(String, Vec<Shape>)> 
     out
 }
 
+pub(crate) fn footprint_copper_joins(
+    p: &Placed,
+    copper: &[String],
+    layer: &str,
+    net: usize,
+    at: P,
+    r: f64,
+) -> bool {
+    let Some((_, shapes)) = footprint_copper(p, copper).into_iter().find(|(l, _)| l == layer)
+    else {
+        return false;
+    };
+    shapes.iter().any(|s| s.point_distance(at) <= r + 1e-6)
+        && p.pads.iter().any(|q| {
+            q.net == Some(net)
+                && q.copper.iter().any(|l| l == layer)
+                && shapes.iter().any(|s| s.distance(&Shape::Poly(q.outlines.clone())) <= 1e-6)
+        })
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Owner {
     Pad(usize, usize),

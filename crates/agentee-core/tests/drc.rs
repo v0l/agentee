@@ -246,6 +246,39 @@ fn footprint_copper_joins_the_pads_it_bridges() {
 }
 
 #[test]
+fn a_track_ending_on_footprint_copper_of_its_net_is_not_dangling() {
+    let files = [("footprints/Bridge.fp.toml", BRIDGE)];
+    let sch = "\n[[parts]]\nref = \"JP1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+               footprint = \"Bridge\"\n\n[[parts]]\nref = \"R2\"\nsymbol = \"R\"\nvalue = \"0\"\n\
+               at = [30.48, 20.32]\n\n[[nets]]\nname = \"A\"\npins = [\"JP1.1\", \"R2.1\"]\n\n\
+               [[nets]]\nname = \"B\"\npins = [\"JP1.2\", \"R2.2\"]\n";
+    let pcb = "[[footprints]]\nref = \"JP1\"\nat = [15, 10]\n\n[[footprints]]\nref = \"R2\"\n\
+               at = [20, 10]\n\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\n\
+               points = [[15, 10], [15, 14], [19.49, 14], [19.49, 10]]\n";
+    let dangling = |p: &Project| -> Vec<String> {
+        p.layouts[0]
+            .diags
+            .iter()
+            .filter(|d| d.rule.as_deref() == Some("dangling-track"))
+            .map(|d| d.message.clone())
+            .collect()
+    };
+    let p = project_with(&files, &[], sch, pcb);
+    assert!(dangling(&p).is_empty(), "{:?}", dangling(&p));
+    let loose = BRIDGE.replace(
+        "[-0.25, -0.3], [0.25, -0.3], [0.25, 0.3], [-0.25, 0.3]",
+        "[-0.1, -0.3], [0.1, -0.3], [0.1, 0.3], [-0.1, 0.3]",
+    );
+    let files = [("footprints/Bridge.fp.toml", loose.as_str())];
+    let p = project_with(&files, &[], sch, pcb);
+    assert!(
+        dangling(&p).iter().any(|m| m.contains("end at [15.000, 10.000] connects to nothing")),
+        "{:?}",
+        dangling(&p)
+    );
+}
+
+#[test]
 fn a_footprint_clearance_replaces_the_class_clearance_for_its_pads() {
     let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
     let r = std::fs::read_to_string(lna.join("footprints/R_0402_1005Metric.fp.toml")).unwrap();

@@ -350,6 +350,13 @@ fn is_interior_join(points: &[P], end: P) -> bool {
 
 fn dangling_track(cx: &Ctx, r: &mut Report) {
     let items = cx.copper_items();
+    let bridged: Vec<&crate::layout::Placed> = cx
+        .parts
+        .iter()
+        .filter(|p| {
+            p.footprint.graphics.iter().any(|g| cx.copper.contains(&p.flip_layer(&g.layer)))
+        })
+        .collect();
     for (ti, t) in cx.tracks.iter().enumerate() {
         for end in [t.points[0], *t.points.last().unwrap()] {
             let mut b = Bounds::EMPTY;
@@ -361,7 +368,17 @@ fn dangling_track(cx: &Ctx, r: &mut Report) {
                     && c.owner != Owner::Track(ti)
                     && c.shape.circle_gap(end, t.width / 2.0) <= 1e-6
             }) || t.points.len() > 2 && is_interior_join(&t.points, end)
-                || cx.zones.iter().any(|z| z.net == t.net && z.layer == t.layer && z.filled(end));
+                || cx.zones.iter().any(|z| z.net == t.net && z.layer == t.layer && z.filled(end))
+                || bridged.iter().any(|p| {
+                    crate::layout::footprint_copper_joins(
+                        p,
+                        cx.copper,
+                        &t.layer,
+                        t.net,
+                        end,
+                        t.width / 2.0,
+                    )
+                });
             if !touches {
                 r.emit(
                     format!("tracks[{ti}] {}", cx.nets[t.net].name),
