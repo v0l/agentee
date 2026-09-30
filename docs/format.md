@@ -546,7 +546,7 @@ length is congatec AN37. Anything a preset sets, the interface can override.
 Delays are the track delay from each layer's effective permittivity plus the via barrel the
 signal crosses. A plane counts as the reference where the first copper found walking away from
 the track, past cut-out layers, is a zone of a `reference` net that covers the track's full
-width. Every sim result records a hash of the copper it saw (the sim's `region` only, plus the
+width; the antipad around the net's own vias does not count. Every sim result records a hash of the copper it saw (the sim's `region` only, plus the
 stackup); a result whose copper has changed since is stale, and a measure on it fails.
 
 `agentee tune NAME` (MCP `tune`) fixes these: for every pair over its skew limit and every match

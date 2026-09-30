@@ -734,6 +734,12 @@ fn unreferenced(side: &[usize], spec: &Spec, cx: &Ctx) -> (f64, Option<(P, Strin
     let mut first = None;
     for t in cx.tracks.iter().filter(|t| side.contains(&t.net)) {
         let Some(li) = cx.copper.iter().position(|c| c == &t.layer) else { continue };
+        let own: Vec<(P, f64)> = cx
+            .vias
+            .iter()
+            .filter(|v| v.net == t.net)
+            .map(|v| (v.at, v.diameter / 2.0 + cx.nets[t.net].clearance.max(0.2) + t.width / 2.0))
+            .collect();
         for w in t.points.windows(2) {
             let l = geom::dist(w[0], w[1]);
             if l < 1e-9 {
@@ -746,6 +752,9 @@ fn unreferenced(side: &[usize], spec: &Spec, cx: &Ctx) -> (f64, Option<(P, Strin
                 let f = (s as f64 + 0.5) / k as f64;
                 let c = [w[0][0] + (w[1][0] - w[0][0]) * f, w[0][1] + (w[1][1] - w[0][1]) * f];
                 let pts = [c, [c[0] + n[0], c[1] + n[1]], [c[0] - n[0], c[1] - n[1]]];
+                if own.iter().any(|(v, r)| geom::dist(*v, c) < *r) {
+                    continue;
+                }
                 if !referenced(li, &pts) {
                     total += l / k as f64;
                     if first.is_none() {
