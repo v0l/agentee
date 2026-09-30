@@ -34,6 +34,11 @@ setup of a run:
 python xcheck/openems_freespace.py gpu 300 800 PML_8 target/xcheck [noprobe]
 ```
 
+`AGENTEE_FDTD_FUSED=1` swaps the separate H and E kernels for the one-kernel step described under
+"Fused E/H step" below, and `AGENTEE_FDTD_PROFILE=1` prints each kernel's mean GPU time per
+dispatch (timestamp queries from step 200 of the first chunk, as far as 2048 dispatches go) and
+their sum per step to stderr, for `throughput`, the cases and `agentee sim` alike.
+
 The openEMS side uses a wider air box (8 mm), PML_8, the thirds rule on the strip edges,
 `AddConductingSheet` for lossy copper (frequency dependent) and PEC otherwise. Lossy substrates
 are an openEMS Debye material with the same poles agentee uses for its Djordjevic-Sarkar
@@ -146,3 +151,49 @@ Findings:
   dB at 1 / 3 / 5 GHz.
 - `thin_lossy` S11 and S21 differ by 0.7 dB and 0.2 dB because agentee widens the strip for its
   35 um thickness and openEMS's conducting sheet has none.
+
+## Fused E/H step
+
+`AGENTEE_FDTD_FUSED=1` updates H and then E in one kernel: E, H and the PML state are double
+buffered, each 32 x 8 block (64 x 4 up to 64 z cells) marches 4 planes along x, recomputes the H it
+needs from its neighbours from the old fields and reads its own new H from workgroup memory. Port
+series are bit-identical to the separate kernels (`the_fused_step_matches_the_separate_kernels`
+reads a largest difference of 0). It stays off: it is not 10 % faster on both the free-space grid
+and an lna-rf sized board. Kernel times from `AGENTEE_FDTD_PROFILE` on an idle RTX PRO 6000
+Blackwell Max-Q (128 MB L2), us per step:
+
+| grid | nodes | update_h + update_e | fused step | whole step, split / fused |
+|---|---|---|---|---|
+| free space 128^3, PML 8 | 2.15M | 33 + 35 | | 81 / 119 (`throughput`) |
+| free space 160^3, PML 8 | 4.17M | 92 + 99 | 232 | 202 / 246 |
+| free space 200^3, PML 8 | 8.12M | 287 + 285 | 424 | 584 / 440 |
+| `via` at 0.0125 mm | 1.61M | 32 + 33 | 85 | 79 / 100, run 4.72 / 6.02 s |
+| lna-rf, port IN | 4.31M | 166 + 159 | 276 | 914 / 853, run 13.43 / 12.33 s |
+
+- The split pair reads and writes one copy of E and H, 24 bytes a node, 100 MB at 160^3, and
+  that stays in the L2. The fused step reads one copy and writes the other, so it streams from
+  DRAM at every size: 16.6 to 18 G nodes/s from 128^3 to 260^3, where the split pair runs 26 G
+  at 128^3, 20 to 23 G at 160^3 and 14 G from 200^3 up. The two cross between 170^3 and 180^3
+  (5.0M to 5.9M nodes); from 200^3 the fused step takes 15 to 25 % less time.
+- Block shape and march length barely move the fused kernel at 160^3: 32 x 8, 32 x 4, 64 x 4 and
+  16 x 16 blocks take 234 to 246 us; marching 2, 4 or 8 planes takes 229, 238 and 264 us, and
+  200^3 takes 429, 424 and 447 us.
+- lna-rf is bound by its lossy dielectric and copper: 2.9M Debye edges of 18 poles (211 MB of
+  pole state read and written each step, `debye_post` 331 us) and 463k surface impedance sheets
+  of 20 states (`sheet_pre` and `sheet_post` 39 + 139 us, the fused `sheet_fix` 185 us, the
+  fused `debye_fix` 346 us against 37 + 331). The E and H update is a third of the step, so the
+  fused kernel saves 49 us there and the whole step is 7 % shorter.
+- Tried and dropped, an in-place step with no double buffers and no halo recompute: each block
+  marches its planes updating H in place and every E component whose curl stays inside the
+  block; the E components on a block's first row, column and plane (the ones a neighbour's H
+  reads) wait for a second kernel over those faces, and the sheet and Debye corrections keep
+  their old E from before the step. Bit-identical, and the fields stay in the L2, but H alone
+  in the march costs what `update_h` does (90 us at 160^3), the E part adds 79 us and the face
+  kernel 28 to 56 us: 218 to 250 us at 160^3 for marches of 2 to 16 planes against 197 split,
+  562 at 200^3 against 584 split and 440 double buffered, 933 to 966 us on lna-rf against 914.
+  In the L2 each E or H component costs the same fused or split (the kernels wait on latency,
+  not bandwidth), so fusing saves nothing there and the face kernel is pure overhead; from DRAM
+  the face kernel's scattered reads eat the saving.
+- `ncu` does not profile Vulkan compute and `nsys` GPU metrics need admin rights on this machine,
+  so the numbers are timestamp queries only; no counters for bank conflicts, occupancy or L2
+  hit rate.
