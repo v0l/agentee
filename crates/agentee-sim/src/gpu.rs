@@ -40,7 +40,8 @@ async fn open() -> Result<Gpu, String> {
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("agentee-sim"),
-            required_features: wgpu::Features::empty(),
+            required_features: adapter.features()
+                & (wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES),
             required_limits: wgpu::Limits {
                 max_storage_buffer_binding_size: limits.max_storage_buffer_binding_size,
                 max_buffer_size: limits.max_buffer_size,
