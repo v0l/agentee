@@ -264,6 +264,15 @@ impl SchematicFile {
     }
 
     pub fn resolve(&self, lib: &Library, d: &mut Diags) -> Schematic {
+        let mut s = self.resolve_netlist(lib, d);
+        route(&mut s, d);
+        for n in &mut s.nets {
+            n.junctions = junctions(n, &s.parts);
+        }
+        s
+    }
+
+    pub fn resolve_netlist(&self, lib: &Library, d: &mut Diags) -> Schematic {
         let mut parts = Vec::new();
         for (i, p) in self.parts.iter().enumerate() {
             let at = format!("parts[{i}] {}", p.reference);
@@ -365,7 +374,7 @@ impl SchematicFile {
             });
         }
         let no_connect = self.no_connect.iter().filter_map(|s| find(s, d, "no_connect")).collect();
-        let mut s = Schematic {
+        Schematic {
             name: self.name.clone(),
             description: self.description.clone(),
             board: self.board.clone(),
@@ -374,12 +383,7 @@ impl SchematicFile {
             no_connect,
             sheets: Vec::new(),
             parent: None,
-        };
-        route(&mut s, d);
-        for n in &mut s.nets {
-            n.junctions = junctions(n, &s.parts);
         }
-        s
     }
 }
 

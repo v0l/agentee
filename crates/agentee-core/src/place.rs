@@ -1,8 +1,8 @@
 use crate::board::Board;
 use crate::footprint::{Footprint, PadKind};
 use crate::geom::{self, P, Transform};
-use crate::graphic::{Anchor, Bounds, Shape};
-use crate::layout::{BoardSide, Layout, PlacementFile, glob};
+use crate::graphic::{Anchor, Bounds, Graphic, Shape};
+use crate::layout::{Artwork, BoardSide, PlacementFile, glob};
 use crate::schematic::{PinRef, Schematic};
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
@@ -128,15 +128,14 @@ pub struct SilkArea {
     pub poly: Vec<P>,
 }
 
-pub fn board_silk(layout: &Layout) -> Vec<SilkArea> {
+pub fn board_silk(graphics: &[Graphic], artwork: &[Artwork]) -> Vec<SilkArea> {
     let side = |layer: &str| layer.starts_with("B.");
-    let mut out: Vec<SilkArea> = layout
-        .board_texts()
+    let mut out: Vec<SilkArea> = crate::layout::board_texts(graphics)
         .iter()
         .filter(|t| t.part == usize::MAX && t.owner != "watermark")
         .map(|t| SilkArea { bottom: side(&t.layer), poly: grow(&t.outline(), SILK_ROOM) })
         .collect();
-    for g in layout.graphics.iter().filter(|g| g.layer.ends_with(".SilkS")) {
+    for g in graphics.iter().filter(|g| g.layer.ends_with(".SilkS")) {
         if matches!(g.shape, Shape::Text { .. }) {
             continue;
         }
@@ -160,7 +159,7 @@ pub fn board_silk(layout: &Layout) -> Vec<SilkArea> {
             out.push(SilkArea { bottom: side(&g.layer), poly });
         }
     }
-    for a in layout.artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
+    for a in artwork.iter().filter(|a| a.layer.ends_with(".SilkS")) {
         for poly in &a.polygons {
             out.push(SilkArea { bottom: side(&a.layer), poly: poly.clone() });
         }

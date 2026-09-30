@@ -154,6 +154,7 @@ fn flatten(
     lib: &Library,
     stack: &mut Vec<String>,
     d: &mut Diags,
+    routed: bool,
 ) -> (SchematicFile, Vec<crate::schematic::SheetFrame>) {
     if file.sheets.is_empty() {
         return (file.clone(), Vec::new());
@@ -169,8 +170,12 @@ fn flatten(
             d.error("sheets", format!("no schematic named `{name}`"));
             continue;
         };
-        let (child, _) = flatten(child, all, lib, stack, &mut Diags::new(name));
-        let bounds = child.resolve(lib, &mut Diags::new(name)).bounds();
+        let (child, _) = flatten(child, all, lib, stack, &mut Diags::new(name), routed);
+        let bounds = if routed {
+            child.resolve(lib, &mut Diags::new(name)).bounds()
+        } else {
+            child.resolve_netlist(lib, &mut Diags::new(name)).bounds()
+        };
         sheets.push((child, bounds));
     }
     stack.pop();
@@ -185,6 +190,21 @@ fn tag(mut d: Diags, path: &Path) -> Vec<Diagnostic> {
     d.list
 }
 
+#[derive(Default)]
+struct Files {
+    symbols: Vec<(PathBuf, SymbolFile)>,
+    footprints: Vec<(PathBuf, FootprintFile)>,
+    schematics: Vec<(PathBuf, SchematicFile)>,
+    layouts: Vec<(PathBuf, LayoutFile)>,
+    sims: Vec<(PathBuf, SimFile, u64)>,
+}
+
+pub struct Geometry {
+    pub project: Project,
+    pub layouts: Vec<(PathBuf, LayoutFile)>,
+    pub sims: Vec<SimFile>,
+}
+
 impl Project {
     pub fn load(path: &Path) -> std::io::Result<Project> {
         Self::load_kinds(path, |_| true)
@@ -194,7 +214,24 @@ impl Project {
         Self::load_kinds(path, |k| matches!(k, Kind::Board | Kind::Footprint))
     }
 
-    fn load_kinds(path: &Path, keep: fn(Kind) -> bool) -> std::io::Result<Project> {
+    pub fn load_geometry(path: &Path) -> std::io::Result<Geometry> {
+        let (mut p, files) = Self::read(path, |_| true)?;
+        for (f, file) in files.footprints {
+            let mut d = Diags::new(&file.name);
+            let item = file.resolve(&mut d);
+            p.footprints.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
+        }
+        for (f, file) in files.symbols {
+            let mut d = Diags::new(&file.name);
+            let item = file.resolve(&mut d);
+            p.symbols.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
+        }
+        p.resolve_schematics(&files.schematics, &files.layouts, false);
+        let sims = files.sims.into_iter().map(|(_, s, _)| s).collect();
+        Ok(Geometry { project: p, layouts: files.layouts, sims })
+    }
+
+    fn read(path: &Path, keep: fn(Kind) -> bool) -> std::io::Result<(Project, Files)> {
         let (root, files) = if path.is_dir() {
             let mut v = Vec::new();
             walk(path, &mut v)?;
@@ -213,11 +250,7 @@ impl Project {
         };
         let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut p = Project { root, generation, ..Default::default() };
-        let mut sym_files = Vec::new();
-        let mut fp_files = Vec::new();
-        let mut sch_files = Vec::new();
-        let mut pcb_files = Vec::new();
-        let mut sim_files = Vec::new();
+        let mut out = Files::default();
         for f in files.into_iter().filter(|f| Kind::of(f).is_some_and(keep)) {
             let src = match std::fs::read_to_string(&f) {
                 Ok(s) => s,
@@ -242,28 +275,40 @@ impl Project {
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 Some(Kind::Symbol) => match parse::<SymbolFile>(&src) {
-                    Ok(s) => sym_files.push((f, s)),
+                    Ok(s) => out.symbols.push((f, s)),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 Some(Kind::Footprint) => match parse::<FootprintFile>(&src) {
-                    Ok(s) => fp_files.push((f, s)),
+                    Ok(s) => out.footprints.push((f, s)),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 Some(Kind::Schematic) => match parse::<SchematicFile>(&src) {
-                    Ok(s) => sch_files.push((f, s)),
+                    Ok(s) => out.schematics.push((f, s)),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 Some(Kind::Layout) => match parse::<LayoutFile>(&src) {
-                    Ok(s) => pcb_files.push((f, s)),
+                    Ok(s) => out.layouts.push((f, s)),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 Some(Kind::Sim) => match parse::<SimFile>(&src) {
-                    Ok(s) => sim_files.push((f, s, crate::sim::hash(&src))),
+                    Ok(s) => out.sims.push((f, s, crate::sim::hash(&src))),
                     Err((at, msg)) => p.fail(&f, &at, msg),
                 },
                 None => {}
             }
         }
+        Ok((p, out))
+    }
+
+    fn load_kinds(path: &Path, keep: fn(Kind) -> bool) -> std::io::Result<Project> {
+        let (mut p, files) = Self::read(path, keep)?;
+        let Files {
+            symbols: sym_files,
+            footprints: fp_files,
+            schematics: sch_files,
+            layouts: pcb_files,
+            sims: mut sim_files,
+        } = files;
         let rules = p.rules();
         for (f, file) in fp_files {
             let mut d = Diags::new(&file.name);
@@ -278,35 +323,7 @@ impl Project {
             p.symbols.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         p.cross_check();
-        let sheet_names: std::collections::HashSet<String> =
-            sch_files.iter().flat_map(|(_, s)| s.sheets.iter().cloned()).collect();
-        for (f, file) in &sch_files {
-            let mut d = Diags::new(&file.name);
-            let board = p.pick_board(file.board.as_deref(), &mut d);
-            let lib = Library {
-                symbols: p.symbols.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
-                footprints: p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
-                netclasses: board.map(|b| b.netclasses.iter().map(|n| n.name.clone()).collect()),
-            };
-            let (whole, frames) = flatten(file, &sch_files, &lib, &mut Vec::new(), &mut d);
-            let mut item = whole.resolve(&lib, &mut d);
-            let laid_out = pcb_files.iter().any(|(_, l)| match l.schematic.as_deref() {
-                Some(n) => n == file.name,
-                None => sch_files.len() == 1,
-            });
-            item.check_as(&lib, &mut d, sheet_names.contains(&file.name), laid_out);
-            item.sheets = frames;
-            item.parent = sch_files
-                .iter()
-                .find(|(_, s)| s.sheets.contains(&file.name))
-                .map(|(_, s)| s.name.clone());
-            p.schematics.push(Entry {
-                name: item.name.clone(),
-                diags: tag(d, f),
-                path: f.clone(),
-                item,
-            });
-        }
+        p.resolve_schematics(&sch_files, &pcb_files, true);
         for (f, file) in pcb_files {
             let mut d = Diags::new(&file.name);
             let board = p.pick_board(file.board.as_deref(), &mut d).cloned();
@@ -431,6 +448,48 @@ impl Project {
         }
         p.measure_interfaces();
         Ok(p)
+    }
+
+    fn resolve_schematics(
+        &mut self,
+        sch_files: &[(PathBuf, SchematicFile)],
+        pcb_files: &[(PathBuf, LayoutFile)],
+        checked: bool,
+    ) {
+        let sheet_names: std::collections::HashSet<String> =
+            sch_files.iter().flat_map(|(_, s)| s.sheets.iter().cloned()).collect();
+        for (f, file) in sch_files {
+            let mut d = Diags::new(&file.name);
+            let board = self.pick_board(file.board.as_deref(), &mut d);
+            let lib = Library {
+                symbols: self.symbols.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+                footprints: self.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+                netclasses: board.map(|b| b.netclasses.iter().map(|n| n.name.clone()).collect()),
+            };
+            let (whole, frames) = flatten(file, sch_files, &lib, &mut Vec::new(), &mut d, checked);
+            let mut item = if checked {
+                let item = whole.resolve(&lib, &mut d);
+                let laid_out = pcb_files.iter().any(|(_, l)| match l.schematic.as_deref() {
+                    Some(n) => n == file.name,
+                    None => sch_files.len() == 1,
+                });
+                item.check_as(&lib, &mut d, sheet_names.contains(&file.name), laid_out);
+                item
+            } else {
+                whole.resolve_netlist(&lib, &mut d)
+            };
+            item.sheets = frames;
+            item.parent = sch_files
+                .iter()
+                .find(|(_, s)| s.sheets.contains(&file.name))
+                .map(|(_, s)| s.name.clone());
+            self.schematics.push(Entry {
+                name: item.name.clone(),
+                diags: tag(d, f),
+                path: f.clone(),
+                item,
+            });
+        }
     }
 
     fn measure_interfaces(&mut self) {
@@ -692,7 +751,7 @@ impl Project {
         hash
     }
 
-    fn pick_board(&self, name: Option<&str>, d: &mut Diags) -> Option<&Board> {
+    pub fn pick_board(&self, name: Option<&str>, d: &mut Diags) -> Option<&Board> {
         match name {
             Some(n) => {
                 let b = self.boards.iter().find(|b| b.name == n).map(|b| &b.item);
@@ -712,7 +771,7 @@ impl Project {
         }
     }
 
-    fn pick_schematic(&self, name: Option<&str>, d: &mut Diags) -> Option<&Schematic> {
+    pub fn pick_schematic(&self, name: Option<&str>, d: &mut Diags) -> Option<&Schematic> {
         let found = match name {
             Some(n) => self.schematics.iter().find(|b| b.name == n).map(|b| &b.item),
             None => match self.schematics.as_slice() {

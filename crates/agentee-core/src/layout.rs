@@ -2081,7 +2081,7 @@ impl LayoutFile {
         out
     }
 
-    fn artwork_of(
+    pub fn artwork_of(
         &self,
         dir: &std::path::Path,
         d: &mut Diags,
@@ -2162,7 +2162,7 @@ impl LayoutFile {
     }
 }
 
-fn board_texts(graphics: &[crate::graphic::Graphic]) -> Vec<SilkText> {
+pub fn board_texts(graphics: &[crate::graphic::Graphic]) -> Vec<SilkText> {
     graphics
         .iter()
         .filter(|g| g.layer.ends_with(".SilkS"))

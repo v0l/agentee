@@ -1686,47 +1686,51 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         other => return Err(format!("side `{other}` is not F, B or both")),
     };
     let started = std::time::Instant::now();
-    let p = load(root)?;
-    let i = layout_index(&p, name)?;
-    let entry = &p.layouts[i];
-    let layout = &entry.item;
-    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
-    let sch = &p
-        .schematics
+    let g = agentee_core::project::Project::load_geometry(root)
+        .map_err(|e| format!("{}: {e}", root.display()))?;
+    let p = &g.project;
+    let (path, file) = g
+        .layouts
         .iter()
-        .find(|s| s.name == layout.schematic)
-        .ok_or("the layout's schematic is missing")?
-        .item;
-    let text = std::fs::read_to_string(&entry.path)
-        .map_err(|e| format!("{}: {e}", entry.path.display()))?;
-    let file: agentee_core::layout::LayoutFile = agentee_core::project::parse(&text)
-        .map_err(|(at, m)| format!("{}: {at}: {m}", entry.path.display()))?;
+        .find(|(_, f)| f.name == name || format!("pcb:{}", f.name) == name)
+        .ok_or_else(|| {
+            let names: Vec<&str> = g.layouts.iter().map(|(_, f)| f.name.as_str()).collect();
+            format!("no layout named `{name}`, there is {}", names.join(", "))
+        })?;
+    let mut d = agentee_core::diag::Diags::new(&file.name);
+    let picked = (
+        p.pick_board(file.board.as_deref(), &mut d),
+        p.pick_schematic(file.schematic.as_deref(), &mut d),
+    );
+    let (Some(board), Some(sch)) = picked else {
+        let why: Vec<String> = d.list.iter().map(|x| x.message.clone()).collect();
+        return Err(format!("{}: {}", path.display(), why.join(", ")));
+    };
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut fast: Vec<String> = file.interfaces.iter().flat_map(|f| f.nets.clone()).collect();
     for pr in &file.pairs {
         fast.push(pr.p.clone());
         fast.push(pr.n.clone());
     }
-    let sims: Vec<agentee_core::sim::SimFile> = p
-        .sims
-        .iter()
-        .filter_map(|s| std::fs::read_to_string(&s.path).ok())
-        .filter_map(|src| agentee_core::project::parse(&src).ok())
-        .collect();
-    let heat = pl::thermal_heat(&sims, &entry.name);
+    let heat = pl::thermal_heat(&g.sims, &file.name);
     let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
         p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect();
     let spec = file.place.clone().unwrap_or_default();
+    let outline = board.outline.as_ref().map(|o| o.points()).unwrap_or_default();
+    let cutouts: Vec<Vec<[f64; 2]>> = board.cutouts.iter().map(|c| c.points()).collect();
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let (graphics, artwork) = file.artwork_of(&dir, &mut d);
     let input = pl::PlaceInput {
         board,
-        outline: &layout.outline,
-        cutouts: &layout.board_cutouts,
+        outline: &outline,
+        cutouts: &cutouts,
         schematic: sch,
         footprints: &footprints,
         placements: &file.footprints,
         spec: &spec,
         fast_nets: fast,
         heat,
-        silk: pl::board_silk(layout),
+        silk: pl::board_silk(&graphics, &artwork),
     };
     let opts = pl::PlaceOptions {
         parts: a.parts.clone(),
@@ -1738,9 +1742,8 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     let r = pl::place(&input, &opts)?;
     let solve_ms = started.elapsed().as_millis() - load_ms;
     let stale_copper = file.tracks.len() + file.vias.len();
-    let path = entry.path.clone();
-    let layout_name = entry.name.clone();
-    drop(p);
+    let path = path.clone();
+    let layout_name = file.name.clone();
     let mut out = json!({
         "layout": layout_name,
         "written": false,

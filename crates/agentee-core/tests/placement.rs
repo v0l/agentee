@@ -191,7 +191,7 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
         spec: &spec,
         fast_nets: Vec::new(),
         heat: vec![("U1".into(), 0.45)],
-        silk: place::board_silk(layout),
+        silk: place::board_silk(&layout.graphics, &layout.artwork),
     };
     place::place(&input, opts).unwrap()
 }
