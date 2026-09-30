@@ -513,7 +513,10 @@ kicad-packages3D repository into the cache: `agentee models` (MCP `models`) fetc
 reports what it found, and the viewer fetches in the background. A part without a model is a box
 over its fab outline, `height` tall, else a height guessed from the footprint name. STEP files are
 meshed with [truck](https://github.com/ricosjp/truck), with colours from their styled items and
-assembly placements applied.
+assembly placements applied. Edges use the 3D curve of each surface curve, not its pcurves.
+Unclamped B-spline curves and surfaces are cut to their valid knot range. An edge curve that
+still does not evaluate to finite points is meshed as a straight line, and a face whose surface
+does not is left out.
 
 Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
 clearance to every other net and to the board edge, and islands that reach nothing are removed.

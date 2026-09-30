@@ -1,7 +1,12 @@
 use crate::{Mesh, MeshBuilder};
 use std::collections::{HashMap, HashSet, VecDeque};
 use truck_meshalgo::prelude::*;
-use truck_stepio::r#in::{Table, alias::Curve3D};
+use truck_stepio::r#in::{
+    Table,
+    alias::{
+        BSplineSurface, Curve3D, KnotVec, Line, Surface, Tolerance, control_point::ControlPoint,
+    },
+};
 
 type M = [[f64; 4]; 3];
 
@@ -320,7 +325,8 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
             }
         }
     }
-    let table = ruststep::parser::parse(text)
+    let text = text.replace(".PCURVE_S1.", ".CURVE_3D.").replace(".PCURVE_S2.", ".CURVE_3D.");
+    let table = ruststep::parser::parse(&text)
         .map_err(|e| format!("STEP parse: {e:?}"))
         .map(|ex| ex.data.first().map(Table::from_data_section))?
         .ok_or("empty STEP")?;
@@ -405,6 +411,57 @@ where
     }
 }
 
+fn valid_range(knots: &KnotVec, degree: usize) -> Option<(f64, f64)> {
+    if knots.is_clamped(degree) || knots.len() < 2 * degree + 2 {
+        return None;
+    }
+    let (lo, hi) = (knots[degree], knots[knots.len() - 1 - degree]);
+    (hi > lo).then_some((lo, hi))
+}
+
+fn clamp_curve<C: Cut>(c: &mut C, range: Option<(f64, f64)>) {
+    if let Some((lo, hi)) = range {
+        let mut part = c.cut(lo);
+        let _ = part.cut(hi);
+        *c = part;
+    }
+}
+
+fn clamp_surface<P: ControlPoint<f64> + Tolerance>(s: &mut BSplineSurface<P>) {
+    if let Some((lo, hi)) = valid_range(s.uknot_vec(), s.udegree()) {
+        let mut part = s.ucut(lo);
+        let _ = part.ucut(hi);
+        *s = part;
+    }
+    if let Some((lo, hi)) = valid_range(s.vknot_vec(), s.vdegree()) {
+        let mut part = s.vcut(lo);
+        let _ = part.vcut(hi);
+        *s = part;
+    }
+}
+
+fn finite_surface(s: &Surface) -> bool {
+    let (ur, vr) = s.try_range_tuple();
+    let ((u0, u1), (v0, v1)) = (ur.unwrap_or((0.0, 1.0)), vr.unwrap_or((0.0, 1.0)));
+    [u0, u1, v0, v1].iter().all(|x| x.is_finite())
+        && (0..=8).all(|i| {
+            (0..=8).all(|j| {
+                let p = s.subs(u0 + (u1 - u0) * i as f64 / 8.0, v0 + (v1 - v0) * j as f64 / 8.0);
+                p.x.is_finite() && p.y.is_finite() && p.z.is_finite()
+            })
+        })
+}
+
+fn finite_curve(c: &Curve3D) -> bool {
+    let (t0, t1) = c.range_tuple();
+    t0.is_finite()
+        && t1.is_finite()
+        && (0..=32).all(|i| {
+            let p = c.subs(t0 + (t1 - t0) * i as f64 / 32.0);
+            p.x.is_finite() && p.y.is_finite() && p.z.is_finite()
+        })
+}
+
 type FaceTris = Vec<(Option<u64>, Vec<[[f64; 3]; 2]>)>;
 
 fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<FaceTris> {
@@ -430,10 +487,32 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
     for e in compressed.edges.iter_mut() {
         let (a, b) = (verts[e.vertices.0], verts[e.vertices.1]);
         match &mut e.curve {
-            Curve3D::BSplineCurve(c) => trim_to(c, a, b),
-            Curve3D::NurbsCurve(c) => trim_to(c, a, b),
+            Curve3D::BSplineCurve(c) => {
+                clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
+                trim_to(c, a, b)
+            }
+            Curve3D::NurbsCurve(c) => {
+                clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
+                trim_to(c, a, b)
+            }
             _ => {}
         }
+        if !finite_curve(&e.curve) {
+            e.curve = Curve3D::Line(Line(a, b));
+        }
+    }
+    for f in compressed.faces.iter_mut() {
+        match &mut f.surface {
+            Surface::BSplineSurface(s) => clamp_surface(s),
+            Surface::NurbsSurface(s) => clamp_surface(s.non_rationalized_mut()),
+            _ => {}
+        }
+    }
+    let kept: Vec<usize> = (0..compressed.faces.len())
+        .filter(|&i| finite_surface(&compressed.faces[i].surface))
+        .collect();
+    if kept.len() < compressed.faces.len() {
+        compressed.faces = kept.iter().map(|&i| compressed.faces[i].clone()).collect();
     }
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut lo = [f64::MAX; 3];
@@ -484,7 +563,7 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
                 verts.push([p[k], n]);
             }
         }
-        out.push(((i < face_ids.len()).then(|| face_ids[i]), verts));
+        out.push(((kept[i] < face_ids.len()).then(|| face_ids[kept[i]]), verts));
     }
     Some(out)
 }
@@ -492,6 +571,7 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
 #[cfg(test)]
 mod tests {
     use super::*;
+    use truck_stepio::r#in::alias::{BSplineCurve, NurbsCurve};
 
     #[test]
     fn placements_compose_and_invert() {
@@ -504,5 +584,57 @@ mod tests {
         }
         assert_eq!(args("FOO('a,b',(#1,#2),#3)"), vec!["'a,b'", "(#1,#2)", "#3"]);
         assert_eq!(refs("(#12,#3) #7"), vec![12, 3, 7]);
+    }
+
+    #[test]
+    fn filleted_box_loads_from_curve_3d() {
+        let mesh = parse(include_str!("../tests/data/filleted_box.step")).unwrap();
+        assert!(mesh.triangles() > 0);
+        let (lo, hi) = mesh.bounds();
+        for k in 0..3 {
+            assert!((lo[k] + 0.5).abs() < 1e-4 && (hi[k] - 0.5).abs() < 1e-4, "{lo:?} {hi:?}");
+        }
+    }
+
+    #[test]
+    fn unclamped_rational_spline_is_clamped_to_its_valid_range() {
+        let t = std::f64::consts::TAU / 3.0;
+        let knots =
+            KnotVec::from(vec![-t, 0.0, 0.0, t, t, 2.0 * t, 2.0 * t, 3.0 * t, 3.0 * t, 4.0 * t]);
+        let w = [1.0, 0.5, 1.0, 0.5, 1.0, 0.5, 1.0];
+        let pts = [
+            (0.8, 0.0),
+            (0.45, 0.0),
+            (0.63, 0.3),
+            (0.8, 0.6),
+            (0.97, 0.3),
+            (1.15, 0.0),
+            (0.8, 0.0),
+        ];
+        let control =
+            pts.iter().zip(w).map(|(&(x, y), w)| Vector4::new(x * w, y * w, 0.0, w)).collect();
+        let mut nurbs = NurbsCurve::new(BSplineCurve::new(knots, control));
+        assert!(!finite_curve(&Curve3D::NurbsCurve(nurbs.clone())));
+        let range = valid_range(nurbs.knot_vec(), nurbs.degree());
+        clamp_curve(&mut nurbs, range);
+        assert_eq!(nurbs.range_tuple(), (0.0, 3.0 * t));
+        assert!(finite_curve(&Curve3D::NurbsCurve(nurbs)));
+        let line = Curve3D::Line(Line(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)));
+        assert!(finite_curve(&line));
+    }
+
+    #[test]
+    fn unclamped_surface_is_cut_to_its_valid_range() {
+        let knots = KnotVec::from(vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
+        let control = (0..3)
+            .map(|i| (0..3).map(|j| Point3::new(i as f64, j as f64, (i * j) as f64)).collect())
+            .collect();
+        let original = BSplineSurface::new((knots.clone(), knots), control);
+        let mut clamped = original.clone();
+        clamp_surface(&mut clamped);
+        assert_eq!(clamped.range_tuple(), ((2.0, 3.0), (2.0, 3.0)));
+        for (u, v) in [(2.0, 2.0), (2.5, 2.25), (3.0, 3.0)] {
+            assert!(clamped.subs(u, v).distance(original.subs(u, v)) < 1e-9);
+        }
     }
 }
