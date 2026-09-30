@@ -397,6 +397,10 @@ pub struct LinkFile {
     #[serde(rename = "ref")]
     pub reference: String,
     pub resistance: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub a: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub b: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1116,19 +1120,28 @@ impl SimFile {
                         None
                     }),
                     (None, "R") => parse_value(&part.value),
-                    (None, "L") => Some(0.1),
+                    (None, "L" | "FB") => Some(0.1),
                     _ => None,
                 };
                 let Some(ohms) = ohms else { continue };
-                let a = part.pads.iter().position(|q| q.number == "1" && !q.copper.is_empty());
-                let b = part.pads.iter().position(|q| q.number == "2" && !q.copper.is_empty());
-                if let (Some(a), Some(b)) = (a, b) {
-                    links.push(Link {
+                let (na, nb) = (
+                    explicit.and_then(|l| l.a.clone()).unwrap_or_else(|| "1".into()),
+                    explicit.and_then(|l| l.b.clone()).unwrap_or_else(|| "2".into()),
+                );
+                let a = part.pads.iter().position(|q| q.number == na && !q.copper.is_empty());
+                let b = part.pads.iter().position(|q| q.number == nb && !q.copper.is_empty());
+                match (a, b) {
+                    (Some(a), Some(b)) => links.push(Link {
                         reference: part.reference.clone(),
-                        a: PadRef { part: pi, pad: a, label: format!("{}.1", part.reference) },
-                        b: PadRef { part: pi, pad: b, label: format!("{}.2", part.reference) },
+                        a: PadRef { part: pi, pad: a, label: format!("{}.{na}", part.reference) },
+                        b: PadRef { part: pi, pad: b, label: format!("{}.{nb}", part.reference) },
                         ohms: ohms.max(1e-6),
-                    });
+                    }),
+                    _ if explicit.is_some() => d.error(
+                        format!("link {}", part.reference),
+                        format!("{} has no copper pads {na} and {nb}", part.reference),
+                    ),
+                    _ => {}
                 }
             }
             for l in &self.links {

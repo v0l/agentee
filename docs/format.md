@@ -773,8 +773,9 @@ stable). The result goes stale when the spec, the board result or a device file 
 
 Solves the copper of every layer as a resistive sheet (vias as plated barrels), with supply pads
 held at their voltage and loads drawing current, by sparse Cholesky in f64. Parts carry DC
-through `[[links]]`: resistors take their value, inductors default to 0.1 ohm, anything else is
-open unless linked.
+through `[[links]]`: resistors take their value, inductors and ferrite beads (`FB`) default to
+0.1 ohm, anything else is open unless linked. A link joins pads 1 and 2 unless `a` and `b` name
+others, so a load switch is `{ ref = "U5", resistance = "80mohm", a = "1", b = "6" }`.
 
 ```toml
 name = "lna-dc"
