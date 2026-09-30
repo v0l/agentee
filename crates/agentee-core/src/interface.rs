@@ -1,5 +1,6 @@
 use crate::board::Board;
 use crate::diag::Diags;
+use crate::drc::Findings;
 use crate::geom::{self, P};
 use crate::layout::{LayoutNet, Pair, Placed, Track, Via, ZoneFill, glob};
 use crate::units::{Length, Ohms, Percent, Picos};
@@ -240,7 +241,12 @@ pub struct Ctx<'a> {
     pub pairs: &'a [Pair],
 }
 
-pub fn check(files: &[InterfaceFile], cx: &Ctx, d: &mut Diags) -> Vec<Interface> {
+pub fn check(
+    files: &[InterfaceFile],
+    cx: &Ctx,
+    d: &mut Diags,
+    found: &mut Findings,
+) -> Vec<Interface> {
     let mut out = Vec::new();
     for f in files {
         let at = format!("interface {}", f.name);
@@ -268,16 +274,20 @@ pub fn check(files: &[InterfaceFile], cx: &Ctx, d: &mut Diags) -> Vec<Interface>
             }
             for &n in &members {
                 if !sides.iter().flatten().any(|&m| m == n) {
-                    d.error(&at, format!("{} has no pair partner", cx.nets[n].name));
+                    found.add(
+                        "interface-pair",
+                        &at,
+                        format!("{} has no pair partner", cx.nets[n].name),
+                    );
                 }
             }
         } else {
             sides = members.iter().map(|&n| vec![n]).collect();
         }
         for n in sides.iter().flatten() {
-            impedance(&spec, &cx.nets[*n], cx.board, &at, d);
+            impedance(&spec, &cx.nets[*n], cx.board, &at, found);
         }
-        let lanes: Vec<Lane> = sides.iter().map(|s| lane(s, &spec, cx, &at, d)).collect();
+        let lanes: Vec<Lane> = sides.iter().map(|s| lane(s, &spec, cx, &at, found)).collect();
         for p in &mut pairs {
             let (a, b) = (&lanes[p.0], &lanes[p.1]);
             p.2 = a.length_mm - b.length_mm;
@@ -288,7 +298,8 @@ pub fn check(files: &[InterfaceFile], cx: &Ctx, d: &mut Diags) -> Vec<Interface>
                 None => false,
             };
             if over {
-                d.error(
+                found.add(
+                    "interface-skew",
                     &at,
                     format!(
                         "{} / {}: skew {:.3} mm ({:.2} ps), the interface allows {}",
@@ -301,7 +312,7 @@ pub fn check(files: &[InterfaceFile], cx: &Ctx, d: &mut Diags) -> Vec<Interface>
                 );
             }
         }
-        let (timing, max_bus_skew_ps, clock_window_ps) = timing(f, &lanes, &pairs, &at, d);
+        let (timing, max_bus_skew_ps, clock_window_ps) = timing(f, &lanes, &pairs, &at, d, found);
         out.push(Interface {
             name: f.name.clone(),
             preset: f.preset.clone(),
@@ -323,6 +334,7 @@ fn timing(
     pairs: &[(usize, usize, f64, f64)],
     at: &str,
     d: &mut Diags,
+    rules: &mut Findings,
 ) -> (Vec<Timing>, Option<f64>, Option<[f64; 2]>) {
     let mut signals: Vec<(String, f64, Vec<String>)> = Vec::new();
     let mut members: Vec<Vec<usize>> = Vec::new();
@@ -368,7 +380,8 @@ fn timing(
                         .iter()
                         .max_by(|a, b| signals[**a].1.total_cmp(&signals[**b].1))
                         .unwrap();
-                    d.error(
+                    rules.add(
+                        "interface-bus-skew",
                         at,
                         format!(
                             "the bus spreads {:.1} ps, {} at {:.1} ps to {} at {:.1} ps, the interface allows {limit} ps",
@@ -392,7 +405,8 @@ fn timing(
                 for &k in &data {
                     let rel = signals[k].1 - c;
                     if rel < lo.0 - 1e-9 || rel > hi.0 + 1e-9 {
-                        d.error(
+                        rules.add(
+                            "interface-clock-window",
                             at,
                             format!(
                                 "{} arrives {rel:.1} ps after the clock, the window is {} to {} ps",
@@ -589,19 +603,21 @@ fn eye(m: &MeasureFile, c: &crate::sim::ChannelResult, at: &str, d: &mut Diags) 
     }
 }
 
-fn impedance(spec: &Spec, net: &LayoutNet, board: &Board, at: &str, d: &mut Diags) {
+fn impedance(spec: &Spec, net: &LayoutNet, board: &Board, at: &str, d: &mut Findings) {
     let Some((z, tol)) = spec.impedance else { return };
     let Some(class) = board.netclasses.iter().find(|c| c.name == net.class) else { return };
     let (lo, hi) = (z * (1.0 - tol / 100.0), z * (1.0 + tol / 100.0));
     match class.impedance {
-        None => d.error(
+        None => d.add(
+            "interface-impedance",
             at,
             format!(
                 "{} is in class {}, which has no impedance target; the interface wants {z} ohm",
                 net.name, class.name
             ),
         ),
-        Some(t) if t.0 < lo - 1e-9 || t.0 > hi + 1e-9 => d.error(
+        Some(t) if t.0 < lo - 1e-9 || t.0 > hi + 1e-9 => d.add(
+            "interface-impedance",
             at,
             format!(
                 "{} is in class {} at {} ohm, outside the interface's {lo:.1} to {hi:.1} ohm",
@@ -611,7 +627,8 @@ fn impedance(spec: &Spec, net: &LayoutNet, board: &Board, at: &str, d: &mut Diag
         _ => {}
     }
     if spec.differential && class.diff_gap.is_none() {
-        d.error(
+        d.add(
+            "interface-impedance",
             at,
             format!(
                 "{} is in class {}, which is not a differential pair class",
@@ -621,7 +638,7 @@ fn impedance(spec: &Spec, net: &LayoutNet, board: &Board, at: &str, d: &mut Diag
     }
 }
 
-fn lane(side: &[usize], spec: &Spec, cx: &Ctx, at: &str, d: &mut Diags) -> Lane {
+fn lane(side: &[usize], spec: &Spec, cx: &Ctx, at: &str, d: &mut Findings) -> Lane {
     let names: Vec<String> = side.iter().map(|&n| cx.nets[n].name.clone()).collect();
     let label = names.join("+");
     let length_mm: f64 = side.iter().map(|&n| cx.nets[n].length_mm).sum();
@@ -680,18 +697,20 @@ fn lane(side: &[usize], spec: &Spec, cx: &Ctx, at: &str, d: &mut Diags) -> Lane 
     if let Some(m) = spec.max_vias
         && vias > m as usize
     {
-        d.error(at, format!("{label} has {vias} vias, the interface allows {m}"));
+        d.add("interface-vias", at, format!("{label} has {vias} vias, the interface allows {m}"));
     }
     if let (Some(m), Some(p)) = (spec.max_stub, worst_stub)
         && stub_mm > m + 1e-6
     {
-        d.error(
+        d.add(
+            "interface-stub",
             at,
             format!("{label}: the via at [{:.3}, {:.3}] leaves a {stub_mm:.3} mm stub, the interface allows {m:.3} mm", p[0], p[1]),
         );
     }
     if let (Some(limit), Some(p)) = (spec.return_via, missing_return) {
-        d.error(
+        d.add(
+            "interface-return-via",
             at,
             format!(
                 "{label}: no {} via within {limit:.2} mm of the via at [{:.3}, {:.3}] to carry the return current",
@@ -704,13 +723,18 @@ fn lane(side: &[usize], spec: &Spec, cx: &Ctx, at: &str, d: &mut Diags) -> Lane 
     if let Some(m) = spec.max_length
         && length_mm > m + 1e-6
     {
-        d.error(at, format!("{label} is {length_mm:.2} mm, the interface allows {m:.2} mm"));
+        d.add(
+            "interface-length",
+            at,
+            format!("{label} is {length_mm:.2} mm, the interface allows {m:.2} mm"),
+        );
     }
     let (unreferenced_mm, first) = unreferenced(side, spec, cx);
     if let (Some(m), Some(p)) = (spec.max_unreferenced, first)
         && unreferenced_mm > m + 1e-6
     {
-        d.error(
+        d.add(
+            "interface-reference",
             at,
             format!(
                 "{label} runs {unreferenced_mm:.2} mm with no {} plane under it (first at [{:.3}, {:.3}] on {}), the interface allows {m:.2} mm",

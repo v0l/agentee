@@ -606,6 +606,7 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(mask::RULES)
         .chain(silk::RULES)
         .chain(assembly::RULES)
+        .chain(signal::RULES)
 }
 
 pub fn find(id: &str) -> Option<&'static Rule> {
@@ -687,6 +688,7 @@ mod copper;
 mod courtyard;
 mod drill;
 mod mask;
+mod signal;
 mod silk;
 mod track;
 mod via;

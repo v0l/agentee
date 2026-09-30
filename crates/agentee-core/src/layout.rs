@@ -1341,8 +1341,8 @@ impl LayoutFile {
                 })
                 .sum();
         }
-        let pairs = self.pairs_of(board, &nets, &tracks, &parts, d);
-        let match_groups = self.matches_of(&nets, d);
+        let pairs = self.pairs_of(board, &nets, &tracks, &parts, d, &mut found);
+        let match_groups = self.matches_of(&nets, d, &mut found);
         let interfaces = crate::interface::check(
             &self.interfaces,
             &crate::interface::Ctx {
@@ -1356,6 +1356,7 @@ impl LayoutFile {
                 pairs: &pairs,
             },
             d,
+            &mut found,
         );
         crate::drc::run(
             &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets)
@@ -1393,6 +1394,7 @@ impl LayoutFile {
         tracks: &[Track],
         parts: &[Placed],
         d: &mut Diags,
+        findings: &mut crate::drc::Findings,
     ) -> Vec<Pair> {
         let index = |n: &str| nets.iter().position(|x| x.name == n);
         let mut found: Vec<(usize, usize, Option<f64>)> = Vec::new();
@@ -1484,7 +1486,8 @@ impl LayoutFile {
                     (at.clone(), if skew_mm > 0.0 { pb.name.clone() } else { pa.name.clone() })
                 };
                 match limit {
-                    Some(l) if skew_mm.abs() > l + 1e-9 => d.error(
+                    Some(l) if skew_mm.abs() > l + 1e-9 => findings.add(
+                        "pair-skew",
                         &at,
                         format!(
                             "skew {:.3} mm ({:.2} ps), limit {l} mm: lengthen {} by {:.3} mm",
@@ -1494,7 +1497,11 @@ impl LayoutFile {
                             skew_mm.abs() - l
                         ),
                     ),
-                    _ => d.info(&at, format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps)),
+                    _ => findings.add(
+                        "pair-skew-info",
+                        &at,
+                        format!("skew {:.3} mm ({:.2} ps)", skew_mm, skew_ps),
+                    ),
                 }
             }
             let mut coupled = 0.0;
@@ -1522,14 +1529,16 @@ impl LayoutFile {
                     }
                 }
                 if let Some((got, len)) = wrong.filter(|_| uncoupled > budget) {
-                    d.error(
+                    findings.add(
+                        "pair-gap",
                         &at,
                         format!("runs {len:.2} mm at a {got:.3} mm gap, the class wants {g} mm"),
                     );
                 }
                 let longest = pa.length_mm.max(pb.length_mm);
                 if longest > 0.0 && coupled < 0.8 * longest {
-                    d.warn(
+                    findings.add(
+                        "pair-coupling",
                         &at,
                         format!(
                             "only {coupled:.2} of {longest:.2} mm run side by side at the pair gap"
@@ -1550,7 +1559,12 @@ impl LayoutFile {
         out
     }
 
-    fn matches_of(&self, nets: &[LayoutNet], d: &mut Diags) -> Vec<MatchGroup> {
+    fn matches_of(
+        &self,
+        nets: &[LayoutNet],
+        d: &mut Diags,
+        found: &mut crate::drc::Findings,
+    ) -> Vec<MatchGroup> {
         let mut out = Vec::new();
         for (i, m) in self.match_groups.iter().enumerate() {
             let at = format!("match_groups[{i}] {}", m.name);
@@ -1573,7 +1587,8 @@ impl LayoutFile {
                 let n = &nets[*k];
                 let off = n.length_mm - target;
                 if off.abs() > tol + 1e-9 {
-                    d.error(
+                    found.add(
+                        "match-length",
                         &at,
                         format!(
                             "{} is {:.3} mm, {:.3} mm {} the {:.3} mm target",
