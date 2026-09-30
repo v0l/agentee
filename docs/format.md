@@ -643,11 +643,14 @@ test pad to each matching net that has no probe access yet (nets are the `[test]
 `--nets` is left out, impedance and pair nets are skipped): it looks on the probe side for a free
 spot on a `--pitch` grid near the net's copper, keeping `min_test_pad_to_edge` from the edge and
 tooling holes, `min_test_pad_to_body` from part bodies, `--pitch` from other test pads, and the
-net clearance from other copper. It adds a `TP` part joined to the net to the schematic sheet
-that names the net, a `[[footprints]]` entry on the probe side to the layout, then routes each
-new pad to the net's copper with the autorouter (a short track, and a via when the copper is on
-the other side) and appends those tracks and vias. `--dry-run` reports the spots without
-writing; nets with no spot or no route are listed.
+net clearance from other copper and from the pads, stubs and vias it placed for other nets. It
+adds a `TP` part joined to the net to the schematic sheet that names the net, a `[[footprints]]`
+entry on the probe side to the layout with a short stub track to a via beside the pad, then
+routes each new pad to the net's copper with the autorouter and appends those tracks and vias.
+A pad the router cannot join is taken out of the schematic and layout again and listed with the
+nets that found no spot. Labels of the new pads are moved to a clear spot or hidden, and when the
+layout stores zone fills they are refreshed as `agentee fill` would. `--dry-run` reports the
+spots without writing.
 
 Silk text must keep 0.4 mm from other silk text and 0.2 mm from silk outlines, stay off pads,
 vias and other parts' bodies, and stay on the board. Each of these is an error, except text under
