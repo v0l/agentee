@@ -106,6 +106,8 @@ pub struct PadFile {
     pub pitch: Option<Point>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub number_step: Option<i64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub edge: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -146,6 +148,7 @@ pub struct Pad {
     pub drill: Option<Drill>,
     pub layers: Vec<String>,
     pub points: Vec<Point>,
+    pub edge: bool,
 }
 
 impl Pad {
@@ -280,6 +283,7 @@ impl FootprintFile {
                     drill: p.drill,
                     layers: p.layers.clone().unwrap_or_else(|| default_layers(p.kind)),
                     points: p.points.clone().unwrap_or_default(),
+                    edge: p.edge,
                 });
             }
         }

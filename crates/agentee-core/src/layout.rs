@@ -1268,6 +1268,9 @@ impl LayoutFile {
                 let off: Vec<&str> = p
                     .pads
                     .iter()
+                    .zip(&p.footprint.pads)
+                    .filter(|(_, f)| !f.edge)
+                    .map(|(q, _)| q)
                     .filter(|q| {
                         q.outlines.iter().flatten().any(|c| {
                             !geom::point_in_polygon(*c, &outline)

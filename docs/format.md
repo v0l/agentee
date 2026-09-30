@@ -194,6 +194,10 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `inner-hole-to-copper` | error | 4+ copper layers | a plated pad hole wall closer than `min_inner_pth_hole_to_copper` to another net's copper on an inner layer |
 | `npth-to-copper` | error | non-plated holes | a non-plated hole wall closer than `min_npth_to_copper` to any copper, its own net's pour included |
 | `hole-to-edge` | error | non-plated holes | a non-plated hole wall closer than `min_copper_to_edge` to the board outline, or through it |
+| `smd-pad-gap` | error | always | SMD pads of different nets closer than `min_smd_pad_gap`, one line per pair of parts with the closest pads |
+| `pad-to-edge` | error | always | pad copper closer than `min_copper_to_edge` to the board outline; pads marked `edge = true` are exempt |
+| `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
+| `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
 
 An id that names no rule is a warning. The older checks described under Layout (clearance,
 shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
@@ -345,6 +349,9 @@ size = [1.7, 1.7]
 drill = 1.0                    # round, or [w, h] for a slot
 # rotation = 90
 # layers = ["*.Cu", "*.Mask"]  # default by kind: smd F.Cu F.Paste F.Mask, tht *.Cu *.Mask
+# edge = true                  # the copper is meant to reach the board edge (edge-launch
+                               # connector, castellation, edge finger): exempt from the edge
+                               # clearance, listed in the fab notes
 
 [[graphics]]
 kind = "rect"
@@ -1014,7 +1021,7 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 | `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill |
+| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill, edge pads to keep |
 | `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |
 | `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |

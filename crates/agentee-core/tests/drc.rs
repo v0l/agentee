@@ -357,3 +357,73 @@ fn npth_keeps_off_copper_and_the_edge() {
     let e = hits(&p, "hole-to-edge");
     assert!(e.len() == 1 && e[0].1.contains("is 0.2mm from the board edge, needs 0.3mm"), "{e:?}");
 }
+
+#[test]
+fn smd_pads_of_other_nets_keep_the_fab_gap() {
+    let p = load(&Fixture {
+        parts: &[("R1", "TWO", [5.0, 5.0]), ("R2", "TWO", [8.12, 5.0])],
+        nets: &[("A", &["R1.1"]), ("B", &["R1.2"]), ("C", &["R2.1"]), ("D", &["R2.2"])],
+        ..Default::default()
+    });
+    let e = hits(&p, "smd-pad-gap");
+    assert!(e.len() == 1 && e[0].1.contains("closest 0.12mm (R1.2 and R2.1)"), "{e:?}");
+}
+
+const TWO_EDGE: &str = r#"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-1.0, 0]
+size = [1.0, 1.0]
+edge = true
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [1.0, 0]
+size = [1.0, 1.0]
+"#;
+
+#[test]
+fn pads_keep_off_the_edge_unless_marked() {
+    let p = load(&Fixture { parts: &[("R1", "TWO", [1.6, 5.0])], ..Default::default() });
+    let e = hits(&p, "pad-to-edge");
+    assert!(e.len() == 1 && e[0].1.contains("pad R1.1 is 0.1mm from the board edge"), "{e:?}");
+    let edge = |x: f64| {
+        load(&Fixture {
+            footprints: &[("TWO", TWO_EDGE)],
+            parts: &[("R1", "TWO", [x, 5.0])],
+            ..Default::default()
+        })
+    };
+    let p = edge(1.6);
+    assert!(hits(&p, "pad-to-edge").is_empty());
+    let w = hits(&p, "edge-pad-reach");
+    assert!(w.len() == 1 && w[0].1.contains("stops 0.1mm short"), "{w:?}");
+    let p = edge(1.5);
+    assert!(hits(&p, "pad-to-edge").is_empty() && hits(&p, "edge-pad-reach").is_empty());
+}
+
+#[test]
+fn a_pad_on_a_thin_neck_of_its_pour_is_starved() {
+    let zone = r#"
+[[zones]]
+net = "A"
+layers = ["F.Cu"]
+outline = [[4.4, 4.9], [5.2, 4.9], [5.2, 5.1], [4.4, 5.1]]
+min_width = 0.1
+min_island_area = 0.0
+"#;
+    let p = load(&Fixture { pcb: zone, ..Default::default() });
+    let w = hits(&p, "starved-thermal");
+    assert!(w.len() == 1 && w[0].1.contains("joined to the A pour on F.Cu by 1 spoke"), "{w:?}");
+    let full = zone.replace(
+        "[4.4, 4.9], [5.2, 4.9], [5.2, 5.1], [4.4, 5.1]",
+        "[3.0, 4.0], [5.1, 4.0], [5.1, 6.0], [3.0, 6.0]",
+    );
+    assert!(
+        hits(&load(&Fixture { pcb: &full, ..Default::default() }), "starved-thermal").is_empty()
+    );
+}
