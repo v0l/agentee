@@ -152,6 +152,56 @@ three rounds).
 
 The existing `tune` (pair skew, match groups), `neck`, `silk` and `fill`, run in that order.
 
+## The score
+
+One score judges every phase and drives the search in each. It is a weighted sum of terms;
+every term is a rule an engineer would apply by hand, and the weights are in the layout file
+so they can be read and changed. Lower is better. A term with weight 0 is off.
+
+| term | measures | default weight | the rule |
+|---|---|---|---|
+| `wirelength` | HPWL per net, mm, weighted by class (`pair` 3, `interface` 3, `plane` 0) | 1 | short connections route and behave |
+| `overflow` | tiles over capacity, summed excess in track widths | 50 | it has to route |
+| `unrouted` | connections with no corridor or no track | 200 | it has to route |
+| `vias` | vias per net beyond the class allowance | 2 | each via is a discontinuity and a drill |
+| `crossings` | pairs of two-pin ratsnest lines that cross | 1 | crossings become vias or detours |
+| `chain_order` | mm a chain part sits off the line from its connector, in net order | 20 | RF and power entry go in a line from the connector |
+| `chain_layer` | mm of an RF net not on its class layers | 100 | RF stays on one layer over ground |
+| `return_path` | mm of an impedance net over a plane cut or edge | 20 | every fast signal needs its return under it |
+| `pair_coupling` | mm of a pair run off its gap, and skew over `max_skew` in ps | 10 | pairs stay coupled and matched |
+| `pin_access` | per BGA, distance from each pin group to its partner region, for the chosen rotation | 5 | the BGA faces what it talks to |
+| `decap` | distance of each decoupling capacitor from its pin beyond `decoupling_distance` | 5 | decaps at the pin, MT-101 |
+| `via_site` | a bottom-side part over an escape via site | 100 | nothing sits on a fanout |
+| `switcher` | mm a switcher sits inside `hot_distance` of an RF or clock region | 20 | switching noise away from RF and clocks |
+| `hot` | mm two hot parts sit inside `hot_distance` | 5 | heat does not stack |
+| `flex` | an MLCC of 0805 or larger in the flex zone | 10 | boards bend at edges and holes |
+| `edge` | a body inside `min_body_to_edge`, a connector off its edge | 50 | handling and depaneling |
+| `keepout` | courtyard area inside a keepout or an escape ring | 100 | escape channels stay open |
+| `overlap` | courtyard overlap area, mm2 | 100 | parts do not stack |
+| `plane_reach` | a plane pad not reached by its rail's plane | 20 | planes reach their sinks |
+| `area` | board area, mm2, and copper layers, per the outer loop | 0.01 and 100 | smaller and thinner is cheaper |
+
+Placement phases evaluate the terms they can (everything except the routing ones, with
+`overflow` from the RUDY estimate). Routing phases evaluate all of them. `agentee layout` prints
+the score per term after each phase, so a bad result says which rule it broke.
+
+## Outline and stackup search
+
+Layer count and board size are not inputs; they fall out of an outer loop:
+
+1. Start from the smallest outline that packs the courtyards at the target density, and the
+   fewest copper layers the classes allow (a board with an RF or impedance class needs a ground
+   under the signal layer, so four).
+2. Run the pipeline. If `overflow` or `unrouted` is not zero, grow the outline by 10% on its
+   longer side, or add a layer pair (signal plus plane) when the outline has grown twice without
+   routing, and run again.
+3. Stop at the first run with zero overflow and unrouted, then try one step smaller on each
+   axis and keep whichever scores lower with `area` included.
+
+`[engine] outline = "search"` and `layers = "search"` turn this on; a fixed outline or stackup
+in the board file pins either one. The loop reuses the previous placement as its start, so a
+step costs one routing pass, not a fresh flow.
+
 ## Configuration
 
 ```toml
@@ -159,6 +209,12 @@ The existing `tune` (pair skew, match groups), `neck`, `silk` and `fill`, run in
 phases = ["floorplan", "place", "legalise", "escape", "planes", "global", "assign", "detail", "finish"]
 tile = "0.5mm"
 rounds = 3                     # global/detail iterations
+outline = "search"             # or fixed by the board file
+layers = "search"
+
+[engine.score]                 # weights, the table above; any subset
+overflow = 50
+chain_order = 20
 
 [engine.floorplan]
 regions = { rf = ["U2", "T1", "T2", "U14", "U15", "U16"], usb = ["U3", "J1", "U5"] }
@@ -208,14 +264,16 @@ iteration. Phases do not call each other.
 
 ## Order of work
 
-1. Cost field, tile grid and the plan tables; `layout` command and viewer drawing of the plan.
+1. Cost field, tile grid, the plan tables and the score; `layout` command that runs the
+   configured phases and prints the score per term; viewer drawing of the plan.
 2. Escape (phase 4). Measured on `examples/sdr`: every ball of U1, U2, U3 gets a legal escape.
 3. Global route and track assign (6, 7), detailed route confined to corridors (8). Measured by
    the SDR's failed connections (86 today with the current placement) and total via count.
 4. Planes (5).
 5. Floorplan (1), then global placement (2) and legalise (3). Measured by the SDR routing again,
    and by the RF chain landing in order from its SMA.
-6. Retire the old `place` and `route`.
+6. The outline and stackup loop.
+7. Retire the old `place` and `route`.
 
 ## Sources
 
