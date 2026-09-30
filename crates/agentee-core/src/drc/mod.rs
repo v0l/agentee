@@ -596,7 +596,12 @@ pub fn every(_: &Setup) -> bool {
 }
 
 pub fn registry() -> impl Iterator<Item = &'static Rule> {
-    via::RULES.iter().chain(drill::RULES).chain(copper::RULES).chain(assembly::RULES)
+    via::RULES
+        .iter()
+        .chain(drill::RULES)
+        .chain(copper::RULES)
+        .chain(track::RULES)
+        .chain(assembly::RULES)
 }
 
 pub fn find(id: &str) -> Option<&'static Rule> {
@@ -676,4 +681,5 @@ pub fn list(items: &[String]) -> String {
 mod assembly;
 mod copper;
 mod drill;
+mod track;
 mod via;
