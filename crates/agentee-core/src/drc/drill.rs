@@ -82,7 +82,7 @@ pub static RULES: &[Rule] = &[
         id: "stacked-via",
         category: Category::Drill,
         severity: Severity::Error,
-        summary: "a via on the same spot as another via whose span shares a dielectric, a stacked via the fab does not build, or any via stacked with a controlled depth via",
+        summary: "a via on the same spot as another via whose span shares a dielectric, a stacked via the fab does not build or that is out of the lamination build order, or any via stacked with a controlled depth via",
         when: "every board",
         applies: every,
         check: stacked_via,
@@ -438,14 +438,45 @@ fn hole_to_hole(cx: &Ctx, r: &mut Report) {
     }
 }
 
+fn out_of_build_order(cx: &Ctx, a: &crate::layout::Via, b: &crate::layout::Via) -> Option<String> {
+    let st = &cx.board.stackup;
+    let last = cx.copper.len().checked_sub(1)?;
+    let (sa, sb) = (a.span_of(cx.copper)?, b.span_of(cx.copper)?);
+    let (upper, lower) = match (sa.1 == sb.0, sb.1 == sa.0) {
+        (true, _) => ((a, sa), (b, sb)),
+        (_, true) => ((b, sb), (a, sa)),
+        _ => return None,
+    };
+    let (top, under) = match upper.1.0.cmp(&(last - lower.1.1)) {
+        std::cmp::Ordering::Less => (upper.0, lower.0),
+        std::cmp::Ordering::Greater => (lower.0, upper.0),
+        std::cmp::Ordering::Equal => return None,
+    };
+    let order = |v: &crate::layout::Via| {
+        st.drill_order(v.hole.first()?, v.hole.last()?, v.drill_kind, v.stacked)
+    };
+    let (top_steps, under_steps) = (order(top)?, order(under)?);
+    (under_steps.1 > top_steps.0).then(|| {
+        format!(
+            "`{}` under `{}` is drilled at lamination step {}, after step {} of the via on top",
+            under.name,
+            top.name,
+            under_steps.1 + 1,
+            top_steps.0 + 1
+        )
+    })
+}
+
 fn stacked_via(cx: &Ctx, r: &mut Report) {
     let allowed = cx.board.rules.stacked_microvias;
-    let (mut doubled, mut stacked, mut on_depth) = (0, 0, 0);
-    let (mut first_doubled, mut first_stacked, mut first_on_depth) = (None, None, None);
+    let (mut doubled, mut stacked, mut on_depth, mut unordered) = (0, 0, 0, 0);
+    let (mut first_doubled, mut first_stacked, mut first_on_depth, mut first_unordered) =
+        (None, None, None, None);
     for (i, a) in cx.vias.iter().enumerate() {
         let here = |b: &&crate::layout::Via| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6;
         let spot = || format!("[{:.3}, {:.3}] ({})", a.at[0], a.at[1], cx.nets[a.net].name);
         let below: Vec<&crate::layout::Via> = cx.vias[..i].iter().filter(here).collect();
+        let order = below.iter().find_map(|b| out_of_build_order(cx, a, b));
         if below.iter().any(|b| a.shares_dielectric(b, cx.copper)) {
             doubled += 1;
             first_doubled.get_or_insert_with(spot);
@@ -456,6 +487,9 @@ fn stacked_via(cx: &Ctx, r: &mut Report) {
         {
             on_depth += 1;
             first_on_depth.get_or_insert_with(spot);
+        } else if let Some(o) = order {
+            unordered += 1;
+            first_unordered.get_or_insert_with(|| format!("{} ({o})", spot()));
         } else if !below.is_empty() && !allowed {
             stacked += 1;
             first_stacked.get_or_insert_with(spot);
@@ -465,6 +499,12 @@ fn stacked_via(cx: &Ctx, r: &mut Report) {
         r.emit(
             "vias",
             format!("{on_depth} vias are stacked with a controlled depth via, whose drill stops by depth on a plain pad and cannot land on or under another via: stagger them, first at {f}"),
+        );
+    }
+    if let Some(f) = first_unordered {
+        r.emit(
+            "vias",
+            format!("{unordered} vias are stacked out of the lamination's build order: the via under a stack must be drilled at the same or an earlier step than the one on top, stagger them or reorder [stackup] lamination, first at {f}"),
         );
     }
     if let Some(f) = first_doubled {

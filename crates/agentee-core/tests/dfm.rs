@@ -1197,6 +1197,47 @@ fn stacked_vias_follow_the_fab_rule() {
     assert!(e.len() == 1 && e[0].1.contains("through the same layers"), "{e:?}");
 }
 
+fn lamination(steps: &[(&str, &str, &str)]) -> String {
+    steps
+        .iter()
+        .map(|(from, to, kind)| {
+            format!(
+                "[[stackup.lamination]]\nfrom = \"{from}\"\nto = \"{to}\"\ndrill_kind = \"{kind}\"\n"
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_stack_follows_the_lamination_build_order() {
+    let stack =
+        format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("A", [10.0, 12.0], "bu"));
+    let built = |order: &[(&str, &str, &str)]| {
+        let board = format!("stacked_microvias = true\n{}", lamination(order));
+        hits(&hdi(&stack, &board), "stacked-via")
+    };
+    let e = built(&[
+        ("F.Cu", "In1.Cu", "laser"),
+        ("In1.Cu", "In4.Cu", "mechanical"),
+        ("In4.Cu", "B.Cu", "laser"),
+        ("F.Cu", "B.Cu", "mechanical"),
+    ]);
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].0 == Severity::Error
+            && e[0].1.contains("out of the lamination's build order")
+            && e[0].1.contains("`bu` under `uv` is drilled at lamination step 2, after step 1"),
+        "{e:?}"
+    );
+    let e = built(&[
+        ("In1.Cu", "In4.Cu", "mechanical"),
+        ("F.Cu", "In1.Cu", "laser"),
+        ("In4.Cu", "B.Cu", "laser"),
+        ("F.Cu", "B.Cu", "mechanical"),
+    ]);
+    assert!(e.is_empty(), "{e:?}");
+}
+
 const DEPTH_AND_SPLIT_VIAS: &str = r#"
 [[vias]]
 name = "cd"

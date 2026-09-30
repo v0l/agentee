@@ -198,7 +198,11 @@ lamination = [
 ]
 ```
 
-`from` is above `to`, a controlled depth step runs from one outer layer to an inner layer.
+`from` is above `to`, a controlled depth step runs from one outer layer to an inner layer. The
+steps are in build order, and a stack is only built from the inside out: a `stacked` microvia type
+whose outer hop is drilled at an earlier step than the hop under it is an error, and `stacked-via`
+reports two vias at one spot where the via under the stack is drilled after the one on top (see
+Via types). The derived sequence is always in build order.
 
 ### Via types
 
@@ -282,7 +286,10 @@ interface via stubs (a blind via has no stub past its end layer, a backdrilled v
 `max_stub`), `hole-to-copper` and `aspect-ratio` over the hole's span, `hole-to-hole` only for
 holes whose spans share a dielectric, and `stacked-via`: two vias at one spot through the same
 dielectric are drilled twice, while vias meeting at one layer (a microvia on a buried via, or a
-stack of microvias) are stacked vias, allowed only with `stacked_microvias`. Silk text keeps off only the vias whose
+stack of microvias) are stacked vias, allowed only with `stacked_microvias` and in build order:
+of two vias meeting at one layer the one nearer the board surface is on top, and the one under it
+must be drilled at the same or an earlier lamination step (a microvia on a buried via needs the
+buried via's step first). Two vias as near the surface as each other stack in either order. Silk text keeps off only the vias whose
 hole opens on its side, so a buried via under a label is fine. The DC, thermal
 and FDTD models run a barrel only between the via's first and last layer; a backdrilled via also
 keeps its stub, `max_stub` of barrel past the stop layer toward the drilled side (short of the
@@ -464,7 +471,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
 | `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
 | `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair; only holes whose spans share a dielectric count, so a microvia beside a buried via is not a pair |
-| `stacked-via` | error | always | a via on the same spot as another via of its net through the same dielectric (drilled twice), stacked on another via at one layer when `stacked_microvias` is off, or stacked with a controlled depth via at all |
+| `stacked-via` | error | always | a via on the same spot as another via of its net through the same dielectric (drilled twice), stacked on another via at one layer when `stacked_microvias` is off or out of the lamination's build order (the via under a stack drilled at a later step than the one on top), or stacked with a controlled depth via at all |
 | `via-lamination` | error | always | vias whose span and drill kind match no drill step of the lamination (see Lamination), per via type and span; the message lists every span the lamination drills, by drill kind |
 | `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
 | `class-width` | error | always | a track narrower than its class width that is not a neck-down |

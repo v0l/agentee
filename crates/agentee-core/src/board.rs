@@ -843,6 +843,59 @@ impl Stackup {
         ))
     }
 
+    fn step_of(&self, steps: &[DrillStep], a: usize, b: usize, kind: DrillKind) -> Option<usize> {
+        steps
+            .iter()
+            .position(|s| s.drill_kind == kind && self.copper_span(&s.from, &s.to) == Some((a, b)))
+    }
+
+    pub fn drill_order(
+        &self,
+        from: &str,
+        to: &str,
+        drill_kind: DrillKind,
+        stacked: bool,
+    ) -> Option<(usize, usize)> {
+        let (a, b) = self.copper_span(from, to)?;
+        let steps = self.drill_steps();
+        if !stacked {
+            let i = self.step_of(&steps, a, b, drill_kind)?;
+            return Some((i, i));
+        }
+        let hops = (a..b)
+            .map(|x| self.step_of(&steps, x, x + 1, drill_kind))
+            .collect::<Option<Vec<usize>>>()?;
+        Some((*hops.iter().min()?, *hops.iter().max()?))
+    }
+
+    pub fn stack_order_error(&self, from: &str, to: &str, drill_kind: DrillKind) -> Option<String> {
+        let (a, b) = self.copper_span(from, to)?;
+        let cu = self.copper_names();
+        let last = cu.len() - 1;
+        let steps = self.drill_steps();
+        let hops: Vec<usize> = match a.cmp(&(last - b)) {
+            std::cmp::Ordering::Less => (a..b).rev().collect(),
+            std::cmp::Ordering::Greater => (a..b).collect(),
+            std::cmp::Ordering::Equal => return None,
+        };
+        let order = hops
+            .iter()
+            .map(|&x| self.step_of(&steps, x, x + 1, drill_kind))
+            .collect::<Option<Vec<usize>>>()?;
+        (1..hops.len()).find(|&k| order[k] < order[k - 1]).map(|k| {
+            let (outer, inner) = (hops[k], hops[k - 1]);
+            format!(
+                "the hop {}-{} is drilled at lamination step {}, before the hop {}-{} under it at step {}: a stack is built from the inside out",
+                cu[outer],
+                cu[outer + 1],
+                order[k] + 1,
+                cu[inner],
+                cu[inner + 1],
+                order[k - 1] + 1
+            )
+        })
+    }
+
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.layers.iter().position(|l| l.name == name)
     }
@@ -1662,6 +1715,11 @@ impl Board {
             }
             _ => {}
         }
+        if v.stacked
+            && let Some(e) = self.stackup.stack_order_error(&v.from, &v.to, v.drill_kind)
+        {
+            d.error(at, format!("the stacked microvia cannot be built: {e}"));
+        }
         if v.stacked && !r.stacked_microvias {
             d.error(
                 at,
@@ -2153,6 +2211,29 @@ severity = { "via-in-pad" = "error" }
         let st = &b.stackup;
         assert!(st.drillable("In4.Cu", "B.Cu", DrillKind::Laser, true).is_ok());
         assert!(st.drillable("F.Cu", "In2.Cu", DrillKind::Laser, true).is_err());
+    }
+
+    #[test]
+    fn a_stacked_microvia_is_built_from_the_inside_out() {
+        let stack = "[[vias]]\nname = \"st\"\ntype = \"microvia\"\nstacked = true\nfill = \"filled_capped\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\nfrom = \"F.Cu\"\nto = \"In2.Cu\"\n";
+        let src = |first: &str, second: &str| {
+            format!(
+                "name = \"x\"\nfab = \"hdi\"\n[stackup]\npreset = \"hdi-8l-2n2\"\nlamination = [\n  {{ from = \"{first}\", to = \"{second}\", drill_kind = \"laser\" }},\n  {{ from = \"{}\", to = \"{}\", drill_kind = \"laser\" }},\n  {{ from = \"F.Cu\", to = \"B.Cu\", drill_kind = \"mechanical\" }},\n]\n{stack}",
+                if first == "F.Cu" { "In1.Cu" } else { "F.Cu" },
+                if first == "F.Cu" { "In2.Cu" } else { "In1.Cu" },
+            )
+        };
+        let (_, d) = board(&src("In1.Cu", "In2.Cu"));
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+        let (_, d) = board(&src("F.Cu", "In1.Cu"));
+        let e = errors(&d);
+        assert_eq!(e.len(), 1, "{e:?}");
+        assert!(
+            e[0].contains(
+                "the hop F.Cu-In1.Cu is drilled at lamination step 1, before the hop In1.Cu-In2.Cu under it at step 2"
+            ),
+            "{e:?}"
+        );
     }
 
     #[test]
