@@ -1234,6 +1234,26 @@ impl LayoutFile {
             );
         }
 
+        let mut stacked = 0;
+        let mut first = None;
+        for (i, a) in vias.iter().enumerate() {
+            if vias[..i].iter().any(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6) {
+                stacked += 1;
+                first.get_or_insert(format!(
+                    "[{:.3}, {:.3}] ({})",
+                    a.at[0], a.at[1], nets[a.net].name
+                ));
+            }
+        }
+        if let Some(f) = first {
+            d.error(
+                "vias",
+                format!(
+                    "{stacked} vias sit on another of their net at the same spot, first at {f}"
+                ),
+            );
+        }
+
         let edge_clear = board.rules.min_copper_to_edge.to_mm();
         if outline.len() >= 3 {
             for it in &items {

@@ -192,3 +192,67 @@ fn mask_openings_of_different_nets_need_a_web() {
     let e = errors(&project_with(&files, &[], &sch(", \"R1.2\""), pcb));
     assert!(!e.iter().any(|t| t.contains("mask")), "{e:?}");
 }
+
+const TWO_NETS: &str =
+    "\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n[[nets]]\nname = \"B\"\npins = [\"R2.1\"]\n";
+
+fn with_copper(copper: &str) -> Vec<String> {
+    errors(&project(RESISTORS, TWO_NETS, &placed([10.0, 10.0], [20.0, 10.0], copper)))
+}
+
+#[test]
+fn a_track_too_close_to_a_via_of_another_net_is_an_error() {
+    let track = "\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[5, 15], [10, 15]]\n";
+    let near = format!("{track}\n[[vias]]\nnet = \"B\"\nat = [7.5, 15.5]\n");
+    let e = with_copper(&near);
+    assert!(
+        e.iter().any(|t| t.starts_with("clearance")
+            && t.contains("track 0 (A) is 0.1mm from via at [7.500, 15.500] (B), needs 0.15mm")),
+        "{e:?}"
+    );
+    let far = format!("{track}\n[[vias]]\nnet = \"B\"\nat = [7.5, 15.6]\n");
+    let e = with_copper(&far);
+    assert!(!e.iter().any(|t| t.starts_with("clearance")), "{e:?}");
+}
+
+#[test]
+fn vias_of_different_nets_keep_clearance_and_hole_spacing() {
+    let e = with_copper(
+        "\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"B\"\nat = [5.7, 5]\n",
+    );
+    assert!(
+        e.iter().any(|t| t.starts_with("clearance")
+            && t.contains("via at [5.000, 5.000] (A) is 0.1mm from via at [5.700, 5.000] (B)")),
+        "{e:?}"
+    );
+    assert!(e.iter().any(|t| t.starts_with("drills") && t.contains("1 drill pairs")), "{e:?}");
+    let e = with_copper(
+        "\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"B\"\nat = [5, 5.3]\n",
+    );
+    assert!(e.iter().any(|t| t.starts_with("short") && t.contains("touches")), "{e:?}");
+}
+
+#[test]
+fn a_via_on_a_pad_of_another_net_is_a_short() {
+    let e = with_copper("\n[[vias]]\nnet = \"B\"\nat = [9.49, 10]\n");
+    assert!(
+        e.iter().any(
+            |t| t.starts_with("short") && t.contains("R1.1 touches via at [9.490, 10.000] (B)")
+        ),
+        "{e:?}"
+    );
+    let e = with_copper("\n[[vias]]\nnet = \"A\"\nat = [9.49, 10]\n");
+    assert!(!e.iter().any(|t| t.starts_with("short")), "{e:?}");
+}
+
+#[test]
+fn same_net_vias_on_the_same_spot_are_an_error() {
+    let e =
+        with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n");
+    assert!(e.iter().any(|t| t.starts_with("vias") && t.contains("[5.000, 5.000] (A)")), "{e:?}");
+    let e = with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\ncount = 2\npitch = [0, 0.1]\n");
+    assert!(e.iter().any(|t| t.starts_with("drills")), "{e:?}");
+    let e =
+        with_copper("\n[[vias]]\nnet = \"A\"\nat = [5, 5]\n\n[[vias]]\nnet = \"A\"\nat = [6, 5]\n");
+    assert!(!e.iter().any(|t| t.starts_with("vias") || t.starts_with("drills")), "{e:?}");
+}

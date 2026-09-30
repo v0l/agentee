@@ -456,6 +456,7 @@ flagged as an acid trap.
 A track may neck down below its class width, to no less than the fab minimum, for up to 0.5 mm
 (the class `neckdown`) where it meets a small pad. Drilled holes, vias and plated pads alike, must
 keep the board's `min_hole_to_hole` apart; check counts the pairs that do not and names the first.
+Two vias of one net at the same spot are an error too: the fab would drill the hole twice.
 Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
 different nets (or no net) that overlap or leave a mask web under `min_mask_web` are an error,
 counted per part pair with the first place named. Pads of one fine pitch part are checked too: fix
