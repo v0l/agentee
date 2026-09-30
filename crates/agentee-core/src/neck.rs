@@ -219,6 +219,25 @@ fn cut(
     Err(why)
 }
 
+fn deepest_pad<'a>(p: P, pads: &[(String, &'a Vec<P>)]) -> Option<(String, &'a Vec<P>)> {
+    let depth = |o: &[P]| crate::drc::edge_distance(o, p);
+    pads.iter()
+        .filter(|(_, o)| geom::point_in_polygon(p, o))
+        .fold(None, |best: Option<&(String, &Vec<P>)>, c| match best {
+            Some(b) if depth(b.1) >= depth(c.1) => Some(b),
+            _ => Some(c),
+        })
+        .map(|(n, o)| (n.clone(), *o))
+}
+
+fn joined_pad<'a>(outline: &Vec<P>, others: impl Iterator<Item = &'a Vec<P>>) -> bool {
+    let mut ring = outline.clone();
+    ring.push(outline[0]);
+    others
+        .into_iter()
+        .any(|o| !std::ptr::eq(o, outline) && geom::polyline_polygon_distance(&ring, o) < 1e-6)
+}
+
 pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckResult, String> {
     let obstacles = obstacles_of(layout);
     let edge = board.rules.min_copper_to_edge.to_mm();
@@ -235,26 +254,19 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
         let mut necks: Vec<NeckSegment> = Vec::new();
         for end in 0..2 {
             let p = if end == 0 { points[0] } else { points[points.len() - 1] };
-            let pad = layout.parts.iter().find_map(|part| {
-                part.pads.iter().find_map(|pad| {
-                    if pad.net != Some(t.net) || !pad.copper.contains(&t.layer) {
-                        return None;
-                    }
-                    let o = pad.outlines.iter().find(|o| geom::point_in_polygon(p, o))?;
-                    Some((format!("{}.{}", part.reference, pad.number), o))
+            let same_net: Vec<(String, &Vec<P>)> = layout
+                .parts
+                .iter()
+                .flat_map(|part| part.pads.iter().map(move |pad| (part, pad)))
+                .filter(|(_, pad)| pad.net == Some(t.net) && pad.copper.contains(&t.layer))
+                .flat_map(|(part, pad)| {
+                    pad.outlines
+                        .iter()
+                        .map(move |o| (format!("{}.{}", part.reference, pad.number), o))
                 })
-            });
-            let Some((name, outline)) = pad else { continue };
-            let mut ring = outline.clone();
-            ring.push(outline[0]);
-            let joined = layout.parts.iter().flat_map(|part| &part.pads).any(|pad| {
-                pad.net == Some(t.net)
-                    && pad.copper.contains(&t.layer)
-                    && pad.outlines.iter().any(|o| {
-                        !std::ptr::eq(o, outline)
-                            && geom::polyline_polygon_distance(&ring, o) < 1e-6
-                    })
-            });
+                .collect();
+            let Some((name, outline)) = deepest_pad(p, &same_net) else { continue };
+            let joined = joined_pad(outline, same_net.iter().map(|(_, o)| *o));
             let pad_w = if joined { f64::INFINITY } else { geom::min_extent(outline) };
             let reach = limit + t.width + net.clearance + 1.0;
             let near: Vec<&Obstacle> = obstacles
@@ -310,4 +322,35 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn square(c: P, h: f64) -> Vec<P> {
+        vec![[c[0] - h, c[1] - h], [c[0] + h, c[1] - h], [c[0] + h, c[1] + h], [c[0] - h, c[1] + h]]
+    }
+
+    #[test]
+    fn a_pad_touching_another_same_net_pad_counts_as_joined() {
+        let pad = square([0.0, 0.0], 0.5);
+        let touching = square([1.0, 0.0], 0.5);
+        let apart = square([1.2, 0.0], 0.5);
+        assert!(joined_pad(&pad, [&pad, &touching].into_iter()));
+        assert!(!joined_pad(&pad, [&pad, &apart].into_iter()));
+        assert!(!joined_pad(&pad, std::iter::once(&pad)));
+        let copy = pad.clone();
+        assert!(joined_pad(&pad, std::iter::once(&copy)));
+    }
+
+    #[test]
+    fn the_pad_that_holds_the_end_deepest_wins() {
+        let big = square([0.0, 0.0], 1.0);
+        let small = square([0.8, 0.0], 0.3);
+        let pads = vec![("U1.1".to_string(), &small), ("U1.2".to_string(), &big)];
+        assert_eq!(deepest_pad([0.7, 0.0], &pads).unwrap().0, "U1.2");
+        assert_eq!(deepest_pad([0.8, 0.0], &pads).unwrap().0, "U1.1");
+        assert!(deepest_pad([3.0, 0.0], &pads).is_none());
+    }
 }
