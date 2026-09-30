@@ -869,7 +869,11 @@ impl LayoutFile {
                 }
             }
             if placed == 0 {
-                d.warn(&at, "placed no vias: no pad with a net is left after the skips");
+                found.add(
+                    "fanout-empty",
+                    &at,
+                    "placed no vias: no pad with a net is left after the skips",
+                );
             }
         }
 
@@ -1070,9 +1074,13 @@ impl LayoutFile {
                 drills.push((c, drill / 2.0));
                 placed += 1;
             }
-            d.info(&at, format!("{placed} stitching vias"));
+            found.add("stitching", &at, format!("{placed} stitching vias"));
             if placed == 0 {
-                d.warn(&at, "placed no vias: every spot is blocked, or outside a zone of the net");
+                found.add(
+                    "stitching-empty",
+                    &at,
+                    "placed no vias: every spot is blocked, or outside a zone of the net",
+                );
             }
         }
 
