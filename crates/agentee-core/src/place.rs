@@ -14,6 +14,10 @@ const HOT_GAP: f64 = 10.0;
 const QUIET_GAP: f64 = 8.0;
 const HOT_WATTS: f64 = 0.25;
 const EPS: f64 = 1e-6;
+const LARGE_MLCC: f64 = 1.8;
+const FLEX_LARGE: f64 = 20.0;
+const FLEX_POINTING: f64 = 3.0;
+const FLEX_REACH: f64 = 12.0;
 const STARTS: u64 = 8;
 const CENTRE_PULL: f64 = 2.0;
 const CENTRE_BLEND: f64 = 0.5;
@@ -554,7 +558,7 @@ struct Placer<'a> {
     net_stamp: Vec<u32>,
     link_stamp: Vec<u32>,
     stamp: u32,
-    holes: Vec<P>,
+    holes: Vec<(P, f64)>,
     cross_w: f64,
 }
 
@@ -1003,21 +1007,93 @@ impl<'a> Placer<'a> {
         if p.large {
             cost += 0.5 * geom::dist(c, self.b.centre);
         }
-        if let Some(len) = p.mlcc_len {
-            let edge = self.edge_gap(c);
-            let hole = self.holes.iter().map(|h| geom::dist(*h, c)).fold(f64::MAX, f64::min);
-            if edge.min(hole) < self.b.flex {
-                if len >= 1.8 {
-                    cost += 20.0;
-                } else if let Some(axis) = self.axis(i) {
-                    let n = self.edge_normal(c);
-                    if dot(axis, n).abs() > 0.7 {
-                        cost += 2.0;
-                    }
-                }
+        cost + self.flex_penalty(i, p.st)
+    }
+
+    fn hole_of(&self, i: usize) -> (P, f64) {
+        let p = &self.parts[i];
+        let t = p.st.transform();
+        p.fp.pads
+            .iter()
+            .filter_map(|q| {
+                let d = q.drill.as_ref()?.min().to_mm();
+                let at = q.at.to_mm();
+                let off = q.drill_offset.to_mm();
+                Some((t.apply([at[0] + off[0], at[1] + off[1]]), d / 2.0))
+            })
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap_or((self.centre(i), 0.0))
+    }
+
+    fn flex_hit(&self, i: usize, st: St) -> Option<bool> {
+        let p = &self.parts[i];
+        p.mlcc_len?;
+        let (ka, kb) = p.ends?;
+        let t = st.transform();
+        let rings: Vec<Vec<P>> = [ka, kb]
+            .iter()
+            .flat_map(|k| p.pads[*k].outline.iter())
+            .map(|r| r.iter().map(|v| t.apply(*v)).collect())
+            .collect();
+        let (a, b) = (t.apply(p.pads[ka].c), t.apply(p.pads[kb].c));
+        let c = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+        let reach = geom::dist(a, b) + p.local.size()[0].max(p.local.size()[1]);
+        let zone = self.b.flex;
+        let bb = &self.b.bounds;
+        let deep = c[0] - bb.min[0] > zone + reach
+            && bb.max[0] - c[0] > zone + reach
+            && c[1] - bb.min[1] > zone + reach
+            && bb.max[1] - c[1] > zone + reach
+            && self.b.cutouts.is_empty();
+        let clear = deep || self.edge_gap(c) > zone + reach;
+        if clear && self.holes.iter().all(|(h, r)| geom::dist(*h, c) > zone + reach + r) {
+            return None;
+        }
+        let rad = rings.iter().flatten().map(|v| geom::dist(*v, c)).fold(0.0, f64::max);
+        let mut best: Option<(f64, P)> = None;
+        for (s, e) in self.board_edge().segments() {
+            let bound = geom::point_segment_distance(c, s, e) - rad;
+            if bound >= best.map_or(zone, |b| b.0.min(zone)) {
+                continue;
+            }
+            let gap = rings
+                .iter()
+                .flat_map(|o| (0..o.len()).map(move |k| (o[k], o[(k + 1) % o.len()])))
+                .map(|(u, v)| geom::segment_segment_distance(u, v, s, e))
+                .fold(f64::MAX, f64::min);
+            if best.is_none_or(|b| gap < b.0) {
+                let (dx, dy) = (e[0] - s[0], e[1] - s[1]);
+                let l2 = dx * dx + dy * dy;
+                let f = if l2 == 0.0 {
+                    0.0
+                } else {
+                    (((c[0] - s[0]) * dx + (c[1] - s[1]) * dy) / l2).clamp(0.0, 1.0)
+                };
+                best = Some((gap, [s[0] + f * dx, s[1] + f * dy]));
             }
         }
-        cost
+        for &(h, r) in &self.holes {
+            let gap = rings
+                .iter()
+                .map(|o| geom::polyline_polygon_distance(&[h, h], o) - r)
+                .fold(f64::MAX, f64::min)
+                .max(0.0);
+            if best.is_none_or(|b| gap < b.0) {
+                best = Some((gap, h));
+            }
+        }
+        let (gap, at) = best?;
+        if gap + 1e-6 >= zone {
+            return None;
+        }
+        let d = geom::dist(at, c);
+        let l = geom::dist(a, b).max(1e-9);
+        let axis = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+        Some(
+            d > 1e-6
+                && dot([at[0] - c[0], at[1] - c[1]], axis).abs() / d
+                    > std::f64::consts::FRAC_1_SQRT_2 - 0.05,
+        )
     }
 
     fn axis(&self, i: usize) -> Option<P> {
@@ -1025,17 +1101,6 @@ impl<'a> Placer<'a> {
         let (a, b) = (self.pad_pos(i, ka), self.pad_pos(i, kb));
         let d = geom::dist(a, b);
         (d > 1e-6).then(|| [(b[0] - a[0]) / d, (b[1] - a[1]) / d])
-    }
-
-    fn edge_normal(&self, c: P) -> P {
-        let bb = &self.b.bounds;
-        let gaps = [
-            (c[0] - bb.min[0], [1.0, 0.0]),
-            (bb.max[0] - c[0], [1.0, 0.0]),
-            (c[1] - bb.min[1], [0.0, 1.0]),
-            (bb.max[1] - c[1], [0.0, 1.0]),
-        ];
-        gaps.iter().min_by(|a, b| a.0.total_cmp(&b.0)).map(|g| g.1).unwrap_or([1.0, 0.0])
     }
 
     fn local_cost(&mut self, set: &[usize]) -> f64 {
@@ -1530,7 +1595,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
     }
     pl.holes = (0..n_parts)
         .filter(|i| pl.parts[*i].role == Role::Hole && pl.parts[*i].fixed)
-        .map(|i| pl.centre(i))
+        .map(|i| pl.hole_of(i))
         .collect();
 
     let run = |start: u64| -> Start {
@@ -1546,6 +1611,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
         let mut moves = cand.refine(&mut rng, MOVES_PER_PART, ANNEAL_HEAT);
         cand.share_rotation();
         moves += cand.refine(&mut rng, QUENCH_PER_PART, QUENCH_HEAT);
+        cand.clear_flex_zone();
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
         (score, cand, failed, edges, moves)
@@ -1899,8 +1965,8 @@ impl<'a> Placer<'a> {
                         self.parts[i].st = st;
                         self.insert(i);
                         if role == Role::Hole {
-                            let at = self.centre(i);
-                            self.holes.push(at);
+                            let hole = self.hole_of(i);
+                            self.holes.push(hole);
                         }
                     }
                     None => failed.push(self.parts[i].reference.clone()),
@@ -2567,15 +2633,13 @@ impl<'a> Placer<'a> {
     }
 
     fn flex_penalty(&self, i: usize, st: St) -> f64 {
-        let p = &self.parts[i];
-        let Some(len) = p.mlcc_len else { return 0.0 };
-        let c = st.transform().apply(p.local.center());
-        let edge = self.edge_gap(c);
-        let hole = self.holes.iter().map(|h| geom::dist(*h, c)).fold(f64::MAX, f64::min);
-        if edge.min(hole) >= self.b.flex {
-            return 0.0;
+        let Some(len) = self.parts[i].mlcc_len else { return 0.0 };
+        match self.flex_hit(i, st) {
+            None => 0.0,
+            Some(_) if len >= LARGE_MLCC => FLEX_LARGE,
+            Some(true) => FLEX_POINTING,
+            Some(false) => 0.0,
         }
-        if len >= 1.8 { 20.0 } else { 0.0 }
     }
 
     fn passive_rotation(
@@ -3046,6 +3110,34 @@ impl<'a> Placer<'a> {
         self.turn_clusters(&order);
         self.swap_clusters(&order);
         self.turn_clusters(&order);
+    }
+
+    fn clear_flex_zone(&mut self) {
+        for i in 0..self.parts.len() {
+            if !self.movable(i) || self.flex_penalty(i, self.parts[i].st) == 0.0 {
+                continue;
+            }
+            let st0 = self.parts[i].st;
+            self.remove(i);
+            let turns = [0.0, 90.0, 270.0, 180.0].map(|t| (st0.rot + t).rem_euclid(360.0));
+            let mut found = None;
+            for k in 0..self.offsets.len() {
+                let off = self.offsets[k];
+                if off[0].hypot(off[1]) > FLEX_REACH {
+                    break;
+                }
+                let at = snap_p([st0.at[0] + off[0], st0.at[1] + off[1]]);
+                found = turns
+                    .iter()
+                    .map(|rot| St { at, rot: *rot, ..st0 })
+                    .find(|st| self.flex_penalty(i, *st) == 0.0 && self.legal(i, *st, &[]));
+                if found.is_some() {
+                    break;
+                }
+            }
+            self.parts[i].st = found.unwrap_or(st0);
+            self.insert(i);
+        }
     }
 
     fn movable(&self, i: usize) -> bool {
