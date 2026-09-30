@@ -1551,6 +1551,75 @@ pub fn tune(
     }))
 }
 
+pub fn neck(
+    root: &Path,
+    name: &str,
+    opts: &agentee_core::neck::NeckOptions,
+    write: bool,
+) -> Result<Value, String> {
+    let p = load(root)?;
+    let r = find(&p, &format!("pcb:{name}")).or_else(|_| find(&p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let entry = &p.layouts[i];
+    let board = p.boards.iter().find(|b| b.name == entry.item.board).ok_or("board is missing")?;
+    let result = agentee_core::neck::neck(&entry.item, &board.item, opts)?;
+    let mut fills = Value::Null;
+    if write && !result.edits.is_empty() {
+        let path = &entry.path;
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+        let tracks = doc
+            .get_mut("tracks")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .ok_or("the layout has no [[tracks]]")?;
+        let round = |v: f64| (v * 1e6).round() / 1e6;
+        let points = |pts: &[[f64; 2]]| {
+            let mut arr = toml_edit::Array::new();
+            for q in pts {
+                let mut pt = toml_edit::Array::new();
+                pt.push(round(q[0]));
+                pt.push(round(q[1]));
+                arr.push(pt);
+            }
+            toml_edit::value(arr)
+        };
+        let mut added = Vec::new();
+        for e in &result.edits {
+            let t = tracks.get_mut(e.track).ok_or("track index out of range")?;
+            t["points"] = points(&e.points);
+            for n in &e.necks {
+                let mut neck = toml_edit::Table::new();
+                for key in ["net", "layer"] {
+                    if let Some(v) = t.get(key) {
+                        neck[key] = v.clone();
+                    }
+                }
+                neck["width"] = toml_edit::value(round(n.width));
+                neck["points"] = points(&n.points);
+                added.push(neck);
+            }
+        }
+        for neck in added {
+            tracks.push(neck);
+        }
+        std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
+        if !entry.item.zones.is_empty() {
+            fills = write_fills(&load(root)?, name)?["fills"].clone();
+        }
+    }
+    Ok(json!({
+        "layout": entry.name,
+        "written": write,
+        "necked": result.necked,
+        "failed": result.failed,
+        "tracks_changed": result.edits.len(),
+        "tracks_added": result.edits.iter().map(|e| e.necks.len()).sum::<usize>(),
+        "fills": fills,
+    }))
+}
+
 pub fn silk(root: &std::path::Path, name: &str, hide: bool, write: bool) -> Result<Value, String> {
     let mut moved: std::collections::BTreeMap<String, usize> = Default::default();
     let mut hidden: Vec<String> = Vec::new();

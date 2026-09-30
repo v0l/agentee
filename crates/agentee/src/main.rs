@@ -255,6 +255,22 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Neck down track ends that enter a pad narrower than the track or break clearance near it:
+    /// the end becomes a separate narrower track within the class neckdown length
+    Neck {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Nets to neck down, globs allowed, comma separated
+        #[arg(long, default_value = "*", value_delimiter = ',')]
+        nets: Vec<String>,
+        /// Step the width down in a short chain of segments instead of one neck
+        #[arg(long)]
+        taper: bool,
+        /// Report without writing the file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Move every failing silk reference to the clear spot check suggests, again until they
     /// settle, and hide the ones with nowhere to go when asked
     Silk {
@@ -658,6 +674,13 @@ fn run(cli: Cli) -> Result<bool, String> {
             let p = ops::load(&project)?;
             let opts = agentee_core::tune::TuneOptions { nets, amplitude, pitch };
             let r = ops::tune(&p, &name, &opts, !dry_run)?;
+            let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
+        }
+        Cmd::Neck { name, project, nets, taper, dry_run } => {
+            let opts = agentee_core::neck::NeckOptions { nets, taper };
+            let r = ops::neck(&project, &name, &opts, !dry_run)?;
             let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
             print_json(&r);
             Ok(ok)

@@ -1536,7 +1536,18 @@ fn end_of(
         return End { cells, stubs: Vec::new() };
     };
     let plane = grid.w * grid.h;
-    let pad_w = geom::min_extent(pad);
+    let mut ring = pad.clone();
+    ring.push(pad[0]);
+    let joined = obstacles.iter().any(|q| match &q.shape {
+        Shape::Poly(v) => {
+            q.net == Some(net)
+                && !std::ptr::eq(v, pad)
+                && q.layers.iter().any(|l| o.layers.contains(l))
+                && geom::polyline_polygon_distance(&ring, v) < 1e-6
+        }
+        _ => false,
+    });
+    let pad_w = if joined { f64::INFINITY } else { geom::min_extent(pad) };
     let layers: Vec<usize> = o
         .layers
         .iter()
@@ -1549,7 +1560,7 @@ fn end_of(
         .collect();
     let stubs: Vec<(usize, Neck)> = layers
         .iter()
-        .flat_map(|&l| stubs(grid, obstacles, net, p, pad, l, ctx, nk, soft))
+        .flat_map(|&l| stubs(grid, obstacles, net, p, pad, pad_w, l, ctx, nk, soft))
         .collect();
     if stubs.is_empty() {
         return End { cells, stubs };
@@ -1576,13 +1587,13 @@ fn stubs(
     net: usize,
     p: P,
     pad: &[P],
+    pad_w: f64,
     l: usize,
     ctx: &Ctx,
     nk: &Necking,
     soft: bool,
 ) -> Vec<(usize, Neck)> {
     let wide = ctx.widths[l];
-    let pad_w = geom::min_extent(pad);
     let overhangs = wide > pad_w + 1e-6;
     let reach = nk.length + wide + ctx.clearance + 1.0;
     let near: Vec<(&Shape, f64)> = obstacles
@@ -1620,7 +1631,7 @@ fn stubs(
                     edges.iter().map(|e| geom::segment_segment_distance(p, q, e.0, e.1) - nk.edge),
                 )
                 .fold(f64::MAX, f64::min);
-            let width = (wide.min(pad_w).min(2.0 * gap) * 100.0 + 1e-6).floor() / 100.0;
+            let width = crate::neck::neck_width(wide.min(pad_w).min(2.0 * gap), nk.min_width);
             if width < nk.min_width - 1e-9 {
                 break;
             }
@@ -2773,6 +2784,45 @@ mod tests {
         assert!(necked_route(0.5, Some(&tight)).is_err());
         let fab = Necking { min_width: 0.35, ..necking };
         assert!(necked_route(0.5, Some(&fab)).is_err());
+    }
+
+    #[test]
+    fn touching_pads_of_one_net_count_as_one_wide_pad() {
+        let outline = square([3.0, 2.0], 3.0);
+        let necking = Necking { length: 0.6, min_width: 0.1, edge: 0.0, outline: &outline };
+        let opts = RouteOptions { margin: 10.0, ..Default::default() };
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            in_pad: false,
+            smd: &[],
+            widths: vec![0.4],
+            clearance: 0.15,
+            via_r: 0.2,
+            via_layers: &[0],
+            routing: &[0],
+            opts: &opts,
+            necking: Some(&necking),
+        };
+        let (a, b) = ([1.025, 2.025], [5.025, 2.025]);
+        let pad = |c: P, h: f64| Obstacle {
+            net: Some(0),
+            layers: vec![0],
+            shape: Shape::Poly(square(c, h)),
+            clearance: 0.15,
+        };
+        let single = [pad(a, 0.15), pad(b, 0.5)];
+        let joined = [pad(a, 0.15), pad([a[0], a[1] + 0.3], 0.15), pad(b, 0.5)];
+        let mut grid = open_grid(60, 40, 1);
+        for o in &joined {
+            grid.add(o, &[0.2], ctx.via_r, ctx.clearance, 0.0);
+        }
+        let found = search(&grid, &single, &[], 0, a, b, &ctx, false, None).unwrap();
+        assert_eq!(found.necks.len(), 1);
+        let found = search(&grid, &joined, &[], 0, a, b, &ctx, false, None).unwrap();
+        assert!(found.necks.is_empty(), "{:?}", found.necks);
     }
 
     #[test]

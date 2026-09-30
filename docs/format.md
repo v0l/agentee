@@ -730,9 +730,11 @@ side, or too close to the neighbouring pads to keep clearance), the route necks 
 width track stops short of the pad and a separate `[[tracks]]` entry with an explicit `width` runs
 straight into the pad centre, at most the class `neckdown` long and no narrower than
 `min_track_width`. Its width is the smallest of the class width, the pad's smaller side and the
-widest that keeps clearance, rounded down to 0.01 mm; the wide track starts at the first spot out
+widest that keeps clearance, rounded down to 0.01 mm (or exactly `min_track_width` where rounding
+would drop under it and the unrounded width does not); the wide track starts at the first spot out
 from the pad where its full width keeps clearance (and, for a pad narrower than the track, outside
-the pad). Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+the pad). Pads of one net that touch, like a thermal pad built from several pad entries, count as
+one wide pad. Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
 each routed connection that uses vias is tried again on one layer at a time with the rest held
 fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
 vias of neighbouring parallel connections that change layer near each other are slid along their
@@ -745,6 +747,26 @@ partner at the pair gap; `--pairs` tries to route both halves together as one co
 first. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
 first, then let the router fill in the rest, a class at a time.
+
+`agentee neck NAME [--nets 'VBUS,RF_*'] [--taper] [--dry-run]` (MCP `neck`) necks down copper that
+is already there. It looks at both ends of every track of the named nets (default all) that end
+inside a pad of their net on their layer, and takes the ones that are wider than the pad's smaller
+side, or whose full width breaks clearance within the class `neckdown` length (plus one track
+width) of the pad. Such an end is cut: the track keeps its width from the cut outward and a new
+`[[tracks]]` entry with an explicit `width` runs from the old end point in the pad to the cut,
+along the old path. The neck width is the smallest of the track width, the pad's smaller side and
+the widest that keeps clearance along the neck, rounded down to 0.01 mm (or exactly
+`min_track_width` as above). The cut is the first spot, in 0.01 mm steps, where the full width
+keeps clearance for the next `neckdown` plus one track width (and, for a pad narrower than the
+track, lies outside the pad); a neck is never longer than `neckdown` and never under
+`min_track_width`, otherwise the end is listed under `failed` with the reason and left alone. A
+pad built from several same-net pad entries that touch counts as one wide pad. `--taper` steps
+the width back up over a short chain instead of one neck: past the narrow neck come up to two
+more entries, each a third of the way from the neck width to the track width, together no longer
+than `neckdown` (three times the neck, at most). The copper only ever gets narrower, so no new
+clearance error can appear; the file is edited in place (every other line is kept) and stored
+zone fills are refreshed. The report lists each neck (track index, net, pad, why, width, length,
+entries) and counts the tracks changed and added.
 
 Pairs and length rules live in the layout too:
 
