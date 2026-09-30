@@ -163,6 +163,16 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "neck",
+            "description": "Neck down track ends that enter a pad narrower than the track or break clearance near the pad: the end becomes a separate [[tracks]] entry with an explicit width, the smallest of the class width, the pad's smaller side and the widest that keeps clearance, rounded down to 0.01 mm, never under min_track_width and never longer than the class neckdown. taper steps the width down over a short chain of segments. Stored zone fills are refreshed.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "nets": { "type": "string", "description": "comma separated globs, default all" },
+                "taper": { "type": "boolean" },
+                "dry_run": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "silk",
             "description": "Move every silk reference that check flags to the clear spot it suggests, repeating until the labels settle, and optionally hide the ones that have nowhere to go. Writes label = { at, rotation } or hide = true into the footprints.",
             "inputSchema": s(json!({
@@ -461,6 +471,20 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 root,
                 arg(a, "name").ok_or("name is required")?,
                 &opts,
+            )?))]))
+        }
+        "neck" => {
+            let nets: Vec<String> = arg(a, "nets")
+                .map(|v| {
+                    v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                })
+                .unwrap_or_else(|| vec!["*".into()]);
+            let opts = agentee_core::neck::NeckOptions { nets, taper: flag(a, "taper") };
+            Ok(ok(vec![text(pretty(&ops::neck(
+                root,
+                arg(a, "name").ok_or("name is required")?,
+                &opts,
+                !flag(a, "dry_run"),
             )?))]))
         }
         "silk" => Ok(ok(vec![text(pretty(&ops::silk(

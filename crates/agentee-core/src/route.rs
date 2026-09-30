@@ -1620,7 +1620,7 @@ fn stubs(
                     edges.iter().map(|e| geom::segment_segment_distance(p, q, e.0, e.1) - nk.edge),
                 )
                 .fold(f64::MAX, f64::min);
-            let width = (wide.min(pad_w).min(2.0 * gap) * 100.0 + 1e-6).floor() / 100.0;
+            let width = crate::neck::neck_width(wide.min(pad_w).min(2.0 * gap), nk.min_width);
             if width < nk.min_width - 1e-9 {
                 break;
             }
