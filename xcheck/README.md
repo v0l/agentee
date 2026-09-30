@@ -22,6 +22,7 @@ The openEMS side uses a wider air box (8 mm), PML_8, the thirds rule on the stri
 | `msl50` | power not in S11 or S21 at 5 GHz (radiation) | 0.032 dB | 0.089 dB |
 | `msl50` | Z0 at 1.5 / 3.5 GHz from a 30 and a 45 mm line, 0.2 and 0.1 mm cells | 50.0 / 50.3, 49.9 / 50.3 ohm | 48.8 / 49.4, 48.9 / 49.5 ohm |
 | `msl50_lossy` | same with tan 0.02 and 35 um copper, S21 at 1 / 3 / 5 GHz | -0.304 / -0.329 / -0.368 dB | -0.315 / -0.359 / -0.424 dB |
+| `msl50_lossy` | the same after agentee's dielectrics became Djordjevic-Sarkar | -0.103 / -0.307 / -0.535 dB | unchanged, conductivity fixed at 3.25 GHz |
 | `thin_lossy` | 0.3 mm on 0.15 mm air, 35 um copper, loss at 1 / 3 / 5 GHz | 0.041 / 0.048 / 0.052 dB | 0.045 / 0.050 / 0.054 dB |
 | `thin_lossy` | the same, earlier model with the sheet resistance fixed at 3.5 GHz | 0.078 / 0.053 / 0.044 dB | |
 | `stub` | 12 mm open stub, notch, 0.2 mm cells | 3.725 GHz | 3.525 GHz |
@@ -31,6 +32,9 @@ Hammerstad-Jensen gives 49.4 ohm for `msl50` on an infinite substrate at DC.
 
 Findings:
 
+- agentee's dielectric loss now follows Djordjevic-Sarkar and grows with frequency, while this
+  openEMS setup holds the conductivity fixed at the band centre, so `msl50_lossy` only agrees
+  near 3 GHz; matching it again needs a Debye material on the openEMS side.
 - Delay on plain lines agrees closely. The lossy line's gap grows with frequency by about as
   much as the lossless line's radiation gap, so dielectric and copper loss agree to about
   0.01 dB. agentee reads less radiation than openEMS; moving agentee's air box out from 1.5 mm
