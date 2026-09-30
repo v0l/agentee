@@ -312,30 +312,37 @@ fn lumped(@builtin(global_invocation_id) g: vec3<u32>) {
     }
 }
 
-@compute @workgroup_size(64, 1, 1)
-fn probe(@builtin(global_invocation_id) g: vec3<u32>) {
-    let k = g.x;
-    if k >= P.ports { return; }
-    let n = step();
+var<workgroup> probe_sum: array<vec2<f32>, 256>;
+
+@compute @workgroup_size(256, 1, 1)
+fn probe(@builtin(workgroup_id) w: vec3<u32>, @builtin(local_invocation_id) l: vec3<u32>) {
+    let k = w.x;
     let b = k * 8u;
     let comp = u32(probe_def[b]);
     let first = u32(probe_def[b + 1u]);
     let count = u32(probe_def[b + 2u]);
     var v = 0.0;
-    for (var e = 0u; e < count; e++) {
+    for (var e = l.x; e < count; e += 256u) {
         let q = (first + e) * 2u;
         v -= e_ro[comp * P.nn + u32(port_edges[q])] * port_edges[q + 1u];
     }
     let lf = u32(probe_def[b + 3u]);
     let lc = u32(probe_def[b + 4u]);
     var cur = 0.0;
-    for (var c = 0u; c < lc; c++) {
+    for (var c = l.x; c < lc; c += 256u) {
         let q = (lf + c) * 3u;
         cur += h_ro[(u32(loops[q + 1u]) - 3u) * P.nn + u32(loops[q])] * loops[q + 2u];
     }
-    if n < P.cap {
-        series[(n * P.ports + k) * 2u] = v;
-        series[(n * P.ports + k) * 2u + 1u] = cur;
+    probe_sum[l.x] = vec2<f32>(v, cur);
+    workgroupBarrier();
+    for (var s = 128u; s > 0u; s /= 2u) {
+        if l.x < s { probe_sum[l.x] += probe_sum[l.x + s]; }
+        workgroupBarrier();
+    }
+    let n = step();
+    if l.x == 0u && n < P.cap {
+        series[(n * P.ports + k) * 2u] = probe_sum[0].x;
+        series[(n * P.ports + k) * 2u + 1u] = probe_sum[0].y;
     }
 }
 

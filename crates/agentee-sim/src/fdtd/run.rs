@@ -427,7 +427,7 @@ pub fn run(
     }
     pipes.extend([
         (make("lumped", &[0, 4, 5, 7], &[0]), [lumped_n, 1, 1]),
-        (make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [(ports as u32).div_ceil(64), 1, 1]),
+        (make("probe", &[4, 5, 6, 8, 10], &[1, 3, 4]), [ports as u32, 1, 1]),
     ]);
     if plane_len > 0 {
         pipes.push((
