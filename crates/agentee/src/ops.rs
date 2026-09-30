@@ -1790,6 +1790,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         "label_room": r.labels,
         "texts_moved": r.texts_moved,
         "texts_stuck": r.texts_stuck,
+        "hot_spread": r.hot_spread,
         "load_ms": load_ms,
         "solve_ms": solve_ms,
     });

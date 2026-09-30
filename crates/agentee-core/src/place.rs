@@ -32,6 +32,7 @@ const LABEL_SHARE: f64 = 0.25;
 const LABEL_REACH: usize = 60;
 const LABEL_WEIGHT: f64 = 0.2;
 const TEXT_REACH: f64 = 10.0;
+const HOT_SHARE: f64 = 0.25;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -308,6 +309,14 @@ pub struct PlaceResult {
     pub labels: LabelRoom,
     pub texts_moved: Vec<TextMove>,
     pub texts_stuck: Vec<String>,
+    pub hot_spread: HotSpread,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HotSpread {
+    pub applied: bool,
+    pub share: f64,
+    pub threshold: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -743,6 +752,8 @@ struct Part<'a> {
     pin_edge: Option<Edge>,
     sensitive: bool,
     switcher: bool,
+    hot: bool,
+    spread_hot: bool,
 }
 
 #[derive(Clone)]
@@ -827,6 +838,7 @@ struct Placer<'a> {
     holes: Vec<(P, f64)>,
     cross_w: f64,
     soft_labels: bool,
+    hot_gap: f64,
     label_at: Vec<Option<(u8, Bounds)>>,
 }
 
@@ -1408,7 +1420,25 @@ impl<'a> Placer<'a> {
 
     fn legal(&self, i: usize, st: St, skip: &[usize]) -> bool {
         let sh = self.shapes(i, st);
-        self.inside(i, st, &sh) && !self.clashes(i, &sh, skip)
+        self.inside(i, st, &sh) && !self.clashes(i, &sh, skip) && !self.too_hot(i, &sh, skip)
+    }
+
+    fn too_hot(&self, i: usize, sh: &[WShape], skip: &[usize]) -> bool {
+        if !self.parts[i].spread_hot {
+            return false;
+        }
+        let mut own = Bounds::EMPTY;
+        sh.iter().filter(|s| !s.label).for_each(|s| own.union(&s.b));
+        (0..self.parts.len()).any(|j| {
+            if j == i || skip.contains(&j) || !self.parts[j].placed || !self.parts[j].hot {
+                return false;
+            }
+            let mut other = Bounds::EMPTY;
+            self.cache[j].iter().filter(|s| !s.label).for_each(|s| other.union(&s.b));
+            let dx = (own.min[0] - other.max[0]).max(other.min[0] - own.max[0]).max(0.0);
+            let dy = (own.min[1] - other.max[1]).max(other.min[1] - own.max[1]).max(0.0);
+            dx.hypot(dy) < self.hot_gap + GRID
+        })
     }
 
     fn nearest(
@@ -2089,6 +2119,8 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             pin_edge: input.spec.edges.get(*r).copied(),
             sensitive: false,
             switcher: false,
+            hot: false,
+            spread_hot: false,
         });
     }
     for r in input.spec.edges.keys() {
@@ -2103,6 +2135,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         }
     }
     for p in parts.iter_mut() {
+        p.hot = p.heat >= HOT_WATTS || (p.role == Role::Chip && p.large && p.area >= 49.0);
         if p.large && p.heat == 0.0 && p.area >= 49.0 {
             p.heat = 1.0;
         }
@@ -2206,6 +2239,25 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
             s[0] * s[1]
         })
         .sum();
+    let hot_gap = pd.hot_distance.map(|l| l.to_mm()).unwrap_or(HOT_DISTANCE);
+    let hot_area: f64 = parts
+        .iter()
+        .filter(|p| p.hot && p.active)
+        .map(|p| {
+            let s = p.local.size();
+            (s[0] + hot_gap) * (s[1] + hot_gap)
+        })
+        .sum();
+    let hot_share = hot_area / b.depth.placeable(b.body_edge).max(1e-9);
+    let spread = parts.iter().filter(|p| p.hot && p.active).count() >= 2 && hot_share <= HOT_SHARE;
+    for p in parts.iter_mut() {
+        p.spread_hot = spread && p.hot;
+    }
+    let hot_spread = HotSpread {
+        applied: spread,
+        share: (hot_share * 1000.0).round() / 1000.0,
+        threshold: HOT_SHARE,
+    };
     let label_room = label_area <= LABEL_SHARE * (room - used);
     let soft_labels = !label_room && label_area <= room - used;
     for p in parts.iter_mut().filter(|p| !p.active || !(label_room || soft_labels)) {
@@ -2247,6 +2299,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         holes: Vec::new(),
         cross_w: CROSSING_WEIGHT,
         soft_labels,
+        hot_gap,
         label_at: vec![None; n_parts],
     };
 
@@ -2375,6 +2428,7 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
         labels,
         texts_moved,
         texts_stuck,
+        hot_spread,
     })
 }
 
@@ -3457,6 +3511,10 @@ impl<'a> Placer<'a> {
             }
             None if !self.parts[i].over_silk => {
                 self.parts[i].over_silk = true;
+                self.try_place(i, target, rot, prefer_bottom)
+            }
+            None if self.parts[i].spread_hot => {
+                self.parts[i].spread_hot = false;
                 self.try_place(i, target, rot, prefer_bottom)
             }
             None => false,
