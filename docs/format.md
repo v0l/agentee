@@ -403,6 +403,7 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # outline = [[x, y], ...]      # default: the board outline
 # clearance = 0.25             # default: the net class clearance
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
+# min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
 
 [[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin
 layers = ["In1.Cu"]
@@ -429,6 +430,11 @@ vias and other parts' bodies, and stay on the board. When a reference label fail
 spot that passes every rule, as a `label = { at = [...] }` line to paste. `agentee silk NAME`
 (MCP `silk`) pastes them all for you and repeats until the labels settle; `--hide` hides the
 references that have no clear spot, typically small passives under a BGA.
+
+A fill piece is kept only if it touches two items of its net, or one and is at least
+`min_island_area`; the rest reach nothing new and are removed. Check verifies every fill against
+other nets: a fill that overlaps another net's zone, track, via or pad, or comes closer than the
+clearance, is an error, and copper tips sharper than 30 degrees are flagged.
 
 Zones on the same layer fill in order of `priority`, then smallest first, and each keeps its
 clearance from the fills already placed, so a small switch-node or supply pour inside a

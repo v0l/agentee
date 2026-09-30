@@ -120,6 +120,8 @@ pub struct ZoneFile {
     pub min_width: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_island_area: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1374,6 +1376,7 @@ impl LayoutFile {
                     &layer_cutouts,
                     &blockers,
                     z.min_width.map(Length::to_mm).unwrap_or(0.25),
+                    z.min_island_area.unwrap_or(2.0),
                 );
                 if fill.islands_removed > 0 {
                     d.info(
@@ -1393,6 +1396,7 @@ impl LayoutFile {
                 uf.union(group[0], group[1]);
             }
         }
+        check_zones(&zones, &items, &nets, &clearance_of, d);
 
         let mut ratsnest = Vec::new();
         let mut stats: Vec<(usize, f64)> = Vec::new();
@@ -2202,6 +2206,7 @@ fn fill_zone(
     cutouts: &[&Vec<P>],
     blockers: &[&ZoneFill],
     min_width: f64,
+    min_island_area: f64,
 ) -> (ZoneFill, Vec<Vec<usize>>) {
     let mut b = Bounds::EMPTY;
     poly.iter().for_each(|p| b.add(*p));
@@ -2395,8 +2400,107 @@ fn fill_zone(
         blockers,
         min_width,
     );
+    let _ = touched;
+    let (rings, touched, dropped) = keep_connected(&fill.rings, net, layer, items, min_island_area);
+    fill.rings = rings;
+    fill.islands_removed += dropped;
+    rasterize(&mut fill);
     fill.triangles = crate::contour::triangles(&fill.rings);
     (fill, touched)
+}
+
+fn keep_connected(
+    rings: &[Vec<P>],
+    net: usize,
+    layer: &str,
+    items: &[Item],
+    min_island_area: f64,
+) -> (Vec<Vec<P>>, Vec<Vec<usize>>, usize) {
+    let mut shapes: Vec<Vec<&Vec<P>>> = Vec::new();
+    for r in rings {
+        if geom::signed_area(r) > 0.0 || shapes.is_empty() {
+            shapes.push(vec![r]);
+        } else {
+            shapes.last_mut().unwrap().push(r);
+        }
+    }
+    let own: Vec<usize> = (0..items.len())
+        .filter(|&i| {
+            items[i].net == Some(net)
+                && items[i].owner != Owner::Hole
+                && items[i].layers.iter().any(|l| l == layer)
+        })
+        .collect();
+    let (mut kept, mut touched, mut dropped) = (Vec::new(), Vec::new(), 0);
+    for shape in shapes {
+        let outer = shape[0];
+        let b = ring_bounds(std::slice::from_ref(outer));
+        let body = Shape::Poly(vec![outer.clone()]);
+        let hits: Vec<usize> = own
+            .iter()
+            .copied()
+            .filter(|&i| {
+                let it = &items[i];
+                if it.bounds.max[0] < b.min[0]
+                    || it.bounds.min[0] > b.max[0]
+                    || it.bounds.max[1] < b.min[1]
+                    || it.bounds.min[1] > b.max[1]
+                {
+                    return false;
+                }
+                if it.shape.distance(&body) > 1e-6 {
+                    return false;
+                }
+                let corners = [
+                    it.bounds.min,
+                    it.bounds.max,
+                    [it.bounds.min[0], it.bounds.max[1]],
+                    [it.bounds.max[0], it.bounds.min[1]],
+                ];
+                !shape[1..].iter().any(|h| corners.iter().all(|c| geom::point_in_polygon(*c, h)))
+            })
+            .collect();
+        let area: f64 = shape.iter().map(|r| geom::signed_area(r)).sum();
+        if hits.len() >= 2 || (hits.len() == 1 && area >= min_island_area) {
+            kept.extend(shape.into_iter().cloned());
+            touched.push(hits);
+        } else {
+            dropped += 1;
+        }
+    }
+    (kept, touched, dropped)
+}
+
+fn rasterize(fill: &mut ZoneFill) {
+    let (w, h, cell, origin) = (fill.width, fill.height, fill.cell, fill.origin);
+    fill.mask.iter_mut().for_each(|m| *m = 0);
+    for y in 0..h {
+        let py = origin[1] + (y as f64 + 0.5) * cell;
+        let mut cross: Vec<(f64, i32)> = Vec::new();
+        for r in &fill.rings {
+            for (a, c) in edges(r) {
+                if (a[1] > py) != (c[1] > py) {
+                    let x = a[0] + (py - a[1]) / (c[1] - a[1]) * (c[0] - a[0]);
+                    cross.push((x, if c[1] > a[1] { 1 } else { -1 }));
+                }
+            }
+        }
+        cross.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut wind = 0;
+        for k in 0..cross.len() {
+            wind += cross[k].1;
+            if wind != 0 && k + 1 < cross.len() {
+                let x0 = (((cross[k].0 - origin[0]) / cell) - 0.5).ceil().max(0.0) as usize;
+                let x1 = (((cross[k + 1].0 - origin[0]) / cell) - 0.5).floor();
+                if x1 < 0.0 {
+                    continue;
+                }
+                for x in x0..=(x1 as usize).min(w - 1) {
+                    fill.mask[y * w + x] = 1;
+                }
+            }
+        }
+    }
 }
 
 fn arc_steps(r: f64) -> usize {
@@ -2615,6 +2719,206 @@ fn check_overlaps(tracks: &[Track], nets: &[LayoutNet], d: &mut Diags) {
                     );
                 }
             }
+        }
+    }
+}
+
+fn ring_bounds(rings: &[Vec<P>]) -> Bounds {
+    let mut b = Bounds::EMPTY;
+    rings.iter().flatten().for_each(|p| b.add(*p));
+    b
+}
+
+fn inside_rings(rings: &[Vec<P>], p: P) -> bool {
+    rings
+        .iter()
+        .filter(|r| geom::point_in_polygon(p, r))
+        .map(|r| if geom::signed_area(r) > 0.0 { 1 } else { -1 })
+        .sum::<i32>()
+        > 0
+}
+
+struct EdgeBins {
+    size: f64,
+    bins: HashMap<(i64, i64), Vec<(P, P)>>,
+}
+
+impl EdgeBins {
+    fn new(rings: &[Vec<P>], size: f64) -> EdgeBins {
+        let mut bins: HashMap<(i64, i64), Vec<(P, P)>> = HashMap::new();
+        for r in rings {
+            for (a, b) in edges(r) {
+                let (x0, x1) = (
+                    (a[0].min(b[0]) / size).floor() as i64,
+                    (a[0].max(b[0]) / size).floor() as i64,
+                );
+                let (y0, y1) = (
+                    (a[1].min(b[1]) / size).floor() as i64,
+                    (a[1].max(b[1]) / size).floor() as i64,
+                );
+                for x in x0..=x1 {
+                    for y in y0..=y1 {
+                        bins.entry((x, y)).or_default().push((a, b));
+                    }
+                }
+            }
+        }
+        EdgeBins { size, bins }
+    }
+
+    fn near(&self, b: &Bounds, grow: f64) -> Vec<(P, P)> {
+        let (x0, x1) = (
+            ((b.min[0] - grow) / self.size).floor() as i64,
+            ((b.max[0] + grow) / self.size).floor() as i64,
+        );
+        let (y0, y1) = (
+            ((b.min[1] - grow) / self.size).floor() as i64,
+            ((b.max[1] + grow) / self.size).floor() as i64,
+        );
+        let mut out = Vec::new();
+        for x in x0..=x1 {
+            for y in y0..=y1 {
+                if let Some(v) = self.bins.get(&(x, y)) {
+                    out.extend_from_slice(v);
+                }
+            }
+        }
+        out
+    }
+}
+
+fn check_zones(
+    zones: &[ZoneFill],
+    items: &[Item],
+    nets: &[LayoutNet],
+    clearance_of: &dyn Fn(Option<usize>) -> f64,
+    d: &mut Diags,
+) {
+    const TOL: f64 = 3e-3;
+    let bins: Vec<EdgeBins> = zones.iter().map(|z| EdgeBins::new(&z.rings, 1.0)).collect();
+    let bounds: Vec<Bounds> = zones.iter().map(|z| ring_bounds(&z.rings)).collect();
+    let at = |z: &ZoneFill| format!("zone {} on {}", nets[z.net].name, z.layer);
+    for (i, a) in zones.iter().enumerate() {
+        if a.rings.is_empty() {
+            continue;
+        }
+        let mut tips = Vec::new();
+        for r in &a.rings {
+            let n = r.len();
+            for k in 0..n {
+                let (p, q, s) = (r[(k + n - 1) % n], r[k], r[(k + 1) % n]);
+                let (Some(u), Some(v)) = (unit(p, q), unit(q, s)) else { continue };
+                let cross = u[0] * v[1] - u[1] * v[0];
+                let turn = (u[0] * v[0] + u[1] * v[1]).clamp(-1.0, 1.0).acos().to_degrees();
+                if cross > 0.0 && 180.0 - turn < 30.0 {
+                    tips.push(q);
+                }
+            }
+        }
+        if let Some(p) = tips.first() {
+            d.warn(
+                at(a),
+                format!(
+                    "{} sharp copper tips under 30 degrees, first at [{:.3}, {:.3}]; they etch unevenly and can lift, raise the zone's min_width",
+                    tips.len(),
+                    p[0],
+                    p[1]
+                ),
+            );
+        }
+        for (j, b) in zones.iter().enumerate().skip(i + 1) {
+            if a.layer != b.layer || a.net == b.net || b.rings.is_empty() {
+                continue;
+            }
+            let need = clearance_of(Some(a.net)).max(clearance_of(Some(b.net)));
+            let (ba, bb) = (&bounds[i], &bounds[j]);
+            if ba.max[0] + need < bb.min[0]
+                || bb.max[0] + need < ba.min[0]
+                || ba.max[1] + need < bb.min[1]
+                || bb.max[1] + need < ba.min[1]
+            {
+                continue;
+            }
+            let over = a
+                .rings
+                .iter()
+                .flatten()
+                .find(|p| inside_rings(&b.rings, **p))
+                .or_else(|| b.rings.iter().flatten().find(|p| inside_rings(&a.rings, **p)));
+            if let Some(p) = over {
+                d.error(
+                    at(a),
+                    format!(
+                        "overlaps the {} zone at [{:.3}, {:.3}], a short",
+                        nets[b.net].name, p[0], p[1]
+                    ),
+                );
+                continue;
+            }
+            let mut worst: Option<(f64, P)> = None;
+            for r in &a.rings {
+                for (p, q) in edges(r) {
+                    let mut eb = Bounds::EMPTY;
+                    eb.add(p);
+                    eb.add(q);
+                    for (s, t) in bins[j].near(&eb, need) {
+                        let gap = geom::segment_segment_distance(p, q, s, t);
+                        if gap < need - TOL && worst.is_none_or(|w| gap < w.0) {
+                            worst = Some((gap, p));
+                        }
+                    }
+                }
+            }
+            if let Some((gap, p)) = worst {
+                d.error(
+                    at(a),
+                    format!(
+                        "comes {gap:.3} mm from the {} zone at [{:.3}, {:.3}], needs {need} mm",
+                        nets[b.net].name, p[0], p[1]
+                    ),
+                );
+            }
+        }
+        let mut hits = 0;
+        let mut first: Option<(String, f64, P)> = None;
+        for it in items.iter().filter(|it| {
+            it.net != Some(a.net) && it.owner != Owner::Hole && it.layers.contains(&a.layer)
+        }) {
+            let need = clearance_of(Some(a.net)).max(clearance_of(it.net));
+            let mut hit: Option<(f64, P)> = None;
+            let probe = match &it.shape {
+                Shape::Seg(p, q, _) => [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
+                Shape::Circle(c, _) => *c,
+                Shape::Poly(v) => v.first().and_then(|r| r.first()).copied().unwrap_or([0.0, 0.0]),
+            };
+            if inside_rings(&a.rings, probe) {
+                hit = Some((-1.0, probe));
+            } else {
+                for (p, q) in bins[i].near(&it.bounds, need) {
+                    let gap = it.shape.distance(&Shape::Seg(p, q, 0.0));
+                    if gap < need - TOL && hit.is_none_or(|h| gap < h.0) {
+                        hit = Some((gap, p));
+                    }
+                }
+            }
+            if let Some((gap, p)) = hit {
+                hits += 1;
+                if first.is_none() {
+                    let name = it
+                        .net
+                        .map(|n| nets[n].name.clone())
+                        .unwrap_or_else(|| "unconnected".into());
+                    first = Some((name, gap, p));
+                }
+            }
+        }
+        if let Some((name, gap, p)) = first {
+            let what =
+                if gap < 0.0 { "covers".to_string() } else { format!("comes {gap:.3} mm from") };
+            d.error(
+                at(a),
+                format!("{what} {name} copper at [{:.3}, {:.3}] ({hits} places), the fill must clear other nets", p[0], p[1]),
+            );
         }
     }
 }
