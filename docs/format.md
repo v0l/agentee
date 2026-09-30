@@ -1693,7 +1693,8 @@ recovery and removal of an asynchronous set or reset):
 | HC, HCT | 10 ns | 15 ns | 3 ns | 8 ns | 0 |
 | AHC, AHCT, VHC, VHCT | 6 ns | 5 ns | 1 ns | 3.5 ns | 0 |
 | AC, ACT | 6 ns | 4 ns | 1 ns | 2.4 ns | 0 |
-| LVC, ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns | 2 ns | 0 |
+| LVC | 4 ns | 3 ns | 1 ns | 2 ns | 0 |
+| ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns | 2 ns | 0 |
 | AUP, LV, LVX | 6 ns | 3 ns | 1 ns | 3 ns | 1 ns |
 | LS and plain 74 | 15 ns | 20 ns | 5 ns | 25 ns | 3 ns |
 | others | 10 ns | 10 ns | 2 ns | 10 ns | 2 ns |
