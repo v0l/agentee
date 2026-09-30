@@ -84,7 +84,26 @@ fn copper(layout: &Layout, layer: &str, function: &str) -> Gerber {
     for v in layout.vias.iter().filter(|v| v.layers.iter().any(|l| l == layer)) {
         g.flash_circle(v.at, v.diameter);
     }
+    footprint_graphics(&mut g, layout, layer);
     g
+}
+
+fn footprint_graphics(g: &mut Gerber, layout: &Layout, layer: &str) {
+    for part in &layout.parts {
+        let tf = part.transform();
+        for gr in part.footprint.graphics.iter().filter(|gr| part.flip_layer(&gr.layer) == layer) {
+            if matches!(gr.shape, Shape::Text { .. }) {
+                continue;
+            }
+            let path: Vec<P> = graphic_path(gr).into_iter().map(|p| tf.apply(p)).collect();
+            if gr.fill == Fill::Solid && path.len() >= 3 {
+                g.region(&path);
+            }
+            if gr.width.to_mm() > 0.0 {
+                g.stroke(&path, gr.width.to_mm());
+            }
+        }
+    }
 }
 
 fn openings(layout: &Layout, layer: &str, function: &str, paste: bool) -> Gerber {
@@ -103,6 +122,7 @@ fn openings(layout: &Layout, layer: &str, function: &str, paste: bool) -> Gerber
             }
         }
     }
+    footprint_graphics(&mut g, layout, layer);
     g
 }
 

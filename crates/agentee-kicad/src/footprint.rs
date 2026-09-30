@@ -182,9 +182,16 @@ fn pad(n: &Node) -> Option<PadFile> {
         None => [at.num(0)?, at.num(1)?],
     };
     let points = (shape == PadShape::Custom)
-        .then(|| n.find("primitives").and_then(|p| p.find("gr_poly")).map(|g| g.pts()))
+        .then(|| custom_outline(n, size.map(|s| s.to_mm()).unwrap_or([0.0, 0.0])))
         .flatten()
         .map(|pts| pts.into_iter().map(pt).collect::<Vec<_>>());
+    let circle_anchor =
+        n.find("options").and_then(|o| o.find("anchor")).and_then(|a| a.arg(0)) == Some("circle");
+    let size = if shape == PadShape::Custom && points.is_some() && circle_anchor {
+        Some(Point::mm(0.0, 0.0))
+    } else {
+        size
+    };
     let shape = if shape == PadShape::Custom && points.is_none() {
         match n.find("options").and_then(|o| o.find("anchor")).and_then(|a| a.arg(0)) {
             Some("circle") => PadShape::Circle,
@@ -210,6 +217,115 @@ fn pad(n: &Node) -> Option<PadFile> {
         number_step: None,
         edge: false,
     })
+}
+
+fn disc(c: [f64; 2], r: f64) -> Vec<[f64; 2]> {
+    let n = 48;
+    (0..n)
+        .map(|k| {
+            let t = std::f64::consts::TAU * k as f64 / n as f64;
+            [c[0] + r * t.cos(), c[1] + r * t.sin()]
+        })
+        .collect()
+}
+
+fn stroke(a: [f64; 2], b: [f64; 2], w: f64) -> Vec<Vec<[f64; 2]>> {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let len = (dx * dx + dy * dy).sqrt();
+    let mut out = vec![disc(a, w / 2.0), disc(b, w / 2.0)];
+    if len > 1e-9 {
+        let (nx, ny) = (-dy / len * w / 2.0, dx / len * w / 2.0);
+        out.push(vec![
+            [a[0] + nx, a[1] + ny],
+            [b[0] + nx, b[1] + ny],
+            [b[0] - nx, b[1] - ny],
+            [a[0] - nx, a[1] - ny],
+        ]);
+    }
+    out
+}
+
+fn custom_outline(n: &Node, size: [f64; 2]) -> Option<Vec<[f64; 2]>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    let [w, _] = size;
+    let mut parts: Vec<Vec<[f64; 2]>> = Vec::new();
+    if w > 0.0
+        && n.find("options").and_then(|o| o.find("anchor")).and_then(|a| a.arg(0)) == Some("circle")
+    {
+        parts.push(disc([0.0, 0.0], w / 2.0));
+    }
+    let prims = n.find("primitives")?;
+    for g in prims.items().iter().skip(1) {
+        let width = g.find("width").and_then(|v| v.num(0)).unwrap_or(0.0);
+        let filled = g.find("fill").is_none_or(|f| f.arg(0) != Some("no"));
+        match g.head() {
+            Some("gr_poly") => {
+                let pts = g.pts();
+                if pts.len() >= 3 {
+                    if width > 0.0 {
+                        for i in 0..pts.len() {
+                            parts.extend(stroke(pts[i], pts[(i + 1) % pts.len()], width));
+                        }
+                    }
+                    parts.push(pts);
+                }
+            }
+            Some("gr_circle") => {
+                let (Some(c), Some(e)) = (g.xy("center"), g.xy("end")) else { continue };
+                let r = ((e[0] - c[0]).powi(2) + (e[1] - c[1]).powi(2)).sqrt();
+                if filled {
+                    parts.push(disc(c, r + width / 2.0));
+                } else if width > 0.0 {
+                    let ring = disc(c, r);
+                    for i in 0..ring.len() {
+                        parts.extend(stroke(ring[i], ring[(i + 1) % ring.len()], width));
+                    }
+                }
+            }
+            Some("gr_rect") => {
+                let (Some(a), Some(b)) = (g.xy("start"), g.xy("end")) else { continue };
+                let rect = vec![a, [b[0], a[1]], b, [a[0], b[1]]];
+                if width > 0.0 {
+                    for i in 0..4 {
+                        parts.extend(stroke(rect[i], rect[(i + 1) % 4], width));
+                    }
+                }
+                if filled {
+                    parts.push(rect);
+                }
+            }
+            Some("gr_line") => {
+                let (Some(a), Some(b)) = (g.xy("start"), g.xy("end")) else { continue };
+                parts.extend(stroke(a, b, width));
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let signed = |r: &[[f64; 2]]| {
+        (0..r.len())
+            .map(|i| {
+                let (a, b) = (r[i], r[(i + 1) % r.len()]);
+                a[0] * b[1] - b[0] * a[1]
+            })
+            .sum::<f64>()
+    };
+    let area = |r: &[[f64; 2]]| signed(r).abs();
+    for p in parts.iter_mut() {
+        if signed(p) < 0.0 {
+            p.reverse();
+        }
+    }
+    let merged =
+        parts.overlay(&Vec::<Vec<[f64; 2]>>::new(), OverlayRule::Subject, FillRule::NonZero);
+    merged
+        .into_iter()
+        .filter_map(|shape| shape.into_iter().next())
+        .max_by(|a, b| area(a).total_cmp(&area(b)))
 }
 
 fn same_template(a: &PadFile, b: &PadFile) -> bool {

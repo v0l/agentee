@@ -8,6 +8,7 @@ description = "KiCad symbol and footprint importer for agentee"
 
 [dependencies]
 agentee-core.workspace = true
+i_overlay = "9"
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true

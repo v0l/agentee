@@ -166,6 +166,14 @@ pub fn layout(
                     fill_polygon(p, o.iter().map(|q| xf.world(*q)).collect(), c, Stroke::NONE);
                 }
             }
+            let placed = xf.placed(part.transform());
+            let c = color.lerp_to_gamma(Color32::WHITE, 0.22);
+            for g in part.footprint.graphics.iter().filter(|g| part.flip_layer(&g.layer) == *layer)
+            {
+                if !matches!(g.shape, Shape::Text { .. }) {
+                    paint::graphic(p, &placed, g, c, c);
+                }
+            }
         }
     }
 

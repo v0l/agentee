@@ -156,6 +156,33 @@ pub struct Pad {
     pub edge: bool,
 }
 
+fn merge_overlapping(mut rings: Vec<Vec<P>>) -> Vec<Vec<P>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    for r in rings.iter_mut() {
+        if geom::signed_area(r) < 0.0 {
+            r.reverse();
+        }
+    }
+    let area = |shapes: &Vec<Vec<Vec<P>>>| -> f64 {
+        shapes.iter().flatten().map(|r| geom::signed_area(r)).sum::<f64>().abs()
+    };
+    let overlap = vec![rings[0].clone()].overlay(
+        &vec![rings[1].clone()],
+        OverlayRule::Intersect,
+        FillRule::NonZero,
+    );
+    if area(&overlap) < 1e-9 {
+        return rings;
+    }
+    rings
+        .overlay(&Vec::<Vec<P>>::new(), OverlayRule::Subject, FillRule::NonZero)
+        .into_iter()
+        .filter_map(|shape| shape.into_iter().next())
+        .collect()
+}
+
 impl Pad {
     pub fn on_layer(&self, layer: &str) -> bool {
         self.layers.iter().any(|l| {
@@ -184,6 +211,9 @@ impl Pad {
                 }
                 if self.points.len() >= 3 {
                     local.push(self.points.iter().map(|p| p.to_mm()).collect());
+                }
+                if local.len() == 2 {
+                    local = merge_overlapping(local);
                 }
             }
         }
@@ -654,6 +684,31 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 mod tests {
     use super::*;
     use crate::board::fab_rules;
+
+    fn custom(points: &str) -> Footprint {
+        let f: FootprintFile = toml::from_str(&format!(
+            r#"
+name = "X"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "custom"
+at = [0, 0]
+size = [1.0, 0.5]
+points = {points}
+"#
+        ))
+        .unwrap();
+        f.resolve(&mut Diags::new("X"))
+    }
+
+    #[test]
+    fn a_custom_pad_merges_an_anchor_it_overlaps_and_keeps_one_it_only_touches() {
+        let merged = custom("[[0.0, -0.75], [0.5, -0.75], [0.5, 0.75], [0.0, 0.75]]");
+        assert_eq!(merged.pads[0].outlines().len(), 1);
+        let touching = custom("[[0.5, -0.75], [2.0, -0.75], [2.0, 0.75], [0.5, 0.75]]");
+        assert_eq!(touching.pads[0].outlines().len(), 2);
+    }
 
     #[test]
     fn pad_rows_count_up() {

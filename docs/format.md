@@ -437,6 +437,10 @@ two. A custom pad is the anchor rectangle from `size` plus `points`, a polygon r
 Layers: `F.Cu`, `B.Cu`, `F.SilkS`, `B.SilkS`, `F.Mask`, `B.Mask`, `F.Paste`, `B.Paste`, `F.Fab`,
 `B.Fab`, `F.CrtYd`, `B.CrtYd`, `Edge.Cuts`, `*.Cu`, `*.Mask`.
 
+Footprint graphics on a copper, mask or paste layer are plotted as copper, mask openings or
+paste, and drawn in the viewer: the copper strip of a bridged solder jumper, say. Check does not
+see them as copper.
+
 Check looks for overlapping pads, pads closer than the fab clearance, drills and annular rings
 under the rules (`min_drill`, `min_pth_annular_ring`), a courtyard that encloses the pads, and
 silk that runs over exposed copper.

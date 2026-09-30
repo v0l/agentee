@@ -43,9 +43,57 @@ impl Builder {
         }
     }
 
+    fn prism(&mut self, colour: [f32; 3], rings: &[Vec<R>], z0: f64, z1: f64) {
+        let p = |q: R, z: f64| [q[0] as f32, -q[1] as f32, z as f32];
+        for t in agentee_core::contour::triangles(rings) {
+            let (up, down) = ([0.0, 0.0, 1.0], [0.0, 0.0, -1.0]);
+            self.mesh.push(colour, [(p(t[0], z1), up), (p(t[1], z1), up), (p(t[2], z1), up)]);
+            self.mesh.push(colour, [(p(t[0], z0), down), (p(t[2], z0), down), (p(t[1], z0), down)]);
+        }
+        let solid = |q: R| {
+            rings.iter().filter(|r| agentee_core::geom::point_in_polygon(q, r)).count() % 2 == 1
+        };
+        for r in rings {
+            for i in 0..r.len() {
+                let (a, b) = (r[i], r[(i + 1) % r.len()]);
+                let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                let len = (dx * dx + dy * dy).sqrt();
+                if len < 1e-9 {
+                    continue;
+                }
+                let mut n = [dy / len, -dx / len];
+                let mid = [(a[0] + b[0]) / 2.0 + n[0] * 1e-4, (a[1] + b[1]) / 2.0 + n[1] * 1e-4];
+                if solid(mid) {
+                    n = [-n[0], -n[1]];
+                }
+                let n = [n[0] as f32, -n[1] as f32, 0.0];
+                let v = [p(a, z0), p(b, z0), p(b, z1), p(a, z1)];
+                self.mesh.push(colour, [(v[0], n), (v[1], n), (v[2], n)]);
+                self.mesh.push(colour, [(v[0], n), (v[2], n), (v[3], n)]);
+            }
+        }
+    }
+
     fn finish(self) -> Mesh {
         self.mesh.finish()
     }
+}
+
+fn square(c: R, half: f64) -> Vec<R> {
+    vec![
+        [c[0] - half, c[1] - half],
+        [c[0] + half, c[1] - half],
+        [c[0] + half, c[1] + half],
+        [c[0] - half, c[1] + half],
+    ]
+}
+
+fn chamfered(c: R, half: f64, cut: f64) -> Vec<R> {
+    let (h, k) = (half, half - cut);
+    [[-k, -h], [k, -h], [h, -k], [h, k], [k, h], [-k, h], [-h, k], [-h, -k]]
+        .into_iter()
+        .map(|q| [c[0] + q[0], c[1] + q[1]])
+        .collect()
 }
 
 fn fab_bounds(fp: &Footprint) -> Option<Bounds> {
@@ -139,23 +187,37 @@ fn chip(fp: &Footprint, kind: &str) -> Option<Mesh> {
 }
 
 fn header(fp: &Footprint, socket: bool) -> Option<Mesh> {
-    let fine = fp.name.contains("P1.27mm");
-    let body = fab_bounds(fp)?;
-    let (base, pin, above, tail) = match (socket, fine) {
-        (false, false) => (2.5, 0.64, 6.0, 3.0),
-        (false, true) => (1.0, 0.4, 3.0, 2.0),
-        (true, false) => (8.5, 0.64, 0.0, 3.0),
-        (true, true) => (4.4, 0.4, 0.0, 2.0),
+    let pitch = if fp.name.contains("P1.27mm") {
+        1.27
+    } else if fp.name.contains("P2.00mm") {
+        2.0
+    } else {
+        2.54
     };
-    let base = fp.height.unwrap_or(base);
+    let k = pitch / 2.54;
+    let (pin, above, tail) = (0.64 * k, 6.0 * k, 3.0 * k);
+    let base = fp.height.unwrap_or(if socket { 8.5 * k } else { 2.5 * k });
+    let pins: Vec<R> = fp.pads.iter().filter(|p| p.drill.is_some()).map(|p| p.at.to_mm()).collect();
+    if pins.is_empty() {
+        return None;
+    }
+    let half = pitch / 2.0;
+    let cut = 0.25 * k;
     let mut m = Builder::new();
-    m.cuboid(BLACK, body.min, body.max, 0.0, base);
-    for p in fp.pads.iter().filter(|p| p.drill.is_some()) {
-        let [x, y] = p.at.to_mm();
+    for c in &pins {
+        let block = chamfered(*c, half, cut);
         let h = pin / 2.0;
-        m.cuboid(GOLD, [x - h, y - h], [x + h, y + h], -tail, base + above);
         if socket {
-            m.cuboid(MARK, [x - h, y - h], [x + h, y + h], base, base + 0.01);
+            let (hole, depth) = (0.5 * k, 2.0 * k);
+            m.prism(BLACK, std::slice::from_ref(&block), 0.0, base - depth);
+            m.prism(BLACK, &[block, square(*c, hole)], base - depth, base);
+            m.prism(GOLD, &[square(*c, h)], -tail, 0.0);
+        } else {
+            m.prism(BLACK, &[block], 0.0, base);
+            let tip = 0.5 * k;
+            m.prism(GOLD, &[square(*c, h)], -tail + tip, base + above - tip);
+            m.prism(GOLD, &[square(*c, h * 0.5)], base + above - tip, base + above);
+            m.prism(GOLD, &[square(*c, h * 0.5)], -tail, -tail + tip);
         }
     }
     Some(m.finish())
@@ -357,6 +419,33 @@ width = 0.1
             .flat_map(|p| &p.positions)
             .any(|p| p[0].abs() < 20.0 && p[1].abs() < 15.0);
         assert!(!centre);
+    }
+
+    #[test]
+    fn a_header_has_a_notched_block_and_a_pin_through_the_board_per_pad() {
+        let text = r#"
+name = "PinHeader_1x02_P2.54mm_Vertical"
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "rect"
+at = [0, 0]
+size = [1.7, 1.7]
+drill = 1.0
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "oval"
+at = [0, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+"#;
+        let m = generate(&footprint(text)).unwrap();
+        let (lo, hi) = m.bounds();
+        assert!(lo[2] < -2.9 && hi[2] > 8.0);
+        let block = m.parts.iter().find(|p| p.colour == BLACK).unwrap();
+        let notch = block.positions.iter().any(|p| (p[0].abs() - 1.02).abs() < 1e-3);
+        assert!(notch);
     }
 
     #[test]

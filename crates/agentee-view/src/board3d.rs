@@ -174,6 +174,35 @@ fn disc(c: P, r: f64, n: usize) -> Vec<P> {
 
 type Decal = Vec<([P; 3], Color32)>;
 
+fn graphic_areas(part: &Placed, layer: &str) -> Vec<Vec<P>> {
+    let tf = part.transform();
+    let mut out = Vec::new();
+    for g in part.footprint.graphics.iter().filter(|g| part.flip_layer(&g.layer) == layer) {
+        if matches!(g.shape, agentee_core::graphic::Shape::Text { .. }) {
+            continue;
+        }
+        let path: Vec<P> =
+            agentee_core::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
+        if g.fill == agentee_core::graphic::Fill::Solid && path.len() >= 3 {
+            out.push(path.clone());
+        }
+        let w = g.width.to_mm() / 2.0;
+        if w > 0.0 {
+            out.extend(path.windows(2).map(|s| capsule(s[0], s[1], w)));
+        }
+    }
+    out
+}
+
+fn overlaps(a: &[P], b: &[P]) -> bool {
+    let bounds = |r: &[P]| {
+        let mut x = agentee_core::graphic::Bounds::EMPTY;
+        r.iter().for_each(|q| x.add(*q));
+        x
+    };
+    bounds(a).overlaps(&bounds(b))
+}
+
 fn flat(polys: &[Vec<P>], color: Color32, out: &mut Decal) {
     for t in agentee_core::contour::triangles(polys) {
         out.push((t, color));
@@ -329,6 +358,11 @@ fn decals(l: &Layout, board: &Board, side: usize) -> Decal {
             if !pad.mask.iter().any(|m| m == mask_layer) {
                 flat(&pad.outlines, under, &mut d);
             }
+        }
+        let bare = graphic_areas(part, mask_layer);
+        for area in graphic_areas(part, cu) {
+            let open = bare.iter().any(|m| overlaps(&area, m));
+            flat(&[area], if open { gold } else { under }, &mut d);
         }
     }
     let pen_for = |size: f64| agentee_core::font::default_thickness(size).max(0.15);

@@ -87,6 +87,7 @@ name = "agentee-kicad"
 version = "0.1.0"
 dependencies = [
  "agentee-core",
+ "i_overlay",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
