@@ -585,6 +585,15 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         if specs.is_empty() {
             return Err("the board defines no [[vias]]".into());
         }
+        let listed: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
+        specs.retain(|s| board.stackup.drills_via(s).is_ok());
+        if specs.is_empty() {
+            return Err(format!(
+                "class {class}: no via of {} matches a drill step of the lamination; {}",
+                listed.join(", "),
+                board.stackup.lamination_summary()
+            ));
+        }
         let options: Vec<ViaOption> = specs
             .iter()
             .map(|s| {

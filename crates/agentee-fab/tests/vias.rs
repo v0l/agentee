@@ -32,6 +32,13 @@ diameter = "0.25mm"
 type = "microvia"
 from = "In4.Cu"
 to = "B.Cu"
+[[vias]]
+name = "cd"
+drill = "0.15mm"
+diameter = "0.45mm"
+from = "In4.Cu"
+to = "B.Cu"
+drill_kind = "controlled_depth"
 "#;
 
 fn project(pcb_vias: &str) -> (Project, PathBuf) {
@@ -143,6 +150,20 @@ fn each_span_gets_its_own_drill_file_and_fab_note() {
         .map(|l| &l[l.find("PA").unwrap() + 1..][..3])
         .collect();
     assert_eq!(access, ["A00", "A01", "A01", "A02", "A01"], "{d356}");
+}
+
+#[test]
+fn a_controlled_depth_via_gets_its_span_file_and_a_depth_note() {
+    let out = package(&[via("std", [10.0, 10.0]), via("cd", [14.0, 10.0])].concat());
+    assert_eq!(drill_files(&out), ["drill-In4.Cu-B.Cu.drl", "drill-PTH.drl"]);
+    let cd = std::fs::read_to_string(out.join("drill-In4.Cu-B.Cu.drl")).unwrap();
+    assert!(cd.contains("TF.FileFunction,Plated,5,6,Blind"), "{cd}");
+    assert!(cd.contains("; span In4.Cu to B.Cu, controlled depth blind vias"), "{cd}");
+    let notes = std::fs::read_to_string(out.join("fab-notes.txt")).unwrap();
+    assert!(
+        notes.contains("cd: blind In4.Cu to B.Cu, mechanically drilled from B.Cu to a controlled depth, stopping on In4.Cu, 0.150 mm drill"),
+        "{notes}"
+    );
 }
 
 #[test]

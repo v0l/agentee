@@ -95,6 +95,34 @@ pub struct StackupFile {
     pub gold: Option<Length>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub layers: Vec<LayerFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lamination: Vec<DrillStep>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DrillKind {
+    Mechanical,
+    Laser,
+    ControlledDepth,
+}
+
+impl DrillKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            DrillKind::Mechanical => "mechanical",
+            DrillKind::Laser => "laser",
+            DrillKind::ControlledDepth => "controlled depth",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DrillStep {
+    pub from: String,
+    pub to: String,
+    pub drill_kind: DrillKind,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -237,6 +265,8 @@ pub struct ViaFile {
     #[serde(default, skip_serializing_if = "is_false")]
     pub skip: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drill_kind: Option<DrillKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<ViaFill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backdrill: Option<BackdrillFile>,
@@ -320,6 +350,8 @@ macro_rules! rules {
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub max_microvia_aspect_ratio: Option<f64>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub max_controlled_depth_aspect_ratio: Option<f64>,
+            #[serde(default, skip_serializing_if = "Option::is_none")]
             pub hdi: Option<bool>,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub stacked_microvias: Option<bool>,
@@ -330,6 +362,7 @@ macro_rules! rules {
             $(pub $field: Length,)*
             pub max_aspect_ratio: f64,
             pub max_microvia_aspect_ratio: f64,
+            pub max_controlled_depth_aspect_ratio: f64,
             pub hdi: bool,
             pub stacked_microvias: bool,
         }
@@ -342,6 +375,9 @@ macro_rules! rules {
                 }
                 if let Some(v) = f.max_microvia_aspect_ratio {
                     self.max_microvia_aspect_ratio = v;
+                }
+                if let Some(v) = f.max_controlled_depth_aspect_ratio {
+                    self.max_controlled_depth_aspect_ratio = v;
                 }
                 if let Some(v) = f.hdi {
                     self.hdi = v;
@@ -366,6 +402,7 @@ rules! {
     min_via_diameter: "smallest via pad",
     min_annular_ring: "copper left around a via hole",
     min_blind_via_drill: "smallest mechanically drilled blind or buried via hole",
+    min_controlled_depth_drill: "smallest blind via hole drilled to a controlled depth",
     min_microvia_drill: "smallest laser drilled microvia hole",
     max_microvia_drill: "largest laser drilled microvia hole",
     min_microvia_diameter: "smallest microvia capture pad",
@@ -425,6 +462,7 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             min_via_diameter: mm(0.35),
             min_annular_ring: mm(0.1),
             min_blind_via_drill: mm(0.15),
+            min_controlled_depth_drill: mm(0.15),
             min_microvia_drill: mm(0.1),
             max_microvia_drill: mm(0.2),
             min_microvia_diameter: mm(0.25),
@@ -447,6 +485,7 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             min_via_diameter: mm(0.6),
             min_annular_ring: mm(0.15),
             min_blind_via_drill: mm(0.2),
+            min_controlled_depth_drill: mm(0.2),
             min_microvia_drill: mm(0.1),
             max_microvia_drill: mm(0.15),
             min_microvia_diameter: mm(0.3),
@@ -474,6 +513,7 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             flex_zone: mm(5.0),
             max_aspect_ratio: 8.0,
             max_microvia_aspect_ratio: 0.8,
+            max_controlled_depth_aspect_ratio: 1.0,
             hdi: false,
             stacked_microvias: false,
         }),
@@ -501,6 +541,7 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
                 min_via_diameter: mm(if single { 0.5 } else { 0.25 }),
                 min_annular_ring: mm(0.05),
                 min_blind_via_drill: mm(0.2),
+                min_controlled_depth_drill: mm(0.2),
                 min_microvia_drill: mm(0.1),
                 max_microvia_drill: mm(0.15),
                 min_microvia_diameter: mm(0.3),
@@ -532,6 +573,7 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
                 flex_zone: mm(5.0),
                 max_aspect_ratio: 10.7,
                 max_microvia_aspect_ratio: 0.8,
+                max_controlled_depth_aspect_ratio: 1.0,
                 hdi: false,
                 stacked_microvias: false,
             })
@@ -578,6 +620,7 @@ pub struct Stackup {
     pub nickel_um: Option<f64>,
     pub gold_um: Option<f64>,
     pub layers: Vec<Layer>,
+    pub lamination: Vec<DrillStep>,
 }
 
 impl Stackup {
@@ -649,50 +692,146 @@ impl Stackup {
             .sum()
     }
 
-    pub fn drillable_span(&self, from: &str, to: &str) -> Result<(), String> {
+    pub fn span_depth(&self, from: &str, to: &str) -> Length {
         let (Some(i), Some(j)) = (self.index_of(from), self.index_of(to)) else {
-            return Err(format!("{from} or {to} is not in the stackup"));
+            return Length::ZERO;
         };
-        let (i, j) = (i.min(j), i.max(j));
-        let body = |l: &&Layer| l.kind == LayerKind::Copper || l.kind.is_dielectric();
-        let above = self.layers[..i].iter().rev().find(body);
-        let below = self.layers[j + 1..].iter().find(body);
-        for (l, end, side) in
-            [(above, &self.layers[i].name, "above"), (below, &self.layers[j].name, "below")]
-        {
-            if let Some(l) = l
-                && l.kind == LayerKind::Core
-            {
-                let spans: Vec<String> =
-                    self.drill_spans().iter().map(|(a, b)| format!("{a}-{b}")).collect();
-                return Err(format!(
-                    "{end} is a foil of core `{}` {side} it, a drilled span must start and end on a laminated sub-stack with prepreg outside both ends; this stackup can drill {}",
-                    l.name,
-                    spans.join(", ")
-                ));
-            }
-        }
-        Ok(())
+        self.layers[i.min(j)..=i.max(j)]
+            .iter()
+            .filter(|l| l.kind == LayerKind::Copper || l.kind.is_dielectric())
+            .map(|l| l.thickness)
+            .sum()
     }
 
-    pub fn drill_spans(&self) -> Vec<(String, String)> {
-        let body = |l: &&Layer| l.kind == LayerKind::Copper || l.kind.is_dielectric();
+    fn core_gaps(&self) -> Vec<bool> {
         let cu: Vec<usize> = self.copper().map(|(i, _)| i).collect();
-        let open_above = |i: usize| {
-            self.layers[..i].iter().rev().find(body).is_none_or(|l| l.kind != LayerKind::Core)
+        cu.windows(2)
+            .map(|w| self.layers[w[0] + 1..w[1]].iter().any(|l| l.kind == LayerKind::Core))
+            .collect()
+    }
+
+    pub fn build_up_layers(&self) -> usize {
+        let cores = self.core_gaps();
+        if !cores.contains(&true) {
+            return 0;
+        }
+        let top = cores.iter().take_while(|c| !**c).count();
+        let bottom = cores.iter().rev().take_while(|c| !**c).count();
+        top.min(bottom)
+    }
+
+    pub fn build_name(&self) -> String {
+        let n = self.copper().count();
+        match self.build_up_layers() {
+            0 => format!("{n} layer single lamination"),
+            i => format!("{i}+{}+{i}", n - 2 * i),
+        }
+    }
+
+    pub fn derived_lamination(&self) -> Vec<DrillStep> {
+        let cu = self.copper_names();
+        if cu.len() < 2 {
+            return Vec::new();
+        }
+        let last = cu.len() - 1;
+        let i = self.build_up_layers();
+        let mut out: Vec<DrillStep> = Vec::new();
+        let mut push = |a: usize, b: usize, drill_kind: DrillKind| {
+            let s = DrillStep { from: cu[a].clone(), to: cu[b].clone(), drill_kind };
+            if !out.contains(&s) {
+                out.push(s);
+            }
         };
-        let open_below = |i: usize| {
-            self.layers[i + 1..].iter().find(body).is_none_or(|l| l.kind != LayerKind::Core)
-        };
-        let mut out = Vec::new();
-        for (x, &i) in cu.iter().enumerate() {
-            for &j in &cu[x + 1..] {
-                if open_above(i) && open_below(j) {
-                    out.push((self.layers[i].name.clone(), self.layers[j].name.clone()));
-                }
+        for (g, core) in self.core_gaps().into_iter().enumerate().take(last - i).skip(i) {
+            if core {
+                push(g, g + 1, DrillKind::Mechanical);
             }
         }
+        push(i, last - i, DrillKind::Mechanical);
+        for k in 1..=i {
+            let (t, b) = (i - k, last - i + k);
+            push(t, t + 1, DrillKind::Laser);
+            push(b - 1, b, DrillKind::Laser);
+            if k >= 2 {
+                push(t, t + 2, DrillKind::Laser);
+                push(b - 2, b, DrillKind::Laser);
+            }
+            push(t, b, DrillKind::Mechanical);
+        }
+        for inner in 1..last {
+            push(0, inner, DrillKind::ControlledDepth);
+        }
+        for inner in 1..last {
+            push(inner, last, DrillKind::ControlledDepth);
+        }
         out
+    }
+
+    pub fn drill_steps(&self) -> Vec<DrillStep> {
+        if self.lamination.is_empty() { self.derived_lamination() } else { self.lamination.clone() }
+    }
+
+    pub fn drills_via(&self, v: &Via) -> Result<(), String> {
+        self.drillable(&v.from, &v.to, v.drill_kind, v.stacked)
+    }
+
+    fn copper_span(&self, from: &str, to: &str) -> Option<(usize, usize)> {
+        let cu = self.copper_names();
+        let a = cu.iter().position(|c| c == from)?;
+        let b = cu.iter().position(|c| c == to)?;
+        Some((a.min(b), a.max(b)))
+    }
+
+    pub fn lamination_summary(&self) -> String {
+        let steps = self.drill_steps();
+        let mut kinds = Vec::new();
+        for kind in [DrillKind::Mechanical, DrillKind::Laser, DrillKind::ControlledDepth] {
+            let spans: Vec<String> = steps
+                .iter()
+                .filter(|s| s.drill_kind == kind)
+                .map(|s| format!("{}-{}", s.from, s.to))
+                .collect();
+            if !spans.is_empty() {
+                kinds.push(format!("{} {}", kind.name(), spans.join(", ")));
+            }
+        }
+        let source = if self.lamination.is_empty() {
+            format!(
+                "the {} build of the stackup (cores, core sub-stack, build-up layers)",
+                self.build_name()
+            )
+        } else {
+            "[stackup] lamination".to_string()
+        };
+        format!("{source} drills {}", kinds.join("; "))
+    }
+
+    pub fn drillable(
+        &self,
+        from: &str,
+        to: &str,
+        drill_kind: DrillKind,
+        stacked: bool,
+    ) -> Result<(), String> {
+        let Some((a, b)) = self.copper_span(from, to) else {
+            return Err(format!("{from} or {to} is not a copper layer"));
+        };
+        let steps = self.drill_steps();
+        let has = |x: usize, y: usize| {
+            steps.iter().any(|s| {
+                s.drill_kind == drill_kind && self.copper_span(&s.from, &s.to) == Some((x, y))
+            })
+        };
+        let ok = if stacked { (a..b).all(|x| has(x, x + 1)) } else { has(a, b) };
+        if ok {
+            return Ok(());
+        }
+        let what = if stacked { "every hop of the stack" } else { "the span" };
+        Err(format!(
+            "no {} drill step of the lamination matches {what}; {}",
+            drill_kind.name(),
+            self.lamination_summary()
+        ))
     }
 
     pub fn index_of(&self, name: &str) -> Option<usize> {
@@ -806,6 +945,7 @@ pub struct Via {
     pub kind: ViaKind,
     pub stacked: bool,
     pub skip: bool,
+    pub drill_kind: DrillKind,
     pub fill: Option<ViaFill>,
     pub backdrill: Option<Backdrill>,
     pub cost: f64,
@@ -957,6 +1097,11 @@ impl BoardFile {
                     kind,
                     stacked: v.stacked,
                     skip: v.skip,
+                    drill_kind: v.drill_kind.unwrap_or(if kind == ViaKind::Microvia {
+                        DrillKind::Laser
+                    } else {
+                        DrillKind::Mechanical
+                    }),
                     fill: v.fill,
                     backdrill: v.backdrill.as_ref().map(|b| Backdrill {
                         from: b.from.clone(),
@@ -1123,6 +1268,7 @@ impl BoardFile {
             nickel_um: s.nickel.map(|t| t.to_mm() * 1e3),
             gold_um: s.gold.map(|t| t.to_mm() * 1e3),
             layers,
+            lamination: s.lamination.clone(),
         }
     }
 }
@@ -1377,15 +1523,38 @@ impl Board {
         let last = copper.len() - 1;
         let span = format!("{} to {}", v.from, v.to);
         let micro = v.kind == ViaKind::Microvia;
+        let depth_drilled = v.drill_kind == DrillKind::ControlledDepth;
         if v.kind != ViaKind::Through && !r.hdi {
+            let how = if depth_drilled {
+                "drilling to a controlled depth"
+            } else {
+                "sequential lamination"
+            };
             d.error(
                 &at,
                 format!(
-                    "a {} via needs sequential lamination, which fab `{}` does not build: use fab = \"hdi\" or set [rules] hdi = true",
+                    "a {} via needs {how}, which fab `{}` does not build: use fab = \"hdi\" or set [rules] hdi = true",
                     v.kind.name(),
                     self.fab
                 ),
             );
+        }
+        match v.drill_kind {
+            DrillKind::Laser if !micro => d.error(
+                &at,
+                "a laser drilled via is a microvia, set type = \"microvia\" or drill_kind = \"mechanical\"",
+            ),
+            DrillKind::Mechanical | DrillKind::ControlledDepth if micro => {
+                d.error(&at, "a microvia is laser drilled, drop `drill_kind` or set it to \"laser\"")
+            }
+            DrillKind::ControlledDepth if v.kind != ViaKind::Blind => d.error(
+                &at,
+                format!(
+                    "a controlled depth via is drilled from one outer layer into the board, a blind via; {span} is {}",
+                    v.kind.name()
+                ),
+            ),
+            _ => {}
         }
         match v.kind {
             ViaKind::Through if a != 0 || b != last => d.error(
@@ -1409,6 +1578,7 @@ impl Board {
             d.error(&at, "`stacked` and `skip` apply to microvias only");
         }
         let floor = match v.kind {
+            _ if depth_drilled => r.min_via_drill.max(r.min_controlled_depth_drill),
             ViaKind::Through => r.min_via_drill,
             ViaKind::Blind | ViaKind::Buried => r.min_via_drill.max(r.min_blind_via_drill),
             ViaKind::Microvia => r.min_microvia_drill,
@@ -1433,7 +1603,21 @@ impl Board {
         }
         if micro {
             self.check_microvia(&at, v, a, b, copper, d);
-        } else if let Err(e) = self.stackup.drillable_span(&v.from, &v.to) {
+        }
+        if depth_drilled {
+            let depth = self.stackup.span_depth(&v.from, &v.to);
+            let ratio = depth.to_mm() / v.drill.to_mm().max(1e-9);
+            if ratio > r.max_controlled_depth_aspect_ratio + 1e-9 {
+                d.error(
+                    &at,
+                    format!(
+                        "controlled depth hole {depth} deep over a {} drill is {ratio:.2}:1, over the fab's {}:1: plating reaches the bottom of a blind hole only this shallow",
+                        v.drill, r.max_controlled_depth_aspect_ratio
+                    ),
+                );
+            }
+        }
+        if let Err(e) = self.stackup.drills_via(v) {
             d.error(&at, format!("{span} cannot be drilled: {e}"));
         }
         if let Some(bd) = &v.backdrill {
@@ -1640,6 +1824,32 @@ impl Board {
                 );
             }
         }
+        let copper = self.stackup.copper_names();
+        let last = copper.len() - 1;
+        for (i, step) in self.stackup.lamination.iter().enumerate() {
+            let at = format!("stackup.lamination[{i}]");
+            let (Some(a), Some(b)) = (
+                copper.iter().position(|c| *c == step.from),
+                copper.iter().position(|c| *c == step.to),
+            ) else {
+                d.error(&at, format!("`from`/`to` must name copper layers: {}", copper.join(", ")));
+                continue;
+            };
+            if a >= b {
+                d.error(&at, "`from` must be above `to` in the stackup");
+            } else if step.drill_kind == DrillKind::ControlledDepth && (a == 0) == (b == last) {
+                d.error(
+                    &at,
+                    format!(
+                        "a controlled depth step drills from one outer layer to an inner layer, {} to {} does not",
+                        step.from, step.to
+                    ),
+                );
+            }
+            if self.stackup.lamination[..i].contains(step) {
+                d.warn(&at, "the same drill step is listed twice");
+            }
+        }
         let t = self.stackup.thickness();
         d.info("stackup", format!("{n_cu} copper layers, {t} finished thickness"));
     }
@@ -1788,7 +1998,7 @@ severity = { "via-in-pad" = "error" }
     #[test]
     fn via_type_is_inferred_from_the_span() {
         let (b, d) = hdi(
-            "[[vias]]\nname = \"std\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\n[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"F.Cu\"\nto = \"In4.Cu\"\n[[vias]]\nname = \"bu\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"In1.Cu\"\nto = \"In4.Cu\"\n",
+            "[[vias]]\nname = \"std\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\n[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\ndrill_kind = \"controlled_depth\"\n[[vias]]\nname = \"bu\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"In1.Cu\"\nto = \"In4.Cu\"\n",
         );
         assert!(errors(&d).is_empty(), "{:?}", d.list);
         let kinds: Vec<ViaKind> = b.vias.iter().map(|v| v.kind).collect();
@@ -1799,9 +2009,15 @@ severity = { "via-in-pad" = "error" }
 
     #[test]
     fn jlcpcb_rejects_blind_vias_unless_hdi_is_set() {
-        let src = "name = \"x\"\nfab = \"jlcpcb\"\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\ntype = \"blind\"\nfrom = \"F.Cu\"\nto = \"In4.Cu\"\n";
+        let src = "name = \"x\"\nfab = \"jlcpcb\"\n[stackup]\npreset = \"hdi-6l-1n1\"\n[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\ntype = \"blind\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\ndrill_kind = \"controlled_depth\"\n";
         let (_, d) = board(src);
-        assert!(errors(&d).iter().any(|m| m.contains("sequential lamination")), "{:?}", d.list);
+        assert!(
+            errors(&d)
+                .iter()
+                .any(|m| m.contains("controlled depth, which fab `jlcpcb` does not build")),
+            "{:?}",
+            d.list
+        );
         let (_, d) = board(&format!("{src}[rules]\nhdi = true\n"));
         assert!(errors(&d).is_empty(), "{:?}", d.list);
     }
@@ -1824,11 +2040,134 @@ severity = { "via-in-pad" = "error" }
         );
         let e = errors(&d);
         assert_eq!(e.len(), 1, "{e:?}");
-        assert!(e[0].starts_with("In2.Cu to In3.Cu cannot be drilled") && e[0].contains("core"));
-        let spans = b.stackup.drill_spans();
-        assert!(spans.contains(&("In1.Cu".into(), "In4.Cu".into())));
-        assert!(spans.contains(&("In3.Cu".into(), "In4.Cu".into())));
-        assert!(!spans.contains(&("In2.Cu".into(), "In3.Cu".into())));
+        assert!(e[0].starts_with("In2.Cu to In3.Cu cannot be drilled"), "{e:?}");
+        assert!(e[0].contains("mechanical In1.Cu-In2.Cu, In3.Cu-In4.Cu, In1.Cu-In4.Cu"), "{e:?}");
+        let st = &b.stackup;
+        let mech = |a: &str, z: &str| st.drillable(a, z, DrillKind::Mechanical, false).is_ok();
+        assert!(mech("In1.Cu", "In4.Cu") && mech("In3.Cu", "In4.Cu") && mech("F.Cu", "B.Cu"));
+        assert!(!mech("In2.Cu", "In3.Cu") && !mech("F.Cu", "In2.Cu") && !mech("F.Cu", "In4.Cu"));
+    }
+
+    fn steps(st: &Stackup) -> Vec<String> {
+        st.drill_steps()
+            .iter()
+            .map(|s| format!("{} {}-{}", s.drill_kind.name(), s.from, s.to))
+            .filter(|s| !s.starts_with("controlled"))
+            .collect()
+    }
+
+    #[test]
+    fn lamination_follows_the_one_n_one_build() {
+        let (b, _) = hdi("");
+        assert_eq!(b.stackup.build_name(), "1+4+1");
+        assert_eq!(
+            steps(&b.stackup),
+            [
+                "mechanical In1.Cu-In2.Cu",
+                "mechanical In3.Cu-In4.Cu",
+                "mechanical In1.Cu-In4.Cu",
+                "laser F.Cu-In1.Cu",
+                "laser In4.Cu-B.Cu",
+                "mechanical F.Cu-B.Cu",
+            ]
+        );
+        let depth: Vec<DrillStep> = b
+            .stackup
+            .drill_steps()
+            .into_iter()
+            .filter(|s| s.drill_kind == DrillKind::ControlledDepth)
+            .collect();
+        assert_eq!(depth.len(), 8);
+        assert!(depth.iter().all(|s| s.from == "F.Cu" || s.to == "B.Cu"));
+    }
+
+    #[test]
+    fn lamination_of_two_n_two_adds_the_inner_build_up() {
+        let (b, _) = board("name = \"x\"\nfab = \"hdi\"\n[stackup]\npreset = \"hdi-8l-2n2\"\n");
+        assert_eq!(b.stackup.build_name(), "2+4+2");
+        assert_eq!(
+            steps(&b.stackup),
+            [
+                "mechanical In2.Cu-In3.Cu",
+                "mechanical In4.Cu-In5.Cu",
+                "mechanical In2.Cu-In5.Cu",
+                "laser In1.Cu-In2.Cu",
+                "laser In5.Cu-In6.Cu",
+                "mechanical In1.Cu-In6.Cu",
+                "laser F.Cu-In1.Cu",
+                "laser In6.Cu-B.Cu",
+                "laser F.Cu-In2.Cu",
+                "laser In5.Cu-B.Cu",
+                "mechanical F.Cu-B.Cu",
+            ]
+        );
+        let st = &b.stackup;
+        assert!(st.drillable("F.Cu", "In2.Cu", DrillKind::Laser, true).is_ok());
+        assert!(st.drillable("F.Cu", "In3.Cu", DrillKind::Laser, true).is_err());
+        let (b, _) = board("name = \"x\"\n[stackup]\npreset = \"jlcpcb-4l-1.6mm-7628\"\n");
+        assert_eq!(b.stackup.build_name(), "1+2+1");
+        let (b, _) = board("name = \"x\"\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n");
+        assert_eq!(steps(&b.stackup), ["mechanical F.Cu-B.Cu"]);
+    }
+
+    #[test]
+    fn explicit_lamination_overrides_the_derived_one() {
+        let lam = "lamination = [\n  { from = \"In1.Cu\", to = \"In4.Cu\", drill_kind = \"mechanical\" },\n  { from = \"F.Cu\", to = \"In4.Cu\", drill_kind = \"mechanical\" },\n  { from = \"F.Cu\", to = \"B.Cu\", drill_kind = \"mechanical\" },\n]\n";
+        let src = format!(
+            "name = \"x\"\nfab = \"hdi\"\n[stackup]\npreset = \"hdi-6l-1n1\"\n{lam}[[vias]]\nname = \"bl\"\ndrill = \"0.2mm\"\ndiameter = \"0.45mm\"\nfrom = \"F.Cu\"\nto = \"In4.Cu\"\n[[vias]]\nname = \"u\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\n"
+        );
+        let (b, d) = board(&src);
+        let e = errors(&d);
+        assert_eq!(e.len(), 1, "{e:?}");
+        assert!(e[0].starts_with("F.Cu to In1.Cu cannot be drilled: no laser drill step"), "{e:?}");
+        assert!(
+            e[0].contains(
+                "[stackup] lamination drills mechanical In1.Cu-In4.Cu, F.Cu-In4.Cu, F.Cu-B.Cu"
+            ),
+            "{e:?}"
+        );
+        assert_eq!(b.stackup.drill_steps().len(), 3);
+        let (_, d) = board(&src.replace(
+            "to = \"In4.Cu\", drill_kind = \"mechanical\" },\n  { from = \"F.Cu\"",
+            "to = \"In4.Cu\", drill_kind = \"mechanical\" },\n  { from = \"In9.Cu\"",
+        ));
+        assert!(errors(&d).iter().any(|m| m.contains("must name copper layers")), "{:?}", d.list);
+    }
+
+    #[test]
+    fn controlled_depth_vias_are_blind_shallow_and_drilled_from_one_side() {
+        let via = |from: &str, to: &str, drill: &str| {
+            hdi(&format!(
+                "[[vias]]\nname = \"cd\"\ndrill = \"{drill}\"\ndiameter = \"0.45mm\"\nfrom = \"{from}\"\nto = \"{to}\"\ndrill_kind = \"controlled_depth\"\n"
+            ))
+        };
+        let (b, d) = via("In4.Cu", "B.Cu", "0.15mm");
+        assert!(errors(&d).is_empty(), "{:?}", d.list);
+        assert_eq!(b.vias[0].kind, ViaKind::Blind);
+        assert_eq!(b.vias[0].drill_kind, DrillKind::ControlledDepth);
+        let (_, d) = via("F.Cu", "In2.Cu", "0.2mm");
+        let e = errors(&d);
+        assert_eq!(e.len(), 1, "{e:?}");
+        assert!(e[0].contains(":1, over the fab's 1:1"), "{e:?}");
+        let (_, d) = via("F.Cu", "In1.Cu", "0.12mm");
+        let e = errors(&d);
+        assert!(e.iter().any(|m| m.contains("under the fab minimum 0.15")), "{e:?}");
+        let (_, d) = via("In1.Cu", "In4.Cu", "0.3mm");
+        assert!(
+            errors(&d)
+                .iter()
+                .any(|m| m.contains("a controlled depth via is drilled from one outer layer")),
+            "{:?}",
+            d.list
+        );
+        let (_, d) = hdi(
+            "[[vias]]\nname = \"u\"\ndrill = \"0.1mm\"\ndiameter = \"0.25mm\"\ntype = \"microvia\"\nfrom = \"F.Cu\"\nto = \"In1.Cu\"\ndrill_kind = \"controlled_depth\"\n",
+        );
+        assert!(
+            errors(&d).iter().any(|m| m.contains("a microvia is laser drilled")),
+            "{:?}",
+            d.list
+        );
     }
 
     #[test]

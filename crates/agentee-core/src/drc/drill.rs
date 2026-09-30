@@ -1,5 +1,5 @@
 use super::{Category, Ctx, Hole, HoleOf, Owner, Report, Rule, Setup, every, near};
-use crate::board::{LayerKind, ViaKind};
+use crate::board::{DrillKind, LayerKind, ViaKind};
 use crate::diag::Severity;
 use crate::geom::{self, P};
 use crate::units::Length;
@@ -82,10 +82,19 @@ pub static RULES: &[Rule] = &[
         id: "stacked-via",
         category: Category::Drill,
         severity: Severity::Error,
-        summary: "a via on the same spot as another via whose span shares a dielectric, or a stacked via the fab does not build",
+        summary: "a via on the same spot as another via whose span shares a dielectric, a stacked via the fab does not build, or any via stacked with a controlled depth via",
         when: "every board",
         applies: every,
         check: stacked_via,
+    },
+    Rule {
+        id: "via-lamination",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "a via whose span and drill kind match no drill step of the lamination, the build-up sequence derived from the stackup or set in [stackup] lamination; the message lists the spans it drills",
+        when: "every board",
+        applies: every,
+        check: via_lamination,
     },
 ];
 
@@ -431,8 +440,8 @@ fn hole_to_hole(cx: &Ctx, r: &mut Report) {
 
 fn stacked_via(cx: &Ctx, r: &mut Report) {
     let allowed = cx.board.rules.stacked_microvias;
-    let (mut doubled, mut stacked) = (0, 0);
-    let (mut first_doubled, mut first_stacked) = (None, None);
+    let (mut doubled, mut stacked, mut on_depth) = (0, 0, 0);
+    let (mut first_doubled, mut first_stacked, mut first_on_depth) = (None, None, None);
     for (i, a) in cx.vias.iter().enumerate() {
         let here = |b: &&crate::layout::Via| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6;
         let spot = || format!("[{:.3}, {:.3}] ({})", a.at[0], a.at[1], cx.nets[a.net].name);
@@ -440,10 +449,23 @@ fn stacked_via(cx: &Ctx, r: &mut Report) {
         if below.iter().any(|b| a.shares_dielectric(b, cx.copper)) {
             doubled += 1;
             first_doubled.get_or_insert_with(spot);
+        } else if !below.is_empty()
+            && std::iter::once(a)
+                .chain(below.iter().copied())
+                .any(|v| v.drill_kind == DrillKind::ControlledDepth)
+        {
+            on_depth += 1;
+            first_on_depth.get_or_insert_with(spot);
         } else if !below.is_empty() && !allowed {
             stacked += 1;
             first_stacked.get_or_insert_with(spot);
         }
+    }
+    if let Some(f) = first_on_depth {
+        r.emit(
+            "vias",
+            format!("{on_depth} vias are stacked with a controlled depth via, whose drill stops by depth on a plain pad and cannot land on or under another via: stagger them, first at {f}"),
+        );
     }
     if let Some(f) = first_doubled {
         r.emit(
@@ -455,6 +477,26 @@ fn stacked_via(cx: &Ctx, r: &mut Report) {
         r.emit(
             "vias",
             format!("{stacked} vias are stacked on another via, which the fab does not build (set [rules] stacked_microvias = true for an HDI fab, or stagger them), first at {f}"),
+        );
+    }
+}
+
+fn via_lamination(cx: &Ctx, r: &mut Report) {
+    let st = &cx.board.stackup;
+    let mut bad: BTreeMap<(String, String, String), (usize, P, String)> = BTreeMap::new();
+    for v in cx.vias {
+        let (Some(from), Some(to)) = (v.hole.first(), v.hole.last()) else { continue };
+        if let Err(e) = st.drillable(from, to, v.drill_kind, v.stacked) {
+            bad.entry((v.name.clone(), from.clone(), to.clone())).or_insert((0, v.at, e)).0 += 1;
+        }
+    }
+    for ((name, from, to), (n, at, e)) in bad {
+        r.emit(
+            format!("vias {name}"),
+            format!(
+                "{n} vias `{name}` from {from} to {to} cannot be drilled, first at [{:.3}, {:.3}]: {e}",
+                at[0], at[1]
+            ),
         );
     }
 }

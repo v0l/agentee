@@ -1197,6 +1197,55 @@ fn stacked_vias_follow_the_fab_rule() {
     assert!(e.len() == 1 && e[0].1.contains("through the same layers"), "{e:?}");
 }
 
+const DEPTH_AND_SPLIT_VIAS: &str = r#"
+[[vias]]
+name = "cd"
+drill = "0.15mm"
+diameter = "0.45mm"
+from = "F.Cu"
+to = "In1.Cu"
+drill_kind = "controlled_depth"
+[[vias]]
+name = "split"
+drill = "0.2mm"
+diameter = "0.45mm"
+from = "F.Cu"
+to = "In4.Cu"
+"#;
+
+#[test]
+fn a_via_off_the_lamination_lists_the_spans_it_drills() {
+    let pcb = format!(
+        "{}{}",
+        typed_via("A", [10.0, 12.0], "split"),
+        typed_via("A", [14.0, 12.0], "split")
+    );
+    let p = hdi(&pcb, DEPTH_AND_SPLIT_VIAS);
+    let e = hits(&p, "via-lamination");
+    assert_eq!(e.len(), 1, "{e:?}");
+    assert!(
+        e[0].0 == Severity::Error
+            && e[0].1.starts_with("2 vias `split` from F.Cu to In4.Cu cannot be drilled"),
+        "{e:?}"
+    );
+    assert!(e[0].1.contains("1+4+1") && e[0].1.contains("laser F.Cu-In1.Cu, In4.Cu-B.Cu"), "{e:?}");
+    let fine =
+        format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("A", [14.0, 12.0], "cd"));
+    assert!(hits(&hdi(&fine, DEPTH_AND_SPLIT_VIAS), "via-lamination").is_empty());
+}
+
+#[test]
+fn nothing_stacks_on_a_controlled_depth_via() {
+    let stack =
+        format!("{}{}", typed_via("A", [10.0, 12.0], "cd"), typed_via("A", [10.0, 12.0], "bu"));
+    let board = format!("stacked_microvias = true\n{DEPTH_AND_SPLIT_VIAS}");
+    let e = hits(&hdi(&stack, &board), "stacked-via");
+    assert!(e.len() == 1 && e[0].1.contains("stacked with a controlled depth via"), "{e:?}");
+    let apart =
+        format!("{}{}", typed_via("A", [10.0, 12.0], "cd"), typed_via("A", [11.0, 12.0], "bu"));
+    assert!(hits(&hdi(&apart, &board), "stacked-via").is_empty());
+}
+
 #[test]
 fn a_via_in_pad_needs_a_filled_and_capped_type() {
     let p = hdi(&typed_via("A", [4.0, 5.0], "vip"), "");
@@ -1288,6 +1337,37 @@ fn the_router_picks_the_cheapest_class_via_that_spans_the_layer_change() {
     assert!(!uv.is_empty() && uv.iter().all(|v| v == "uv"), "{uv:?}");
     assert!(chosen(&["std"]).unwrap().iter().all(|v| v == "std"));
     assert!(chosen(&["std", "nope"]).unwrap_err().contains("nope"));
+}
+
+#[test]
+fn the_router_skips_class_vias_the_lamination_cannot_drill() {
+    let wall = track("B", "F.Cu", "[[12.0, 0.1], [12.0, 19.9]]");
+    let board = format!("{HDI_VIAS}{DEPTH_AND_SPLIT_VIAS}{HDI_VIA_TYPES}");
+    let p = load(&Fixture {
+        preset: "hdi-6l-1n1",
+        board: &board,
+        parts: &[("R1", "TWO", [5.0, 5.0]), ("R2", "TWO", [20.0, 5.0])],
+        nets: &[("A", &["R1.2", "R2.1"]), ("B", &["R1.1"])],
+        pcb: &wall,
+        ..Default::default()
+    });
+    let routed = |via: &[&str]| {
+        let mut b = p.boards[0].item.clone();
+        b.netclasses[0].via = via.iter().map(|s| s.to_string()).collect();
+        b.vias.iter_mut().find(|v| v.name == "split").unwrap().cost = 0.1;
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: vec!["F.Cu".into(), "In4.Cu".into()],
+            grid: 0.1,
+            ..Default::default()
+        };
+        agentee_core::route::route(&p.layouts[0].item, &b, &opts)
+            .map(|r| r.vias.iter().map(|v| v.via.clone()).collect::<Vec<_>>())
+    };
+    let vias = routed(&["split", "std"]).unwrap();
+    assert!(!vias.is_empty() && vias.iter().all(|v| v == "std"), "{vias:?}");
+    let e = routed(&["split"]).unwrap_err();
+    assert!(e.contains("no via of split matches a drill step") && e.contains("1+4+1"), "{e}");
 }
 
 #[test]
