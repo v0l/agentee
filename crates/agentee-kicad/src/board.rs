@@ -1,6 +1,6 @@
 use crate::footprint;
 use crate::sexpr::{self, Node};
-use agentee_core::board::BoardFile;
+use agentee_core::board::{BoardFile, ViaFill, ViaKind};
 use agentee_core::footprint::FootprintFile;
 use agentee_core::layout::LayoutFile;
 use agentee_core::schematic::SchematicFile;
@@ -669,7 +669,8 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
     }
 
     let mut vias = Vec::new();
-    let mut spans: HashMap<String, (String, String)> = HashMap::new();
+    let mut typed: Vec<Value> = Vec::new();
+    let mut unused_layers = 0;
     for v in root.all("via") {
         let Some(at) = v.xy("at") else { continue };
         let Some(net) = net_of(v, &nets) else { continue };
@@ -679,33 +680,39 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
             .find("layers")
             .map(|l| l.items().iter().skip(1).filter_map(Node::text).map(str::to_string).collect())
             .unwrap_or_default();
-        let mut vname = via_name(drill, size);
-        if layers.len() == 2 && copper.first() != Some(&layers[0])
-            || layers.len() == 2 && copper.last() != Some(&layers[1])
-        {
-            vname = format!(
-                "{vname}-{}-{}",
-                layers[0].trim_end_matches(".Cu"),
-                layers[1].trim_end_matches(".Cu")
-            );
-            spans.insert(vname.clone(), (layers[0].clone(), layers[1].clone()));
+        if v.flag("remove_unused_layers") {
+            unused_layers += 1;
         }
+        let spec = kicad_via(v, drill, size, &layers, &copper);
+        let vname = match spec {
+            None => via_name(drill, size),
+            Some(spec) => {
+                let n = spec["name"].as_str().unwrap_or_default().to_string();
+                if !typed.iter().any(|t| t["name"] == spec["name"]) {
+                    typed.push(spec);
+                }
+                n
+            }
+        };
         vias.push(json!({ "net": net, "at": pt(shift(at)), "via": vname }));
     }
     let mut board_vias: Vec<Value> = via_types
         .iter()
         .map(|((d, s), n)| json!({ "name": n, "drill": mm(*d as f64 / 1e4), "diameter": mm(*s as f64 / 1e4) }))
         .collect();
-    for (n, (from, to)) in &spans {
-        let base =
-            board_vias.iter().find(|v| n.starts_with(v["name"].as_str().unwrap_or("?"))).cloned();
-        if let Some(mut b) = base {
-            b["name"] = json!(n);
-            b["from"] = json!(from);
-            b["to"] = json!(to);
-            board_vias.push(b);
-        }
+    let hdi = typed.iter().any(|t| t.get("type").is_some_and(|k| k != "through"));
+    if hdi {
+        notes.push(
+            "the board has blind, buried or micro vias: [rules] hdi = true lets check accept them, pick an HDI fab"
+                .into(),
+        );
     }
+    if unused_layers > 0 {
+        notes.push(format!(
+            "{unused_layers} vias drop their unconnected inner pads in KiCad, here a via keeps a pad on every layer it spans"
+        ));
+    }
+    board_vias.extend(typed);
 
     let mut zones = Vec::new();
     let mut keepouts = 0;
@@ -819,6 +826,9 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         .collect();
 
     let mut rules = serde_json::Map::new();
+    if hdi {
+        rules.insert("hdi".into(), json!(true));
+    }
     let r = &pro["board"]["design_settings"]["rules"];
     for (ours, theirs) in [
         ("min_track_width", "min_track_width"),
@@ -947,6 +957,77 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
     })
 }
 
+fn kicad_on(v: &Node, name: &str) -> bool {
+    v.find(name).is_some_and(|n| {
+        n.arg(0) == Some("yes")
+            || ["front", "back"].iter().any(|s| n.find(s).and_then(|f| f.arg(0)) == Some("yes"))
+    })
+}
+
+fn kicad_fill(v: &Node) -> Option<ViaFill> {
+    let (fill, cap, cover, plug) = (
+        kicad_on(v, "filling"),
+        kicad_on(v, "capping"),
+        kicad_on(v, "covering"),
+        kicad_on(v, "plugging"),
+    );
+    match (fill, cap, cover, plug) {
+        (true, true, _, _) => Some(ViaFill::FilledCapped),
+        (true, false, true, _) => Some(ViaFill::FilledCovered),
+        (true, false, false, _) => Some(ViaFill::Filled),
+        (false, _, true, true) => Some(ViaFill::PluggedCovered),
+        (false, _, false, true) => Some(ViaFill::Plugged),
+        (false, _, true, false) => Some(ViaFill::TentedCovered),
+        _ => None,
+    }
+}
+
+fn kicad_via(
+    v: &Node,
+    drill: f64,
+    size: f64,
+    layers: &[String],
+    copper: &[String],
+) -> Option<Value> {
+    let pos = |l: &String| copper.iter().position(|c| c == l);
+    let (a, b) = match layers {
+        [x, y] => (pos(x)?, pos(y)?),
+        _ => (0, copper.len().saturating_sub(1)),
+    };
+    let (a, b) = (a.min(b), a.max(b));
+    let kind =
+        if v.has_atom("micro") { ViaKind::Microvia } else { ViaKind::of_span(a, b, copper.len()) };
+    let fill = kicad_fill(v);
+    if kind == ViaKind::Through && fill.is_none() {
+        return None;
+    }
+    let short = |k: usize| copper[k].trim_end_matches(".Cu").to_string();
+    let mut name = format!(
+        "{}{}-{}",
+        if kind == ViaKind::Microvia { "u" } else { "v" },
+        round(drill),
+        round(size)
+    );
+    if kind != ViaKind::Through {
+        name += &format!("-{}-{}", short(a), short(b));
+    }
+    if let Some(f) = fill {
+        name += &format!("-{}", f.ipc4761());
+    }
+    let mut e = json!({
+        "name": name,
+        "drill": mm(drill),
+        "diameter": mm(size),
+        "type": kind,
+        "from": copper[a],
+        "to": copper[b],
+    });
+    if let Some(f) = fill {
+        e["fill"] = json!(f);
+    }
+    Some(e)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1026,6 +1107,42 @@ mod tests {
         assert_eq!(relief.spoke_width, Some(agentee_core::units::Length::mm(0.3)));
         let solid = zone("yes ");
         assert_eq!(solid.pad_connection, None);
+    }
+
+    #[test]
+    fn kicad_via_types_map_to_board_vias_by_size_and_span() {
+        let text = BOARD
+            .replace(
+                "(2 \"B.Cu\" signal)",
+                "(4 \"In1.Cu\" signal) (6 \"In2.Cu\" signal) (2 \"B.Cu\" signal)",
+            )
+            .replacen(
+                "  (segment",
+                "  (via micro (at 3 3) (size 0.25) (drill 0.1) (layers \"F.Cu\" \"In1.Cu\") (capping yes) (filling yes) (net 2))\n\
+                 (via micro (at 4 3) (size 0.25) (drill 0.1) (layers \"F.Cu\" \"In1.Cu\") (capping yes) (filling yes) (net 2))\n\
+                 (via blind (at 5 3) (size 0.45) (drill 0.2) (layers \"In1.Cu\" \"In2.Cu\") (remove_unused_layers yes) (net 2))\n\
+                 (via blind (at 6 3) (size 0.45) (drill 0.2) (layers \"In2.Cu\" \"B.Cu\") (net 2))\n\
+                 (via (at 7 3) (size 0.6) (drill 0.3) (layers \"F.Cu\" \"B.Cu\") (net 2))\n  (segment",
+                1,
+            );
+        let b = import_board(&text, None, "t").unwrap();
+        let kinds: Vec<&str> = b.board.vias.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(kinds.len(), 4, "{kinds:?}");
+        let find = |n: &str| b.board.vias.iter().find(|v| v.name == n).unwrap();
+        let u = find("u0.1-0.25-F-In1-VII");
+        assert_eq!(u.kind, Some(ViaKind::Microvia));
+        assert_eq!(u.fill, Some(ViaFill::FilledCapped));
+        assert_eq!(find("v0.2-0.45-In1-In2").kind, Some(ViaKind::Buried));
+        assert_eq!(find("v0.2-0.45-In2-B").kind, Some(ViaKind::Blind));
+        assert_eq!(find("v0.3-0.6").kind, None);
+        let used: Vec<Option<String>> = b.layout.vias.iter().map(|v| v.via.clone()).collect();
+        assert_eq!(used[0], used[1]);
+        assert_eq!(b.board.rules.hdi, Some(true));
+        assert!(
+            b.notes.iter().any(|n| n.starts_with("1 vias drop their unconnected")),
+            "{:?}",
+            b.notes
+        );
     }
 
     #[test]
