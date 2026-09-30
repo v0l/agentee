@@ -1,0 +1,184 @@
+# imported from KiCad Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm
+name = "WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm"
+description = "WSON, 6 Pin (http://www.ti.com/lit/ds/symlink/tps61040.pdf#page=35), generated with kicad-footprint-generator ipc_noLead_generator.py"
+tags = ["WSON", "NoLead"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_SON.3dshapes/WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm.step"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.0, -0.4]
+size = [0.81, 0.64]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.0, 0.4]
+size = [0.81, 0.64]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.8875, -0.65]
+size = [0.375, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, 0.65]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.8875, 0.65]
+size = [0.375, 0.4]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 3
+pitch = [0.0, -0.65]
+
+[[pads]]
+number = "7"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.0, 1.6]
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -1.95]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.95]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.0, -1.11]
+end = [1.0, -1.11]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.0, 1.11]
+end = [1.0, 1.11]
+width = 0.15
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.24, -1.01], [-1.52, -1.01], [-1.24, -1.29]]
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.33, -1.1]
+end = [-1.25, -1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.33, 1.1]
+end = [-1.33, -1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, -1.25]
+end = [1.25, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, -1.1]
+end = [-1.25, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, 1.1]
+end = [-1.33, 1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, 1.25]
+end = [-1.25, 1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, -1.25]
+end = [1.25, -1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, -1.1]
+end = [1.33, -1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, 1.1]
+end = [1.25, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, 1.25]
+end = [-1.25, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.33, -1.1]
+end = [1.33, 1.1]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.33, 1.1]
+end = [1.25, 1.1]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[-1.0, -0.5], [-1.0, 1.0], [1.0, 1.0], [1.0, -1.0], [-0.5, -1.0]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5

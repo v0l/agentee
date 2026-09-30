@@ -1,0 +1,176 @@
+# imported from KiCad Package_DFN_QFN:DFN-8-1EP_2x2mm_P0.5mm_EP0.8x1.6mm
+name = "DFN-8-1EP_2x2mm_P0.5mm_EP0.8x1.6mm"
+description = "DFN, 8 Pin (https://www.qorvo.com/products/d/da007268), generated with kicad-footprint-generator ipc_noLead_generator.py"
+tags = ["DFN", "NoLead"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_DFN_QFN.3dshapes/DFN-8-1EP_2x2mm_P0.5mm_EP0.8x1.6mm.step"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [0.64, 1.29]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.0, -0.75]
+size = [0.7, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.0, 0.5]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "roundrect"
+at = [1.0, 0.75]
+size = [0.7, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.0, -0.5]
+
+[[pads]]
+number = "9"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [0.8, 1.6]
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -1.95]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.95]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.0, -1.135]
+end = [1.0, -1.135]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.0, 1.135]
+end = [1.0, 1.135]
+width = 0.15
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.52, -1.05], [-1.8, -1.05], [-1.52, -1.33]]
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, -1.13]
+end = [-1.25, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.6, 1.13]
+end = [-1.6, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, -1.25]
+end = [1.25, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, -1.13]
+end = [-1.25, -1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, 1.13]
+end = [-1.6, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, 1.25]
+end = [-1.25, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, -1.25]
+end = [1.25, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, -1.13]
+end = [1.6, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, 1.13]
+end = [1.25, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, 1.25]
+end = [-1.25, 1.25]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.6, -1.13]
+end = [1.6, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.6, 1.13]
+end = [1.25, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[-1.0, -0.5], [-1.0, 1.0], [1.0, 1.0], [1.0, -1.0], [-0.5, -1.0]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5

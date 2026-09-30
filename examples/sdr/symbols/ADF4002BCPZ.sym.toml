@@ -1,0 +1,209 @@
+# imported from KiCad Timer_PLL:ADF4002BCPZ
+name = "ADF4002BCPZ"
+reference = "U"
+description = "400MHz Bandwidth Frequency Synthesizer, LFCSP-20"
+datasheet = "https://www.analog.com/media/en/technical-documentation/data-sheets/ADF4002.pdf"
+keywords = ["Analog", "Devices", "PFD"]
+footprint = "LFCSP-20-1EP_4x4mm_P0.5mm_EP2.1x2.1mm"
+footprint_filters = ["LFCSP*1EP*4x4mm*P0.5mm*"]
+
+[[graphics]]
+kind = "rect"
+start = [-12.7, -15.24]
+end = [12.7, 15.24]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "8"
+name = "REFIN"
+type = "input"
+at = [-15.24, -12.7]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "RFINA"
+type = "input"
+at = [-15.24, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "RFINB"
+type = "input"
+at = [-15.24, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "12"
+name = "CLK"
+type = "input"
+at = [-15.24, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "13"
+name = "DATA"
+type = "input"
+at = [-15.24, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "14"
+name = "LE"
+type = "input"
+at = [-15.24, 5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "CE"
+type = "input"
+at = [-15.24, 10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "19"
+name = "RSET"
+type = "input"
+at = [-15.24, 12.7]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "16"
+name = "DVDD"
+type = "power_in"
+at = [-5.08, -17.78]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "17"
+name = "DVDD"
+type = "passive"
+at = [-5.08, -17.78]
+side = "top"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "10"
+name = "DGND"
+type = "passive"
+at = [-5.08, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "9"
+name = "DGND"
+type = "power_in"
+at = [-5.08, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "AVDD"
+type = "passive"
+at = [0.0, -17.78]
+side = "top"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "7"
+name = "AVDD"
+type = "power_in"
+at = [0.0, -17.78]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "AGND"
+type = "power_in"
+at = [0.0, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "21"
+name = "AGND"
+type = "passive"
+at = [0.0, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "3"
+name = "AGND"
+type = "passive"
+at = [0.0, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "18"
+name = "VP"
+type = "power_in"
+at = [5.08, -17.78]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "CPGND"
+type = "power_in"
+at = [5.08, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "20"
+name = "CP"
+type = "output"
+at = [15.24, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "15"
+name = "MUXOUT"
+type = "output"
+at = [15.24, 5.08]
+side = "right"
+length = 2.54
+unit = 1

@@ -1,0 +1,39 @@
+# imported from KiCad Diode:SMF12A
+name = "SMF12A"
+reference = "D"
+description = "200W unidirectional Transil Transient Voltage Suppressor, 12Vrwm, SMF"
+datasheet = "https://www.vishay.com/doc?85881"
+keywords = ["diode", "TVS", "voltage", "suppressor"]
+footprint = "D_SMF"
+footprint_filters = ["D*SMF*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-0.762, -1.27], [-1.27, -1.27], [-1.27, 1.27]]
+width = 0.254
+
+[[graphics]]
+kind = "polygon"
+points = [[1.27, -1.27], [1.27, 1.27], [-1.27, 0.0]]
+width = 0.254
+
+[[pins]]
+number = "1"
+name = "A1"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A2"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1

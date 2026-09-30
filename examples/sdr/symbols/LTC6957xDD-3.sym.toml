@@ -1,0 +1,133 @@
+# imported from KiCad Interface:LTC6957xDD-3
+name = "LTC6957xDD-3"
+reference = "U"
+description = "Low Phase Noise, Dual Output Buffer/Driver/Logic Converter, CMOS In-Phase Outputs, DFN-12"
+datasheet = "https://www.analog.com/media/en/technical-documentation/data-sheets/6957fb.pdf"
+keywords = ["LTC", "clock", "converter"]
+footprint = "DFN-12-1EP_3x3mm_P0.45mm_EP1.65x2.38mm"
+footprint_filters = ["DFN*1EP*3x3mm*P0.45mm*"]
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -12.7]
+end = [7.62, 12.7]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "3"
+name = "IN+"
+type = "input"
+at = [-10.16, -10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "IN-"
+type = "input"
+at = [-10.16, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "FILTA"
+type = "input"
+at = [-10.16, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "FILTB"
+type = "input"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "12"
+name = "SD1"
+type = "input"
+at = [-10.16, 7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "SD2"
+type = "input"
+at = [-10.16, 10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "V+"
+type = "power_in"
+at = [0.0, -15.24]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "13"
+name = "GND"
+type = "passive"
+at = [0.0, 15.24]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "5"
+name = "GND"
+type = "power_in"
+at = [0.0, 15.24]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "VDD"
+type = "power_in"
+at = [2.54, -15.24]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "GNDOUT"
+type = "output"
+at = [2.54, 15.24]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "10"
+name = "OUT1"
+type = "output"
+at = [10.16, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "9"
+name = "OUT2"
+type = "output"
+at = [10.16, 2.54]
+side = "right"
+length = 2.54
+unit = 1

@@ -1,0 +1,208 @@
+# imported from KiCad Package_TO_SOT_SMD:SOT-23
+name = "SOT-23"
+description = "SOT, 3 Pin (JEDEC TO-236 Var AB https://www.jedec.org/document_search?search_api_views_fulltext=TO-236), generated with kicad-footprint-generator ipc_gullwing_generator.py"
+tags = ["SOT", "TO_SOT_SMD"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-23.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.9375, -0.95]
+size = [1.475, 0.6]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [-0.9375, 0.95]
+size = [1.475, 0.6]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "roundrect"
+at = [0.9375, 0.0]
+size = [1.475, 0.6]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.4]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 2.4]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -1.56]
+end = [-0.65, -1.56]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, -1.56]
+end = [0.65, -1.56]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, 1.56]
+end = [-0.65, 1.56]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.0, 1.56]
+end = [0.65, 1.56]
+width = 0.15
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.1625, -1.51], [-1.4025, -1.84], [-0.9225, -1.84]]
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.93, -1.5]
+end = [-0.9, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.93, 1.5]
+end = [-1.93, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.9, -1.7]
+end = [0.9, -1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.9, -1.5]
+end = [-0.9, -1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.9, 1.5]
+end = [-1.93, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.9, 1.7]
+end = [-0.9, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.9, -1.7]
+end = [0.9, -0.55]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.9, -0.55]
+end = [1.93, -0.55]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.9, 0.55]
+end = [0.9, 1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.9, 1.7]
+end = [-0.9, 1.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.93, -0.55]
+end = [1.93, 0.55]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.93, 0.55]
+end = [0.9, 0.55]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.65, -1.125]
+end = [-0.325, -1.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.65, 1.45]
+end = [-0.65, -1.125]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.325, -1.45]
+end = [0.65, -1.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.65, -1.45]
+end = [0.65, 1.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.65, 1.45]
+end = [-0.65, 1.45]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.32

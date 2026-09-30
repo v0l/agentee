@@ -1,0 +1,160 @@
+# imported from KiCad RF_Switch:BGS12WN6E6327
+name = "BGS12WN6E6327"
+reference = "U"
+description = "SPDT DC-9GHz switch, 45dB isolation at 960MHz, PG-TSNP-6-10"
+datasheet = "https://www.infineon.com/dgdl/Infineon-BGS12WN6-DataSheet-v02_05-EN.pdf?fileId=5546d4626b2d8e69016b89d2b3334727"
+keywords = ["RF", "Mux", "SPDT", "switch", "CMOS"]
+footprint = "Infineon_PG-TSNP-6-10_0.7x1.1mm_0.7x1.1mm_P0.4mm"
+footprint_filters = ["*PG?TSNP*0.7x1.1mm*P0.4mm*"]
+
+[[graphics]]
+kind = "rect"
+start = [-10.16, -10.16]
+end = [10.16, 10.16]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polygon"
+points = [[-4.318, 1.524], [-4.318, 3.556], [-2.54, 2.54]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-4.318, 2.54], [-4.826, 2.54]]
+
+[[graphics]]
+kind = "circle"
+center = [-3.81, -2.54]
+radius = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[-3.81, -2.54], [-5.588, -2.54]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.794, 0.0], [-3.81, 0.0], [-3.81, -5.08], [-2.794, -5.08]]
+
+[[graphics]]
+kind = "circle"
+center = [-2.286, 2.54]
+radius = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -5.08], [-1.27, -4.318]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -3.81], [-1.27, -3.048]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -2.54], [-1.27, -1.778]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -1.27], [-1.27, -0.508]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 1.27], [-1.27, 0.508]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 2.54], [-2.032, 2.54]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 2.54], [-1.27, 1.778]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.254, -5.08], [5.588, -5.08]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.254, 0.0], [5.588, 0.0]]
+
+[[graphics]]
+kind = "circle"
+center = [-2.54, -5.08]
+radius = 0.254
+
+[[graphics]]
+kind = "circle"
+center = [-2.54, 0.0]
+radius = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.286, -5.08], [-0.254, -5.842]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.286, 0.0], [0.127, -0.381]]
+
+[[graphics]]
+kind = "circle"
+center = [0.0, -5.08]
+radius = 0.254
+
+[[graphics]]
+kind = "circle"
+center = [0.0, 0.0]
+radius = 0.254
+
+[[pins]]
+number = "5"
+name = "RFIN"
+type = "passive"
+at = [-12.7, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "CTRL"
+type = "input"
+at = [-12.7, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "VDD"
+type = "power_in"
+at = [0.0, -12.7]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "GND"
+type = "power_in"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "RF2"
+type = "passive"
+at = [12.7, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "RF1"
+type = "passive"
+at = [12.7, 0.0]
+side = "right"
+length = 2.54
+unit = 1

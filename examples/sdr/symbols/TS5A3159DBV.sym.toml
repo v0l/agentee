@@ -1,0 +1,177 @@
+# imported from KiCad Analog_Switch:TS5A3159DBV
+name = "TS5A3159DBV"
+reference = "U"
+description = "Single SPDT Analog Switch, 1.65-V to 5.5-V Single-Supply Operation, 1Ohm Ron, SOT-23-6"
+datasheet = "http://www.ti.com/lit/ds/symlink/ts5a3159.pdf"
+keywords = ["Analog", "Switch"]
+footprint = "SOT-23-6"
+footprint_filters = ["SOT?23*"]
+pin_name_offset = 0.127
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[-5.08, 0.0], [-2.794, 0.0]]
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-3.81, -4.445]
+end = [3.81, 4.445]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "circle"
+unit = 1
+center = [-2.159, 0.0]
+radius = 0.508
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[-1.651, -0.127], [2.54, -1.905]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, -0.254], [0.0, -0.508]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, -0.254], [0.0, -0.508]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 0.254], [0.0, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 0.762], [0.0, 0.508]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 1.27], [0.0, 1.016]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 1.778], [0.0, 1.524]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 2.286], [0.0, 2.032]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 2.794], [0.0, 2.54]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 3.302], [0.0, 3.048]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 3.81], [0.0, 3.556]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 4.318], [0.0, 4.064]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 5.08], [0.0, 4.572]]
+
+[[graphics]]
+kind = "circle"
+unit = 1
+center = [2.159, -2.54]
+radius = 0.508
+width = 0.254
+
+[[graphics]]
+kind = "circle"
+unit = 1
+center = [2.159, 2.54]
+radius = 0.508
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[5.08, -2.54], [2.794, -2.54]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[5.08, 2.54], [2.794, 2.54]]
+
+[[graphics]]
+kind = "rect"
+unit = 2
+start = [-3.81, -10.16]
+end = [3.81, 10.16]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "4"
+type = "passive"
+at = [-7.62, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+type = "input"
+at = [0.0, 7.62]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+type = "passive"
+at = [7.62, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+type = "passive"
+at = [7.62, 2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "V+"
+type = "power_in"
+at = [0.0, -12.7]
+side = "top"
+length = 2.54
+unit = 2
+
+[[pins]]
+number = "2"
+name = "GND"
+type = "power_in"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 2

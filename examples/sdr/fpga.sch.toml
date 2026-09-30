@@ -1,14 +1,14 @@
 name = "fpga"
-description = "XC7A50T: bank 35 at 2V5 for the AD9364 CMOS port and control, bank 34 at 2V5 for the FX5 LVDS, bank 14 at 3V3 for the FX5 LVCMOS port and the config flash, bank 15 at 3V3 for LEDs"
+description = "XC7A50T: bank 35 at 2V5 for the AD9364 CMOS port and control, bank 34 at 2V5 for the FX5 LVDS, bank 14 at 3V3 for the FX5 LVCMOS port and the config flash, bank 15 at 3V3 for LEDs, the front end switches and amplifier enables, the reference PLL, PPS, REF_10M and the GPIO header"
 board = "sdr"
 no_connect = [
   "U1.K12", "U1.M15", "U1.L14", "U1.K13", "U1.L13", "U1.M12", "U1.N13", "U1.P14", "U1.N9", "U1.M6", "U1.N6",
   "U1.R5", "U1.T5", "U1.R6", "U1.P6",
-  "U1.D10", "U1.C8", "U1.C9", "U1.A8", "U1.A9", "U1.B9", "U1.A10", "U1.B10", "U1.B11", "U1.B12", "U1.A12",
-  "U1.D8", "U1.D9", "U1.C14", "U1.B14", "U1.B15", "U1.A15", "U1.C16", "U1.B16", "U1.C11", "U1.C12", "U1.D13",
-  "U1.C13", "U1.E12", "U1.E13", "U1.E11", "U1.D11", "U1.D14", "U1.D15", "U1.F12", "U1.F13", "U1.E16", "U1.D16",
-  "U1.F15", "U1.E15", "U1.H11", "U1.G12", "U1.H12", "U1.H13", "U1.G14", "U1.F14", "U1.H16", "U1.G16", "U1.J15",
-  "U1.J16", "U1.H14", "U1.G15", "U1.G11",
+  "U1.D10", "U1.C9",
+  "U1.D8", "U1.D9", "U1.C14", "U1.B14", "U1.B15", "U1.A15", "U1.C16", "U1.B16", "U1.C12", "U1.D13",
+  "U1.C13", "U1.E13", "U1.E11", "U1.D11", "U1.D14", "U1.D15", "U1.F12", "U1.F13", "U1.E16", "U1.D16",
+  "U1.F15", "U1.E15", "U1.G12", "U1.F14", "U1.J15",
+  "U1.J16", "U1.G11",
   "U1.L5", "U1.L4", "U1.M4", "U1.P5", "U1.P4", "U1.P3", "U1.R3", "U1.T2",
   "U1.B7", "U1.A7", "U1.B6", "U1.B5", "U1.A5", "U1.A4", "U1.C7", "U1.C6", "U1.D6", "U1.D5",
   "U1.B4", "U1.D4", "U1.C4", "U1.G5",
@@ -846,3 +846,98 @@ pins = ["U1.N12"]
 name = "FX_SPI_CS"
 style = "label"
 pins = ["U1.M14"]
+
+[[nets]]
+name = "RX_BYPASS"
+style = "label"
+pins = ["U1.A8"]
+
+[[nets]]
+name = "RX_LNA_SD"
+style = "label"
+pins = ["U1.A9"]
+
+[[nets]]
+name = "TX_BYPASS"
+style = "label"
+pins = ["U1.B9"]
+
+[[nets]]
+name = "TX_AMP_PD"
+style = "label"
+pins = ["U1.A10"]
+
+[[nets]]
+name = "PLL_CLK"
+style = "label"
+pins = ["U1.B10"]
+
+[[nets]]
+name = "PLL_DATA"
+style = "label"
+pins = ["U1.B11"]
+
+[[nets]]
+name = "PLL_LE"
+style = "label"
+pins = ["U1.B12"]
+
+[[nets]]
+name = "PLL_MUXOUT"
+style = "label"
+pins = ["U1.A12"]
+
+[[nets]]
+name = "VC_DAC"
+style = "label"
+pins = ["U1.C8"]
+
+[[nets]]
+name = "REF_10M"
+style = "label"
+pins = ["U1.E12"]
+
+[[nets]]
+name = "PPS_IN"
+style = "label"
+pins = ["U1.C11"]
+
+[[nets]]
+name = "GPIO0"
+style = "label"
+pins = ["U1.H11"]
+
+[[nets]]
+name = "GPIO1"
+style = "label"
+pins = ["U1.H12"]
+
+[[nets]]
+name = "GPIO2"
+style = "label"
+pins = ["U1.H13"]
+
+[[nets]]
+name = "GPIO3"
+style = "label"
+pins = ["U1.H14"]
+
+[[nets]]
+name = "GPIO4"
+style = "label"
+pins = ["U1.H16"]
+
+[[nets]]
+name = "GPIO5"
+style = "label"
+pins = ["U1.G14"]
+
+[[nets]]
+name = "GPIO6"
+style = "label"
+pins = ["U1.G15"]
+
+[[nets]]
+name = "GPIO7"
+style = "label"
+pins = ["U1.G16"]

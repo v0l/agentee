@@ -1,0 +1,69 @@
+# imported from KiCad 74xGxx:74LVC1G17
+name = "74LVC1G17"
+reference = "U"
+description = "Single Schmitt Buffer Gate, Low-Voltage CMOS"
+datasheet = "https://www.ti.com/lit/ds/symlink/sn74lvc1g17.pdf"
+keywords = ["Single", "Gate", "Buff", "Schmitt", "LVC", "CMOS"]
+footprint_filters = ["SOT?23*", "SOT?553*", "Texas?R-PDSO-G5?DCK*", "Texas?R-PDSO-N5?DRL*", "Texas?X2SON*0.8x0.8mm*P0.48mm*"]
+
+[[graphics]]
+kind = "polygon"
+points = [[-7.62, -6.35], [-7.62, 6.35], [5.08, 0.0]]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[-3.81, 1.27], [-2.54, 1.27], [-2.54, -1.27], [-1.27, -1.27]]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 1.27], [-1.27, 1.27], [-1.27, -1.27], [0.0, -1.27]]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "2"
+type = "input"
+at = [-12.7, 0.0]
+side = "left"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "1"
+name = "NC"
+type = "no_connect"
+at = [-7.62, -5.08]
+side = "right"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "5"
+name = "VCC"
+type = "power_in"
+at = [-5.08, -10.16]
+side = "top"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "3"
+name = "GND"
+type = "power_in"
+at = [-5.08, 10.16]
+side = "bottom"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "4"
+type = "output"
+at = [10.16, 0.0]
+side = "right"
+length = 5.08
+unit = 1

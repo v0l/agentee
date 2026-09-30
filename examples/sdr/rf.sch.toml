@@ -1,5 +1,5 @@
 name = "rf"
-description = "AD9364 on its CMOS dual port (P0 transmit, P1 receive, 61.44 MHz DDR) with its 1V3 decoupling, 40 MHz VCTCXO trimmed by AUXDAC1, and TCM1-63AX+ baluns to the RX and TX SMAs, after the AD-FMCOMMS3 front end"
+description = "AD9364 on its CMOS dual port (P0 transmit, P1 receive, 61.44 MHz DDR) with its 1V3 decoupling (synthesizer and VCO LDO inputs on their own 1V3S rail), the 40 MHz VCTCXO whose tuning voltage comes through the clock sheet, and TCM1-63AX+ baluns to the front end sheet, after the AD-FMCOMMS3"
 board = "sdr"
 no_connect = ["U2.M11", "U2.C3", "U2.B4", "U2.B5", "U2.B6", "U2.B7", "U2.D4", "U2.E4", "U2.E5", "U2.E6", "U2.F4", "U2.F5", "U2.F6", "U2.G4", "U2.J6", "U2.G7", "U2.H11"]
 
@@ -33,13 +33,6 @@ value = "AD9364BBCZ"
 at = [495.3, 63.5]
 
 [[parts]]
-ref = "J3"
-symbol = "Conn_Coaxial"
-value = "RX"
-at = [25.4, 38.1]
-fields = { mpn = "Amphenol 132289" }
-
-[[parts]]
 ref = "T1"
 symbol = "TCM1-63AX+"
 value = "TCM1-63AX+"
@@ -61,13 +54,6 @@ value = "18p"
 at = [88.9, 45.72]
 rotation = 90
 fields = { mpn = "Murata GJM1555C1H180GB01" }
-
-[[parts]]
-ref = "J2"
-symbol = "Conn_Coaxial"
-value = "TX"
-at = [25.4, 88.9]
-fields = { mpn = "Amphenol 132289" }
 
 [[parts]]
 ref = "T2"
@@ -326,7 +312,7 @@ pins = [
   "U2.C5", "U2.C6", "U2.D5", "U2.D6", "U2.G10", "U2.H9",
   "C46.2", "C47.2", "C48.2", "C49.2", "C50.2", "C51.2", "C52.2", "C53.2", "C54.2", "C55.2", "C56.2",
   "C57.2", "C58.2", "C59.2", "C60.2", "C61.2", "C62.2", "C63.2", "R29.2", "Y1.2", "C64.2", "C65.2", "C67.2",
-  "J2.2", "J3.2", "T1.2", "T1.1", "T1.5", "T2.2", "T2.1", "T2.5", "C72.2", "C73.2",
+  "T1.2", "T1.1", "T1.5", "T2.2", "T2.1", "T2.5", "C72.2", "C73.2",
 ]
 
 [[nets]]
@@ -334,11 +320,16 @@ name = "1V3A"
 class = "Power"
 style = "power"
 pins = [
-  "U2.A7", "U2.A8", "U2.A9", "U2.A10", "U2.D3", "U2.D2", "U2.E2", "U2.F2", "U2.J3", "U2.K3", "U2.K4", "U2.B9",
-  "U2.B10", "U2.E3",
-  "C46.1", "C47.1", "C48.1", "C49.1", "C50.1", "C51.1", "C52.1", "C53.1", "C54.1", "C55.1", "C56.1",
+  "U2.A7", "U2.A8", "U2.A9", "U2.A10", "U2.D3", "U2.D2", "U2.E2", "U2.K4", "U2.B9", "U2.E3",
+  "C46.1", "C47.1", "C48.1", "C49.1", "C51.1", "C52.1", "C53.1", "C54.1",
   "FB1.1", "FB2.1",
 ]
+
+[[nets]]
+name = "1V3S"
+class = "Power"
+style = "power"
+pins = ["U2.F2", "U2.J3", "U2.K3", "U2.B10", "C50.1", "C55.1", "C56.1"]
 
 [[nets]]
 name = "1V3D"
@@ -403,11 +394,18 @@ style = "label"
 pins = ["U2.B3", "R30.1"]
 
 [[nets]]
+name = "TCXO_DAC"
+style = "label"
+pins = ["R30.2"]
+
+[[nets]]
 name = "TCXO_VC"
-pins = ["R30.2", "Y1.1", "C67.1"]
+style = "label"
+pins = ["Y1.1", "C67.1"]
 
 [[nets]]
 name = "TCXO_OUT"
+style = "label"
 pins = ["Y1.3", "C66.1"]
 
 [[nets]]
@@ -418,7 +416,8 @@ pins = ["C66.2", "U2.M12"]
 [[nets]]
 name = "RX_RF"
 class = "RF"
-pins = ["J3.1", "T1.3"]
+style = "label"
+pins = ["T1.3"]
 
 [[nets]]
 name = "RXT_P"
@@ -445,7 +444,8 @@ pins = ["C68.2", "U2.M2"]
 [[nets]]
 name = "TX_RF"
 class = "RF"
-pins = ["J2.1", "T2.3"]
+style = "label"
+pins = ["T2.3"]
 
 [[nets]]
 name = "TXT_P"

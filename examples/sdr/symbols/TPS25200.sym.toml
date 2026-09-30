@@ -1,0 +1,23 @@
+name = "TPS25200"
+reference = "U"
+value = "TPS25200"
+description = "5 V eFuse, 20 V tolerant input, 5.4 V output clamp, current limit 85 mA to 2.9 A set by RILIM, WSON-6"
+datasheet = "https://www.ti.com/lit/ds/symlink/tps25200.pdf"
+keywords = ["efuse", "usb", "overvoltage", "current limit"]
+footprint = "WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm"
+
+[[bodies]]
+left = [
+  { number = "6", name = "IN", type = "power_in" },
+  { number = "4", name = "EN", type = "input" },
+  { gap = 1 },
+  { number = "2", name = "ILIM", type = "passive" },
+]
+right = [
+  { number = "1", name = "OUT", type = "power_out" },
+  { number = "3", name = "~{FAULT}", type = "open_collector" },
+]
+bottom = [
+  { number = "5", name = "GND", type = "power_in" },
+  { number = "7", name = "PAD", type = "passive" },
+]
