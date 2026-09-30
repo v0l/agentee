@@ -807,6 +807,16 @@ impl PcbModel {
                     }
                 }
             }
+            let sheet_node = |ii: usize, jj: usize| {
+                let (sx, sy) = (&sheet_x[p.sheet], &sheet_y[p.sheet]);
+                sx[ii * ny + jj]
+                    || sy[ii * ny + jj]
+                    || (ii > 0 && sx[(ii - 1) * ny + jj])
+                    || (jj > 0 && sy[ii * ny + jj - 1])
+            };
+            if nodes.iter().any(|(ii, jj)| sheet_node(*ii, *jj)) {
+                nodes.retain(|(ii, jj)| sheet_node(*ii, *jj));
+            }
             if nodes.is_empty() {
                 nodes.push((i, j));
             }
@@ -1164,5 +1174,51 @@ mod tests {
         let sim = m.build(&opt).unwrap();
         assert!(!sim.ports[0].reference_above);
         assert!(sim.ports[1].reference_above);
+    }
+
+    #[test]
+    fn port_columns_stay_on_the_copper_at_fine_cells() {
+        let (w, len) = (0.95, 6.0);
+        let area = |x: f64| {
+            vec![
+                [x - 0.05, -w / 2.0],
+                [x + 0.05, -w / 2.0],
+                [x + 0.05, w / 2.0],
+                [x - 0.05, w / 2.0],
+            ]
+        };
+        let port = |name: &str, x: f64| ModelPort {
+            name: name.into(),
+            at: [x, 0.0],
+            area: area(x),
+            sheet: 0,
+            reference: 1,
+            r: 50.0,
+        };
+        let board = vec![[0.0, -2.0], [len, -2.0], [len, 2.0], [0.0, 2.0]];
+        let strip =
+            vec![[0.5, -w / 2.0], [len - 0.5, -w / 2.0], [len - 0.5, w / 2.0], [0.5, w / 2.0]];
+        let m = PcbModel {
+            outline: board.clone(),
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.0 },
+                Sheet { name: "B.Cu".into(), z: -0.5, thickness: 0.0 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.5, z1: 0.0, er: 4.5, tan: 0.0, pinned: true }],
+            copper: vec![(0, Copper::Poly(strip)), (1, Copper::Poly(board))],
+            ports: vec![port("P1", 0.5), port("P2", len - 0.5)],
+            features_y: vec![-w / 2.0, w / 2.0],
+            ..Default::default()
+        };
+        let opt = Meshing { cell: 0.025, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let sim = m.build(&opt).unwrap();
+        let x = |i: usize| sim.grid.x[i] * 1e3;
+        for p in &sim.ports {
+            assert!(p.columns.len() > 1, "{}", p.name);
+            for c in &p.columns {
+                let at = x(c[0].at[0]);
+                assert!((0.5 - 1e-9..=len - 0.5 + 1e-9).contains(&at), "{} {at}", p.name);
+            }
+        }
     }
 }
