@@ -1,4 +1,4 @@
-use super::engine::{EPS0, MU0, Sim, idx, pulse_shape};
+use super::engine::{self, EPS0, MU0, PortDef, Sim, idx, pulse_shape};
 use crate::gpu::{Gpu, gpu};
 use bytemuck::{Pod, Zeroable};
 
@@ -97,6 +97,33 @@ impl CoefSets {
         };
         CoefSets { index, sets, wide }
     }
+}
+
+fn port_loop(sim: &Sim, p: &PortDef, axis: usize, k: usize) -> Vec<(usize, usize, f64)> {
+    let n = sim.dims();
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    let at = |a: usize, b: usize| {
+        let mut q = [0usize; 3];
+        q[u] = a;
+        q[v] = b;
+        q[axis] = k;
+        idx(n, q[0], q[1], q[2])
+    };
+    let mut turns: std::collections::BTreeMap<(usize, usize), i32> = Default::default();
+    let nodes: std::collections::BTreeSet<(usize, usize)> =
+        p.columns.iter().map(|c| (c[0].at[u], c[0].at[v])).collect();
+    for (a, b) in &nodes {
+        let (a, b) = (*a, *b);
+        *turns.entry((at(a, b), v)).or_default() += 1;
+        *turns.entry((at(a - 1, b), v)).or_default() -= 1;
+        *turns.entry((at(a, b), u)).or_default() -= 1;
+        *turns.entry((at(a, b - 1), u)).or_default() += 1;
+    }
+    turns
+        .into_iter()
+        .filter(|(_, t)| *t != 0)
+        .map(|((id, comp), t)| (id, comp, t as f64 * sim.ax[comp].dd[engine::unidx(n, id)[comp]]))
+        .collect()
 }
 
 pub fn run(
@@ -214,30 +241,13 @@ pub fn run(
         }
         let probed = port_edges.len() / 2 - first;
         let loop_first = loops.len() / 3;
-        let k = mid[mid.len() / 2].at[axis];
-        let (i0, i1) = (
-            p.columns.iter().map(|c| c[0].at[u]).min().unwrap(),
-            p.columns.iter().map(|c| c[0].at[u]).max().unwrap(),
-        );
-        let (j0, j1) = (
-            p.columns.iter().map(|c| c[0].at[v]).min().unwrap(),
-            p.columns.iter().map(|c| c[0].at[v]).max().unwrap(),
-        );
-        let at = |a: usize, b: usize| {
-            let mut q = [0usize; 3];
-            q[u] = a;
-            q[v] = b;
-            q[axis] = k;
-            idx(n, q[0], q[1], q[2]) as f32
-        };
-        let (hu, hv) = ((3 + u) as f32, (3 + v) as f32);
-        for b in j0..=j1 {
-            let w = sim.ax[v].dd[b] as f32;
-            loops.extend_from_slice(&[at(i1, b), hv, w, at(i0 - 1, b), hv, -w]);
-        }
-        for a in i0..=i1 {
-            let w = sim.ax[u].dd[a] as f32;
-            loops.extend_from_slice(&[at(a, j1), hu, -w, at(a, j0 - 1), hu, w]);
+        let height: f64 = mid.iter().map(|e| sim.ax[axis].d[e.at[axis]]).sum();
+        for e in mid {
+            let k = e.at[axis];
+            let share = sim.ax[axis].d[k] / height;
+            for (id, comp, w) in port_loop(sim, p, axis, k) {
+                loops.extend_from_slice(&[id as f32, (3 + comp) as f32, (w * share) as f32]);
+            }
         }
         probe_def.extend_from_slice(&[
             axis as f32,
@@ -483,6 +493,54 @@ mod tests {
         let i =
             if sets.wide { sets.index[f] } else { (sets.index[f / 2] >> (16 * (f % 2))) & 0xffff };
         sets.sets[i as usize]
+    }
+
+    #[test]
+    fn a_port_loop_circles_only_its_own_columns() {
+        let line = |n: usize| (0..n).map(|i| i as f64 * 1e-3 * (1.0 + 0.1 * i as f64)).collect();
+        let grid = Grid { x: line(9), y: line(8), z: line(7), pml: 0 };
+        let mats = Materials::new(&grid);
+        let media = || Media {
+            surface: Surface { scale: 1e9, ..Default::default() },
+            debye: Debye::default(),
+        };
+        let column = |i: usize, j: usize| vec![Edge { comp: 2, at: [i, j, 3] }];
+        let ring: Vec<Vec<Edge>> = (2..5)
+            .flat_map(|i| (2..5).map(move |j| (i, j)))
+            .filter(|p| *p != (3, 3))
+            .map(|(i, j)| column(i, j))
+            .collect();
+        let port = PortDef { name: "p".into(), columns: ring.clone(), r: 50.0 };
+        let sim = Sim::new(grid.clone(), &mats, &|_, _| false, &[], vec![port], &[], media());
+        let n = sim.dims();
+        let got = port_loop(&sim, &sim.ports[0], 2, 3);
+        let single = |i: usize, j: usize| {
+            let one = PortDef { name: "q".into(), columns: vec![column(i, j)], r: 50.0 };
+            port_loop(&sim, &one, 2, 3)
+        };
+        let mut want: std::collections::BTreeMap<(usize, usize), f64> = Default::default();
+        for c in &ring {
+            for (id, comp, w) in single(c[0].at[0], c[0].at[1]) {
+                *want.entry((id, comp)).or_default() += w;
+            }
+        }
+        want.retain(|_, w| w.abs() > 1e-12);
+        assert_eq!(got.len(), 16);
+        assert_eq!(want.len(), 16);
+        for (id, comp, w) in &got {
+            assert!((want[&(*id, *comp)] - w).abs() < 1e-15);
+        }
+        for (id, comp, w) in single(3, 3) {
+            let &(_, _, back) = got.iter().find(|g| g.0 == id && g.1 == comp).unwrap();
+            assert_eq!(back, -w);
+        }
+        let square = |i: usize, j: usize| -> usize { idx(n, i, j, 3) };
+        let single_x = single(3, 3);
+        assert_eq!(single_x.len(), 4);
+        assert!(single_x.iter().any(|s| s.0 == square(3, 3) && s.1 == 1 && s.2 > 0.0));
+        assert!(single_x.iter().any(|s| s.0 == square(2, 3) && s.1 == 1 && s.2 < 0.0));
+        assert!(single_x.iter().any(|s| s.0 == square(3, 3) && s.1 == 0 && s.2 < 0.0));
+        assert!(single_x.iter().any(|s| s.0 == square(3, 2) && s.1 == 0 && s.2 > 0.0));
     }
 
     #[test]
