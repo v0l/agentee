@@ -592,6 +592,34 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             routed[ci] = Some(conn);
         }
 
+        for ci in 0..conns.len() {
+            let Some(old) = routed[ci].clone() else { continue };
+            let others: Vec<&Conn> = routed
+                .iter()
+                .enumerate()
+                .filter(|&(k, _)| k != ci)
+                .filter_map(|(_, r)| r.as_ref())
+                .collect();
+            if locked[ci]
+                || old.vias.is_empty()
+                || others.iter().any(|r| r.net == old.net && joined(r, &old, &ctx))
+            {
+                continue;
+            }
+            grid.clear_routed();
+            for r in &others {
+                grid.mark_routed(r, &ctx);
+            }
+            let (a, b, net) = conns[ci];
+            let fresh: Vec<Obstacle> =
+                others.iter().filter(|c| c.net == net).flat_map(|c| copper_of(c, &ctx)).collect();
+            if let Some(c) = one_layer(&grid, &obstacles, &fresh, net, a, b, &ctx)
+                && track_length(&c) <= track_length(&old) * 1.25 + 1.0
+            {
+                routed[ci] = Some(c);
+            }
+        }
+
         for (ci, reason) in failed {
             if routed[ci].is_none() {
                 let (a, b, net) = conns[ci];
@@ -657,6 +685,42 @@ struct Conn {
 fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Conn {
     let (tracks, vias) = geometry(grid, path, a, b, net);
     Conn { net, tracks, vias }
+}
+
+fn track_length(c: &Conn) -> f64 {
+    c.tracks.iter().flat_map(|(_, p)| p.windows(2)).map(|w| geom::dist(w[0], w[1])).sum()
+}
+
+fn joined(a: &Conn, b: &Conn, ctx: &Ctx) -> bool {
+    let (pa, pb) = (copper_of(a, ctx), copper_of(b, ctx));
+    pa.iter().any(|x| {
+        pb.iter()
+            .any(|y| x.layers.iter().any(|l| y.layers.contains(l)) && touch(&x.shape, &y.shape))
+    })
+}
+
+fn one_layer(
+    grid: &Grid,
+    obstacles: &[Obstacle],
+    fresh: &[Obstacle],
+    net: usize,
+    a: P,
+    b: P,
+    ctx: &Ctx,
+) -> Option<Conn> {
+    let mut best: Option<Conn> = None;
+    for &l in ctx.routing {
+        let layer = [l];
+        let one = Ctx { widths: ctx.widths.clone(), routing: &layer, ..*ctx };
+        if let Ok(p) = search(grid, obstacles, fresh, net, a, b, &one, false, None) {
+            let c = conn_of(grid, &p, a, b, net);
+            if c.vias.is_empty() && best.as_ref().is_none_or(|x| track_length(&c) < track_length(x))
+            {
+                best = Some(c);
+            }
+        }
+    }
+    best
 }
 
 fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
