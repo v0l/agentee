@@ -134,6 +134,8 @@ pub struct FootprintFile {
     pub height: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mask_web: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearance: Option<Length>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub overhang: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -258,6 +260,7 @@ pub struct Footprint {
     pub model_scale: [f64; 3],
     pub height: Option<f64>,
     pub mask_web: bool,
+    pub clearance: Option<f64>,
     pub overhang: bool,
     pub mlcc: Option<bool>,
     pub pads: Vec<Pad>,
@@ -378,6 +381,7 @@ impl FootprintFile {
             model_scale: self.model_scale.unwrap_or([1.0; 3]),
             height: self.height.map(Length::to_mm),
             mask_web: self.mask_web.unwrap_or(true),
+            clearance: self.clearance.map(Length::to_mm),
             overhang: self.overhang,
             mlcc: self.mlcc,
             pads,

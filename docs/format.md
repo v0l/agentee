@@ -218,7 +218,7 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `test-access` | info | parts | nets the `[test]` section asks for with no probe access from the probe side: no pad of a test point (reference `TP1`..., or a footprint named `TestPoint*`), no exposed plated through-hole pad (`through_holes`), no untented via (`vias`). Nets in classes with an impedance target or a pair gap, and nets of pairs, are exempt and named, since a stub hurts them |
 | `test-pad-geometry` | info | test points | a test point pad under `min_test_pad`, closer than `min_test_pad_pitch` to another centre to centre, closer than `min_test_pad_to_body` to another part's body on the probe side, closer than `min_test_pad_to_edge` to the board edge or a tooling hole (non-plated holes and mounting holes), or not on the probe side |
 | `short` | error | always | copper of two different nets touches |
-| `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
+| `clearance` | error | always | copper of two nets closer than the larger of their class clearances (a footprint `clearance` replaces them for its pads), or copper run into a non-plated hole |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
 | `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
 | `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
@@ -404,6 +404,8 @@ model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
 # mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
                                # window, so min_mask_web is not checked between its own pads
+# clearance = "0.2mm"          # as KiCad's footprint clearance: its pads keep this from other
+                               # copper instead of the net class clearance
 # overhang = true              # a connector meant to hang over the board edge: part-body-to-edge
                                # skips it, its SMD pads still keep min_part_to_edge
 # mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules

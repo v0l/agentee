@@ -569,6 +569,35 @@ impl Shape {
     }
 }
 
+fn footprint_copper(p: &Placed, copper: &[String]) -> Vec<(String, Vec<Shape>)> {
+    let tf = p.transform();
+    let mut out: Vec<(String, Vec<Shape>)> = Vec::new();
+    for g in &p.footprint.graphics {
+        let layer = p.flip_layer(&g.layer);
+        if !copper.contains(&layer) || matches!(g.shape, crate::graphic::Shape::Text { .. }) {
+            continue;
+        }
+        let path: Vec<P> =
+            crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
+        let hw = g.width.to_mm() / 2.0;
+        let shapes: Vec<Shape> = if g.fill == crate::graphic::Fill::Solid && path.len() >= 3 {
+            vec![Shape::Poly(vec![path])]
+        } else if hw > 0.0 {
+            path.windows(2).map(|w| Shape::Seg(w[0], w[1], hw)).collect()
+        } else {
+            Vec::new()
+        };
+        if shapes.is_empty() {
+            continue;
+        }
+        match out.iter_mut().find(|(l, _)| *l == layer) {
+            Some((_, v)) => v.extend(shapes),
+            None => out.push((layer, shapes)),
+        }
+    }
+    out
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Owner {
     Pad(usize, usize),
@@ -1173,6 +1202,11 @@ impl LayoutFile {
             }
         };
 
+        let min_clearance = board.rules.min_clearance.to_mm();
+        let footprint_clearance = |it: &Item| match it.owner {
+            Owner::Pad(pi, _) => parts[pi].footprint.clearance,
+            _ => None,
+        };
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1214,7 +1248,10 @@ impl LayoutFile {
                     }
                     continue;
                 }
-                let need = clearance_of(a.net).max(clearance_of(b.net));
+                let need = match (footprint_clearance(a), footprint_clearance(b)) {
+                    (None, None) => clearance_of(a.net).max(clearance_of(b.net)),
+                    (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
+                };
                 if dist <= 1e-6 {
                     shorts.push(format!("{} touches {}", name_of(a), name_of(b)));
                 } else if dist + DRC_EPSILON < need {
@@ -1225,6 +1262,67 @@ impl LayoutFile {
                         name_of(b),
                         Length::mm(need)
                     ));
+                }
+            }
+        }
+        for (pi, p) in parts.iter().enumerate() {
+            for (layer, shapes) in footprint_copper(p, &copper) {
+                let mut cb = Bounds::EMPTY;
+                shapes.iter().for_each(|sh| cb.union(&sh.bounds()));
+                let near = |it: &Item| {
+                    let mut grown = cb;
+                    grown.add([cb.min[0] - max_clear, cb.min[1] - max_clear]);
+                    grown.add([cb.max[0] + max_clear, cb.max[1] + max_clear]);
+                    it.layers.contains(&layer)
+                        && (grown.overlaps(&it.bounds) || grown.contains(&it.bounds))
+                };
+                let gap = |it: &Item| {
+                    shapes.iter().map(|sh| sh.distance(&it.shape)).fold(f64::MAX, f64::min)
+                };
+                let own: Vec<usize> = (0..items.len())
+                    .filter(|&i| {
+                        matches!(items[i].owner, Owner::Pad(q, _) if q == pi)
+                            && near(&items[i])
+                            && gap(&items[i]) <= 1e-6
+                    })
+                    .collect();
+                for w in own.windows(2) {
+                    uf.union(w[0], w[1]);
+                }
+                let tie: Vec<usize> = own.iter().filter_map(|&i| items[i].net).collect();
+                let name = format!("{} copper on {layer}", p.reference);
+                for (j, it) in items.iter().enumerate() {
+                    if matches!(it.owner, Owner::Pad(q, _) if q == pi) || !near(it) {
+                        continue;
+                    }
+                    let dist = gap(it);
+                    if it.owner == Owner::Hole {
+                        if dist <= 0.0 {
+                            tight.push(format!("{name} runs into a hole"));
+                        }
+                        continue;
+                    }
+                    if it.net.is_some_and(|n| tie.contains(&n)) {
+                        if dist <= 1e-6 {
+                            uf.union(own[0], j);
+                        }
+                        continue;
+                    }
+                    let need = tie
+                        .iter()
+                        .map(|&n| clearance_of(Some(n)))
+                        .fold(clearance_of(None), f64::max)
+                        .max(clearance_of(it.net));
+                    if dist <= 1e-6 {
+                        shorts.push(format!("{name} touches {}", name_of(it)));
+                    } else if dist + DRC_EPSILON < need {
+                        tight.push(format!(
+                            "{name} is {} from {}, needs {}",
+                            Length::mm(dist),
+                            name_of(it),
+                            Length::mm(need)
+                        ));
+                    }
                 }
             }
         }

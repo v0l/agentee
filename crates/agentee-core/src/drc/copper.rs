@@ -21,7 +21,7 @@ pub static RULES: &[Rule] = &[
         id: "clearance",
         category: Category::Copper,
         severity: Severity::Error,
-        summary: "copper of two nets closer than their net class clearance, or copper run into a non-plated hole",
+        summary: "copper of two nets closer than their net class clearance, or a pad footprint clearance, or copper run into a non-plated hole",
         when: "every board",
         applies: every,
         check: recorded,

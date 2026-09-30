@@ -189,6 +189,77 @@ fn a_ring_courtyard_leaves_its_inside_free_for_other_parts() {
     assert!(e.iter().any(|t| t.contains("courtyard overlaps")), "{e:?}");
 }
 
+const BRIDGE: &str = r#"name = "Bridge"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-0.65, 0]
+size = [1.0, 1.5]
+layers = ["F.Cu", "F.Mask"]
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.65, 0]
+size = [1.0, 1.5]
+layers = ["F.Cu", "F.Mask"]
+[[graphics]]
+kind = "polygon"
+layer = "F.Cu"
+points = [[-0.25, -0.3], [0.25, -0.3], [0.25, 0.3], [-0.25, 0.3]]
+fill = "solid"
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.4, -1]
+end = [1.4, 1]
+"#;
+
+#[test]
+fn footprint_copper_joins_the_pads_it_bridges() {
+    let files = [("footprints/Bridge.fp.toml", BRIDGE)];
+    let sch = "\n[[parts]]\nref = \"JP1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+               footprint = \"Bridge\"\n\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\n\
+               at = [20.32, 20.32]\n\n[[parts]]\nref = \"R2\"\nsymbol = \"R\"\nvalue = \"0\"\n\
+               at = [30.48, 20.32]\n\n[[nets]]\nname = \"A\"\npins = [\"R1.1\", \"JP1.1\", \"R2.1\"]\n\n\
+               [[nets]]\nname = \"B\"\npins = [\"JP1.2\"]\n\n[[nets]]\nname = \"C\"\npins = [\"R1.2\"]\n";
+    let parts = "[[footprints]]\nref = \"JP1\"\nat = [15, 10]\n\n[[footprints]]\nref = \"R1\"\n\
+                 at = [10, 10]\n\n[[footprints]]\nref = \"R2\"\nat = [20, 10]\n\n\
+                 [[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\n\
+                 points = [[9.49, 10], [9.49, 12], [14.35, 12], [14.35, 10]]\n\n\
+                 [[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\n\
+                 points = [[15, 10], [15, 14], [19.49, 14], [19.49, 10]]\n";
+    let e = errors(&project_with(&files, &[], sch, parts));
+    assert!(!e.iter().any(|t| t.contains("unrouted") || t.contains("short")), "{e:?}");
+
+    let across = format!(
+        "{parts}\n[[tracks]]\nnet = \"C\"\nlayer = \"F.Cu\"\npoints = [[15, 7], [15, 8.5]]\n\
+         \n[[tracks]]\nnet = \"C\"\nlayer = \"F.Cu\"\npoints = [[15, 8.5], [15, 9.8]]\n"
+    );
+    let e = errors(&project_with(&files, &[], sch, &across));
+    assert!(e.iter().any(|t| t.contains("JP1 copper on F.Cu touches track")), "{e:?}");
+
+    let cut = parts.replace("[15, 10], [15, 14]", "[15, 10.6], [15, 14]");
+    let e = errors(&project_with(&files, &[], sch, &cut));
+    assert!(e.iter().any(|t| t.contains("unrouted")), "{e:?}");
+}
+
+#[test]
+fn a_footprint_clearance_replaces_the_class_clearance_for_its_pads() {
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    let r = std::fs::read_to_string(lna.join("footprints/R_0402_1005Metric.fp.toml")).unwrap();
+    let loose = r.replacen("\n[[pads]]", "\nclearance = \"0.1mm\"\n\n[[pads]]", 1);
+    let track =
+        "\n[[tracks]]\nnet = \"B\"\nlayer = \"F.Cu\"\npoints = [[8, 10.54], [9.5, 10.54]]\n";
+    let pcb = placed([10.0, 10.0], [20.0, 10.0], track);
+    let e = errors(&project(RESISTORS, TWO_NETS, &pcb));
+    assert!(e.iter().any(|t| t.contains("R1.1 is 0.12mm from track 0 (B), needs 0.15mm")), "{e:?}");
+    let files = [("footprints/R_0402_1005Metric.fp.toml", loose.as_str())];
+    let e = errors(&project_with(&files, RESISTORS, TWO_NETS, &pcb));
+    assert!(!e.iter().any(|t| t.starts_with("clearance")), "{e:?}");
+}
+
 const TIGHT: &str = r#"name = "Tight2"
 [[pads]]
 number = "1"
