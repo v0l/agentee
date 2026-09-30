@@ -195,6 +195,7 @@ fn pad(n: &Node) -> Option<PadFile> {
         count: None,
         pitch: None,
         number_step: None,
+        edge: false,
     })
 }
 

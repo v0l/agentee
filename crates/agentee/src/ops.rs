@@ -534,7 +534,8 @@ fn run_pdn(
     let freqs: Vec<f64> =
         (0..n).map(|k| a * (b / a).powf(k as f64 / (n - 1).max(1) as f64)).collect();
     let hash = agentee_core::sim::cascade_hash(agentee_core::sim::hash(src), r.spec_hash, &texts);
-    let mut out = agentee_sim::pdn::run(&spec.name, r, z0, &sinks, &parts, &freqs, ps.target, hash)?;
+    let mut out =
+        agentee_sim::pdn::run(&spec.name, r, z0, &sinks, &parts, &freqs, ps.target, hash)?;
     out.layout_hash = r.layout_hash;
     let json_path = agentee_core::sim::result_path(&entry.path);
     std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
@@ -1052,6 +1053,54 @@ pub fn fab(p: &Project, name: &str, out: &std::path::Path) -> Result<Value, Stri
         "holes": report.holes,
         "warnings": warnings,
     }))
+}
+
+pub fn drc(p: &Project, name: &str, list: bool) -> Result<(String, Value), String> {
+    use agentee_core::drc;
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let (board, setup, diags) = match r {
+        ItemRef::Layout(i) => {
+            let e = &p.layouts[i];
+            let b = p
+                .boards
+                .iter()
+                .find(|b| b.name == e.item.board)
+                .ok_or_else(|| format!("board `{}` is missing", e.item.board))?;
+            let setup = drc::Setup::of(&drc::Ctx::of_layout(&b.item, &e.item));
+            let diags: Vec<&Diagnostic> = e.diags.iter().filter(|d| d.rule.is_some()).collect();
+            (&b.item, setup, diags)
+        }
+        ItemRef::Board(i) => (&p.boards[i].item, drc::Setup::of_board(&p.boards[i].item), vec![]),
+        _ => return Err(format!("`{name}` is not a layout or a board")),
+    };
+    if list {
+        let rules = drc::status(board, &setup);
+        let mut text = String::new();
+        for r in &rules {
+            let state = match (r.enabled, r.applies) {
+                (false, _) => "disabled".to_string(),
+                (true, true) => format!("applies ({})", r.when),
+                (true, false) => format!("skipped, needs {}", r.when),
+            };
+            let sev = format!("{:?}", r.severity).to_lowercase();
+            let cat = serde_json::to_value(r.category).unwrap_or_default();
+            text += &format!(
+                "{:<22} {:<9} {:<8} {state}: {}\n",
+                r.id,
+                cat.as_str().unwrap_or_default(),
+                sev,
+                r.summary
+            );
+        }
+        return Ok((text, json!({ "setup": setup, "rules": rules })));
+    }
+    let mut text = String::new();
+    for d in &diags {
+        text += &format!("{d}\n");
+    }
+    let errors = diags.iter().filter(|d| d.severity == Severity::Error).count();
+    text += &format!("{}: {errors} DRC errors, {} DRC diagnostics\n", p.name_of(r), diags.len());
+    Ok((text, json!({ "setup": setup, "diagnostics": diags })))
 }
 
 pub struct FieldQuery<'a> {

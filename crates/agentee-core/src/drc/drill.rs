@@ -1,0 +1,375 @@
+use super::{Category, Ctx, Hole, HoleOf, Owner, Report, Rule, Setup, every, near};
+use crate::board::LayerKind;
+use crate::diag::Severity;
+use crate::units::Length;
+use std::collections::BTreeMap;
+
+pub static RULES: &[Rule] = &[
+    Rule {
+        id: "drill-size",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "pad holes under min_drill (plated) or min_npth_drill (non-plated), or over max_drill",
+        when: "every board",
+        applies: every,
+        check: drill_size,
+    },
+    Rule {
+        id: "slot-size",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "slots narrower than min_plated_slot_width or min_npth_slot_width, or shorter than twice their width",
+        when: "slotted holes",
+        applies: with_slots,
+        check: slot_size,
+    },
+    Rule {
+        id: "aspect-ratio",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "plated holes whose depth over drill exceeds max_aspect_ratio",
+        when: "every board",
+        applies: every,
+        check: aspect_ratio,
+    },
+    Rule {
+        id: "hole-to-copper",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "a via or plated pad hole wall closer than min_via_hole_to_copper or min_pth_hole_to_copper to another net's copper",
+        when: "every board",
+        applies: every,
+        check: hole_to_copper,
+    },
+    Rule {
+        id: "inner-hole-to-copper",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "a plated pad hole wall closer than min_inner_pth_hole_to_copper to another net's copper on an inner layer",
+        when: "4 or more copper layers",
+        applies: with_inner_layers,
+        check: inner_hole_to_copper,
+    },
+    Rule {
+        id: "npth-to-copper",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "a non-plated hole wall closer than min_npth_to_copper to any copper",
+        when: "non-plated holes",
+        applies: with_npth,
+        check: npth_to_copper,
+    },
+    Rule {
+        id: "hole-to-edge",
+        category: Category::Drill,
+        severity: Severity::Error,
+        summary: "a non-plated hole wall closer than min_copper_to_edge to the board outline",
+        when: "non-plated holes",
+        applies: with_npth,
+        check: hole_to_edge,
+    },
+];
+
+fn with_slots(s: &Setup) -> bool {
+    s.slots
+}
+
+fn with_npth(s: &Setup) -> bool {
+    s.npth
+}
+
+pub fn with_inner_layers(s: &Setup) -> bool {
+    s.copper_layers >= 4
+}
+
+fn mm(v: f64) -> Length {
+    Length::mm(v)
+}
+
+fn pad_holes(cx: &Ctx) -> Vec<(usize, usize, Hole)> {
+    cx.holes()
+        .into_iter()
+        .filter_map(|h| match h.of {
+            HoleOf::Pad(p, k) => Some((p, k, h)),
+            HoleOf::Via(_) => None,
+        })
+        .collect()
+}
+
+fn once_per_footprint(cx: &Ctx, found: Vec<(usize, usize, String)>, r: &mut Report) {
+    let mut seen: BTreeMap<(String, String), (String, usize)> = BTreeMap::new();
+    let mut order = Vec::new();
+    for (p, k, msg) in found {
+        let key = (cx.parts[p].footprint_name.clone(), msg);
+        let e = seen.entry(key.clone()).or_insert_with(|| {
+            order.push(key.clone());
+            (cx.pad_name(p, k), 0)
+        });
+        e.1 += 1;
+    }
+    for key in order {
+        let (first, n) = &seen[&key];
+        let more = if *n > 1 { format!(" ({n} placements)") } else { String::new() };
+        r.emit(format!("pad {first}"), format!("{}{more}, footprint {}", key.1, key.0));
+    }
+}
+
+fn drill_size(cx: &Ctx, r: &mut Report) {
+    let rules = &cx.board.rules;
+    let mut found = Vec::new();
+    for (p, k, h) in pad_holes(cx) {
+        let (small, big) = (h.size[0].min(h.size[1]), h.size[0].max(h.size[1]));
+        let floor = if h.plated { rules.min_drill } else { rules.min_npth_drill };
+        let kind = if h.plated { "plated" } else { "non-plated" };
+        if small + 1e-6 < floor.to_mm() {
+            found.push((
+                p,
+                k,
+                format!("{kind} hole {} is under the fab minimum {floor}", mm(small)),
+            ));
+        }
+        if big > rules.max_drill.to_mm() + 1e-6 {
+            found.push((
+                p,
+                k,
+                format!(
+                    "hole {} is over the largest drill {}, draw it as a routed cutout",
+                    mm(big),
+                    rules.max_drill
+                ),
+            ));
+        }
+    }
+    once_per_footprint(cx, found, r);
+}
+
+fn slot_size(cx: &Ctx, r: &mut Report) {
+    let rules = &cx.board.rules;
+    let mut found = Vec::new();
+    for (p, k, h) in pad_holes(cx).into_iter().filter(|x| x.2.slot()) {
+        let (w, l) = (h.size[0].min(h.size[1]), h.size[0].max(h.size[1]));
+        let floor = if h.plated { rules.min_plated_slot_width } else { rules.min_npth_slot_width };
+        let kind = if h.plated { "plated" } else { "non-plated" };
+        if w + 1e-6 < floor.to_mm() {
+            found.push((
+                p,
+                k,
+                format!("{kind} slot {} wide is under the fab minimum {floor}", mm(w)),
+            ));
+        }
+        if l + 1e-6 < 2.0 * w {
+            found.push((
+                p,
+                k,
+                format!(
+                    "{kind} slot {} x {} is shorter than twice its width, the fab drills it as a hole",
+                    mm(w),
+                    mm(l)
+                ),
+            ));
+        }
+    }
+    once_per_footprint(cx, found, r);
+}
+
+fn span(cx: &Ctx, layers: &[String]) -> f64 {
+    let st = &cx.board.stackup;
+    let (Some(a), Some(b)) =
+        (layers.first().and_then(|l| st.index_of(l)), layers.last().and_then(|l| st.index_of(l)))
+    else {
+        return 0.0;
+    };
+    st.layers[a.min(b)..=a.max(b)]
+        .iter()
+        .filter(|l| l.kind == LayerKind::Copper || l.kind.is_dielectric())
+        .map(|l| l.thickness.to_mm())
+        .sum()
+}
+
+fn aspect_ratio(cx: &Ctx, r: &mut Report) {
+    let max = cx.board.rules.max_aspect_ratio;
+    let mut vias: BTreeMap<(String, String, String), (usize, String)> = BTreeMap::new();
+    let mut found = Vec::new();
+    for h in cx.holes().into_iter().filter(|h| h.plated) {
+        let drill = h.size[0].min(h.size[1]);
+        let depth = span(cx, &h.layers);
+        if drill <= 0.0 || depth / drill <= max + 1e-9 {
+            continue;
+        }
+        let what = format!(
+            "{} deep over a {} drill is {:.1}:1, over the fab's {max}:1",
+            mm(depth),
+            mm(drill),
+            depth / drill
+        );
+        match h.of {
+            HoleOf::Via(_) => {
+                let key = (
+                    format!("{}", mm(drill)),
+                    h.layers.first().cloned().unwrap_or_default(),
+                    h.layers.last().cloned().unwrap_or_default(),
+                );
+                let e = vias.entry(key).or_insert((0, what));
+                e.0 += 1;
+            }
+            HoleOf::Pad(p, k) => found.push((p, k, format!("plated hole {what}"))),
+        }
+    }
+    for ((drill, from, to), (n, what)) in vias {
+        r.emit(format!("vias {drill} {from}-{to}"), format!("{n} vias: {what}"));
+    }
+    once_per_footprint(cx, found, r);
+}
+
+struct Hit {
+    gap: f64,
+    hole: String,
+    other: String,
+}
+
+fn crowding(
+    cx: &Ctx,
+    h: &Hole,
+    need: f64,
+    any_net: bool,
+    layer_ok: &dyn Fn(&str) -> bool,
+) -> Option<Hit> {
+    let mut worst: Option<(f64, String)> = None;
+    let items = cx.copper_items();
+    let hb = h.bounds();
+    let shares = |layers: &[String]| layers.iter().any(|l| h.layers.contains(l) && layer_ok(l));
+    let other_net = |n: Option<usize>| any_net || n.is_none() || n != h.net;
+    for i in cx.items_near(&hb, need) {
+        let c = &items[i];
+        let own = match (h.of, c.owner) {
+            (HoleOf::Via(a), Owner::Via(b)) => a == b,
+            (HoleOf::Pad(p, k), Owner::Pad(q, j)) => (p, k) == (q, j),
+            _ => false,
+        };
+        if own || !other_net(c.net) || !shares(&c.layers) {
+            continue;
+        }
+        let gap = h.gap_to(&c.shape);
+        if gap + 1e-6 < need && worst.as_ref().is_none_or(|w| gap < w.0) {
+            worst = Some((gap, cx.describe(c)));
+        }
+    }
+    for (z, f) in cx.zones.iter().zip(cx.fills()) {
+        if !other_net(Some(z.net))
+            || !h.layers.contains(&z.layer)
+            || !layer_ok(&z.layer)
+            || !near(&f.bounds, hb.center(), need + hb.size()[0].max(hb.size()[1]))
+        {
+            continue;
+        }
+        let gap = h.gap_to_fill(f, need);
+        if gap + 1e-6 < need && worst.as_ref().is_none_or(|w| gap < w.0) {
+            worst = Some((gap, format!("the {} pour on {}", cx.nets[z.net].name, z.layer)));
+        }
+    }
+    worst.map(|(gap, other)| Hit { gap, hole: cx.hole_name(h), other })
+}
+
+fn report_groups(
+    groups: BTreeMap<String, Vec<Hit>>,
+    need_of: &dyn Fn(&str) -> f64,
+    what: &str,
+    r: &mut Report,
+) {
+    for (group, mut hits) in groups {
+        hits.sort_by(|a, b| a.gap.total_cmp(&b.gap));
+        let first: Vec<String> = hits
+            .iter()
+            .take(3)
+            .map(|h| format!("{} is {} from {}", h.hole, mm(h.gap), h.other))
+            .collect();
+        r.emit(
+            group.clone(),
+            format!(
+                "{} holes closer than {} to {what}: {}",
+                hits.len(),
+                mm(need_of(&group)),
+                first.join("; ")
+            ),
+        );
+    }
+}
+
+fn group_of(cx: &Ctx, h: &Hole) -> String {
+    match h.of {
+        HoleOf::Via(_) => format!("vias {}", mm(h.size[0])),
+        HoleOf::Pad(p, _) => format!("part {}", cx.parts[p].reference),
+    }
+}
+
+fn hole_to_copper(cx: &Ctx, r: &mut Report) {
+    let rules = &cx.board.rules;
+    let (via, pth) = (rules.min_via_hole_to_copper.to_mm(), rules.min_pth_hole_to_copper.to_mm());
+    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
+    for h in cx.holes().into_iter().filter(|h| h.plated) {
+        let need = if matches!(h.of, HoleOf::Via(_)) { via } else { pth };
+        if let Some(hit) = crowding(cx, &h, need, false, &|_| true) {
+            groups.entry(group_of(cx, &h)).or_default().push(hit);
+        }
+    }
+    let need_of = |g: &str| if g.starts_with("vias") { via } else { pth };
+    report_groups(groups, &need_of, "another net's copper", r);
+}
+
+fn inner_hole_to_copper(cx: &Ctx, r: &mut Report) {
+    let need = cx.board.rules.min_inner_pth_hole_to_copper.to_mm();
+    let inner: Vec<&String> =
+        cx.copper.iter().skip(1).take(cx.copper.len().saturating_sub(2)).collect();
+    let is_inner = |l: &str| inner.iter().any(|i| i.as_str() == l);
+    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
+    for h in cx.holes().into_iter().filter(|h| h.plated && matches!(h.of, HoleOf::Pad(..))) {
+        if let Some(hit) = crowding(cx, &h, need, false, &is_inner) {
+            groups.entry(group_of(cx, &h)).or_default().push(hit);
+        }
+    }
+    report_groups(groups, &|_| need, "another net's copper on an inner layer", r);
+}
+
+fn npth_to_copper(cx: &Ctx, r: &mut Report) {
+    let need = cx.board.rules.min_npth_to_copper.to_mm();
+    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
+    for h in cx.holes().into_iter().filter(|h| !h.plated) {
+        if let Some(hit) = crowding(cx, &h, need, true, &|_| true) {
+            groups.entry(group_of(cx, &h)).or_default().push(hit);
+        }
+    }
+    report_groups(groups, &|_| need, "copper", r);
+}
+
+fn hole_to_edge(cx: &Ctx, r: &mut Report) {
+    if cx.outline.len() < 3 {
+        return;
+    }
+    let need = cx.board.rules.min_copper_to_edge.to_mm();
+    for h in cx.holes().into_iter().filter(|h| !h.plated) {
+        let inside = crate::geom::point_in_polygon(h.a, cx.outline)
+            && crate::geom::point_in_polygon(h.b, cx.outline);
+        let gap = (0..cx.outline.len())
+            .map(|i| {
+                crate::geom::segment_segment_distance(
+                    h.a,
+                    h.b,
+                    cx.outline[i],
+                    cx.outline[(i + 1) % cx.outline.len()],
+                )
+            })
+            .fold(f64::MAX, f64::min)
+            - h.r;
+        if !inside || gap + 1e-6 < need {
+            let how = if !inside || gap < 0.0 {
+                "breaks through the board edge".to_string()
+            } else {
+                format!("is {} from the board edge", mm(gap))
+            };
+            r.emit(
+                format!("pad {}", cx.hole_name(&h)),
+                format!("non-plated hole {how}, needs {}", mm(need)),
+            );
+        }
+    }
+}

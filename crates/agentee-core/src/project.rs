@@ -667,6 +667,7 @@ impl Project {
             item,
             at: at.to_string(),
             message,
+            rule: None,
         });
     }
 
@@ -813,5 +814,12 @@ impl Project {
 
 fn push<T>(e: &mut Entry<T>, severity: Severity, at: &str, message: String) {
     let item = e.name.clone();
-    e.diags.push(Diagnostic { severity, file: Some(e.path.clone()), item, at: at.into(), message });
+    e.diags.push(Diagnostic {
+        severity,
+        file: Some(e.path.clone()),
+        item,
+        at: at.into(),
+        message,
+        rule: None,
+    });
 }

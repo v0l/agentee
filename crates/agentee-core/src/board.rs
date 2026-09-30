@@ -20,6 +20,8 @@ pub struct BoardFile {
     pub vias: Vec<ViaFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub netclasses: Vec<NetclassFile>,
+    #[serde(default)]
+    pub drc: DrcFile,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -161,16 +163,22 @@ macro_rules! rules {
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub $field: Option<Length>,
             )*
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub max_aspect_ratio: Option<f64>,
         }
 
         #[derive(Clone, Debug, PartialEq, Serialize)]
         pub struct Rules {
             $(pub $field: Length,)*
+            pub max_aspect_ratio: f64,
         }
 
         impl Rules {
             pub fn overlay(&mut self, f: &RulesFile) {
                 $(if let Some(v) = f.$field { self.$field = v; })*
+                if let Some(v) = f.max_aspect_ratio {
+                    self.max_aspect_ratio = v;
+                }
             }
 
             pub fn table(&self) -> Vec<(&'static str, Length, &'static str)> {
@@ -186,18 +194,52 @@ rules! {
     min_drill: "smallest plated hole",
     min_via_drill: "smallest via hole",
     min_via_diameter: "smallest via pad",
-    min_annular_ring: "copper left around a plated hole",
+    min_annular_ring: "copper left around a via hole",
     min_hole_to_hole: "drill edge to drill edge",
     min_copper_to_edge: "copper to board outline",
     min_silk_width: "silkscreen line width",
     min_silk_text_height: "silkscreen text height",
     min_mask_web: "solder mask left between openings of different nets",
+    max_drill: "largest drilled hole",
+    min_npth_drill: "smallest non-plated hole",
+    min_plated_slot_width: "narrowest plated slot",
+    min_npth_slot_width: "narrowest non-plated slot",
+    min_pth_annular_ring: "copper left around a plated pad hole",
+    min_via_hole_to_copper: "via hole wall to copper of another net",
+    min_pth_hole_to_copper: "plated pad hole wall to copper of another net",
+    min_inner_pth_hole_to_copper: "plated pad hole wall to other-net copper on inner layers",
+    min_npth_to_copper: "non-plated hole wall to any copper",
+    min_smd_pad_gap: "SMD pad to SMD pad of another net",
+    min_hole_to_smd_pad: "via hole wall to the edge of an SMD pad it does not sit in",
+    max_filled_via_drill: "largest via hole the fab fills and caps in a pad",
+    min_bga_pad: "smallest BGA pad",
+    min_bga_pitch: "finest BGA pitch the assembler places",
+    min_part_to_edge: "SMD part pads to board outline, for assembly",
 }
 
 pub const FAB_PRESETS: &[&str] = &["generic", "jlcpcb"];
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct FabSetup {
+    pub layers: usize,
+    pub outer_oz: f64,
+    pub finish: String,
+}
+
+impl Default for FabSetup {
+    fn default() -> Self {
+        FabSetup { layers: 2, outer_oz: 1.0, finish: "HASL".into() }
+    }
+}
+
 pub fn fab_rules(name: &str) -> Option<Rules> {
+    fab_rules_for(name, &FabSetup::default())
+}
+
+pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
     let mm = Length::mm;
+    let multi = s.layers > 2;
+    let enig = s.finish.eq_ignore_ascii_case("ENIG");
     match name {
         "generic" => Some(Rules {
             min_track_width: mm(0.15),
@@ -211,22 +253,84 @@ pub fn fab_rules(name: &str) -> Option<Rules> {
             min_silk_width: mm(0.12),
             min_silk_text_height: mm(1.0),
             min_mask_web: mm(0.1),
+            max_drill: mm(6.3),
+            min_npth_drill: mm(0.5),
+            min_plated_slot_width: mm(0.5),
+            min_npth_slot_width: mm(1.0),
+            min_pth_annular_ring: mm(0.2),
+            min_via_hole_to_copper: mm(0.25),
+            min_pth_hole_to_copper: mm(0.3),
+            min_inner_pth_hole_to_copper: mm(0.3),
+            min_npth_to_copper: mm(0.25),
+            min_smd_pad_gap: mm(0.15),
+            min_hole_to_smd_pad: mm(0.2),
+            max_filled_via_drill: mm(0.5),
+            min_bga_pad: mm(0.25),
+            min_bga_pitch: mm(0.5),
+            min_part_to_edge: mm(0.5),
+            max_aspect_ratio: 8.0,
         }),
-        "jlcpcb" => Some(Rules {
-            min_track_width: mm(0.127),
-            min_clearance: mm(0.127),
-            min_drill: mm(0.3),
-            min_via_drill: mm(0.3),
-            min_via_diameter: mm(0.5),
-            min_annular_ring: mm(0.1),
-            min_hole_to_hole: mm(0.5),
-            min_copper_to_edge: mm(0.3),
-            min_silk_width: mm(0.15),
-            min_silk_text_height: mm(1.0),
-            min_mask_web: mm(0.1),
-        }),
+        "jlcpcb" => {
+            let track = match (multi, s.outer_oz) {
+                (_, oz) if oz <= 1.25 => {
+                    if multi {
+                        0.09
+                    } else {
+                        0.10
+                    }
+                }
+                (true, _) => 0.15,
+                (false, oz) if oz <= 2.25 => 0.16,
+                (false, oz) if oz <= 2.75 => 0.2,
+                (false, oz) if oz <= 3.75 => 0.25,
+                _ => 0.3,
+            };
+            let single = s.layers <= 1;
+            Some(Rules {
+                min_track_width: mm(track),
+                min_clearance: mm(track),
+                min_drill: mm(if single { 0.3 } else { 0.15 }),
+                min_via_drill: mm(if single { 0.3 } else { 0.15 }),
+                min_via_diameter: mm(if single { 0.5 } else { 0.25 }),
+                min_annular_ring: mm(0.05),
+                min_hole_to_hole: mm(0.5),
+                min_copper_to_edge: mm(0.3),
+                min_silk_width: mm(0.15),
+                min_silk_text_height: mm(1.0),
+                min_mask_web: mm(0.1),
+                max_drill: mm(6.3),
+                min_npth_drill: mm(0.5),
+                min_plated_slot_width: mm(if multi { 0.35 } else { 0.5 }),
+                min_npth_slot_width: mm(1.0),
+                min_pth_annular_ring: mm(match (multi, s.outer_oz > 1.25) {
+                    (_, true) => 0.254,
+                    (true, false) => 0.15,
+                    (false, false) => 0.18,
+                }),
+                min_via_hole_to_copper: mm(0.2),
+                min_pth_hole_to_copper: mm(0.28),
+                min_inner_pth_hole_to_copper: mm(0.3),
+                min_npth_to_copper: mm(0.2),
+                min_smd_pad_gap: mm(0.15),
+                min_hole_to_smd_pad: mm(0.2),
+                max_filled_via_drill: mm(0.55),
+                min_bga_pad: mm(if enig { 0.2 } else { 0.25 }),
+                min_bga_pitch: mm(0.3),
+                min_part_to_edge: mm(0.5),
+                max_aspect_ratio: 10.7,
+            })
+        }
         _ => None,
     }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DrcFile {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disable: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub severity: std::collections::BTreeMap<String, crate::diag::Severity>,
 }
 
 pub const STACKUP_PRESETS: &[(&str, &str)] = &[
@@ -310,6 +414,18 @@ pub struct Stackup {
 impl Stackup {
     pub fn copper(&self) -> impl Iterator<Item = (usize, &Layer)> {
         self.layers.iter().enumerate().filter(|(_, l)| l.kind == LayerKind::Copper)
+    }
+
+    pub fn outer_oz(&self) -> f64 {
+        self.copper().next().map(|(_, l)| l.thickness.to_mm() / 0.035).unwrap_or(1.0)
+    }
+
+    pub fn fab_setup(&self) -> FabSetup {
+        FabSetup {
+            layers: self.copper().count(),
+            outer_oz: self.outer_oz(),
+            finish: self.finish.clone(),
+        }
     }
 
     pub fn copper_names(&self) -> Vec<String> {
@@ -466,6 +582,7 @@ pub struct Board {
     pub rules: Rules,
     pub vias: Vec<Via>,
     pub netclasses: Vec<Netclass>,
+    pub drc: DrcFile,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -491,13 +608,14 @@ fn copper_name(i: usize, n: usize) -> String {
 impl BoardFile {
     pub fn resolve(&self, d: &mut Diags) -> Board {
         let fab = self.fab.clone().unwrap_or_else(|| "generic".into());
-        let mut rules = fab_rules(&fab).unwrap_or_else(|| {
+        let stackup = self.resolve_stackup(d);
+        let setup = stackup.fab_setup();
+        let mut rules = fab_rules_for(&fab, &setup).unwrap_or_else(|| {
             d.error("fab", format!("unknown fab `{fab}`, use one of {}", FAB_PRESETS.join(", ")));
-            fab_rules("generic").unwrap()
+            fab_rules_for("generic", &setup).unwrap()
         });
         rules.overlay(&self.rules);
 
-        let stackup = self.resolve_stackup(d);
         let copper = stackup.copper_names();
         let first = copper.first().cloned().unwrap_or_default();
         let last = copper.last().cloned().unwrap_or_default();
@@ -580,6 +698,7 @@ impl BoardFile {
             rules,
             vias,
             netclasses,
+            drc: self.drc.clone(),
         }
     }
 
@@ -751,6 +870,12 @@ impl Board {
                     &at,
                     format!("`from`/`to` must name copper layers: {}", copper.join(", ")),
                 ),
+            }
+        }
+
+        for id in self.drc.disable.iter().chain(self.drc.severity.keys()) {
+            if crate::drc::find(id).is_none() {
+                d.warn("drc", format!("no DRC rule `{id}`, `agentee drc NAME --list` lists them"));
             }
         }
 
@@ -1007,6 +1132,62 @@ layers = ["F.Cu"]
         let w = b.netclasses[0].track_width.to_mm();
         assert!((0.3..0.42).contains(&w), "{w}");
         assert!(!d.has_errors(), "{:?}", d.list);
+    }
+
+    #[test]
+    fn jlcpcb_rules_follow_layer_count_and_copper_weight() {
+        let at = |layers, outer_oz, finish: &str| {
+            fab_rules_for("jlcpcb", &FabSetup { layers, outer_oz, finish: finish.into() }).unwrap()
+        };
+        assert_eq!(at(2, 1.0, "HASL").min_track_width, Length::mm(0.10));
+        assert_eq!(at(4, 1.0, "HASL").min_track_width, Length::mm(0.09));
+        assert_eq!(at(2, 2.0, "HASL").min_clearance, Length::mm(0.16));
+        assert_eq!(at(6, 2.0, "HASL").min_clearance, Length::mm(0.15));
+        assert_eq!(at(2, 3.5, "HASL").min_track_width, Length::mm(0.25));
+        assert_eq!(at(1, 1.0, "HASL").min_via_drill, Length::mm(0.3));
+        assert_eq!(at(4, 1.0, "HASL").min_via_drill, Length::mm(0.15));
+        assert_eq!(at(2, 1.0, "HASL").min_pth_annular_ring, Length::mm(0.18));
+        assert_eq!(at(4, 1.0, "HASL").min_pth_annular_ring, Length::mm(0.15));
+        assert_eq!(at(4, 2.0, "HASL").min_pth_annular_ring, Length::mm(0.254));
+        assert_eq!(at(2, 1.0, "HASL").min_plated_slot_width, Length::mm(0.5));
+        assert_eq!(at(4, 1.0, "HASL").min_plated_slot_width, Length::mm(0.35));
+        assert_eq!(at(4, 1.0, "ENIG").min_bga_pad, Length::mm(0.2));
+        assert_eq!(at(4, 1.0, "HASL").min_bga_pad, Length::mm(0.25));
+
+        let (b, _) =
+            board("name = \"x\"\nfab = \"jlcpcb\"\n[stackup]\npreset = \"jlcpcb-4l-1.6mm-7628\"\n");
+        assert_eq!(b.rules.min_track_width, Length::mm(0.09));
+        let (b, _) = board(
+            "name = \"x\"\nfab = \"jlcpcb\"\n[stackup]\npreset = \"jlcpcb-4l-1.6mm-7628\"\n[rules]\nmin_track_width = \"0.2mm\"\nmax_aspect_ratio = 8\n",
+        );
+        assert_eq!(b.rules.min_track_width, Length::mm(0.2));
+        assert_eq!(b.rules.max_aspect_ratio, 8.0);
+    }
+
+    #[test]
+    fn drc_table_names_known_rules() {
+        let (b, d) = board(
+            r#"
+name = "x"
+[stackup]
+preset = "jlcpcb-2l-1.6mm"
+[[netclasses]]
+name = "Default"
+track_width = "0.2mm"
+[drc]
+disable = ["no-such-rule"]
+severity = { "via-in-pad" = "error" }
+"#,
+        );
+        assert_eq!(b.drc.severity["via-in-pad"], crate::diag::Severity::Error);
+        assert!(d.list.iter().any(|x| x.message.contains("no DRC rule `no-such-rule`")));
+        assert!(!d.list.iter().any(|x| x.message.contains("`via-in-pad`")), "{:?}", d.list);
+        assert!(
+            toml::from_str::<BoardFile>(
+                "name = \"x\"\n[stackup]\npreset = \"a\"\n[drc]\nseverity = { a = \"loud\" }\n"
+            )
+            .is_err()
+        );
     }
 
     #[test]

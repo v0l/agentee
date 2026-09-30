@@ -1288,6 +1288,9 @@ impl LayoutFile {
                 let off: Vec<&str> = p
                     .pads
                     .iter()
+                    .zip(&p.footprint.pads)
+                    .filter(|(_, f)| !f.edge)
+                    .map(|(q, _)| q)
                     .filter(|q| {
                         q.outlines.iter().flatten().any(|c| {
                             !geom::point_in_polygon(*c, &outline)
@@ -1505,6 +1508,10 @@ impl LayoutFile {
         }
 
         check_overlaps(&tracks, &nets, d);
+        crate::drc::run(
+            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets),
+            d,
+        );
 
         let (graphics, artwork) = self.artwork_of(&cx.dir, d);
         let silk: Vec<SilkBox> = parts

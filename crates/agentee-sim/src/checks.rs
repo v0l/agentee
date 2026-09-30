@@ -100,6 +100,7 @@ pub fn apply(project: &mut Project) {
                 item: e.name.clone(),
                 at,
                 message,
+                rule: None,
             });
         }
     }

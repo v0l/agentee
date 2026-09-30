@@ -51,6 +51,17 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Design rule checks of a layout: its rule diagnostics, or every rule with --list
+    Drc {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Print every rule with its id, category, severity and whether it applies here
+        #[arg(long)]
+        list: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// List the items in a project
     List {
         #[arg(default_value = ".")]
@@ -353,6 +364,16 @@ fn run(cli: Cli) -> Result<bool, String> {
                 print!("{text}");
             }
             Ok(ok)
+        }
+        Cmd::Drc { name, project, list, json } => {
+            let p = ops::load(&project)?;
+            let (text, v) = ops::drc(&p, &name, list)?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{text}");
+            }
+            Ok(true)
         }
         Cmd::List { path } => {
             print_json(&ops::list(&ops::load(&path)?));

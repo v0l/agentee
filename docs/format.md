@@ -120,9 +120,94 @@ dielectric; mask, paste and silk sit outside the outer copper.
 ### Rules
 
 All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `min_via_diameter`,
-`min_annular_ring`, `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
-`min_silk_text_height`, `min_mask_web` (0.1 mm in both presets). Footprints are checked against the
-rules of the board when the project has exactly one board, otherwise against `generic`.
+`min_annular_ring` (vias), `min_hole_to_hole`, `min_copper_to_edge`, `min_silk_width`,
+`min_silk_text_height`, `min_mask_web` (0.1 mm), `max_drill`, `min_npth_drill`, `min_plated_slot_width`,
+`min_npth_slot_width`, `min_pth_annular_ring`, `min_via_hole_to_copper`, `min_pth_hole_to_copper`,
+`min_inner_pth_hole_to_copper`, `min_npth_to_copper`, `min_smd_pad_gap`, `min_hole_to_smd_pad`,
+`max_filled_via_drill`, `min_bga_pad`, `min_bga_pitch`, `min_part_to_edge`; plus
+`max_aspect_ratio`, a plain number (board thickness over via drill). Footprints are checked against
+the rules of the board when the project has exactly one board, otherwise against `generic`.
+
+The fab preset is a table keyed by the copper layer count, the outer copper weight (from the
+first copper layer's thickness) and the finish, so a 4 layer 1 oz board gets tighter track rules
+than a 2 layer 2 oz one. Anything in `[rules]` overrides the table. The `jlcpcb` values come from
+<https://jlcpcb.com/capabilities/pcb-capabilities>:
+
+| rule | 1 layer | 2 layers | 4+ layers | source line |
+|---|---|---|---|---|
+| `min_track_width`, `min_clearance`, 1 oz | 0.10 | 0.10 | 0.09 | min. track width and spacing (1 oz) |
+| same, 2 oz | 0.16 | 0.16 | 0.15 | min. track width and spacing (2 oz) |
+| same, 2.5 / 3.5 / 4.5 oz | | 0.2 / 0.25 / 0.3 | | 2 layer heavy copper |
+| `min_drill`, `min_via_drill` | 0.3 | 0.15 | 0.15 | drill diameter, min. via hole size |
+| `min_via_diameter` | 0.5 | 0.25 | 0.25 | min. via diameter |
+| `min_annular_ring` (via) | 0.05 | 0.05 | 0.05 | via diameter 0.1 mm over the hole |
+| `min_pth_annular_ring`, 1 oz | 0.18 | 0.18 | 0.15 | PTH annular ring, absolute minimum |
+| same, 2 oz | 0.254 | 0.254 | 0.254 | PTH annular ring, 2 oz |
+| `max_drill` | 6.3 | 6.3 | 6.3 | drill diameter, larger holes are routed |
+| `min_npth_drill` | 0.5 | 0.5 | 0.5 | min. non-plated holes |
+| `min_plated_slot_width` | 0.5 | 0.5 | 0.35 | min. plated slot width, slot at least 2 widths long |
+| `min_npth_slot_width` | 1.0 | 1.0 | 1.0 | min. non-plated slots |
+| `min_via_hole_to_copper` | 0.2 | 0.2 | 0.2 | via hole to track, inner layer via hole to copper |
+| `min_pth_hole_to_copper` | 0.28 | 0.28 | 0.28 | PTH to track |
+| `min_inner_pth_hole_to_copper` | | | 0.3 | inner layer PTH pad hole to copper |
+| `min_npth_to_copper` | 0.2 | 0.2 | 0.2 | NPTH to track |
+| `min_smd_pad_gap` | 0.15 | 0.15 | 0.15 | SMD pad to pad clearance, different nets |
+| `max_filled_via_drill` | 0.55 | 0.55 | 0.55 | via-in-pad epoxy or copper fill, 0.15 to 0.55 mm |
+| `min_bga_pad` | 0.25 (0.2 ENIG) | | | BGA pad, 0.2 to 0.25 mm needs ENIG |
+| `min_bga_pitch` | 0.3 | 0.3 | 0.3 | PCBA capabilities, standard: 0.3 mm BGA centre to centre |
+| `min_silk_width`, `min_silk_text_height` | 0.15, 1.0 | | | legend line width, text height |
+| `max_aspect_ratio` | 10.7 | 10.7 | 10.7 | the 0.15 mm drill on a 1.6 mm board |
+
+Where agentee is stricter than the page, on purpose: `min_copper_to_edge` stays 0.3 mm (the page
+allows 0.2 mm on a routed edge, which is milled to +/-0.2 mm, and 0.4 mm on a V-cut),
+`min_hole_to_hole` stays 0.5 mm (the page gives 0.45 mm between pad holes and 0.2 mm between
+vias), and `min_hole_to_smd_pad` (0.2 mm, the via hole to track figure) and `min_part_to_edge`
+(0.5 mm) are agentee's choices, not on the page.
+
+### Design rule checks
+
+Layout checks run from a registry of rules, each with a stable id, a category (`copper`,
+`drill`, `mask`, `silk`, `assembly`, `zone`, `signal`), a default severity, and a condition on the
+board: a rule for inner layers runs only with 4 or more copper layers, a via fill rule only when
+vias sit in pads, a BGA rule only when there is a BGA. Every message of a rule starts with its id
+in brackets, e.g. `[via-cuts-pad]`. `agentee drc NAME --list` (MCP `drc` with `list = true`) prints
+every rule with its category, severity, and whether it applies to this board and why; `agentee
+drc NAME` prints the layout's rule messages alone.
+
+```toml
+[drc]                          # in the board file
+disable = ["silk-width"]       # rule ids to skip
+severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
+```
+
+| id | severity | runs when | checks |
+|---|---|---|---|
+| `via-cuts-pad` | error | always | a via whose copper overlaps or touches an SMD pad while its drill is not fully inside the pad: solder wicks down the barrel and the pad edge is damaged. Any net; one of another net is also a short |
+| `via-annulus-past-pad` | warning | vias in pads | the drill sits in the pad but the via's annulus reaches past the pad edge under the mask |
+| `via-in-pad` | info | vias in pads | counts the vias in SMD pads (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
+| `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill` |
+| `hole-to-smd-pad` | warning | always | a via hole closer than `min_hole_to_smd_pad` to an SMD pad of its own net (or no net) that it does not touch; paste and solder can flow into it |
+| `drill-size` | error | always | pad holes under `min_drill` (plated) or `min_npth_drill` (non-plated), or over `max_drill` (larger holes are routed, draw them as cutouts). Via sizes are checked on the board's `[[vias]]` |
+| `slot-size` | error | slotted holes | slots narrower than `min_plated_slot_width` or `min_npth_slot_width`, or shorter than twice their width |
+| `aspect-ratio` | error | always | plated holes whose depth (the copper and dielectric they pass) over drill exceeds `max_aspect_ratio` |
+| `hole-to-copper` | error | always | a via or plated pad hole wall closer than `min_via_hole_to_copper` or `min_pth_hole_to_copper` to copper of another net on a layer the hole passes: tracks, pads, vias, pours |
+| `inner-hole-to-copper` | error | 4+ copper layers | a plated pad hole wall closer than `min_inner_pth_hole_to_copper` to another net's copper on an inner layer |
+| `npth-to-copper` | error | non-plated holes | a non-plated hole wall closer than `min_npth_to_copper` to any copper, its own net's pour included |
+| `hole-to-edge` | error | non-plated holes | a non-plated hole wall closer than `min_copper_to_edge` to the board outline, or through it |
+| `smd-pad-gap` | error | always | SMD pads of different nets closer than `min_smd_pad_gap`, one line per pair of parts with the closest pads |
+| `pad-to-edge` | error | always | pad copper closer than `min_copper_to_edge` to the board outline; pads marked `edge = true` are exempt |
+| `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
+| `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
+| `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
+| `fiducials` | info | parts | no footprint named like `Fiducial` on the board |
+| `tooling-holes` | info | parts | no non-plated hole of 1.5 mm or more |
+| `bga-pad` | error | a BGA | BGA pads (16 or more round SMD pads) smaller than `min_bga_pad` |
+| `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
+| `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
+| `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
+
+An id that names no rule is a warning. The older checks described under Layout (clearance,
+shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
 
 ### What check computes
 
@@ -271,6 +356,9 @@ size = [1.7, 1.7]
 drill = 1.0                    # round, or [w, h] for a slot
 # rotation = 90
 # layers = ["*.Cu", "*.Mask"]  # default by kind: smd F.Cu F.Paste F.Mask, tht *.Cu *.Mask
+# edge = true                  # the copper is meant to reach the board edge (edge-launch
+                               # connector, castellation, edge finger): exempt from the edge
+                               # clearance, listed in the fab notes
 
 [[graphics]]
 kind = "rect"
@@ -294,7 +382,8 @@ Layers: `F.Cu`, `B.Cu`, `F.SilkS`, `B.SilkS`, `F.Mask`, `B.Mask`, `F.Paste`, `B.
 `B.Fab`, `F.CrtYd`, `B.CrtYd`, `Edge.Cuts`, `*.Cu`, `*.Mask`.
 
 Check looks for overlapping pads, pads closer than the fab clearance, drills and annular rings
-under the rules, a courtyard that encloses the pads, and silk that runs over exposed copper.
+under the rules (`min_drill`, `min_pth_annular_ring`), a courtyard that encloses the pads, and
+silk that runs over exposed copper.
 
 ## Schematic (`*.sch.toml`)
 
@@ -955,7 +1044,7 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 | `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85 |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill |
+| `fab-notes.txt` | stackup, finish, impedance classes, vias in pads to fill, edge pads to keep |
 | `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |
 | `assembly-top.png`, `assembly-bottom.png` | fab and silk layers for the line |

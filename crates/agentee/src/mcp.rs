@@ -32,6 +32,14 @@ fn tools() -> Value {
             }), &[]),
         },
         {
+            "name": "drc",
+            "description": "Design rule checks of a layout. With list = true: every DRC rule with its id, category, severity, and whether it applies to this board and why. Without: the layout's diagnostics that carry a rule id. Rule ids go in the board's [drc] disable list or severity table.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout or board" },
+                "list": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "list_items",
             "description": "Every board, symbol and footprint in the project with its file and error counts.",
             "inputSchema": s(json!({}), &[]),
@@ -251,6 +259,11 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let item = arg(a, "item").map(|n| ops::find(&p, n)).transpose()?;
             let min = if flag(a, "include_info") { Severity::Info } else { Severity::Warning };
             let (t, _, _) = ops::check_report(&p, item, min);
+            Ok(ok(vec![text(t)]))
+        }
+        "drc" => {
+            let p = ops::load(root)?;
+            let (t, _) = ops::drc(&p, arg(a, "name").ok_or("name is required")?, flag(a, "list"))?;
             Ok(ok(vec![text(t)]))
         }
         "list_items" => Ok(ok(vec![text(pretty(&ops::list(&ops::load(root)?)))])),

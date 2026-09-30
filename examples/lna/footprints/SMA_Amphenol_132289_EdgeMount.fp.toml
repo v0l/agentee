@@ -12,6 +12,7 @@ shape = "rect"
 at = [0.0, 0.0]
 size = [1.5, 5.08]
 rotation = 90.0
+edge = true
 layers = ["F.Cu", "F.Mask", "F.Paste"]
 
 [[pads]]
@@ -21,6 +22,7 @@ shape = "rect"
 at = [0.0, -4.25]
 size = [1.5, 5.08]
 rotation = 90.0
+edge = true
 layers = ["F.Cu", "F.Mask", "F.Paste"]
 
 [[pads]]
@@ -30,6 +32,7 @@ shape = "rect"
 at = [0.0, -4.25]
 size = [1.5, 5.08]
 rotation = 90.0
+edge = true
 layers = ["B.Cu", "B.Mask", "B.Paste"]
 
 [[pads]]
@@ -39,6 +42,7 @@ shape = "rect"
 at = [0.0, 4.25]
 size = [1.5, 5.08]
 rotation = 90.0
+edge = true
 layers = ["F.Cu", "F.Mask", "F.Paste"]
 
 [[pads]]
@@ -48,6 +52,7 @@ shape = "rect"
 at = [0.0, 4.25]
 size = [1.5, 5.08]
 rotation = 90.0
+edge = true
 layers = ["B.Cu", "B.Mask", "B.Paste"]
 
 [[graphics]]
