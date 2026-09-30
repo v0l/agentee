@@ -609,6 +609,7 @@ impl LayoutFile {
             })
             .collect();
         let net_index = |name: &str| sch.nets.iter().position(|n| n.name == name);
+        let mut found = crate::drc::Findings::default();
         let default_clearance = class_of(board, "Default")
             .map(|c| c.clearance.to_mm())
             .unwrap_or(board.rules.min_clearance.to_mm());
@@ -1190,11 +1191,11 @@ impl LayoutFile {
                 }
             }
         }
-        for s in &shorts {
-            d.error("short", s.clone());
+        for s in shorts {
+            found.add("short", "short", s);
         }
-        for s in &tight {
-            d.error("clearance", s.clone());
+        for s in tight {
+            found.add("clearance", "clearance", s);
         }
 
         let mut drills: Vec<(P, f64, String, Option<usize>)> = vias
@@ -1255,59 +1256,6 @@ impl LayoutFile {
         }
 
         let edge_clear = board.rules.min_copper_to_edge.to_mm();
-        if outline.len() >= 3 {
-            for it in &items {
-                if !matches!(it.owner, Owner::Seg(_) | Owner::Via(_)) {
-                    continue;
-                }
-                let inside = match &it.shape {
-                    Shape::Seg(a, b, _) => {
-                        geom::point_in_polygon(*a, &outline) && geom::point_in_polygon(*b, &outline)
-                    }
-                    Shape::Circle(c, _) => geom::point_in_polygon(*c, &outline),
-                    Shape::Poly(_) => true,
-                };
-                let to_edge = edges(&outline)
-                    .map(|(a, b)| it.shape.distance(&Shape::Seg(a, b, 0.0)))
-                    .fold(f64::MAX, f64::min);
-                if !inside {
-                    d.error("edge", format!("{} leaves the board", name_of(it)));
-                } else if to_edge + 1e-6 < edge_clear {
-                    d.error(
-                        "edge",
-                        format!(
-                            "{} is {} from the board edge, needs {}",
-                            name_of(it),
-                            Length::mm(to_edge),
-                            Length::mm(edge_clear)
-                        ),
-                    );
-                }
-            }
-            for p in &parts {
-                let off: Vec<&str> = p
-                    .pads
-                    .iter()
-                    .zip(&p.footprint.pads)
-                    .filter(|(_, f)| !f.edge)
-                    .map(|(q, _)| q)
-                    .filter(|q| {
-                        q.outlines.iter().flatten().any(|c| {
-                            !geom::point_in_polygon(*c, &outline)
-                                && edges(&outline)
-                                    .all(|(a, b)| geom::point_segment_distance(*c, a, b) > 1e-3)
-                        })
-                    })
-                    .map(|q| q.number.as_str())
-                    .collect();
-                if !off.is_empty() {
-                    d.error(
-                        format!("part {}", p.reference),
-                        format!("pads {} hang off the board", off.join(", ")),
-                    );
-                }
-            }
-        }
 
         check_courtyards(&parts, d);
         check_mask_webs(&parts, board.rules.min_mask_web.to_mm(), d);
@@ -1438,7 +1386,8 @@ impl LayoutFile {
                         g.iter().map(|(i, _)| name_of(&items[*i])).collect::<Vec<_>>().join("+")
                     })
                     .collect();
-                d.error(
+                found.add(
+                    "unrouted",
                     format!("net {}", n.name),
                     format!("{unrouted} unrouted: {} are not joined", names.join(" | ")),
                 );
@@ -1451,67 +1400,7 @@ impl LayoutFile {
             stats.push((unrouted, length));
         }
 
-        for pad in items.iter().filter(|it| matches!(it.owner, Owner::Pad(..)) && it.net.is_some())
-        {
-            let Owner::Pad(pi, k) = pad.owner else { continue };
-            let in_zone = zones.iter().any(|z| {
-                Some(z.net) == pad.net
-                    && pad.layers.contains(&z.layer)
-                    && z.filled(pad.bounds.center())
-            });
-            if in_zone {
-                continue;
-            }
-            let mut touching = Vec::new();
-            for seg in items.iter().filter(|it| {
-                matches!(it.owner, Owner::Seg(_))
-                    && it.net == pad.net
-                    && it.layers.iter().any(|l| pad.layers.contains(l))
-                    && it.shape.distance(&pad.shape) <= 0.0
-            }) {
-                if let Shape::Seg(a, b, hw) = seg.shape {
-                    let centre = Shape::Seg(a, b, 0.0).distance(&pad.shape);
-                    touching.push((hw - centre.max(0.0), hw));
-                }
-            }
-            if !touching.is_empty() && touching.iter().all(|(depth, hw)| *depth < *hw) {
-                let worst = touching.iter().map(|t| t.0).fold(f64::MAX, f64::min);
-                d.warn(
-                    format!("pad {}.{}", parts[pi].reference, parts[pi].pads[k].number),
-                    format!(
-                        "the track only grazes the pad ({worst:.3} mm of overlap), run it into the pad"
-                    ),
-                );
-            }
-        }
-
-        for (ti, t) in tracks.iter().enumerate() {
-            for end in [t.points[0], *t.points.last().unwrap()] {
-                let probe = Shape::Circle(end, t.width / 2.0);
-                let touches = items.iter().any(|it| {
-                    it.net == Some(t.net)
-                        && it.layers.contains(&t.layer)
-                        && match it.owner {
-                            Owner::Seg(s) => seg_track[s] != ti,
-                            _ => true,
-                        }
-                        && it.shape.distance(&probe) <= 1e-6
-                }) || t.points.len() > 2 && is_interior_join(t, end)
-                    || zones.iter().any(|z| z.net == t.net && z.layer == t.layer && z.filled(end));
-                if !touches {
-                    d.warn(
-                        format!("tracks[{ti}] {}", nets[t.net].name),
-                        format!("end at [{:.3}, {:.3}] connects to nothing", end[0], end[1]),
-                    );
-                }
-            }
-        }
-
         check_overlaps(&tracks, &nets, d);
-        crate::drc::run(
-            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets),
-            d,
-        );
 
         let (graphics, artwork) = self.artwork_of(&cx.dir, d);
         let silk: Vec<SilkBox> = parts
@@ -1561,6 +1450,12 @@ impl LayoutFile {
                 zones: &zones,
                 pairs: &pairs,
             },
+            d,
+        );
+        crate::drc::run(
+            &crate::drc::Ctx::new(board, &copper, &outline, &parts, &tracks, &vias, &zones, &nets)
+                .with_signals(&graphics, &pairs, &match_groups, &interfaces)
+                .with_found(&found),
             d,
         );
         Layout {
@@ -2429,10 +2324,6 @@ fn check_mask_webs(parts: &[Placed], web: f64, d: &mut Diags) {
             );
         }
     }
-}
-
-fn is_interior_join(t: &Track, end: P) -> bool {
-    t.points[1..t.points.len() - 1].iter().any(|p| geom::dist(*p, end) < 1e-9)
 }
 
 impl ZoneFill {

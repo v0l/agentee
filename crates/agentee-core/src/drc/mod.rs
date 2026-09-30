@@ -3,7 +3,9 @@ use crate::diag::{Diags, Severity};
 use crate::footprint::PadKind;
 use crate::geom::{self, P};
 use crate::graphic::Bounds;
-use crate::layout::{Layout, LayoutNet, Placed, PlacedPad, Track, Via, ZoneFill};
+use crate::graphic::Graphic;
+use crate::interface::Interface;
+use crate::layout::{Layout, LayoutNet, MatchGroup, Pair, Placed, PlacedPad, Track, Via, ZoneFill};
 use serde::Serialize;
 use std::cell::OnceCell;
 use std::collections::HashMap;
@@ -48,6 +50,9 @@ pub struct Setup {
     pub npth: bool,
     pub slots: bool,
     pub bga: bool,
+    pub pairs: bool,
+    pub match_groups: bool,
+    pub interfaces: bool,
 }
 
 impl Setup {
@@ -76,10 +81,13 @@ impl Setup {
             via_in_pad: !vias_in_pads(cx.parts, cx.vias).is_empty(),
             parts: cx.parts.len(),
             bottom_parts: cx.parts.iter().any(|p| p.bottom),
-            zones: cx.zones.iter().any(|z| !z.rings.is_empty()),
+            zones: !cx.zones.is_empty(),
             npth: pads().any(|q| q.kind == PadKind::Npth),
             slots: pads().any(|q| q.drill.is_some_and(|(_, s, _)| (s[0] - s[1]).abs() > 1e-6)),
             bga: cx.parts.iter().any(|p| assembly::bga_pitch(p).is_some()),
+            pairs: !cx.pairs.is_empty(),
+            match_groups: !cx.match_groups.is_empty(),
+            interfaces: !cx.interfaces.is_empty(),
             ..Setup::of_board(cx.board)
         }
     }
@@ -94,6 +102,11 @@ pub struct Ctx<'a> {
     pub vias: &'a [Via],
     pub zones: &'a [ZoneFill],
     pub nets: &'a [LayoutNet],
+    pub graphics: &'a [Graphic],
+    pub pairs: &'a [Pair],
+    pub match_groups: &'a [MatchGroup],
+    pub interfaces: &'a [Interface],
+    found: &'a [Finding],
     items: OnceCell<Vec<Cu>>,
     grid: OnceCell<HashMap<(i64, i64), Vec<usize>>>,
     fills: OnceCell<Vec<FillIndex>>,
@@ -178,6 +191,11 @@ impl<'a> Ctx<'a> {
             vias,
             zones,
             nets,
+            graphics: &[],
+            pairs: &[],
+            match_groups: &[],
+            interfaces: &[],
+            found: &[],
             items: OnceCell::new(),
             grid: OnceCell::new(),
             fills: OnceCell::new(),
@@ -186,6 +204,26 @@ impl<'a> Ctx<'a> {
 
     pub fn of_layout(board: &'a Board, l: &'a Layout) -> Ctx<'a> {
         Ctx::new(board, &l.copper, &l.outline, &l.parts, &l.tracks, &l.vias, &l.zones, &l.nets)
+            .with_signals(&l.graphics, &l.pairs, &l.match_groups, &l.interfaces)
+    }
+
+    pub fn with_signals(
+        mut self,
+        graphics: &'a [Graphic],
+        pairs: &'a [Pair],
+        match_groups: &'a [MatchGroup],
+        interfaces: &'a [Interface],
+    ) -> Ctx<'a> {
+        self.graphics = graphics;
+        self.pairs = pairs;
+        self.match_groups = match_groups;
+        self.interfaces = interfaces;
+        self
+    }
+
+    pub fn with_found(mut self, found: &'a Findings) -> Ctx<'a> {
+        self.found = &found.0;
+        self
     }
 
     pub fn net_name(&self, n: Option<usize>) -> &str {
@@ -515,6 +553,29 @@ impl FillIndex {
             return -r;
         }
         self.edge_gap(c, r + reach) - r
+    }
+}
+
+pub struct Finding {
+    pub rule: &'static str,
+    pub at: String,
+    pub message: String,
+}
+
+#[derive(Default)]
+pub struct Findings(pub Vec<Finding>);
+
+impl Findings {
+    pub fn add(&mut self, rule: &'static str, at: impl Into<String>, message: impl Into<String>) {
+        debug_assert!(find(rule).is_some(), "no DRC rule `{rule}`");
+        self.0.push(Finding { rule, at: at.into(), message: message.into() });
+    }
+}
+
+pub fn recorded(cx: &Ctx, r: &mut Report) {
+    let rule = r.rule;
+    for f in cx.found.iter().filter(|f| f.rule == rule) {
+        r.emit(f.at.clone(), f.message.clone());
     }
 }
 
