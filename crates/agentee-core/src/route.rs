@@ -24,7 +24,7 @@ impl Default for RouteOptions {
             layers: Vec::new(),
             grid: 0.05,
             via: None,
-            via_cost: 1.0,
+            via_cost: 3.0,
             bend_cost: 0.1,
             margin: 5.0,
             pairs: false,

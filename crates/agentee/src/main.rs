@@ -210,7 +210,7 @@ enum Cmd {
         #[arg(long)]
         via: Option<String>,
         /// Cost of a via in mm of track
-        #[arg(long, default_value_t = 1.0)]
+        #[arg(long, default_value_t = 3.0)]
         via_cost: f64,
         /// Cost of a 45 degree bend in mm of track, three times that for 90
         #[arg(long, default_value_t = 0.1)]
