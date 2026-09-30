@@ -1692,6 +1692,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     let input = pl::PlaceInput {
         board,
         outline: &layout.outline,
+        cutouts: &layout.board_cutouts,
         schematic: sch,
         footprints: &footprints,
         placements: &file.footprints,

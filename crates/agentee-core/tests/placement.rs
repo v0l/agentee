@@ -180,6 +180,7 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
     let input = PlaceInput {
         board,
         outline: &layout.outline,
+        cutouts: &layout.board_cutouts,
         schematic: sch,
         footprints: &footprints,
         placements: &file.footprints,
@@ -265,4 +266,111 @@ fn locked_parts_and_pinned_edges_are_kept() {
     assert_eq!(r.edges.get("J2"), Some(&place::Edge::Right));
     let j1 = r.placements.iter().find(|p| p.reference == "J1").unwrap();
     assert!(j1.at[0] < 5.0, "{:?}", j1.at);
+}
+
+fn courtyards(p: &agentee_core::layout::Placed) -> Vec<Vec<[f64; 2]>> {
+    let t = p.transform();
+    ["F.CrtYd", "B.CrtYd"]
+        .iter()
+        .flat_map(|l| place::courtyard_loops(&p.footprint, l))
+        .map(|l| l.into_iter().map(|q| t.apply(q)).collect())
+        .collect()
+}
+
+#[test]
+fn placement_keeps_parts_out_of_board_cutouts() {
+    let dir = temp_dir("cutout");
+    copy_dir(&lna(), &dir, false);
+    let board = std::fs::read_to_string(dir.join("lna.board.toml")).unwrap();
+    std::fs::write(
+        dir.join("lna.board.toml"),
+        format!("{board}\n[[outline.cutouts]]\npoints = [[14, 7], [22, 7], [22, 15], [14, 15]]\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.after.overlaps, 0);
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let layout = &p.layouts[0].item;
+    assert_eq!(layout.board_cutouts.len(), 1);
+    let cutout = &layout.board_cutouts[0];
+    let body = p.boards[0].item.rules.min_body_to_edge.to_mm();
+    for part in &layout.parts {
+        for c in courtyards(part) {
+            let gap = agentee_core::geom::polygon_distance(&c, cutout);
+            assert!(gap >= body - 1e-6, "{} is {gap:.2} mm from the cutout", part.reference);
+        }
+    }
+}
+
+#[test]
+fn fiducials_go_to_corners_clear_of_the_edge_and_parts() {
+    let dir = temp_dir("fid");
+    copy_dir(&lna(), &dir, false);
+    let hackrf = lna().join("../hackrf-pro");
+    std::fs::copy(
+        hackrf.join("footprints/Fiducial_1mm_Mask2mm.fp.toml"),
+        dir.join("footprints/Fiducial_1mm_Mask2mm.fp.toml"),
+    )
+    .unwrap();
+    std::fs::copy(
+        hackrf.join("symbols/KiCad_Fiducial_1mm_Mask2mm.sym.toml"),
+        dir.join("symbols/KiCad_Fiducial_1mm_Mask2mm.sym.toml"),
+    )
+    .unwrap();
+    let sch = std::fs::read_to_string(dir.join("lna.sch.toml")).unwrap();
+    let (head, tail) = sch.split_at(sch.find("\n[[nets]]").unwrap_or(sch.len()));
+    let mut fids = String::new();
+    for k in 1..=3 {
+        fids += &format!(
+            "\n[[parts]]\nref = \"FID{k}\"\nsymbol = \"KiCad_Fiducial_1mm_Mask2mm\"\nvalue = \"Fiducial\"\nfootprint = \"Fiducial_1mm_Mask2mm\"\nat = [{}, 80]\n",
+            20 * k
+        );
+    }
+    std::fs::write(dir.join("lna.sch.toml"), format!("{head}{fids}{tail}")).unwrap();
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    assert_eq!(r.after.overlaps, 0);
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let layout = &p.layouts[0].item;
+    let edge = layout.edge();
+    let fids: Vec<_> = layout.parts.iter().filter(|q| q.reference.starts_with("FID")).collect();
+    assert_eq!(fids.len(), 3);
+    let mut corners = Vec::new();
+    for f in &fids {
+        let [x, y] = f.at.to_mm();
+        for pad in f.pads.iter().flat_map(|q| q.outlines.iter().flatten()) {
+            assert!(
+                edge.distance(*pad) >= place::FIDUCIAL_TO_EDGE - 1e-6,
+                "{} at {x}, {y}",
+                f.reference
+            );
+        }
+        assert!(x.min(36.0 - x) < 9.0 && y.min(24.0 - y) < 9.0, "{} at {x}, {y}", f.reference);
+        corners.push((x < 18.0, y < 12.0));
+        let mine = courtyards(f);
+        for other in layout.parts.iter().filter(|q| q.reference != f.reference) {
+            for c in courtyards(other) {
+                for m in &mine {
+                    let gap = agentee_core::geom::polygon_distance(m, &c);
+                    assert!(gap > 0.0, "{} touches {}", f.reference, other.reference);
+                }
+            }
+        }
+    }
+    corners.sort();
+    corners.dedup();
+    assert_eq!(corners.len(), 3, "{corners:?}");
 }

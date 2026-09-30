@@ -99,6 +99,7 @@ impl Default for PlaceOptions {
 pub struct PlaceInput<'a> {
     pub board: &'a Board,
     pub outline: &'a [P],
+    pub cutouts: &'a [Vec<P>],
     pub schematic: &'a Schematic,
     pub footprints: &'a HashMap<&'a str, &'a Footprint>,
     pub placements: &'a [PlacementFile],
@@ -515,6 +516,7 @@ struct Cluster {
 #[derive(Clone)]
 struct Board2 {
     outline: Vec<P>,
+    cutouts: Vec<Vec<P>>,
     bounds: Bounds,
     centre: P,
     keepouts: Vec<Vec<P>>,
@@ -602,8 +604,27 @@ impl<'a> Placer<'a> {
         self.parts[i].placed = false;
     }
 
+    fn board_edge(&self) -> geom::BoardEdge<'_> {
+        geom::BoardEdge::new(&self.b.outline, &self.b.cutouts)
+    }
+
     fn edge_gap(&self, p: P) -> f64 {
-        crate::drc::edge_distance(&self.b.outline, p)
+        self.board_edge().distance(p)
+    }
+
+    fn clear_of_cutouts(&self, poly: &[P], min: f64) -> bool {
+        let b = poly_bounds(poly);
+        self.b.cutouts.iter().all(|c| {
+            let cb = poly_bounds(c);
+            b.min[0] > cb.max[0] + min
+                || cb.min[0] > b.max[0] + min
+                || b.min[1] > cb.max[1] + min
+                || cb.min[1] > b.max[1] + min
+                || {
+                    let d = geom::polygon_distance(poly, c);
+                    d > 0.0 && d >= min - 1e-6
+                }
+        })
     }
 
     fn inside(&self, i: usize, st: St, sh: &[WShape]) -> bool {
@@ -613,28 +634,27 @@ impl<'a> Placer<'a> {
             return true;
         }
         let t = st.transform();
+        let edge = self.board_edge();
         let pads_in = |min: f64, skip_edge: bool| {
             part.pads.iter().filter(|q| !(skip_edge && q.edge)).all(|q| {
-                q.outline.iter().flatten().all(|v| {
-                    let w = t.apply(*v);
-                    geom::point_in_polygon(w, o) && self.edge_gap(w) >= min - 1e-6
+                q.outline.iter().all(|ring| {
+                    let w: Vec<P> = ring.iter().map(|v| t.apply(*v)).collect();
+                    w.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
+                        && self.clear_of_cutouts(&w, min)
                 })
             })
         };
         let body_in = |min: f64| {
             sh.iter().all(|s| {
-                s.poly
-                    .iter()
-                    .all(|v| geom::point_in_polygon(*v, o) && self.edge_gap(*v) >= min - 1e-6)
+                s.poly.iter().all(|v| edge.contains(*v) && self.edge_gap(*v) >= min - 1e-6)
                     && !o.iter().any(|v| geom::point_in_polygon(*v, &s.poly))
+                    && self.clear_of_cutouts(&s.poly, min)
             })
         };
         let ok = match part.role {
-            Role::Connector if edge_mount(part.fp) => part
-                .pads
-                .iter()
-                .filter(|q| !q.edge)
-                .all(|q| geom::point_in_polygon(t.apply(q.c), o)),
+            Role::Connector if edge_mount(part.fp) => {
+                part.pads.iter().filter(|q| !q.edge).all(|q| edge.contains(t.apply(q.c)))
+            }
             Role::Hole => body_in(0.0) && pads_in(self.b.copper_edge, false),
             Role::Fiducial => body_in(0.0) && pads_in(FIDUCIAL_TO_EDGE, false),
             _ => {
@@ -1090,6 +1110,7 @@ pub fn place(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, Str
     let pd = input.board.drc.placement.clone().unwrap_or_default();
     let b = Board2 {
         outline: input.outline.to_vec(),
+        cutouts: input.cutouts.iter().filter(|c| c.len() >= 3).cloned().collect(),
         centre: ob.center(),
         bounds: ob,
         keepouts: input
