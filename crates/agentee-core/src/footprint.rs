@@ -2,6 +2,7 @@ use crate::board::Rules;
 use crate::diag::Diags;
 use crate::geom::{self, P};
 use crate::graphic::{self, Bounds, Graphic, GraphicDefaults, GraphicFile, Shape};
+use crate::layout::PadConnection;
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +111,8 @@ pub struct PadFile {
     pub number_step: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub edge: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone_connect: Option<PadConnection>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,6 +163,7 @@ pub struct Pad {
     pub layers: Vec<String>,
     pub points: Vec<Point>,
     pub edge: bool,
+    pub zone_connect: Option<PadConnection>,
 }
 
 fn merge_overlapping(mut rings: Vec<Vec<P>>) -> Vec<Vec<P>> {
@@ -330,6 +334,7 @@ impl FootprintFile {
                     layers: p.layers.clone().unwrap_or_else(|| default_layers(p.kind)),
                     points: p.points.clone().unwrap_or_default(),
                     edge: p.edge,
+                    zone_connect: p.zone_connect,
                 });
             }
         }
@@ -415,6 +420,11 @@ pub fn graphic_path(g: &Graphic) -> Vec<P> {
 }
 
 impl Footprint {
+    pub fn is_ball_grid(&self) -> bool {
+        self.pads.iter().filter(|q| q.kind == PadKind::Smd && q.shape == PadShape::Circle).count()
+            >= 16
+    }
+
     pub fn bounds(&self) -> Bounds {
         let mut b = Bounds::EMPTY;
         for p in &self.pads {

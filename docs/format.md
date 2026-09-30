@@ -602,6 +602,8 @@ drill = 1.0                    # round, or [w, h] for a slot
 # edge = true                  # the copper is meant to reach the board edge (edge-launch
                                # connector, castellation, edge finger): exempt from the edge
                                # clearance, listed in the fab notes
+# zone_connect = "solid"       # solid | relief | none: this pad's join to a same-net zone,
+                               # over the zone's pad_connection (KiCad's pad zone_connect)
 
 [[graphics]]
 kind = "rect"
@@ -743,8 +745,13 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # clearance = 0.25             # default: the net class clearance
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
 # min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
-# pad_connection = "relief"    # solid (default) | relief: SMD pads of the net join the pour by four
-                               # spokes across a gap, so they heat like a track-fed pad
+# pad_connection = "relief"    # solid (default) | relief: pads of the net join the pour by four
+                               # spokes across a gap, so they heat like a track-fed pad;
+                               # none: the pour keeps its clearance from the pads. A pad's
+                               # own zone_connect wins, and BGA balls (16 or more round SMD
+                               # pads) stay solid, since spokes starve a ball of solder heat
+# relief_tht_only = true       # relief on through-hole pads only, SMD pads solid (KiCad's
+                               # thru_hole_only)
 # relief_gap = "0.3mm"         # default: the zone clearance
 # spoke_width = "0.3mm"        # default: the net class track width, at least min_width
 

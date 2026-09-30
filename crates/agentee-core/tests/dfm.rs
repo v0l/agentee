@@ -892,6 +892,48 @@ fn a_relief_zone_joins_smd_pads_by_four_spokes() {
     assert!(hits(&p, "starved-thermal").is_empty());
 }
 
+#[test]
+fn relief_follows_pad_overrides_through_hole_only_and_leaves_bga_balls_solid() {
+    let zone = |extra: &str| {
+        format!(
+            "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\nrelief_gap = \"0.3mm\"\nspoke_width = \"0.3mm\"\n{extra}"
+        )
+    };
+    let filled = |fp: &str, pcb: &str, at: [f64; 2]| {
+        let p = load(&Fixture {
+            footprints: &[("R_0402_1005Metric", fp)],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb,
+            ..Default::default()
+        });
+        p.layouts[0].item.zones[0].filled(at)
+    };
+    let relief = zone("pad_connection = \"relief\"\n");
+    let corner = [10.91, 10.46];
+    let fp = chip([0.96, 0.0], [0.56, 0.62]);
+    assert!(!filled(&fp, &relief, corner));
+    assert!(filled(&fp, &zone("pad_connection = \"relief\"\nrelief_tht_only = true\n"), corner));
+    let solid_pad = format!("{fp}zone_connect = \"solid\"\n");
+    assert!(filled(&solid_pad, &relief, corner));
+    let relief_pad = format!("{fp}zone_connect = \"relief\"\n");
+    assert!(!filled(&relief_pad, &zone(""), corner));
+    let isolated = format!("{fp}zone_connect = \"none\"\n");
+    assert!(!filled(&isolated, &zone(""), [11.3, 10.0]));
+    assert!(filled(&fp, &zone(""), [11.3, 10.0]));
+    let balls = format!(
+        "{}\n[[pads]]\nnumber = \"3\"\nkind = \"smd\"\nshape = \"circle\"\nat = [-4, -3]\nsize = [0.3, 0.3]\ncount = 14\npitch = [0.6, 0]\n",
+        chip([0.96, 0.0], [0.56, 0.56]).replace("roundrect", "circle")
+    );
+    let diagonal = [10.73, 10.25];
+    assert!(filled(&balls, &relief, diagonal));
+    let few = chip([0.96, 0.0], [0.56, 0.56]).replace("roundrect", "circle");
+    assert!(!filled(&few, &relief, diagonal));
+    let tht = "\n[[pads]]\nnumber = \"1\"\nkind = \"tht\"\nshape = \"circle\"\nat = [-0.75, 0]\nsize = [1.0, 1.0]\ndrill = \"0.5mm\"\ncount = 2\npitch = [1.5, 0]\n";
+    let gap = [11.17, 10.42];
+    assert!(filled(tht, &zone(""), gap));
+    assert!(!filled(tht, &zone("pad_connection = \"relief\"\nrelief_tht_only = true\n"), gap));
+}
+
 const SLOT: &str = "[[outline.cutouts]]\norigin = [14, 8]\nsize = [2, 4]\n";
 
 #[test]

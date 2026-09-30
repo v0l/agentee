@@ -2,6 +2,7 @@ use crate::sexpr::Node;
 use agentee_core::footprint::{Drill, FootprintFile, Mount, PadFile, PadKind, PadShape};
 use agentee_core::geom;
 use agentee_core::graphic::{Anchor, Fill, GraphicFile, GraphicKind};
+use agentee_core::layout::PadConnection;
 use agentee_core::units::{Length, Point};
 
 fn pt(v: [f64; 2]) -> Point {
@@ -141,7 +142,18 @@ pub(crate) fn graphic(n: &Node) -> Option<GraphicFile> {
     Some(g)
 }
 
-fn pad(n: &Node) -> Option<PadFile> {
+fn zone_connect(n: &Node, kind: PadKind) -> Option<PadConnection> {
+    match n.find("zone_connect")?.num(0)? as i64 {
+        0 => Some(PadConnection::None),
+        1 => Some(PadConnection::Relief),
+        2 => Some(PadConnection::Solid),
+        3 if kind == PadKind::Tht => Some(PadConnection::Relief),
+        3 => Some(PadConnection::Solid),
+        _ => None,
+    }
+}
+
+fn pad(n: &Node, footprint: &Node) -> Option<PadFile> {
     let kind = match n.arg(1)? {
         "smd" => PadKind::Smd,
         "thru_hole" => PadKind::Tht,
@@ -217,6 +229,7 @@ fn pad(n: &Node) -> Option<PadFile> {
         pitch: None,
         number_step: None,
         edge: false,
+        zone_connect: zone_connect(n, kind).or_else(|| zone_connect(footprint, kind)),
     })
 }
 
@@ -337,6 +350,7 @@ fn same_template(a: &PadFile, b: &PadFile) -> bool {
         && a.roundrect_ratio == b.roundrect_ratio
         && a.drill == b.drill
         && a.layers == b.layers
+        && a.zone_connect == b.zone_connect
         && a.points.is_none()
         && b.points.is_none()
 }
@@ -394,7 +408,7 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
     let mut pads = Vec::new();
     for item in root.items().iter().skip(2) {
         if item.head() == Some("pad") {
-            pads.extend(pad(item));
+            pads.extend(pad(item, root));
         } else {
             graphics.extend(graphic(item));
         }
@@ -469,5 +483,21 @@ mod tests {
         assert_eq!(fp.clearance, Some(Length::mm(0.2)));
         let src = "(footprint \"R\" (pad \"1\" smd rect (at 0 0) (size 0.3 0.3) (layers \"F.Cu\") (clearance 0.3)))";
         assert_eq!(convert(&parse(src).unwrap()).unwrap().clearance, None);
+    }
+
+    #[test]
+    fn pad_zone_connect_overrides_the_footprint_setting() {
+        let src = "(footprint \"J\" (zone_connect 1) (pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\") (zone_connect 2)) (pad \"2\" smd rect (at 2 0) (size 1 1) (layers \"F.Cu\")) (pad \"3\" smd rect (at 4 0) (size 1 1) (layers \"F.Cu\") (zone_connect 0)) (pad \"4\" thru_hole circle (at 6 0) (size 1 1) (drill 0.5) (layers \"*.Cu\") (zone_connect 3)))";
+        let fp = convert(&parse(src).unwrap()).unwrap();
+        let modes: Vec<Option<PadConnection>> = fp.pads.iter().map(|p| p.zone_connect).collect();
+        assert_eq!(
+            modes,
+            [
+                Some(PadConnection::Solid),
+                Some(PadConnection::Relief),
+                Some(PadConnection::None),
+                Some(PadConnection::Relief)
+            ]
+        );
     }
 }

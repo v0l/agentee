@@ -766,8 +766,15 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         if let Some(m) = z.find("min_thickness").and_then(|m| m.num(0)) {
             e.insert("min_width".into(), json!(mm(m)));
         }
-        if z.find("connect_pads").is_some_and(|c| c.arg(0).is_none()) {
+        let connect = z.find("connect_pads").map(|c| c.arg(0));
+        if connect == Some(Some("no")) {
+            e.insert("pad_connection".into(), json!("none"));
+        }
+        if matches!(connect, Some(None | Some("thru_hole_only"))) {
             e.insert("pad_connection".into(), json!("relief"));
+            if connect == Some(Some("thru_hole_only")) {
+                e.insert("relief_tht_only".into(), json!(true));
+            }
             let fill = z.find("fill");
             let setting = |key: &str| fill.and_then(|f| f.find(key)).and_then(|g| g.num(0));
             if let Some(g) = setting("thermal_gap") {
@@ -1107,6 +1114,11 @@ mod tests {
         assert_eq!(relief.spoke_width, Some(agentee_core::units::Length::mm(0.3)));
         let solid = zone("yes ");
         assert_eq!(solid.pad_connection, None);
+        let tht = zone("thru_hole_only ");
+        assert_eq!(tht.pad_connection, Some(agentee_core::layout::PadConnection::Relief));
+        assert!(tht.relief_tht_only && !relief.relief_tht_only);
+        let none = zone("no ");
+        assert_eq!(none.pad_connection, Some(agentee_core::layout::PadConnection::None));
     }
 
     #[test]
