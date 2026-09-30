@@ -765,6 +765,7 @@ struct Board2 {
     spread: f64,
     depth: EdgeDepth,
     edges: std::sync::Arc<EdgeIndex>,
+    flex_edges: std::sync::Arc<EdgeIndex>,
     silk: Vec<WShape>,
 }
 
@@ -808,6 +809,7 @@ const SPECTRAL_ROUNDS: usize = 60;
 const GLOBAL_CROSSING: f64 = 0.02;
 const DEPTH_CELL: f64 = 0.5;
 const EDGE_CELL: f64 = 1.0;
+const FLEX_RAD: f64 = 6.0;
 const GRID_MARGIN: f64 = 20.0;
 
 #[derive(Clone, Copy)]
@@ -982,11 +984,12 @@ impl EdgeIndex {
             let n = ring.len();
             for k in 0..n {
                 let (a, b) = (ring[k], ring[(k + n - 1) % n]);
-                let (x0, x1) = (a[0].min(b[0]) - reach, a[0].max(b[0]) + reach);
-                let (y0, y1) = (a[1].min(b[1]) - reach, a[1].max(b[1]) + reach);
+                let e = ring[(k + 1) % n];
+                let (x0, x1) = (a[0].min(e[0]) - reach, a[0].max(e[0]) + reach);
+                let (y0, y1) = (a[1].min(e[1]) - reach, a[1].max(e[1]) + reach);
                 for y in cell(y0, 1, ny)..=cell(y1, 1, ny) {
                     for x in cell(x0, 0, nx)..=cell(x1, 0, nx) {
-                        near[y * nx + x].push((a, b));
+                        near[y * nx + x].push((a, e));
                     }
                 }
                 for row in rows.iter_mut().take(cell(a[1].max(b[1]), 1, ny) + 1).skip(cell(
@@ -1023,16 +1026,17 @@ impl EdgeIndex {
         Some(odd == 1)
     }
 
-    fn clear(&self, p: P, gap: f64) -> Option<bool> {
-        if gap > self.reach {
+    fn near(&self, p: P, reach: f64) -> Option<&[(P, P)]> {
+        if reach > self.reach {
             return None;
         }
         let (x, y) = (self.cell(p[0], 0)?, self.cell(p[1], 1)?);
-        Some(
-            self.near[y * self.nx + x]
-                .iter()
-                .all(|(a, b)| geom::point_segment_distance(p, *a, *b) >= gap),
-        )
+        Some(&self.near[y * self.nx + x])
+    }
+
+    fn clear(&self, p: P, gap: f64) -> Option<bool> {
+        let near = self.near(p, gap)?;
+        Some(near.iter().all(|(a, b)| geom::point_segment_distance(p, *a, *b) >= gap))
     }
 }
 
@@ -1553,11 +1557,6 @@ impl<'a> Placer<'a> {
         p.mlcc_len?;
         let (ka, kb) = p.ends?;
         let t = st.transform();
-        let rings: Vec<Vec<P>> = [ka, kb]
-            .iter()
-            .flat_map(|k| p.pads[*k].outline.iter())
-            .map(|r| r.iter().map(|v| t.apply(*v)).collect())
-            .collect();
         let (a, b) = (t.apply(p.pads[ka].c), t.apply(p.pads[kb].c));
         let c = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
         let reach = geom::dist(a, b) + p.local.size()[0].max(p.local.size()[1]);
@@ -1568,13 +1567,29 @@ impl<'a> Placer<'a> {
             && c[1] - bb.min[1] > zone + reach
             && bb.max[1] - c[1] > zone + reach
             && self.b.cutouts.is_empty();
-        let clear = deep || self.b.depth.at(c) > zone + reach || self.edge_gap(c) > zone + reach;
+        let clear = deep
+            || self.b.depth.at(c) > zone + reach
+            || match self.b.flex_edges.near(c, zone + reach) {
+                Some(near) => {
+                    near.iter().all(|(s, e)| geom::point_segment_distance(c, *s, *e) > zone + reach)
+                }
+                None => self.edge_gap(c) > zone + reach,
+            };
         if clear && self.holes.iter().all(|(h, r)| geom::dist(*h, c) > zone + reach + r) {
             return None;
         }
+        let rings: Vec<Vec<P>> = [ka, kb]
+            .iter()
+            .flat_map(|k| p.pads[*k].outline.iter())
+            .map(|r| r.iter().map(|v| t.apply(*v)).collect())
+            .collect();
         let rad = rings.iter().flatten().map(|v| geom::dist(*v, c)).fold(0.0, f64::max);
         let mut best: Option<(f64, P)> = None;
-        for (s, e) in self.board_edge().segments() {
+        let segments: Vec<(P, P)> = match self.b.flex_edges.near(c, zone + rad) {
+            Some(near) => near.to_vec(),
+            None => self.board_edge().segments().collect(),
+        };
+        for (s, e) in segments {
             let bound = geom::point_segment_distance(c, s, e) - rad;
             if bound >= best.map_or(zone, |b| b.0.min(zone)) {
                 continue;
@@ -1872,6 +1887,11 @@ pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRes
                 .max(board.rules.min_copper_to_edge.to_mm())
                 .max(FIDUCIAL_TO_EDGE)
                 + EDGE_CELL,
+        )),
+        flex_edges: std::sync::Arc::new(EdgeIndex::new(
+            geom::BoardEdge::new(input.outline, input.cutouts),
+            &ob,
+            board.rules.flex_zone.to_mm() + FLEX_RAD,
         )),
         silk: input
             .silk
