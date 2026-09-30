@@ -70,6 +70,12 @@ Both solvers run through wgpu (Vulkan, Metal or DX12) and fall back to the CPU o
 { "mcpServers": { "agentee": { "command": "agentee", "args": ["mcp", "/path/to/project"] } } }
 ```
 
+## Agent skill
+
+[skills/agentee/SKILL.md](skills/agentee/SKILL.md) teaches an agent the edit, check, render loop,
+the order to build a design in, and how to iterate on sims without burning GPU hours. Copy or
+link the `skills/agentee` directory into your agent's skills folder.
+
 ## What check knows
 
 - Stackup order, layer thicknesses, dielectric constants, finished thickness.
