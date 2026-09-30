@@ -688,4 +688,20 @@ mod tests {
         }
         assert!(reciprocity(&point).0 < 0.01 && reciprocity(&impedance).0 < 0.01);
     }
+
+    #[test]
+    fn dispersive_lossy_line_stays_reciprocal() {
+        if crate::gpu::gpu().is_none() {
+            return;
+        }
+        let r = run_line_with(20.0, 2.9, 1.51, 4.5, 0.02, 0.035, (0.05e9, 6e9), 0.12, true, &|m| {
+            m.ports[1].r = 25.0;
+        });
+        let (d, f) = reciprocity(&r);
+        eprintln!(
+            "Debye dielectric, skin-effect copper: worst |S21 - S12| {d:.5} at {:.2} GHz",
+            f / 1e9
+        );
+        assert!(d < 0.01, "{d} at {f}");
+    }
 }
