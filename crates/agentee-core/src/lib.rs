@@ -12,11 +12,11 @@ pub mod layout;
 pub mod project;
 pub mod rf;
 pub mod route;
-pub mod tune;
 pub mod schematic;
 pub mod sim;
 pub mod sparam;
 pub mod symbol;
+pub mod tune;
 pub mod units;
 
 pub use diag::{Diagnostic, Severity};
