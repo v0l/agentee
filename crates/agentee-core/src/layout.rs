@@ -1912,7 +1912,7 @@ fn check_silk(
             .map(|(p, q)| format!("{}.{}", p.reference, q.number))
             .collect();
         if !over.is_empty() {
-            d.warn(
+            d.error(
                 &at,
                 format!("`{}` sits on pads {}, it will be clipped", a.name, over.join(", ")),
             );
@@ -1926,12 +1926,12 @@ fn check_silk(
             .map(|(t, _)| t.text.as_str())
             .collect();
         if !hit.is_empty() {
-            d.warn(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
+            d.error(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
         }
         if outline.len() >= 3
             && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
         {
-            d.warn(&at, format!("`{}` runs off the board", a.name));
+            d.error(&at, format!("`{}` runs off the board", a.name));
         }
     }
     for (i, t) in texts.iter().enumerate() {
@@ -1968,7 +1968,13 @@ fn check_silk(
             }
             _ => String::new(),
         };
-        d.warn(&at, format!("`{}` {}{hint}", t.text, found.join(", ")));
+        let text: Vec<&str> = found.iter().map(|(_, s)| s.as_str()).collect();
+        let message = format!("`{}` {}{hint}", t.text, text.join(", "));
+        if found.iter().any(|(error, _)| *error) {
+            d.error(&at, message);
+        } else {
+            d.warn(&at, message);
+        }
     }
     fixes
 }
@@ -1986,11 +1992,11 @@ fn silk_issues(
     parts: &[Placed],
     vias: &[Via],
     outline: &[P],
-) -> Vec<String> {
+) -> Vec<(bool, String)> {
     let mut out = Vec::new();
     for (j, u) in texts.iter().enumerate() {
         if j != me && u.layer == t.layer && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP {
-            out.push(format!("crowds `{}` of {}", u.text, u.owner));
+            out.push((true, format!("crowds `{}` of {}", u.text, u.owner)));
         }
     }
     let side = t.layer.trim_end_matches(".SilkS");
@@ -2005,7 +2011,7 @@ fn silk_issues(
         .map(|(p, q)| format!("{}.{}", p.reference, q.number))
         .collect();
     if !pads.is_empty() {
-        out.push(format!("sits on pads {}, it will be clipped", pads.join(", ")));
+        out.push((true, format!("sits on pads {}, it will be clipped", pads.join(", "))));
     }
     let on_vias = vias
         .iter()
@@ -2015,7 +2021,10 @@ fn silk_issues(
         })
         .count();
     if on_vias > 0 {
-        out.push(format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }));
+        out.push((
+            true,
+            format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }),
+        ));
     }
     let crossed: Vec<&str> = parts
         .iter()
@@ -2038,10 +2047,10 @@ fn silk_issues(
         .map(|p| p.reference.as_str())
         .collect();
     if !crossed.is_empty() {
-        out.push(format!("crosses the silk outline of {}", crossed.join(", ")));
+        out.push((true, format!("crosses the silk outline of {}", crossed.join(", "))));
     }
     if outline.len() >= 3 && bx.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
-        out.push("runs off the board".into());
+        out.push((true, "runs off the board".into()));
     }
     let side = if t.layer.starts_with("B.") { "B" } else { "F" };
     let hidden: Vec<&str> = parts
@@ -2053,7 +2062,7 @@ fn silk_issues(
         .map(|(_, p)| p.reference.as_str())
         .collect();
     if !hidden.is_empty() {
-        out.push(format!("hides under the body of {}", hidden.join(", ")));
+        out.push((false, format!("hides under the body of {}", hidden.join(", "))));
     }
     out
 }
