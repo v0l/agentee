@@ -2184,10 +2184,12 @@ fn silk_issues(
     if !pads.is_empty() {
         out.push((true, format!("sits on pads {}, it will be clipped", pads.join(", "))));
     }
+    let face = if t.layer.starts_with("B.") { "B.Cu" } else { "F.Cu" };
     let on_vias = vias
         .iter()
         .filter(|v| {
-            near(&mut std::iter::once(v.at), v.diameter / 2.0)
+            v.hole.iter().any(|l| l == face)
+                && near(&mut std::iter::once(v.at), v.diameter / 2.0)
                 && (geom::point_in_polygon(v.at, bx)
                     || geom::polyline_polygon_distance(&[v.at, v.at], bx) < v.diameter / 2.0)
         })
@@ -2459,7 +2461,7 @@ fn watermark_occupancy(
             occ.block(&crate::drc::rings_bounds(&q.outlines), 0.05);
         }
     }
-    for v in vias {
+    for v in vias.iter().filter(|v| v.hole.contains(&cu)) {
         let mut b = Bounds::EMPTY;
         b.add_circle(v.at, v.diameter / 2.0);
         occ.block(&b, 0.05);

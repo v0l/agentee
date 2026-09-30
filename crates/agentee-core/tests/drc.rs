@@ -399,3 +399,24 @@ fn sdr_in6_ground_has_no_stubs_between_the_u3_antipads() {
     }
     assert!(copper([64.7, 43.7]));
 }
+
+#[test]
+fn the_hdi_coupon_checks_clean_with_microvias_in_its_bga_pads() {
+    let hdi = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/hdi");
+    let p = Project::load(&hdi).unwrap();
+    let errors: Vec<String> = p
+        .boards
+        .iter()
+        .flat_map(|b| b.diags.iter())
+        .chain(p.layouts.iter().flat_map(|l| l.diags.iter()))
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message.clone())
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    let layout = &p.layouts[0].item;
+    let count = |name: &str| layout.vias.iter().filter(|v| v.name == name).count();
+    assert_eq!(count("uv-top"), 10);
+    assert!(count("core") > 0 && count("std") > 0);
+    let silk = p.layouts[0].diags.iter().filter(|d| d.rule.as_deref() == Some("silk-text")).count();
+    assert_eq!(silk, 0);
+}

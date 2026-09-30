@@ -429,6 +429,7 @@ pub fn fab_rules_for(name: &str, s: &FabSetup) -> Option<Rules> {
             max_microvia_drill: mm(0.15),
             min_microvia_diameter: mm(0.25),
             min_hole_to_hole: mm(0.25),
+            min_via_hole_to_copper: mm(0.15),
             min_copper_to_edge: mm(0.3),
             min_bga_pad: mm(0.2),
             min_bga_pitch: mm(0.4),

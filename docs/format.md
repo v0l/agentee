@@ -216,7 +216,8 @@ interface via stubs (a blind via has no stub past its end layer, a backdrilled v
 `max_stub`), `hole-to-copper` and `aspect-ratio` over the hole's span, `hole-to-hole` only for
 holes whose spans share a dielectric, and `stacked-via`: two vias at one spot through the same
 dielectric are drilled twice, while vias meeting at one layer (a microvia on a buried via, or a
-stack of microvias) are stacked vias, allowed only with `stacked_microvias`. The DC, thermal
+stack of microvias) are stacked vias, allowed only with `stacked_microvias`. Silk text keeps off only the vias whose
+hole opens on its side, so a buried via under a label is fine. The DC, thermal
 and FDTD models run a barrel only between the via's first and last layer, the 2D viewer
 draws a via only when one of its layers is shown, rings it in its type's colour (through gold,
 blind teal, buried lavender, microvia cyan) with its two end layers' colours on the rim, and the 3D
@@ -299,7 +300,7 @@ stackups:
 | `min_via_drill`, `min_blind_via_drill` | 0.15 | mechanical drill |
 | `min_via_diameter`, `min_annular_ring` | 0.35, 0.1 | |
 | `min_track_width`, `min_clearance` | 0.075 | 3 mil lines for escape between 0.4 mm BGA balls |
-| `min_hole_to_hole` | 0.25 | |
+| `min_hole_to_hole`, `min_via_hole_to_copper` | 0.25, 0.15 | |
 | `min_bga_pad`, `min_bga_pitch` | 0.2, 0.4 | |
 | `max_aspect_ratio` | 10 | |
 
