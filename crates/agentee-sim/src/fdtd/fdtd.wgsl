@@ -34,6 +34,7 @@ struct Params {
 @group(0) @binding(10) var<storage, read> h_ro: array<f32>;
 @group(0) @binding(1) var<storage, read> coef_idx: array<u32>;
 @group(0) @binding(11) var<storage, read> coef_set: array<vec2<f32>>;
+@group(0) @binding(12) var<storage, read> psi_ro: array<f32>;
 @group(0) @binding(2) var<storage, read_write> psi: array<f32>;
 @group(0) @binding(3) var<storage, read> axes: array<f32>;
 @group(0) @binding(4) var<uniform> P: Params;
@@ -54,7 +55,6 @@ struct Params {
 @group(1) @binding(11) var<storage, read_write> debye_edge: array<f32>;
 @group(1) @binding(12) var<storage, read> debye_table: array<f32>;
 @group(1) @binding(13) var<storage, read_write> debye_state: array<f32>;
-@group(1) @binding(14) var<storage, read> extra: array<u32>;
 
 const STRIDE: u32 = 10u;
 
@@ -128,28 +128,6 @@ fn curl_e(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i
     e[f] = cf.x * e[f] + cf.y * curl_of_h(c, u, v, id, du, dv, pu, pv, i, j, k);
 }
 
-fn curl_e_fused(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) {
-    let f = c * P.nn + id;
-    let cf = coef_at(f);
-    if cf.y == 0.0 { return; }
-    let cb = abs(cf.y);
-    let old = e[f];
-    let curl = curl_of_h(c, u, v, id, du, dv, pu, pv, i, j, k);
-    if cf.y > 0.0 {
-        e[f] = cf.x * old + cb * curl;
-        return;
-    }
-    let x = extra[f];
-    let kind = x >> 29u;
-    let slot = x & 0x1fffffffu;
-    if kind == 2u { sheet_before(slot, old); }
-    e[f] = cf.x * old + cb * curl;
-    if kind == 1u { debye_after(slot, f, old, cb); }
-    if kind == 2u { sheet_after(slot); }
-    if kind == 3u { source_at(slot); }
-    if kind == 4u { inductor_at(slot); }
-}
-
 fn curl_of_h(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32) -> f32 {
     let hv = h_ro[v * P.nn + id] - h_ro[v * P.nn + id - du];
     let hu = h_ro[u * P.nn + id] - h_ro[u * P.nn + id - dv];
@@ -204,18 +182,150 @@ fn update_e(@builtin(global_invocation_id) g: vec3<u32>) {
     curl_e(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
 }
 
-@compute @workgroup_size(64, 4, 1)
-fn update_e_fused(@builtin(global_invocation_id) g: vec3<u32>) {
-    let i = g.z;
-    let j = g.y;
-    let k = g.x;
-    if i >= P.n0 || j >= P.n1 || k >= P.n2 { return; }
+const TK: u32 = 64u;
+const TJ: u32 = 4u;
+const SEG: u32 = 4u;
+
+const PLANE: u32 = 3u * (TJ + 1u) * (TK + 1u);
+
+var<workgroup> hs: array<f32, 2u * PLANE>;
+
+fn hs_at(c: u32, a: u32, b: u32) -> u32 {
+    return (c * (TJ + 1u) + a) * (TK + 1u) + b;
+}
+
+fn h_step(c: u32, u: u32, v: u32, id: u32, du: u32, dv: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32, own: bool) -> f32 {
+    let ev = e_ro[v * P.nn + id + du] - e_ro[v * P.nn + id];
+    let eu = e_ro[u * P.nn + id + dv] - e_ro[u * P.nn + id];
+    var t1 = ev * axv(u, pu, 0u);
+    var t2 = eu * axv(v, pv, 0u);
+    if P.pml > 0u && (edge_zone(u, pu) || edge_zone(v, pv)) {
+        let su = slotv(u, pu, 9u);
+        if su >= 0 {
+            let q = psi_at(1u, c, u, i, j, k, u32(su));
+            let p = axv(u, pu, 6u) * psi_ro[q] + axv(u, pu, 7u) * ev * axv(u, pu, 2u);
+            if own { psi[q] = p; }
+            t1 += p;
+        }
+        let sv = slotv(v, pv, 9u);
+        if sv >= 0 {
+            let q = psi_at(1u, c, v, i, j, k, u32(sv));
+            let p = axv(v, pv, 6u) * psi_ro[q] + axv(v, pv, 7u) * eu * axv(v, pv, 2u);
+            if own { psi[q] = p; }
+            t2 += p;
+        }
+    }
+    return h_ro[c * P.nn + id] - P.k_mu * (t1 - t2);
+}
+
+fn h_next(c: u32, i: u32, j: u32, k: u32, own: bool) -> f32 {
     let sx = P.n1 * P.n2;
     let sy = P.n2;
     let id = i * sx + j * sy + k;
-    curl_e_fused(0u, 1u, 2u, id, sy, 1u, j, k, i, j, k);
-    curl_e_fused(1u, 2u, 0u, id, 1u, sx, k, i, i, j, k);
-    curl_e_fused(2u, 0u, 1u, id, sx, sy, i, j, i, j, k);
+    let xi = i + 1u < P.n0;
+    let yj = j + 1u < P.n1;
+    let zk = k + 1u < P.n2;
+    if c == 0u && yj && zk { return h_step(0u, 1u, 2u, id, sy, 1u, j, k, i, j, k, own); }
+    if c == 1u && zk && xi { return h_step(1u, 2u, 0u, id, 1u, sx, k, i, i, j, k, own); }
+    if c == 2u && xi && yj { return h_step(2u, 0u, 1u, id, sx, sy, i, j, i, j, k, own); }
+    return h_ro[c * P.nn + id];
+}
+
+fn e_step(c: u32, u: u32, v: u32, id: u32, pu: u32, pv: u32, i: u32, j: u32, k: u32, hv: f32, hu: f32) {
+    let f = c * P.nn + id;
+    let cf = coef_at(f);
+    if cf.y == 0.0 { return; }
+    var t1 = hv * axv(u, pu, 1u);
+    var t2 = hu * axv(v, pv, 1u);
+    if P.pml > 0u && (edge_zone(u, pu) || edge_zone(v, pv)) {
+        let su = slotv(u, pu, 8u);
+        if su >= 0 {
+            let q = psi_at(0u, c, u, i, j, k, u32(su));
+            let p = axv(u, pu, 4u) * psi_ro[q] + axv(u, pu, 5u) * hv * axv(u, pu, 3u);
+            psi[q] = p;
+            t1 += p;
+        }
+        let sv = slotv(v, pv, 8u);
+        if sv >= 0 {
+            let q = psi_at(0u, c, v, i, j, k, u32(sv));
+            let p = axv(v, pv, 4u) * psi_ro[q] + axv(v, pv, 5u) * hu * axv(v, pv, 3u);
+            psi[q] = p;
+            t2 += p;
+        }
+    }
+    e[f] = cf.x * e_ro[f] + cf.y * (t1 - t2);
+}
+
+fn fused_step(parity: u32, w: vec3<u32>, l: vec3<u32>) {
+    let n = state[2u + parity];
+    if all(w == vec3<u32>(0u)) && all(l == vec3<u32>(0u)) {
+        state[3u - parity] = n + 1u;
+        state[0] = n + 1u;
+    }
+    let lk = l.x;
+    let lj = l.y;
+    let k = w.x * TK + lk;
+    let j = w.y * TJ + lj;
+    let i0 = w.z * SEG;
+    let i1 = min(i0 + SEG, P.n0);
+    let live = k < P.n2 && j < P.n1;
+    let sx = P.n1 * P.n2;
+    let sy = P.n2;
+    let a = lj + 1u;
+    let b = lk + 1u;
+    var prev_y = 0.0;
+    var prev_z = 0.0;
+    if live && i0 > 0u {
+        prev_y = h_next(1u, i0 - 1u, j, k, false);
+        prev_z = h_next(2u, i0 - 1u, j, k, false);
+    }
+    for (var i = i0; i < i1; i++) {
+        let o = (i & 1u) * PLANE;
+        if live {
+            let id = i * sx + j * sy + k;
+            for (var c = 0u; c < 3u; c++) {
+                let v = h_next(c, i, j, k, true);
+                h[c * P.nn + id] = v;
+                hs[o + hs_at(c, a, b)] = v;
+            }
+            if lj == 0u && j > 0u {
+                hs[o + hs_at(0u, 0u, b)] = h_next(0u, i, j - 1u, k, false);
+                hs[o + hs_at(2u, 0u, b)] = h_next(2u, i, j - 1u, k, false);
+            }
+        }
+        let cj = w.y * TJ + lk;
+        if lj == 1u && lk < TJ && cj < P.n1 && w.x > 0u {
+            let ck = w.x * TK - 1u;
+            hs[o + hs_at(0u, lk + 1u, 0u)] = h_next(0u, i, cj, ck, false);
+            hs[o + hs_at(1u, lk + 1u, 0u)] = h_next(1u, i, cj, ck, false);
+        }
+        workgroupBarrier();
+        if live {
+            let id = i * sx + j * sy + k;
+            let hx = hs[o + hs_at(0u, a, b)];
+            let hy = hs[o + hs_at(1u, a, b)];
+            let hz = hs[o + hs_at(2u, a, b)];
+            let hx_j = hs[o + hs_at(0u, a - 1u, b)];
+            let hz_j = hs[o + hs_at(2u, a - 1u, b)];
+            let hx_k = hs[o + hs_at(0u, a, b - 1u)];
+            let hy_k = hs[o + hs_at(1u, a, b - 1u)];
+            e_step(0u, 1u, 2u, id, j, k, i, j, k, hz - hz_j, hy - hy_k);
+            e_step(1u, 2u, 0u, id, k, i, i, j, k, hx - hx_k, hz - prev_z);
+            e_step(2u, 0u, 1u, id, i, j, i, j, k, hy - prev_y, hx - hx_j);
+            prev_y = hy;
+            prev_z = hz;
+        }
+    }
+}
+
+@compute @workgroup_size(TK, TJ, 1)
+fn step_even(@builtin(workgroup_id) w: vec3<u32>, @builtin(local_invocation_id) l: vec3<u32>) {
+    fused_step(0u, w, l);
+}
+
+@compute @workgroup_size(TK, TJ, 1)
+fn step_odd(@builtin(workgroup_id) w: vec3<u32>, @builtin(local_invocation_id) l: vec3<u32>) {
+    fused_step(1u, w, l);
 }
 
 const SHEET: u32 = 16u;
@@ -224,14 +334,13 @@ const SHEET: u32 = 16u;
 fn sheet_pre(@builtin(global_invocation_id) g: vec3<u32>) {
     let s = g.x;
     if s >= P.sheets { return; }
-    sheet_before(s, e[bitcast<u32>(sheet[s * SHEET])]);
+    let b = s * SHEET;
+    sheet_before(s, e[bitcast<u32>(sheet[b])], h_ro[bitcast<u32>(sheet[b + 1u])], h_ro[bitcast<u32>(sheet[b + 2u])]);
 }
 
-fn sheet_before(s: u32, old: f32) {
+fn sheet_before(s: u32, old: f32, ha: f32, hb: f32) {
     let b = s * SHEET;
     sheet[b + 12u] = old;
-    let ha = h_ro[bitcast<u32>(sheet[b + 1u])];
-    let hb = h_ro[bitcast<u32>(sheet[b + 2u])];
     let aa = sheet[b + 7u] + ha * ha;
     let bb = sheet[b + 8u] + hb * hb;
     let ab = sheet[b + 9u] + ha * hb;
@@ -250,6 +359,15 @@ fn sheet_before(s: u32, old: f32) {
     }
     sheet[b + 10u] = scale * aa / sum;
     sheet[b + 11u] = scale * bb / sum;
+}
+
+@compute @workgroup_size(64, 1, 1)
+fn sheet_fix(@builtin(global_invocation_id) g: vec3<u32>) {
+    let s = g.x;
+    if s >= P.sheets { return; }
+    let b = s * SHEET;
+    sheet_before(s, e_ro[bitcast<u32>(sheet[b])], h_ro[bitcast<u32>(sheet[b + 1u])], h_ro[bitcast<u32>(sheet[b + 2u])]);
+    sheet_after(s);
 }
 
 @compute @workgroup_size(64, 1, 1)
@@ -324,6 +442,14 @@ fn debye_post(@builtin(global_invocation_id) g: vec3<u32>) {
     debye_after(s, f, debye_edge[s * 3u + 2u], coef_at(f).y);
 }
 
+@compute @workgroup_size(64, 1, 1)
+fn debye_fix(@builtin(global_invocation_id) g: vec3<u32>) {
+    let s = debye_index(g);
+    if s >= P.debye { return; }
+    let f = bitcast<u32>(debye_edge[s * 3u]);
+    debye_after(s, f, e_ro[f], coef_at(f).y);
+}
+
 fn debye_after(s: u32, f: u32, old: f32, cb: f32) {
     let dd = debye_edge[s * 3u + 1u];
     let np = u32(debye_table[0]);
@@ -349,15 +475,14 @@ fn pulse(t: f32) -> f32 {
 fn lumped(@builtin(global_invocation_id) g: vec3<u32>) {
     let i = g.x;
     if i < P.sources {
-        source_at(i);
+        source_at(i, step());
     }
     if i < P.inductors {
         inductor_at(i);
     }
 }
 
-fn source_at(i: u32) {
-    let n = step();
+fn source_at(i: u32, n: u32) {
     let t = (f32(n) + 0.5) * P.dt;
     let id = u32(source[i * 3u]);
     let comp = u32(source[i * 3u + 2u]);
