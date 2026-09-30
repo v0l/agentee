@@ -1285,34 +1285,7 @@ impl LayoutFile {
             }
         }
 
-        let courtyards: Vec<(Bounds, bool)> = parts
-            .iter()
-            .map(|p| {
-                let mut cy = p.footprint.courtyard("F");
-                if cy.is_empty() {
-                    cy = p.footprint.courtyard("B");
-                }
-                let t = p.transform();
-                let mut b = Bounds::EMPTY;
-                if !cy.is_empty() {
-                    for c in [cy.min, cy.max, [cy.min[0], cy.max[1]], [cy.max[0], cy.min[1]]] {
-                        b.add(t.apply(c));
-                    }
-                }
-                (b, p.bottom)
-            })
-            .collect();
-        for i in 0..parts.len() {
-            for j in i + 1..parts.len() {
-                let ((a, sa), (b, sb)) = (&courtyards[i], &courtyards[j]);
-                if sa == sb && !a.is_empty() && !b.is_empty() && a.overlaps(b) {
-                    d.error(
-                        format!("part {}", parts[i].reference),
-                        format!("courtyard overlaps {}", parts[j].reference),
-                    );
-                }
-            }
-        }
+        check_courtyards(&parts, d);
 
         let cutouts: Vec<(Vec<String>, Vec<P>)> = self
             .cutouts
@@ -2165,6 +2138,173 @@ fn free_spot(
                     && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
             })
     })
+}
+
+struct Courtyard {
+    part: usize,
+    side: String,
+    poly: Vec<P>,
+    bounds: Bounds,
+}
+
+fn chain_loops(mut open: Vec<Vec<P>>) -> Vec<Vec<P>> {
+    let near = |a: P, b: P| geom::dist(a, b) < 1e-3;
+    let mut out = Vec::new();
+    while let Some(mut cur) = open.pop() {
+        loop {
+            let end = *cur.last().unwrap();
+            if cur.len() > 2 && near(cur[0], end) {
+                cur.pop();
+                break;
+            }
+            if let Some(j) = open.iter().position(|p| near(p[0], end)) {
+                let next = open.swap_remove(j);
+                cur.extend_from_slice(&next[1..]);
+            } else if let Some(j) = open.iter().position(|p| near(*p.last().unwrap(), end)) {
+                let next = open.swap_remove(j);
+                cur.extend(next.into_iter().rev().skip(1));
+            } else {
+                break;
+            }
+        }
+        if cur.len() >= 3 {
+            out.push(cur);
+        }
+    }
+    out
+}
+
+fn courtyards_of(pi: usize, p: &Placed) -> Vec<Courtyard> {
+    let tf = p.transform();
+    let mut out = Vec::new();
+    for side in ["F", "B"] {
+        let layer = format!("{side}.CrtYd");
+        let mut closed = Vec::new();
+        let mut open = Vec::new();
+        for g in p.footprint.graphics.iter().filter(|g| g.layer == layer) {
+            let mut path: Vec<P> =
+                crate::footprint::graphic_path(g).into_iter().map(|q| tf.apply(q)).collect();
+            if path.len() < 2 {
+                continue;
+            }
+            let shut = match &g.shape {
+                crate::graphic::Shape::Rect { .. } | crate::graphic::Shape::Circle { .. } => true,
+                crate::graphic::Shape::Polyline { closed, .. } => *closed,
+                _ => false,
+            };
+            if shut {
+                if geom::dist(path[0], *path.last().unwrap()) < 1e-9 {
+                    path.pop();
+                }
+                closed.push(path);
+            } else {
+                open.push(path);
+            }
+        }
+        closed.extend(chain_loops(open));
+        let placed_side = p.flip_layer(&layer).trim_end_matches(".CrtYd").to_string();
+        for poly in closed.into_iter().filter(|c| c.len() >= 3) {
+            let mut bounds = Bounds::EMPTY;
+            poly.iter().for_each(|q| bounds.add(*q));
+            out.push(Courtyard { part: pi, side: placed_side.clone(), poly, bounds });
+        }
+    }
+    out
+}
+
+fn overlap_area(a: &[P], b: &[P]) -> f64 {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    a.to_vec()
+        .overlay(&b.to_vec(), OverlayRule::Intersect, FillRule::NonZero)
+        .iter()
+        .map(|shape| {
+            shape
+                .iter()
+                .enumerate()
+                .map(|(k, r)| {
+                    let area = crate::contour::area(r).abs();
+                    if k == 0 { area } else { -area }
+                })
+                .sum::<f64>()
+        })
+        .sum()
+}
+
+fn check_courtyards(parts: &[Placed], d: &mut Diags) {
+    const MIN_AREA: f64 = 1e-4;
+    let courts: Vec<Courtyard> =
+        parts.iter().enumerate().flat_map(|(i, p)| courtyards_of(i, p)).collect();
+    let mut overlapping: Vec<(usize, usize)> = Vec::new();
+    for (i, a) in courts.iter().enumerate() {
+        for b in &courts[i + 1..] {
+            if a.part == b.part
+                || a.side != b.side
+                || !a.bounds.overlaps(&b.bounds)
+                || overlapping.contains(&(a.part.min(b.part), a.part.max(b.part)))
+            {
+                continue;
+            }
+            let area = overlap_area(&a.poly, &b.poly);
+            if area > MIN_AREA {
+                overlapping.push((a.part.min(b.part), a.part.max(b.part)));
+                d.error(
+                    format!("part {}", parts[a.part].reference),
+                    format!(
+                        "courtyard overlaps {} on {}.CrtYd by {area:.3} mm2",
+                        parts[b.part].reference, a.side
+                    ),
+                );
+            }
+        }
+    }
+    let mut holes: Vec<(usize, String, Option<String>, Vec<P>)> = Vec::new();
+    for (pi, p) in parts.iter().enumerate() {
+        if p.footprint_name.starts_with("MountingHole") {
+            let own: Vec<&Courtyard> = courts.iter().filter(|c| c.part == pi).collect();
+            if own.is_empty() {
+                for pad in p.pads.iter().filter(|q| q.drill.is_some()) {
+                    for o in &pad.outlines {
+                        holes.push((pi, format!("mounting hole {}", p.reference), None, o.clone()));
+                    }
+                }
+            }
+            for c in own {
+                let name = format!("mounting hole {}", p.reference);
+                holes.push((pi, name, Some(c.side.clone()), c.poly.clone()));
+            }
+            continue;
+        }
+        for pad in p.pads.iter().filter(|q| q.kind == PadKind::Npth) {
+            for o in &pad.outlines {
+                holes.push((pi, format!("hole {}.{}", p.reference, pad.number), None, o.clone()));
+            }
+        }
+    }
+    let mut reported: Vec<(usize, usize)> = Vec::new();
+    for (hp, name, side, poly) in &holes {
+        let mut hb = Bounds::EMPTY;
+        poly.iter().for_each(|q| hb.add(*q));
+        for c in &courts {
+            let pair = (c.part.min(*hp), c.part.max(*hp));
+            if c.part == *hp
+                || side.as_ref() == Some(&c.side)
+                || !c.bounds.overlaps(&hb)
+                || overlapping.contains(&pair)
+                || reported.contains(&(c.part, *hp))
+            {
+                continue;
+            }
+            if overlap_area(&c.poly, poly) > MIN_AREA {
+                reported.push((c.part, *hp));
+                d.error(
+                    format!("part {}", parts[c.part].reference),
+                    format!("courtyard on {}.CrtYd covers the {name}", c.side),
+                );
+            }
+        }
+    }
 }
 
 fn is_interior_join(t: &Track, end: P) -> bool {

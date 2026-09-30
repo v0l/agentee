@@ -102,3 +102,44 @@ fn silk_text_off_the_board_or_over_a_via_is_an_error() {
     let e = errors(&p);
     assert!(e.iter().any(|t| t.contains("silk R2") && t.contains("prints over 1 via")), "{e:?}");
 }
+
+#[test]
+fn courtyards_overlap_by_their_outline_on_the_same_side() {
+    let e = errors(&project(RESISTORS, "", &placed([10.0, 10.0], [11.5, 10.0], "")));
+    assert!(e.iter().any(|t| t.contains("part R1: courtyard overlaps R2 on F.CrtYd")), "{e:?}");
+
+    let e = errors(&project(RESISTORS, "", &placed([10.0, 10.0], [11.86, 10.0], "")));
+    assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
+
+    let bottom = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\n\n\
+                  [[footprints]]\nref = \"R2\"\nat = [11.5, 10]\nside = \"bottom\"\n";
+    let e = errors(&project(RESISTORS, "", bottom));
+    assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
+
+    let turned = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\nrotation = 45\n\n\
+                  [[footprints]]\nref = \"R2\"\nat = [11.9, 11.2]\n";
+    let e = errors(&project(RESISTORS, "", turned));
+    assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
+}
+
+#[test]
+fn a_courtyard_over_a_mounting_hole_is_an_error_on_either_side() {
+    let parts = &[("R1", "R"), ("R2", "R"), ("H1", "MountingHole_Pad")];
+    let hole = "\n[[footprints]]\nref = \"H1\"\nat = [20, 10]\n";
+    let under = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\n\n\
+                 [[footprints]]\nref = \"R2\"\nat = [21, 10]\nside = \"bottom\"\n";
+    let e = errors(&project(parts, "", &format!("{under}{hole}")));
+    assert!(
+        e.iter().any(|t| t.contains("part R2: courtyard on B.CrtYd covers the mounting hole H1")),
+        "{e:?}"
+    );
+
+    let beside = under.replace("side = \"bottom\"\n", "");
+    let e = errors(&project(parts, "", &format!("{beside}{hole}")));
+    assert!(e.iter().any(|t| t.contains("courtyard overlaps") && t.contains("H1")), "{e:?}");
+    assert!(!e.iter().any(|t| t.contains("covers the mounting hole")), "{e:?}");
+
+    let clear = under.replace("[21, 10]", "[24, 10]");
+    let e = errors(&project(parts, "", &format!("{clear}{hole}")));
+    assert!(!e.iter().any(|t| t.contains("courtyard")), "{e:?}");
+}
