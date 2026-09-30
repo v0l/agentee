@@ -13,7 +13,7 @@ mod pour;
 
 pub use pour::{
     FillCase, FillFile, FillKey, ZonesCase, capture_fill_cases, take_fill_cases, take_zones_cases,
-    to_file as fill_file,
+    to_file as fill_file, without_fills,
 };
 
 pub(crate) const DRC_EPSILON: f64 = 5e-4;
@@ -1507,6 +1507,9 @@ impl LayoutFile {
                 let (fill, touched) = match fresh.or(hit.as_ref()) {
                     Some(f) => spec.stored(&items, f),
                     None if pour::capturing() => spec.stored(&items, &FillFile::default()),
+                    None if pour::unfilled() => {
+                        spec.stored(&items, stored.unwrap_or(&FillFile::default()))
+                    }
                     None => fill_zone(
                         net,
                         layer,
@@ -1522,7 +1525,7 @@ impl LayoutFile {
                         spec.min_island_area,
                     ),
                 };
-                if fresh.is_none() && hit.is_none() && !pour::capturing() {
+                if fresh.is_none() && hit.is_none() && !pour::capturing() && !pour::unfilled() {
                     pour::cache(hash, &fill);
                 }
                 if stored.is_some() && fresh.is_none() {

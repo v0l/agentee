@@ -871,6 +871,30 @@ impl Project {
     pub fn count(&self, s: Severity) -> usize {
         self.diagnostics().iter().filter(|d| d.severity == s).count()
     }
+
+    pub fn relayout(&mut self, i: usize, text: &str) -> Result<(), String> {
+        let path = self.layouts[i].path.clone();
+        let file: LayoutFile =
+            parse(text).map_err(|(at, m)| format!("{}: {at}: {m}", path.display()))?;
+        let layout = &self.layouts[i].item;
+        let board =
+            self.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
+        let schematic = self
+            .schematics
+            .iter()
+            .find(|s| s.name == layout.schematic)
+            .ok_or("the layout's schematic is missing")?;
+        let cx = Context {
+            dir: path.parent().map(Path::to_path_buf).unwrap_or_default(),
+            board: &board.item,
+            schematic: &schematic.item,
+            footprints: self.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
+        };
+        let mut d = Diags::new(&file.name);
+        let item = file.resolve(&cx, &mut d);
+        self.layouts[i] = Entry { name: item.name.clone(), diags: tag(d, &path), path, item };
+        Ok(())
+    }
 }
 
 fn push<T>(e: &mut Entry<T>, severity: Severity, at: &str, message: String) {

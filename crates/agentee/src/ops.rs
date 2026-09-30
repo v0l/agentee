@@ -306,7 +306,18 @@ pub fn write_fills(p: &Project, name: &str) -> Result<Value, String> {
         return Err(format!("`{name}` is not a layout"));
     };
     let entry = &p.layouts[i];
-    let layout = &entry.item;
+    let path = &entry.path;
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (out, report) = with_fills(&text, &entry.item, Some(path))?;
+    std::fs::write(path, &out).map_err(|e| format!("{}: {e}", path.display()))?;
+    Ok(report)
+}
+
+fn with_fills(
+    text: &str,
+    layout: &agentee_core::layout::Layout,
+    path: Option<&Path>,
+) -> Result<(String, Value), String> {
     #[derive(serde::Serialize)]
     struct Fills {
         fills: Vec<agentee_core::layout::FillFile>,
@@ -319,8 +330,6 @@ pub fn write_fills(p: &Project, name: &str) -> Result<Value, String> {
             .map(|(k, z)| agentee_core::layout::fill_file(k, z))
             .collect(),
     };
-    let path = &entry.path;
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
     doc.remove("fills");
     let mut out = doc.to_string().trim_end().to_string();
@@ -329,14 +338,14 @@ pub fn write_fills(p: &Project, name: &str) -> Result<Value, String> {
         out.push('\n');
         out += &toml::to_string(&fills).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, &out).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(json!({
+    let report = json!({
         "layout": layout.name,
         "file": path,
         "fills": fills.fills.len(),
         "refilled": layout.fill_keys.iter().filter(|k| !k.stored).count(),
         "points": fills.fills.iter().flat_map(|f| &f.rings).map(|r| r.len()).sum::<usize>(),
-    }))
+    });
+    Ok((out, report))
 }
 
 pub enum FootprintPick {
@@ -1046,7 +1055,7 @@ pub fn neck(
     opts: &agentee_core::neck::NeckOptions,
     write: bool,
 ) -> Result<Value, String> {
-    let p = load(root)?;
+    let mut p = agentee_core::layout::without_fills(|| load(root))?;
     let r = find(&p, &format!("pcb:{name}")).or_else(|_| find(&p, name))?;
     let ItemRef::Layout(i) = r else {
         return Err(format!("`{name}` is not a layout"));
@@ -1054,10 +1063,13 @@ pub fn neck(
     let entry = &p.layouts[i];
     let board = p.boards.iter().find(|b| b.name == entry.item.board).ok_or("board is missing")?;
     let result = agentee_core::neck::neck(&entry.item, &board.item, opts)?;
+    let layout_name = entry.name.clone();
+    let path = entry.path.clone();
+    let has_zones = !entry.item.zones.is_empty();
     let mut fills = Value::Null;
     if write && !result.edits.is_empty() {
-        let path = &entry.path;
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
         let tracks = doc
             .get_mut("tracks")
@@ -1093,13 +1105,17 @@ pub fn neck(
         for neck in added {
             tracks.push(neck);
         }
-        std::fs::write(path, doc.to_string()).map_err(|e| e.to_string())?;
-        if !entry.item.zones.is_empty() {
-            fills = write_fills(&load(root)?, name)?["fills"].clone();
+        let mut text = doc.to_string();
+        if has_zones {
+            p.relayout(i, &text)?;
+            let (filled, report) = with_fills(&text, &p.layouts[i].item, Some(&path))?;
+            text = filled;
+            fills = report["fills"].clone();
         }
+        std::fs::write(&path, text).map_err(|e| e.to_string())?;
     }
     Ok(json!({
-        "layout": entry.name,
+        "layout": layout_name,
         "written": write,
         "necked": result.necked,
         "failed": result.failed,
@@ -1374,11 +1390,13 @@ fn drop_testpoints(layout: &Path, dropped: &[Placed]) -> Result<(), String> {
 }
 
 pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value, String> {
+    use agentee_core::layout::without_fills;
     use agentee_core::testpoint as tp;
-    let p = load(root)?;
+    let p = without_fills(|| load(root))?;
     let i = layout_index(&p, name)?;
     let entry = &p.layouts[i];
     let layout = &entry.item;
+    let had_fills = layout.fill_keys.iter().any(|k| k.stored || k.stale);
     let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
     let mut spec = layout.test.clone();
     if let Some(side) = &o.side {
@@ -1498,7 +1516,7 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
         .map_err(|e| format!("{}: {e}", path.display()))?;
     std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| e.to_string())?;
 
-    let p = load(root)?;
+    let mut p = load(root)?;
     let i = layout_index(&p, &layout_name)?;
     let mut layout = p.layouts[i].item.clone();
     let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
@@ -1532,13 +1550,20 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
         agentee_core::route::route(&layout, board, &opts)?
     };
     append_route(&path, "agentee testpoints routes", &routed)?;
-    drop(p);
 
     let mut labels: std::collections::BTreeMap<String, Value> = Default::default();
-    let mut settled = None;
+    let mut sheets_changed = false;
+    let mut i = i;
     for pass in 0..2 {
-        let p = load(root)?;
-        let i = layout_index(&p, &layout_name)?;
+        if sheets_changed {
+            p = without_fills(|| load(root))?;
+            i = layout_index(&p, &layout_name)?;
+        } else {
+            let text =
+                std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let carried = with_fills(&text, &p.layouts[i].item, None)?.0;
+            without_fills(|| p.relayout(i, &carried))?;
+        }
         let mut dropped_now = false;
         if pass == 0 {
             let unjoined = unjoined(&p.layouts[i].item, &placed);
@@ -1548,6 +1573,7 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
             if !dropped.is_empty() {
                 drop_testpoints(&path, &dropped)?;
                 dropped_now = true;
+                sheets_changed = true;
             }
             for (r, net, ..) in &dropped {
                 failed.push(json!({ "net": net, "reason": format!("the router found no path from {r} to the net's copper, so it was taken out again") }));
@@ -1592,20 +1618,21 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
                 std::fs::write(&path, doc.to_string()).map_err(|e| e.to_string())?;
             }
         }
-        if !dropped_now {
-            settled = Some(p);
-        }
         if fixes.is_empty() && !dropped_now {
             break;
         }
     }
-    let p = match settled {
-        Some(p) => p,
-        None => load(root)?,
-    };
-    let i = layout_index(&p, &layout_name)?;
-    let refilled = if p.layouts[i].item.fill_keys.iter().any(|k| k.stored || k.stale) {
-        Some(write_fills(&p, &layout_name)?)
+    let refilled = if had_fills {
+        if sheets_changed {
+            p = without_fills(|| load(root))?;
+            i = layout_index(&p, &layout_name)?;
+        }
+        let text =
+            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        p.relayout(i, &text)?;
+        let (out, report) = with_fills(&text, &p.layouts[i].item, Some(&path))?;
+        std::fs::write(&path, out).map_err(|e| format!("{}: {e}", path.display()))?;
+        Some(report)
     } else {
         None
     };
