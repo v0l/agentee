@@ -3,7 +3,7 @@ description = "1x1 70 MHz to 6 GHz SDR: AD9364, Artix-7 XC7A50T and an EZ-USB FX
 fab = "jlcpcb"
 
 [outline]
-size = [90, 60]
+size = [65, 45]
 corner_radius = 1.5
 
 [stackup]

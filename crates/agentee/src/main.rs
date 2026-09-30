@@ -268,6 +268,25 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Add a test pad to each net that has no probe access: a TestPoint part in the schematic,
+    /// a footprint on the probe side near the net's copper, and a routed track (and via) to it
+    Testpoints {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Nets to give a test pad, globs allowed, comma separated; default the [test] nets
+        #[arg(long, value_delimiter = ',')]
+        nets: Vec<String>,
+        /// Probe side, F or B; default the [test] side (B)
+        #[arg(long)]
+        side: Option<String>,
+        /// Grid the pads sit on and the least spacing between them, mm
+        #[arg(long, default_value_t = 2.54)]
+        pitch: f64,
+        /// List the spots without writing any file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Trace calculators
     Calc {
         #[command(subcommand)]
@@ -649,6 +668,14 @@ fn run(cli: Cli) -> Result<bool, String> {
             print_json(&r);
             Ok(ok)
         }
+        Cmd::Testpoints { name, project, nets, side, pitch, dry_run } => {
+            let opts = ops::TestpointOptions { nets, side, pitch, write: !dry_run };
+            let r = ops::testpoints(&project, &name, &opts)?;
+            let ok = r["failed"].as_array().is_none_or(|f| f.is_empty())
+                && r["unrouted"].as_array().is_none_or(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
+        }
         Cmd::Docs => {
             print!("{FORMAT}");
             Ok(true)
@@ -657,6 +684,7 @@ fn run(cli: Cli) -> Result<bool, String> {
 }
 
 fn main() -> ExitCode {
+    agentee_core::version::set_build(env!("CARGO_PKG_VERSION"), env!("AGENTEE_BUILD_ID"));
     match run(Cli::parse()) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::from(1),

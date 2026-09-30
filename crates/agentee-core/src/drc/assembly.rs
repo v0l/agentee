@@ -1,7 +1,8 @@
+use super::courtyard::{BodyFrom, body_outlines};
 use super::{Category, Ctx, Report, Rule, Setup, is_smd};
 use crate::diag::Severity;
 use crate::footprint::{PadKind, PadShape};
-use crate::geom;
+use crate::geom::{self, P};
 use crate::layout::Placed;
 use crate::units::Length;
 use std::collections::BTreeSet;
@@ -15,6 +16,15 @@ pub static RULES: &[Rule] = &[
         when: "placed parts",
         applies: with_parts,
         check: part_to_edge,
+    },
+    Rule {
+        id: "part-body-to-edge",
+        category: Category::Assembly,
+        severity: Severity::Info,
+        summary: "a part body (fab outline, else courtyard, else pads) closer than min_body_to_edge to the board outline, or past it; skips `overhang = true` footprints",
+        when: "placed parts",
+        applies: with_parts,
+        check: part_body_to_edge,
     },
     Rule {
         id: "fiducials",
@@ -124,6 +134,63 @@ fn part_to_edge(cx: &Ctx, r: &mut Report) {
                 format!(
                     "pad {pad} is {} from the board edge, keep parts {} in so depaneling does not crack them",
                     mm(gap),
+                    mm(need)
+                ),
+            );
+        }
+    }
+}
+
+fn ring_edge_gap(ring: &[P], outline: &[P]) -> Option<f64> {
+    if ring.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
+        return None;
+    }
+    let (n, m) = (ring.len(), outline.len());
+    let mut best = f64::MAX;
+    for i in 0..n {
+        for j in 0..m {
+            best = best.min(geom::segment_segment_distance(
+                ring[i],
+                ring[(i + 1) % n],
+                outline[j],
+                outline[(j + 1) % m],
+            ));
+        }
+    }
+    Some(best)
+}
+
+fn part_body_to_edge(cx: &Ctx, r: &mut Report) {
+    if cx.outline.len() < 3 {
+        return;
+    }
+    let need = cx.board.rules.min_body_to_edge.to_mm();
+    for p in cx.parts.iter().filter(|p| !is_marker(p) && !p.footprint.overhang) {
+        if p.footprint.pads.iter().any(|f| f.edge) {
+            continue;
+        }
+        let (from, rings) = body_outlines(p);
+        let gaps: Vec<Option<f64>> = rings.iter().map(|o| ring_edge_gap(o, cx.outline)).collect();
+        let at = format!("part {}", p.reference);
+        if from != BodyFrom::Pads && gaps.iter().any(Option::is_none) {
+            r.emit(
+                at,
+                format!(
+                    "its {} reaches past the board edge; keep bodies {} in, or set `overhang = true` on a connector footprint meant to hang over the edge",
+                    from.name(),
+                    mm(need)
+                ),
+            );
+            continue;
+        }
+        let gap = gaps.into_iter().flatten().fold(f64::MAX, f64::min);
+        if gap + 1e-6 < need {
+            r.emit(
+                at,
+                format!(
+                    "its {} is {} from the board edge; assembly DFM guides keep part bodies {} in so depaneling does not crack them",
+                    from.name(),
+                    mm((gap * 1000.0).round() / 1000.0),
                     mm(need)
                 ),
             );

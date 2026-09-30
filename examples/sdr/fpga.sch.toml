@@ -9,7 +9,7 @@ no_connect = [
   "U1.C13", "U1.E12", "U1.E13", "U1.E11", "U1.D11", "U1.D14", "U1.D15", "U1.F12", "U1.F13", "U1.E16", "U1.D16",
   "U1.F15", "U1.E15", "U1.H11", "U1.G12", "U1.H12", "U1.H13", "U1.G14", "U1.F14", "U1.H16", "U1.G16", "U1.J15",
   "U1.J16", "U1.H14", "U1.G15", "U1.G11",
-  "U1.L5", "U1.M2", "U1.M1", "U1.P5", "U1.P4", "U1.P3", "U1.R3", "U1.T2",
+  "U1.L5", "U1.L4", "U1.M4", "U1.P5", "U1.P4", "U1.P3", "U1.R3", "U1.T2",
   "U1.B7", "U1.A7", "U1.B6", "U1.B5", "U1.A5", "U1.A4", "U1.C7", "U1.C6", "U1.D6", "U1.D5",
   "U1.B4", "U1.D4", "U1.C4", "U1.G5",
   "U1.K8", "U1.K7", "J4.7",
@@ -659,13 +659,13 @@ pins = ["U1.N1"]
 name = "FX_LVDS_D0_P"
 class = "LVDS"
 style = "label"
-pins = ["U1.M4"]
+pins = ["U1.M2"]
 
 [[nets]]
 name = "FX_LVDS_D0_N"
 class = "LVDS"
 style = "label"
-pins = ["U1.L4"]
+pins = ["U1.M1"]
 
 [[nets]]
 name = "AD_SPI_DI"

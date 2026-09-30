@@ -20,6 +20,7 @@ pub enum Category {
     Assembly,
     Zone,
     Signal,
+    Test,
 }
 
 pub struct Rule {
@@ -53,6 +54,10 @@ pub struct Setup {
     pub pairs: bool,
     pub match_groups: bool,
     pub interfaces: bool,
+    pub mlcc: bool,
+    pub small_chips: bool,
+    pub tall_parts: bool,
+    pub test_points: bool,
 }
 
 impl Setup {
@@ -88,6 +93,10 @@ impl Setup {
             pairs: !cx.pairs.is_empty(),
             match_groups: !cx.match_groups.is_empty(),
             interfaces: !cx.interfaces.is_empty(),
+            mlcc: !mechanical::mlcc_chips(cx.parts).is_empty(),
+            small_chips: mechanical::has_small_chips(cx.parts),
+            tall_parts: mechanical::has_tall_parts(cx.parts),
+            test_points: cx.parts.iter().any(crate::testpoint::is_test_point),
             ..Setup::of_board(cx.board)
         }
     }
@@ -106,6 +115,7 @@ pub struct Ctx<'a> {
     pub pairs: &'a [Pair],
     pub match_groups: &'a [MatchGroup],
     pub interfaces: &'a [Interface],
+    pub test: Option<&'a crate::testpoint::TestSpec>,
     found: &'a [Finding],
     items: OnceCell<Vec<Cu>>,
     grid: OnceCell<HashMap<(i64, i64), Vec<usize>>>,
@@ -195,6 +205,7 @@ impl<'a> Ctx<'a> {
             pairs: &[],
             match_groups: &[],
             interfaces: &[],
+            test: None,
             found: &[],
             items: OnceCell::new(),
             grid: OnceCell::new(),
@@ -205,6 +216,12 @@ impl<'a> Ctx<'a> {
     pub fn of_layout(board: &'a Board, l: &'a Layout) -> Ctx<'a> {
         Ctx::new(board, &l.copper, &l.outline, &l.parts, &l.tracks, &l.vias, &l.zones, &l.nets)
             .with_signals(&l.graphics, &l.pairs, &l.match_groups, &l.interfaces)
+            .with_test(&l.test)
+    }
+
+    pub fn with_test(mut self, test: &'a crate::testpoint::TestSpec) -> Ctx<'a> {
+        self.test = Some(test);
+        self
     }
 
     pub fn with_signals(
@@ -606,7 +623,9 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(mask::RULES)
         .chain(silk::RULES)
         .chain(assembly::RULES)
+        .chain(mechanical::RULES)
         .chain(signal::RULES)
+        .chain(test::RULES)
 }
 
 pub fn find(id: &str) -> Option<&'static Rule> {
@@ -689,8 +708,10 @@ mod copper;
 mod courtyard;
 mod drill;
 mod mask;
+mod mechanical;
 mod signal;
 mod silk;
+mod test;
 mod track;
 mod via;
 mod zone;

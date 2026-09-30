@@ -556,3 +556,211 @@ fn thin_board_silk_lines_are_flagged() {
     let wide = pcb.replace("0.1mm", "0.15mm");
     assert!(hits(&load(&Fixture { pcb: &wide, ..Default::default() }), "silk-width").is_empty());
 }
+
+const FAB_BODY: &str = r#"
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-2.0, -1.0]
+end = [2.0, 1.0]
+"#;
+
+#[test]
+fn part_bodies_keep_off_the_edge_unless_they_overhang() {
+    let fab = format!("{TWO_PADS}{FAB_BODY}");
+    let at = |fp: &str, x: f64| {
+        let fp = fp.to_string();
+        let p = load(&Fixture {
+            footprints: &[("TWO", fp.as_str())],
+            parts: &[("R1", "TWO", [x, 5.0])],
+            ..Default::default()
+        });
+        (hits(&p, "part-body-to-edge"), hits(&p, "part-to-edge"))
+    };
+    let (b, e) = at(&fab, 2.6);
+    assert!(
+        b.len() == 1 && b[0].0 == Severity::Info && b[0].1.contains("its fab outline is 0.6mm"),
+        "{b:?}"
+    );
+    assert!(e.is_empty(), "{e:?}");
+    let court = fab.replace("F.Fab", "F.CrtYd");
+    let (b, _) = at(&court, 2.6);
+    assert!(b.len() == 1 && b[0].1.contains("its courtyard is 0.6mm"), "{b:?}");
+    let (b, _) = at(TWO_PADS, 2.3);
+    assert!(b.len() == 1 && b[0].1.contains("its pad copper is 0.8mm"), "{b:?}");
+    assert!(at(&fab, 3.1).0.is_empty());
+    let (b, e) = at(&fab, 1.8);
+    assert!(
+        b.len() == 1 && b[0].1.contains("its fab outline reaches past the board edge"),
+        "{b:?}"
+    );
+    assert!(e.len() == 1 && e[0].0 == Severity::Warning, "{e:?}");
+    let (b, e) = at(&format!("overhang = true\n{fab}"), 1.8);
+    assert!(b.is_empty(), "{b:?}");
+    assert!(e.len() == 1 && e[0].1.contains("pad 1 is 0.3mm from the board edge"), "{e:?}");
+    let p = load(&Fixture {
+        footprints: &[("TWO", fab.as_str())],
+        parts: &[("R1", "TWO", [2.6, 5.0])],
+        board: "[drc]\nseverity = { \"part-body-to-edge\" = \"error\" }\n",
+        ..Default::default()
+    });
+    assert_eq!(hits(&p, "part-body-to-edge")[0].0, Severity::Error);
+}
+
+fn chip(pitch: [f64; 2], size: [f64; 2]) -> String {
+    format!(
+        "\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"roundrect\"\nat = [{}, {}]\nsize = [{}, {}]\ncount = 2\npitch = [{}, {}]\n",
+        -pitch[0] / 2.0,
+        -pitch[1] / 2.0,
+        size[0],
+        size[1],
+        pitch[0],
+        pitch[1]
+    )
+}
+
+const HOLE: &str = r#"
+[[pads]]
+number = ""
+kind = "npth"
+shape = "circle"
+at = [0, 0]
+size = [3.0, 3.0]
+drill = 3.0
+"#;
+
+#[test]
+fn ceramic_caps_in_the_flex_zone_are_noted_by_case_and_orientation() {
+    let h = chip([0.96, 0.0], [0.56, 0.62]);
+    let v = chip([0.0, 0.96], [0.62, 0.56]);
+    let big = chip([1.9, 0.0], [1.0, 1.45]);
+    let fps = [
+        ("C_0402_1005Metric", h.as_str()),
+        ("C_0402_1005Metric_V", v.as_str()),
+        ("C_0805_2012Metric", big.as_str()),
+        ("MountingHole_3mm", HOLE),
+    ];
+    let p = load(&Fixture {
+        footprints: &fps,
+        parts: &[
+            ("C1", "C_0402_1005Metric", [2.5, 10.0]),
+            ("C2", "C_0402_1005Metric", [15.0, 2.5]),
+            ("C3", "C_0805_2012Metric", [27.0, 10.0]),
+            ("C4", "C_0805_2012Metric", [6.8, 10.0]),
+            ("H1", "MountingHole_3mm", [15.0, 10.0]),
+            ("C5", "C_0402_1005Metric_V", [15.0, 13.0]),
+        ],
+        nets: &[],
+        ..Default::default()
+    });
+    let e = hits(&p, "mlcc-flex-zone-case");
+    assert!(
+        e.len() == 1
+            && e[0].0 == Severity::Info
+            && e[0]
+                .1
+                .contains("0805 ceramic capacitor 1.55mm from the board edge at [30.000, 10.000]"),
+        "{e:?}"
+    );
+    let w = hits(&p, "mlcc-flex-zone");
+    assert!(w.len() == 2, "{w:?}");
+    assert!(
+        w[0].1.contains("0402 ceramic capacitor 1.74mm from the board edge at [0.000, 10.000]"),
+        "{w:?}"
+    );
+    assert!(w[1].1.contains("from mounting hole H1 with its long axis pointing at it"), "{w:?}");
+    let i = hits(&p, "mlcc-flex-zone-info");
+    assert!(
+        i.len() == 1 && i[0].1.contains("1 small ceramic capacitors") && i[0].1.ends_with("C2"),
+        "{i:?}"
+    );
+
+    let p = load(&Fixture {
+        footprints: &fps,
+        parts: &[("C1", "C_0402_1005Metric", [2.5, 10.0])],
+        nets: &[],
+        pcb: "mlcc = false\n",
+        ..Default::default()
+    });
+    assert!(hits(&p, "mlcc-flex-zone").is_empty());
+    let s = agentee_core::drc::Setup::of(&agentee_core::drc::Ctx::of_layout(
+        &p.boards[0].item,
+        &p.layouts[0].item,
+    ));
+    assert!(!s.mlcc && s.small_chips && !s.tall_parts);
+    let opted = format!("mlcc = false\n{h}");
+    let p = load(&Fixture {
+        footprints: &[("C_0402_1005Metric", opted.as_str())],
+        parts: &[("C1", "C_0402_1005Metric", [2.5, 10.0])],
+        nets: &[],
+        ..Default::default()
+    });
+    assert!(hits(&p, "mlcc-flex-zone").is_empty());
+}
+
+#[test]
+fn small_chips_with_unbalanced_pads_risk_tombstoning() {
+    let even = chip([0.96, 0.0], [0.56, 0.62]);
+    let fixture = |fp: &str, pcb: &str| {
+        let fp = fp.to_string();
+        let pcb = pcb.to_string();
+        let p = load(&Fixture {
+            footprints: &[("R_0402_1005Metric", fp.as_str())],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb: &pcb,
+            ..Default::default()
+        });
+        hits(&p, "tombstone-risk")
+    };
+    let tracks = format!(
+        "{}{}",
+        track("A", "F.Cu", "[[9.52, 10.0], [7.0, 10.0]]"),
+        track("B", "F.Cu", "[[10.48, 10.0], [13.0, 10.0]]")
+    );
+    assert!(fixture(&even, &tracks).is_empty());
+    let odd = even.replace("count = 2\npitch = [0.96, 0]\n", "")
+        + "\n[[pads]]\nnumber = \"2\"\nkind = \"smd\"\nshape = \"rect\"\nat = [0.48, 0]\nsize = [0.7, 0.62]\n";
+    let t = fixture(&odd, &tracks);
+    assert!(
+        t.len() == 1
+            && t[0].0 == Severity::Info
+            && t[0].1.contains("pads 1 and 2 differ in size or shape"),
+        "{t:?}"
+    );
+    let t = fixture(&even, &format!("{tracks}{}", via("A", [9.52, 10.0])));
+    assert!(t.len() == 1 && t[0].1.contains("pad 1 has a via in it and pad 2 not"), "{t:?}");
+    let pour = format!(
+        "{}\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\n",
+        track("A", "F.Cu", "[[9.52, 10.0], [7.0, 10.0]]")
+    );
+    let t = fixture(&even, &pour);
+    assert!(
+        t.len() == 1 && t[0].1.contains("pad 2 has") && t[0].1.contains("and pad 1 0.06 mm2"),
+        "{t:?}"
+    );
+}
+
+#[test]
+fn small_chips_keep_a_tall_part_height_away() {
+    let tall = format!("height = \"4mm\"\n{TWO_PADS}{FAB_BODY}");
+    let small = chip([0.96, 0.0], [0.56, 0.62]);
+    let near = |x: f64, fp: &str| {
+        let fp = fp.to_string();
+        let p = load(&Fixture {
+            footprints: &[("TALL", fp.as_str()), ("R_0402_1005Metric", small.as_str())],
+            parts: &[("U1", "TALL", [10.0, 10.0]), ("R1", "R_0402_1005Metric", [x, 10.0])],
+            nets: &[],
+            ..Default::default()
+        });
+        hits(&p, "tall-part-shadow")
+    };
+    let w = near(13.3, &tall);
+    assert!(
+        w.len() == 1
+            && w[0].0 == Severity::Info
+            && w[0].1.contains("0402 chip 0.54mm from U1, which is 4mm tall"),
+        "{w:?}"
+    );
+    assert!(near(17.0, &tall).is_empty());
+    assert!(near(13.3, &format!("{TWO_PADS}{FAB_BODY}")).is_empty());
+}
