@@ -21,6 +21,7 @@ pub enum Category {
     Zone,
     Signal,
     Test,
+    Placement,
 }
 
 pub struct Rule {
@@ -626,6 +627,7 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(mechanical::RULES)
         .chain(signal::RULES)
         .chain(test::RULES)
+        .chain(placement::RULES)
 }
 
 pub fn find(id: &str) -> Option<&'static Rule> {
@@ -709,6 +711,7 @@ mod courtyard;
 mod drill;
 mod mask;
 mod mechanical;
+mod placement;
 mod signal;
 mod silk;
 mod test;
