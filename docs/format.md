@@ -670,7 +670,10 @@ group member short of its target it meanders the short side, on its longest stra
 anywhere along a series chain, with bumps that keep every other net's clearance and the board
 edge rule, and writes the new points into the tracks. `--nets` limits it, `--amplitude` caps the
 bump height and `--pitch` fixes the bump pitch (default three track widths, tighter where that is
-all that fits). Interfaces count too, in time as well as length: a pair over
+all that fits). On one leg of a pair it bumps the stretches where the legs already run apart
+first (breakouts and bends, where the mismatch comes from) and never leaves the leg running beside
+its partner off the class gap; a coupled stretch only takes bumps tall enough to clear the pair.
+Interfaces count too, in time as well as length: a pair over
 its `max_skew` in ps gets the short side lengthened by that delay; for `max_bus_skew` and
 `clock_window` the clock is lengthened until the latest data line falls inside its window and
 every data line short of the bus spread or the window's early edge is lengthened to the latest

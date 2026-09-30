@@ -244,3 +244,42 @@ fn same_net_tracks_on_top_of_each_other_are_an_error() {
     let m = messages(&project("", &folded));
     assert!(m.iter().any(|(_, t)| t.contains("turns back")), "{m:?}");
 }
+
+#[test]
+fn tuning_a_pair_leg_bumps_where_the_pair_is_uncoupled() {
+    let legs = [
+        ("USB_DP", "[[2.49, 4], [2.49, 1.5], [7, 1.5], [7, 4.85], [27.49, 4.85], [27.49, 4]]"),
+        ("USB_DN", "[[2.49, 6], [2.49, 5.15], [24, 5.15], [24, 8.65], [27.49, 8.65], [27.49, 6]]"),
+    ];
+    let tracks = |pts: &[String]| {
+        legs.iter()
+            .zip(pts)
+            .map(|((net, _), p)| {
+                format!("\n[[tracks]]\nnet = \"{net}\"\nlayer = \"F.Cu\"\npoints = {p}\n")
+            })
+            .collect::<String>()
+    };
+    let before: Vec<String> = legs.iter().map(|l| l.1.to_string()).collect();
+    let p = project("", &tracks(&before));
+    let m = messages(&p);
+    assert!(m.iter().any(|(s, t)| *s == Severity::Error && t.contains("lengthen USB_DP")), "{m:?}");
+    let opts = agentee_core::tune::TuneOptions::default();
+    let r = agentee_core::tune::tune(&p.layouts[0].item, &p.boards[0].item, &opts).unwrap();
+    assert!(r.failed.is_empty() && r.tuned.len() == 1, "{:?}", r.failed);
+    let mut after = before.clone();
+    for e in &r.edits {
+        let pts: Vec<String> = e.points.iter().map(|q| format!("[{}, {}]", q[0], q[1])).collect();
+        after[e.track] = format!("[{}]", pts.join(", "));
+    }
+    assert!(after[1] == before[1], "the long leg stays");
+    let added: Vec<&[f64; 2]> = r.edits[0]
+        .points
+        .iter()
+        .filter(|q| !before[0].contains(&format!("[{}, {}]", q[0], q[1])))
+        .collect();
+    assert!(!added.is_empty() && added.iter().all(|q| q[0] <= 7.0 + 1e-9), "{added:?}");
+    let p = project("", &tracks(&after));
+    let m = messages(&p);
+    assert!(!m.iter().any(|(_, t)| t.contains("gap, the class")), "{m:?}");
+    assert!(!m.iter().any(|(s, t)| *s == Severity::Error && t.contains("skew")), "{m:?}");
+}

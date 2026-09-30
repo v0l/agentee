@@ -162,6 +162,26 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
     let edge = board.rules.min_copper_to_edge.to_mm();
     let floor = board.rules.min_clearance.to_mm();
 
+    let partner_of = |n: usize| {
+        layout.pairs.iter().find_map(|p| {
+            if p.p == n {
+                Some(p.n)
+            } else if p.n == n {
+                Some(p.p)
+            } else {
+                None
+            }
+        })
+    };
+    let gap_of = |n: usize| {
+        board
+            .netclasses
+            .iter()
+            .find(|c| c.name == layout.nets[n].class)
+            .and_then(|c| c.diff_gap)
+            .map(|g| g.to_mm())
+    };
+
     let mut shortfall: std::collections::HashMap<Vec<usize>, f64> =
         std::collections::HashMap::new();
     for mut d in demands {
@@ -170,10 +190,18 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
             let names: Vec<&str> = d.tie.iter().map(|&n| layout.nets[n].name.as_str()).collect();
             d.why = format!("{}, {cut:.3} mm less to stay matched to {}", d.why, names.join("+"));
         }
+        let legs: Vec<(usize, usize, f64)> = d
+            .nets
+            .iter()
+            .filter_map(|&n| {
+                let other = partner_of(n).filter(|o| !d.nets.contains(o))?;
+                Some((n, other, gap_of(n)?))
+            })
+            .collect();
         let mut left = d.add;
         let mut meanders = 0;
         'grow: while left > 1e-4 {
-            let mut segs: Vec<(usize, usize, f64)> = layout
+            let segs: Vec<(usize, usize, f64)> = layout
                 .tracks
                 .iter()
                 .enumerate()
@@ -186,7 +214,27 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                         .collect::<Vec<_>>()
                 })
                 .collect();
-            segs.sort_by(|a, b| b.2.total_cmp(&a.2));
+            let beside = |ti: usize, line: &[P]| {
+                let t = &layout.tracks[ti];
+                legs.iter()
+                    .filter(|l| l.0 == t.net)
+                    .map(|&(_, other, gap)| {
+                        pair_runs(line, t.width, gap, &t.layer, other, layout, &points)
+                    })
+                    .fold((false, false), |a, b| (a.0 || b.0, a.1 || b.1))
+            };
+            let coupled: Vec<bool> = segs
+                .iter()
+                .map(|&(ti, k, _)| {
+                    let (at_gap, off_gap) = beside(ti, &points[ti][k..k + 2]);
+                    at_gap || off_gap
+                })
+                .collect();
+            let mut order: Vec<usize> = (0..segs.len()).collect();
+            order.sort_by(|&i, &j| {
+                coupled[i].cmp(&coupled[j]).then(segs[j].2.total_cmp(&segs[i].2))
+            });
+            let segs: Vec<(usize, usize, f64)> = order.into_iter().map(|i| segs[i]).collect();
             for (ti, k, _) in segs {
                 let t = &layout.tracks[ti];
                 let net = &layout.nets[t.net];
@@ -200,17 +248,18 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 };
                 let Some((pts, added)) = pitches.iter().find_map(|&pitch| {
                     fit(a, b, left, pitch, opts.amplitude, |line| {
-                        legal(
-                            line,
-                            t.width,
-                            &t.layer,
-                            t.net,
-                            net.clearance,
-                            floor,
-                            edge,
-                            &obstacles,
-                            &layout.outline,
-                        )
+                        !beside(ti, line).1
+                            && legal(
+                                line,
+                                t.width,
+                                &t.layer,
+                                t.net,
+                                net.clearance,
+                                floor,
+                                edge,
+                                &obstacles,
+                                &layout.outline,
+                            )
                     })
                 }) else {
                     continue;
@@ -253,6 +302,58 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
         e.track = layout.tracks[e.track].source;
     }
     Ok(out)
+}
+
+fn pair_runs(
+    line: &[P],
+    width: f64,
+    gap: f64,
+    layer: &str,
+    other: usize,
+    layout: &Layout,
+    points: &[Vec<P>],
+) -> (bool, bool) {
+    let (mut at_gap, mut off_gap) = (false, false);
+    for (ti, t) in layout.tracks.iter().enumerate() {
+        if t.net != other || t.layer != layer {
+            continue;
+        }
+        let want = gap + (width + t.width) / 2.0;
+        for s in line.windows(2) {
+            for o in points[ti].windows(2) {
+                let Some((overlap, sep)) = parallel_overlap(s[0], s[1], o[0], o[1]) else {
+                    continue;
+                };
+                if (sep - want).abs() <= 0.1 * gap + 0.005 {
+                    at_gap = true;
+                } else if sep < want + 2.0 * gap && overlap > 0.05 {
+                    off_gap = true;
+                }
+            }
+        }
+    }
+    (at_gap, off_gap)
+}
+
+fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)> {
+    let la = geom::dist(a0, a1);
+    let lb = geom::dist(b0, b1);
+    if la < 1e-9 || lb < 1e-9 {
+        return None;
+    }
+    let u = [(a1[0] - a0[0]) / la, (a1[1] - a0[1]) / la];
+    let cross = (u[0] * (b1[1] - b0[1]) - u[1] * (b1[0] - b0[0])).abs() / lb;
+    if cross > 0.02 {
+        return None;
+    }
+    let proj = |p: P| (p[0] - a0[0]) * u[0] + (p[1] - a0[1]) * u[1];
+    let (s0, s1) = (proj(b0).min(proj(b1)), proj(b0).max(proj(b1)));
+    let overlap = s1.min(la) - s0.max(0.0);
+    if overlap <= 0.0 {
+        return None;
+    }
+    let mid = [b0[0] - a0[0], b0[1] - a0[1]];
+    Some((overlap, (u[0] * mid[1] - u[1] * mid[0]).abs()))
 }
 
 fn interface_demands(ifaces: &[Interface], nets: &[LayoutNet]) -> Vec<(Demand, bool)> {
