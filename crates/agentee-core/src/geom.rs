@@ -131,6 +131,11 @@ impl<'a> BoardEdge<'a> {
         self.segments().map(|(c, d)| segment_segment_distance(a, b, c, d)).fold(f64::MAX, f64::min)
     }
 
+    pub fn holds(self, poly: &[P]) -> bool {
+        poly.iter().all(|p| self.contains(*p))
+            && self.cutouts.iter().all(|c| c.len() < 3 || polygon_distance(poly, c) > 0.0)
+    }
+
     pub fn polygon_distance(self, poly: &[P]) -> f64 {
         edges(poly).map(|(a, b)| self.segment_distance(a, b)).fold(f64::MAX, f64::min)
     }

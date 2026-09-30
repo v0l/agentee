@@ -902,3 +902,22 @@ fn the_router_goes_around_a_board_cutout() {
         .fold(f64::MAX, f64::min);
     assert!(closest >= 0.3 + 0.1 - 1e-6, "track centre {closest} from the edge");
 }
+
+#[test]
+fn silk_over_a_board_cutout_runs_off_the_board_and_the_watermark_avoids_it() {
+    let text = "\n[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [15.0, 10.0]\ntext = \"SLOT EDGE\"\nsize = 1.0\n";
+    let p = load(&Fixture { board: SLOT, pcb: text, ..Default::default() });
+    let e = hits(&p, "silk-text");
+    assert!(e.iter().any(|(_, m)| m.contains("runs off the board")), "{e:?}");
+    let slot = [[1.0, 1.0], [26.0, 1.0], [26.0, 19.0], [1.0, 19.0]]
+        .iter()
+        .map(|p| format!("[{}, {}]", p[0], p[1]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let wide = format!("[[outline.cutouts]]\npoints = [{slot}]\n");
+    let p = load(&Fixture { board: &wide, parts: &[], nets: &[], ..Default::default() });
+    let l = &p.layouts[0].item;
+    let w = l.watermark.as_ref().expect("a spot beside the cutout");
+    let edge = l.edge();
+    assert!(edge.holds(&w.outline()) && w.at[0] > 26.0, "watermark at {:?}", w.at);
+}

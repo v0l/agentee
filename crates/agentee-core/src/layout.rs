@@ -1458,7 +1458,7 @@ impl LayoutFile {
             &tracks,
             &graphics,
             &artwork,
-            &outline,
+            geom::BoardEdge::new(&outline, &board_cutouts),
             board.rules.min_silk_text_height.to_mm(),
             &mut found,
         );
@@ -1470,7 +1470,7 @@ impl LayoutFile {
             &vias,
             &graphics,
             &artwork,
-            &outline,
+            geom::BoardEdge::new(&outline, &board_cutouts),
             &mut found,
         );
         let mut silk = silk;
@@ -1895,7 +1895,7 @@ fn check_silk(
     tracks: &[Track],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
     min_height: f64,
     d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
@@ -1936,9 +1936,7 @@ fn check_silk(
         if !hit.is_empty() {
             d.add("silk-artwork", &at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
         }
-        if outline.len() >= 3
-            && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
-        {
+        if board_edge.is_closed() && a.polygons.iter().any(|r| !board_edge.holds(r)) {
             d.add("silk-artwork", &at, format!("`{}` runs off the board", a.name));
         }
     }
@@ -1957,13 +1955,13 @@ fn check_silk(
                 ),
             );
         }
-        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, outline);
+        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, vias, board_edge);
         if found.is_empty() {
             continue;
         }
         let hint = match (t.part != usize::MAX).then(|| parts.get(t.part)).flatten() {
             Some(p) if t.text == p.reference => {
-                let spot = free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, outline);
+                let spot = free_spot(t, p, &texts, &boxes, i, parts, vias, tracks, board_edge);
                 fixes.push(LabelFix {
                     reference: p.reference.clone(),
                     at: spot.map(|s| s.0),
@@ -1997,7 +1995,7 @@ fn silk_issues(
     boxes: &[Vec<P>],
     parts: &[Placed],
     vias: &[Via],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
 ) -> Vec<(bool, String)> {
     let mut out = Vec::new();
     for (j, u) in texts.iter().enumerate() {
@@ -2055,7 +2053,7 @@ fn silk_issues(
     if !crossed.is_empty() {
         out.push((true, format!("crosses the silk outline of {}", crossed.join(", "))));
     }
-    if outline.len() >= 3 && bx.iter().any(|c| !geom::point_in_polygon(*c, outline)) {
+    if board_edge.is_closed() && !board_edge.holds(bx) {
         out.push((true, "runs off the board".into()));
     }
     let side = if t.layer.starts_with("B.") { "B" } else { "F" };
@@ -2107,7 +2105,7 @@ fn free_spot(
     parts: &[Placed],
     vias: &[Via],
     tracks: &[Track],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
 ) -> Option<(P, f64)> {
     let mut b = Bounds::EMPTY;
     for q in &part.pads {
@@ -2165,7 +2163,7 @@ fn free_spot(
             ..t.clone()
         };
         let bx = trial.outline();
-        silk_issues(&trial, &bx, me, texts, boxes, parts, vias, outline).is_empty()
+        silk_issues(&trial, &bx, me, texts, boxes, parts, vias, board_edge).is_empty()
             && !tracks.iter().any(|tr| {
                 tr.layer == cu
                     && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
@@ -2262,18 +2260,16 @@ fn watermark_occupancy(
     boxes: &[Vec<P>],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
     margin: f64,
 ) -> Occupancy {
     let mut ob = Bounds::EMPTY;
-    outline.iter().for_each(|p| ob.add(*p));
+    board_edge.outline.iter().for_each(|p| ob.add(*p));
     let mut occ = Occupancy::new(&ob);
     for j in 0..occ.h {
         for i in 0..occ.w {
             let c = occ.center(i, j);
-            if !geom::point_in_polygon(c, outline)
-                || crate::drc::edge_distance(outline, c) < margin + WATERMARK_CELL
-            {
+            if !board_edge.contains(c) || board_edge.distance(c) < margin + WATERMARK_CELL {
                 occ.blocked[j * occ.w + i] = true;
             }
         }
@@ -2342,7 +2338,7 @@ fn place_watermark(
     vias: &[Via],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
-    outline: &[P],
+    board_edge: geom::BoardEdge,
     found: &mut crate::drc::Findings,
 ) -> (Option<SilkText>, Option<String>) {
     let text = crate::version::watermark();
@@ -2397,7 +2393,7 @@ fn place_watermark(
     let problems = |t: &SilkText| -> Vec<String> {
         let bx = t.outline();
         let mut out: Vec<String> =
-            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, vias, outline)
+            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, vias, board_edge)
                 .into_iter()
                 .map(|(_, s)| s)
                 .collect();
@@ -2418,9 +2414,9 @@ fn place_watermark(
         }) {
             out.push("overlaps silk artwork".into());
         }
-        if outline.len() >= 3
-            && bx.iter().all(|c| geom::point_in_polygon(*c, outline))
-            && bx.iter().any(|c| crate::drc::edge_distance(outline, *c) < margin)
+        if board_edge.is_closed()
+            && board_edge.holds(&bx)
+            && bx.iter().any(|c| board_edge.distance(*c) < margin)
         {
             out.push(format!("sits closer than {} to the board edge", Length::mm(margin)));
         }
@@ -2451,13 +2447,13 @@ fn place_watermark(
         None => vec![0.0, 90.0],
     };
     let mut ob = Bounds::EMPTY;
-    outline.iter().for_each(|p| ob.add(*p));
+    board_edge.outline.iter().for_each(|p| ob.add(*p));
     let corner = [ob.min[0], ob.max[1]];
     let round = |v: f64| (v * 100.0).round() / 100.0;
     let mut least: Option<(u32, SilkText)> = None;
     for layer in &layers {
         let occ = watermark_occupancy(
-            layer, parts, vias, &texts, &boxes, graphics, artwork, outline, margin,
+            layer, parts, vias, &texts, &boxes, graphics, artwork, board_edge, margin,
         );
         for &rot in &rotations {
             let (sin, cos) = rot.to_radians().sin_cos();
