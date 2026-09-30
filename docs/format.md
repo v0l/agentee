@@ -467,7 +467,8 @@ ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the
 to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
 It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
 the board edge, keeps new vias `min_hole_to_hole` from every drill, uses the class via to change
-layer (`--via` to override, `--via-cost` in mm of track), and never moves what is already there
+layer (`--via` to override, `--via-cost` in mm of track), charges `--bend-cost` mm of track for
+each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets
 it would cross, remembers the spot as congested, and those nets go back in the queue. The search
 steps in 45 degree directions and charges for every bend, so paths come out as straight runs with
