@@ -198,6 +198,13 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `pad-to-edge` | error | always | pad copper closer than `min_copper_to_edge` to the board outline; pads marked `edge = true` are exempt |
 | `edge-pad-reach` | warning | always | a pad marked `edge = true` that stops short of the board outline |
 | `starved-thermal` | warning | zones | a pad joined to a pour of its net over less than half its outline, by fewer than two spokes at least `min_track_width` wide, and with less copper in all than the pad's own width |
+| `part-to-edge` | warning | parts | SMD pads closer than `min_part_to_edge` to the outline, where depaneling stress cracks parts; skips fiducials, mounting holes and parts with `edge` pads |
+| `fiducials` | info | parts | no footprint named like `Fiducial` on the board |
+| `tooling-holes` | info | parts | no non-plated hole of 1.5 mm or more |
+| `bga-pad` | error | a BGA | BGA pads (16 or more round SMD pads) smaller than `min_bga_pad` |
+| `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
+| `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
+| `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
 
 An id that names no rule is a warning. The older checks described under Layout (clearance,
 shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.

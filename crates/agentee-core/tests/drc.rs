@@ -427,3 +427,72 @@ min_island_area = 0.0
         hits(&load(&Fixture { pcb: &full, ..Default::default() }), "starved-thermal").is_empty()
     );
 }
+
+fn bga(pitch: f64, pad: f64) -> String {
+    let mut s = String::new();
+    for (row, name) in ["A", "B", "C", "D"].iter().enumerate() {
+        s += &format!(
+            "\n[[pads]]\nnumber = \"{name}1\"\nkind = \"smd\"\nshape = \"circle\"\nat = [0, {}]\nsize = [{pad}, {pad}]\ncount = 4\npitch = [{pitch}, 0]\n",
+            row as f64 * pitch
+        );
+    }
+    s + "\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [-3, 0]\nsize = [0.5, 0.5]\ncount = 2\npitch = [0, 1]\n"
+}
+
+#[test]
+fn bga_pads_and_pitch_follow_the_fab() {
+    let fp = bga(0.5, 0.15);
+    let p = load(&Fixture {
+        footprints: &[("BGA", &fp)],
+        parts: &[("R1", "BGA", [10.0, 8.0])],
+        ..Default::default()
+    });
+    let e = hits(&p, "bga-pad");
+    assert!(e.len() == 1 && e[0].1.contains("are 0.15mm, under the fab minimum 0.2mm"), "{e:?}");
+    let w = hits(&p, "bga-pad-ratio");
+    assert!(w.len() == 1 && w[0].1.contains("(30%)"), "{w:?}");
+    assert!(hits(&p, "bga-pitch").is_empty());
+    let fp = bga(0.25, 0.125);
+    let p = load(&Fixture {
+        footprints: &[("BGA", &fp)],
+        parts: &[("R1", "BGA", [10.0, 8.0])],
+        ..Default::default()
+    });
+    let e = hits(&p, "bga-pitch");
+    assert!(
+        e.len() == 1 && e[0].1.contains("0.25mm ball pitch, finer than the assembler's 0.3mm"),
+        "{e:?}"
+    );
+    let p = load(&Fixture::default());
+    let s = agentee_core::drc::Setup::of(&agentee_core::drc::Ctx::of_layout(
+        &p.boards[0].item,
+        &p.layouts[0].item,
+    ));
+    assert!(!s.bga);
+}
+
+#[test]
+fn assembly_advisories() {
+    let fp = TWO_PADS
+        .replace("size = [1.0, 1.0]", "size = [1.0, 1.0]\nlayers = [\"F.Cu\", \"F.Paste\"]");
+    let p = load(&Fixture {
+        footprints: &[("TWO", &fp)],
+        parts: &[("R1", "TWO", [1.9, 5.0])],
+        ..Default::default()
+    });
+    let w = hits(&p, "paste-without-mask");
+    assert!(
+        w.len() == 1 && w[0].1.contains("pads 1, 2 of TWO have paste but no mask opening"),
+        "{w:?}"
+    );
+    let w = hits(&p, "part-to-edge");
+    assert!(
+        w.len() == 1
+            && w[0].0 == Severity::Warning
+            && w[0].1.contains("pad 1 is 0.4mm from the board edge"),
+        "{w:?}"
+    );
+    assert!(hits(&p, "pad-to-edge").is_empty());
+    assert_eq!(hits(&p, "fiducials")[0].0, Severity::Info);
+    assert_eq!(hits(&p, "tooling-holes")[0].0, Severity::Info);
+}
