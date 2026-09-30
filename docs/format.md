@@ -731,7 +731,8 @@ straight into the pad centre, at most the class `neckdown` long and no narrower 
 widest that keeps clearance, rounded down to 0.01 mm (or exactly `min_track_width` where rounding
 would drop under it and the unrounded width does not); the wide track starts at the first spot out
 from the pad where its full width keeps clearance (and, for a pad narrower than the track, outside
-the pad). Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+the pad). Pads of one net that touch, like a thermal pad built from several pad entries, count as
+one wide pad. Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
 each routed connection that uses vias is tried again on one layer at a time with the rest held
 fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
 vias of neighbouring parallel connections that change layer near each other are slid along their
