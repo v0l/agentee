@@ -833,3 +833,33 @@ fn disabled_silk_rules_skip_the_silk_text_search() {
     assert!(hits(&p, "silk-text").is_empty());
     assert!(p.layouts[0].item.label_fixes.is_empty());
 }
+
+#[test]
+fn a_relief_zone_joins_smd_pads_by_four_spokes() {
+    let fp = chip([0.96, 0.0], [0.56, 0.62]);
+    let zone = |extra: &str| {
+        format!(
+            "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\n{extra}"
+        )
+    };
+    let load_with = |pcb: &str| {
+        load(&Fixture {
+            footprints: &[("R_0402_1005Metric", fp.as_str())],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb,
+            ..Default::default()
+        })
+    };
+    let corner = [10.91, 10.46];
+    let p = load_with(&zone(""));
+    assert!(p.layouts[0].item.zones[0].filled(corner));
+    let p = load_with(&zone(
+        "pad_connection = \"relief\"\nrelief_gap = \"0.3mm\"\nspoke_width = \"0.3mm\"\n",
+    ));
+    let fill = &p.layouts[0].item.zones[0];
+    assert!(!fill.filled(corner));
+    assert!(fill.filled([10.91, 10.0]) && fill.filled([10.48, 10.46]));
+    assert!(fill.filled([11.4, 10.46]));
+    assert!(p.layouts[0].item.nets.iter().all(|n| n.unrouted == 0));
+    assert!(hits(&p, "starved-thermal").is_empty());
+}

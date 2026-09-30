@@ -583,6 +583,10 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # clearance = 0.25             # default: the net class clearance
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
 # min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
+# pad_connection = "relief"    # solid (default) | relief: SMD pads of the net join the pour by four
+                               # spokes across a gap, so they heat like a track-fed pad
+# relief_gap = "0.3mm"         # default: the zone clearance
+# spoke_width = "0.3mm"        # default: the net class track width, at least min_width
 
 [[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin
 layers = ["In1.Cu"]

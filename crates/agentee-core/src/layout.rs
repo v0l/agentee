@@ -134,6 +134,20 @@ pub struct ZoneFile {
     pub priority: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_island_area: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pad_connection: Option<PadConnection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relief_gap: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spoke_width: Option<Length>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PadConnection {
+    #[default]
+    Solid,
+    Relief,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1388,8 +1402,26 @@ impl LayoutFile {
                     d.error(&at, format!("`{layer}` is not a copper layer"));
                     continue;
                 }
-                let layer_cutouts: Vec<&Vec<P>> =
-                    cutouts.iter().filter(|(ls, _)| ls.contains(layer)).map(|(_, p)| p).collect();
+                let reliefs = if z.pad_connection.unwrap_or_default() == PadConnection::Relief {
+                    let min_width = z.min_width.map(Length::to_mm).unwrap_or(0.25);
+                    relief_cutouts(
+                        &items,
+                        &parts,
+                        net,
+                        layer,
+                        &poly,
+                        z.relief_gap.map(Length::to_mm).unwrap_or(clearance),
+                        z.spoke_width.map(Length::to_mm).unwrap_or(nets[net].width.max(min_width)),
+                    )
+                } else {
+                    Vec::new()
+                };
+                let layer_cutouts: Vec<&Vec<P>> = cutouts
+                    .iter()
+                    .filter(|(ls, _)| ls.contains(layer))
+                    .map(|(_, p)| p)
+                    .chain(&reliefs)
+                    .collect();
                 let (blockers, blocker_hashes): (Vec<&ZoneFill>, Vec<u64>) = zones
                     .iter()
                     .zip(&fill_keys)
@@ -3048,6 +3080,67 @@ fn arc_steps(r: f64) -> usize {
     let tol = 0.002f64.min(r * 0.5);
     ((std::f64::consts::PI / (1.0 - tol / r).clamp(-1.0, 1.0).acos()).ceil() as usize)
         .clamp(12, 180)
+}
+
+fn relief_cutouts(
+    items: &[Item],
+    parts: &[Placed],
+    net: usize,
+    layer: &str,
+    poly: &[P],
+    gap: f64,
+    spoke: f64,
+) -> Vec<Vec<P>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    use i_overlay::mesh::float::outline::offset::OutlineOffset;
+    use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
+    let mut zone = Bounds::EMPTY;
+    poly.iter().for_each(|p| zone.add(*p));
+    let ccw = |mut r: Vec<P>| {
+        if geom::signed_area(&r) < 0.0 {
+            r.reverse();
+        }
+        r
+    };
+    let mut out = Vec::new();
+    for it in items {
+        let (Owner::Pad(pi, k), Shape::Poly(rings)) = (it.owner, &it.shape) else { continue };
+        let part = &parts[pi];
+        if it.net != Some(net)
+            || part.pads[k].kind != PadKind::Smd
+            || !it.layers.iter().any(|l| l == layer)
+            || !(zone.overlaps(&it.bounds) || zone.contains(&it.bounds))
+            || gap <= 0.0
+        {
+            continue;
+        }
+        let pad_rotation = part.footprint.pads.get(k).map(|f| f.rotation).unwrap_or(0.0);
+        let u = part.transform().direction(geom::rotate([1.0, 0.0], pad_rotation));
+        let v = [-u[1], u[0]];
+        let c = it.bounds.center();
+        let [w, h] = it.bounds.size();
+        let reach = w.max(h) + gap + 1.0;
+        let half = spoke / 2.0;
+        let bar = |d: P, n: P| {
+            ccw(vec![
+                [c[0] - d[0] * reach - n[0] * half, c[1] - d[1] * reach - n[1] * half],
+                [c[0] + d[0] * reach - n[0] * half, c[1] + d[1] * reach - n[1] * half],
+                [c[0] + d[0] * reach + n[0] * half, c[1] + d[1] * reach + n[1] * half],
+                [c[0] - d[0] * reach + n[0] * half, c[1] - d[1] * reach + n[1] * half],
+            ])
+        };
+        let pad: Vec<Vec<P>> = rings.iter().cloned().map(ccw).collect();
+        let step = 2.0 * (1.0 - 0.002f64.min(gap * 0.5) / gap).acos();
+        let ring = pad.outline(&OutlineStyle::new(gap).line_join(LineJoin::Round(step)));
+        let mut clip = pad;
+        clip.push(bar(u, v));
+        clip.push(bar(v, u));
+        let pieces = ring.overlay(&clip, OverlayRule::Difference, FillRule::NonZero);
+        out.extend(pieces.into_iter().flatten().filter(|r| r.len() >= 3).map(ccw));
+    }
+    out
 }
 
 fn capsule(a: P, b: P, r: f64) -> Vec<P> {
