@@ -1315,7 +1315,7 @@ impl LayoutFile {
             &artwork,
             &outline,
             board.rules.min_silk_text_height.to_mm(),
-            d,
+            &mut found,
         );
 
         let mut nets = nets;
@@ -1703,7 +1703,7 @@ fn check_silk(
     artwork: &[Artwork],
     outline: &[P],
     min_height: f64,
-    d: &mut Diags,
+    d: &mut crate::drc::Findings,
 ) -> Vec<LabelFix> {
     let mut fixes = Vec::new();
     let mut texts: Vec<SilkText> =
@@ -1725,7 +1725,8 @@ fn check_silk(
             .map(|(p, q)| format!("{}.{}", p.reference, q.number))
             .collect();
         if !over.is_empty() {
-            d.error(
+            d.add(
+                "silk-artwork",
                 &at,
                 format!("`{}` sits on pads {}, it will be clipped", a.name, over.join(", ")),
             );
@@ -1739,19 +1740,20 @@ fn check_silk(
             .map(|(t, _)| t.text.as_str())
             .collect();
         if !hit.is_empty() {
-            d.error(&at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
+            d.add("silk-artwork", &at, format!("`{}` overlaps {}", a.name, hit.join(", ")));
         }
         if outline.len() >= 3
             && a.polygons.iter().flatten().any(|c| !geom::point_in_polygon(*c, outline))
         {
-            d.error(&at, format!("`{}` runs off the board", a.name));
+            d.add("silk-artwork", &at, format!("`{}` runs off the board", a.name));
         }
     }
     for (i, t) in texts.iter().enumerate() {
         let who = &t.owner;
         let at = format!("silk {who}");
         if t.size + 1e-9 < min_height {
-            d.warn(
+            d.add(
+                "silk-text-height",
                 &at,
                 format!(
                     "`{}` is {} tall, under the fab minimum {}",
@@ -1783,11 +1785,8 @@ fn check_silk(
         };
         let text: Vec<&str> = found.iter().map(|(_, s)| s.as_str()).collect();
         let message = format!("`{}` {}{hint}", t.text, text.join(", "));
-        if found.iter().any(|(error, _)| *error) {
-            d.error(&at, message);
-        } else {
-            d.warn(&at, message);
-        }
+        let rule = if found.iter().any(|(error, _)| *error) { "silk-text" } else { "silk-hidden" };
+        d.add(rule, &at, message);
     }
     fixes
 }
