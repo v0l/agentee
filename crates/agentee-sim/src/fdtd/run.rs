@@ -135,6 +135,45 @@ pub fn fused_update() -> bool {
     std::env::var("AGENTEE_FDTD_FUSED").is_ok_and(|v| v != "0")
 }
 
+const TIMESTAMPS: u32 = 4096;
+
+fn kernel_timer(g: &Gpu) -> Option<(wgpu::QuerySet, wgpu::Buffer)> {
+    let wanted = std::env::var("AGENTEE_FDTD_PROFILE").is_ok_and(|v| v != "0");
+    if !wanted || !g.device.features().contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_PASSES) {
+        return None;
+    }
+    let set = g.device.create_query_set(&wgpu::QuerySetDescriptor {
+        label: Some("kernel times"),
+        ty: wgpu::QueryType::Timestamp,
+        count: TIMESTAMPS,
+    });
+    let resolved = g.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("kernel times"),
+        size: TIMESTAMPS as u64 * 8,
+        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    Some((set, resolved))
+}
+
+fn report_kernel_times(g: &Gpu, resolved: &wgpu::Buffer, timed: &[usize], pipes: &[(usize, &str)]) {
+    let ticks: Vec<u64> = g.read(resolved, 2 * timed.len());
+    let ns = g.queue.get_timestamp_period() as f64;
+    let mut sums = vec![(0.0f64, 0usize); pipes.len()];
+    for (w, p) in ticks.chunks(2).zip(timed) {
+        sums[*p].0 += w[1].saturating_sub(w[0]) as f64 * ns / 1e3;
+        sums[*p].1 += 1;
+    }
+    let mut step = 0.0;
+    for ((sum, count), (tag, name)) in sums.iter().zip(pipes).filter(|(s, _)| s.1 > 0) {
+        let mean = sum / *count as f64;
+        step += if *tag == 2 { mean } else { mean / 2.0 };
+        let steps = ["even steps", "odd steps", "every step"][*tag];
+        eprintln!("fdtd kernel {name} ({steps}): {mean:.1} us over {count} dispatches");
+    }
+    eprintln!("fdtd kernel time per step: {step:.1} us");
+}
+
 pub fn run(
     sim: &Sim,
     driven: usize,
@@ -436,7 +475,7 @@ pub fn run(
                 }),
             ));
         }
-        (pipe, groups)
+        (pipe, groups, entry.to_string())
     };
     let make = |entry: &str, uses0: &[u32], uses1: &[u32]| make_with(entry, uses0, uses1, &group0);
     let grid = [(n[2] as u32).div_ceil(64), (n[1] as u32).div_ceil(4), n[0] as u32];
@@ -519,6 +558,8 @@ pub fn run(
     let mut peak: f64 = 0.0;
     let mut decay = 0.0;
     let pulse_end = (2.0 * t0 / sim.dt) as usize;
+    let timer = kernel_timer(g);
+    let mut timed_pipes = Vec::new();
     while steps < max_steps {
         let k = chunk.min(max_steps - steps);
         let mut enc = g.device.create_command_encoder(&Default::default());
@@ -526,7 +567,7 @@ pub fn run(
             let mut pass = enc.begin_compute_pass(&Default::default());
             for s in 0..k {
                 let parity = (steps + s) % 2;
-                for (tag, (pipe, groups), d) in &pipes {
+                for (p, (tag, (pipe, groups, _), d)) in pipes.iter().enumerate() {
                     if *tag != 2 && *tag != parity {
                         continue;
                     }
@@ -534,7 +575,16 @@ pub fn run(
                     for (gi, bg) in groups {
                         pass.set_bind_group(*gi, bg, &[]);
                     }
+                    let q = 2 * timed_pipes.len() as u32;
+                    let timed = timer.as_ref().filter(|_| steps == 0 && s >= 200 && q < TIMESTAMPS);
+                    if let Some((set, _)) = timed {
+                        pass.write_timestamp(set, q);
+                    }
                     pass.dispatch_workgroups(d[0], d[1], d[2]);
+                    if let Some((set, _)) = timed {
+                        pass.write_timestamp(set, q + 1);
+                        timed_pipes.push(p);
+                    }
                 }
             }
             let energy = &energy[(steps + k - 1) % 2];
@@ -544,7 +594,16 @@ pub fn run(
             }
             pass.dispatch_workgroups(1024, 1, 1);
         }
+        let timed = timer.as_ref().filter(|_| steps == 0 && !timed_pipes.is_empty());
+        if let Some((set, resolved)) = timed {
+            enc.resolve_query_set(set, 0..2 * timed_pipes.len() as u32, resolved, 0);
+        }
         g.queue.submit([enc.finish()]);
+        if let Some((_, resolved)) = timed {
+            let names: Vec<(usize, &str)> =
+                pipes.iter().map(|(tag, (_, _, name), _)| (*tag, name.as_str())).collect();
+            report_kernel_times(g, resolved, &timed_pipes, &names);
+        }
         steps += k;
         let part: Vec<f32> = g.read(&b_partial, 1024);
         let e: f64 = part.iter().map(|v| *v as f64).sum();
