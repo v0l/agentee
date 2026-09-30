@@ -1091,6 +1091,28 @@ fn kicad_fill(v: &Node) -> Option<ViaFill> {
     }
 }
 
+fn kicad_backdrill(v: &Node, a: usize, b: usize, copper: &[String]) -> Option<(usize, usize, f64)> {
+    ["backdrill", "tertiary_drill"].iter().find_map(|name| {
+        let d = v.find(name)?;
+        let size = d.find("size")?.num(0).filter(|s| *s > 0.0)?;
+        let layers: Vec<&str> =
+            d.find("layers")?.items().iter().skip(1).filter_map(Node::text).collect();
+        let pos = |l: &str| copper.iter().position(|c| c == l);
+        let (start, end) = match layers[..] {
+            [x, y] => (pos(x)?, pos(y)?),
+            _ => return None,
+        };
+        let (side, stop) = if start == a && end >= start {
+            (start, end + 1)
+        } else if start == b && end <= start {
+            (start, end.checked_sub(1)?)
+        } else {
+            return None;
+        };
+        (a < stop && stop < b).then_some((side, stop, size))
+    })
+}
+
 fn kicad_via(
     v: &Node,
     drill: f64,
@@ -1107,7 +1129,8 @@ fn kicad_via(
     let kind =
         if v.has_atom("micro") { ViaKind::Microvia } else { ViaKind::of_span(a, b, copper.len()) };
     let fill = kicad_fill(v);
-    if kind == ViaKind::Through && fill.is_none() {
+    let backdrill = kicad_backdrill(v, a, b, copper);
+    if kind == ViaKind::Through && fill.is_none() && backdrill.is_none() {
         return None;
     }
     let short = |k: usize| copper[k].trim_end_matches(".Cu").to_string();
@@ -1123,6 +1146,9 @@ fn kicad_via(
     if let Some(f) = fill {
         name += &format!("-{}", f.ipc4761());
     }
+    if let Some((side, stop, _)) = backdrill {
+        name += &format!("-bd{}-{}", short(side), short(stop));
+    }
     let mut e = json!({
         "name": name,
         "drill": mm(drill),
@@ -1133,6 +1159,9 @@ fn kicad_via(
     });
     if let Some(f) = fill {
         e["fill"] = json!(f);
+    }
+    if let Some((side, stop, size)) = backdrill {
+        e["backdrill"] = json!({ "from": copper[side], "to": copper[stop], "diameter": mm(size) });
     }
     Some(e)
 }
@@ -1276,6 +1305,29 @@ mod tests {
             "{:?}",
             b.notes
         );
+    }
+
+    #[test]
+    fn a_kicad_backdrill_keeps_the_layer_past_its_last_drilled_layer() {
+        let text = BOARD
+            .replace(
+                "(2 \"B.Cu\" signal)",
+                "(4 \"In1.Cu\" signal) (6 \"In2.Cu\" signal) (2 \"B.Cu\" signal)",
+            )
+            .replacen(
+                "  (segment",
+                "  (via (at 3 3) (size 0.6) (drill 0.3) (backdrill (size 0.5) (layers \"B.Cu\" \"In2.Cu\")) (layers \"F.Cu\" \"B.Cu\") (net 2))\n\
+                 (via (at 4 3) (size 0.6) (drill 0.3) (tertiary_drill (size 0.5) (layers \"F.Cu\" \"F.Cu\")) (layers \"F.Cu\" \"B.Cu\") (net 2))\n  (segment",
+                1,
+            );
+        let b = import_board(&text, None, "t").unwrap();
+        let bd = b.board.vias.iter().find(|v| v.name == "v0.3-0.6-bdB-In1").unwrap();
+        let d = bd.backdrill.as_ref().unwrap();
+        assert_eq!((d.from.as_str(), d.to.as_str()), ("B.Cu", "In1.Cu"));
+        assert!((d.diameter.unwrap().to_mm() - 0.5).abs() < 1e-9);
+        let top = b.board.vias.iter().find(|v| v.name == "v0.3-0.6-bdF-In1").unwrap();
+        assert_eq!(top.backdrill.as_ref().unwrap().to, "In1.Cu");
+        assert_eq!(b.layout.vias.len(), 2);
     }
 
     #[test]

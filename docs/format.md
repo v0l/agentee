@@ -1932,6 +1932,16 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 | `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept |
 | `symbols/` | one box symbol per footprint with a pin per pad number |
 
+KiCad vias keep their type: `micro` becomes a microvia, `blind` a blind or buried via by its span,
+and each distinct drill, pad, span, fill and backdrill becomes a board `[[vias]]` type. KiCad 9
+stores only a per-via `tenting`, solder mask rather than a via fill, which is left out, and has no
+backdrill or depth drill. The later format's `filling`, `capping`, `covering` and `plugging` map to
+the IPC-4761 `fill`, and its `backdrill` (from the top) and `tertiary_drill` (from the bottom)
+become `backdrill` at their `size`; KiCad lists the layers the backdrill removes, so `to` is the
+copper layer past the last of them. Neither has a controlled depth via, so an imported blind via
+is drilled mechanically: set `drill_kind = "controlled_depth"` on its type where the fab drills it
+by depth.
+
 Coordinates move so the outline starts at 0, 0. Teardrops and keepout areas are left out and
 reported. A class whose tracks run narrower than its width takes the narrowest one, since KiCad
 treats the class width as a default and agentee as a minimum. Clearances are checked with
