@@ -952,21 +952,37 @@ fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
     );
     ui.add_space(8.0);
     Line::new().legend("layers").show(ui);
-    let mut names: Vec<String> = l.copper.clone();
-    names.extend(
-        ["F.SilkS", "B.SilkS", "F.Fab", "F.CrtYd", "F.Mask", "Edge.Cuts", "Cutouts"]
-            .map(String::from),
-    );
-    ui.horizontal_wrapped(|ui| {
-        for n in &names {
-            if toggle(ui, n, st.pcb_layers.shows(n)).clicked() {
-                st.pcb_layers.toggle(n);
-            }
-        }
-        if toggle(ui, "ratsnest", st.ratsnest).clicked() {
-            st.ratsnest = !st.ratsnest;
-        }
-    });
+    let side = |a: &str, b: &str| vec![a.to_string(), b.to_string()];
+    let groups: [(&str, Vec<String>); 6] = [
+        ("copper", l.copper.clone()),
+        ("silk", side("F.SilkS", "B.SilkS")),
+        ("mask", side("F.Mask", "B.Mask")),
+        ("fab", side("F.Fab", "B.Fab")),
+        ("courtyard", side("F.CrtYd", "B.CrtYd")),
+        ("board", side("Edge.Cuts", "Cutouts")),
+    ];
+    for (group, names) in &groups {
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                Vec2::new(80.0, 20.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.set_min_width(80.0);
+                    ui.label(legend(*group))
+                },
+            );
+            ui.horizontal_wrapped(|ui| {
+                for n in names {
+                    if toggle(ui, n, st.pcb_layers.shows(n)).clicked() {
+                        st.pcb_layers.toggle(n);
+                    }
+                }
+                if *group == "board" && toggle(ui, "ratsnest", st.ratsnest).clicked() {
+                    st.ratsnest = !st.ratsnest;
+                }
+            });
+        });
+    }
     ui.add_space(6.0);
     let cols =
         [("net", 110.0), ("class", 64.0), ("width", 60.0), ("length", 66.0), ("state", 70.0)];
