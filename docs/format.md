@@ -230,7 +230,7 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `zone-islands` | info | always | fill islands that reach nothing of the zone's net and were removed |
 | `courtyard-overlap` | error | parts | courtyards of two parts on one side overlap by their outline |
 | `courtyard-hole` | error | parts | a courtyard that covers a mounting hole or a non-plated hole of another part |
-| `mask-web` | error | always | pads of different nets whose mask openings leave less than `min_mask_web`, one line per pair of parts |
+| `mask-web` | error | always | pads of different nets whose mask openings leave less than `min_mask_web`, one line per pair of parts; pads of one footprint with `mask_web = false` are skipped among themselves |
 | `silk-text` | error | always | silk text that crowds other text, sits on pads, prints over vias, crosses a silk outline or runs off the board; a reference gets a clear spot (`agentee silk` moves it there) |
 | `silk-hidden` | warning | always | silk text only hidden under another part's body |
 | `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
@@ -373,6 +373,8 @@ model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step
 model_offset = ["0mm", "0mm", "0mm"]   # optional, as in KiCad: model frame, Y up
 model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
+# mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
+                               # window, so min_mask_web is not checked between its own pads
 
 [[pads]]
 number = "1"
@@ -599,7 +601,9 @@ Two vias of one net at the same spot are an error too: the fab would drill the h
 Mask openings are the pad outlines, with no expansion, and vias are tented. Two openings of
 different nets (or no net) that overlap or leave a mask web under `min_mask_web` are an error,
 counted per part pair with the first place named. Pads of one fine pitch part are checked too: fix
-it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it.
+it in the footprint with narrower pads, or set a smaller `min_mask_web` when the fab allows it. A
+footprint with `mask_web = false` has its mask opened as one window over its pads (a gang
+opening), so pairs of its own pads are skipped; its pads are still checked against other parts.
 
 Artwork on a bottom layer is mirrored so it reads correctly from below. SVG fills and strokes are
 flattened to polygons; text in an SVG is ignored, so convert it to paths first. Silk text and

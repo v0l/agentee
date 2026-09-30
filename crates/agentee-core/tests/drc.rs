@@ -193,6 +193,20 @@ fn mask_openings_of_different_nets_need_a_web() {
     assert!(!e.iter().any(|t| t.contains("mask")), "{e:?}");
 }
 
+#[test]
+fn a_footprint_can_opt_out_of_the_mask_web_within_itself() {
+    let merged = format!("mask_web = false\n{TIGHT}");
+    let files = [("footprints/Tight2.fp.toml", merged.as_str())];
+    let sch = "\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"0\"\nat = [10.16, 20.32]\n\
+               footprint = \"Tight2\"\n\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n\
+               [[nets]]\nname = \"B\"\npins = [\"R1.2\"]\n";
+    let pcb = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\nlabel = { hide = true }\n";
+    let p = project_with(&files, &[], sch, pcb);
+    assert!(p.layouts[0].item.parts.iter().any(|q| !q.footprint.mask_web));
+    let e = errors(&p);
+    assert!(!e.iter().any(|t| t.contains("mask web")), "{e:?}");
+}
+
 const TWO_NETS: &str =
     "\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\n[[nets]]\nname = \"B\"\npins = [\"R2.1\"]\n";
 

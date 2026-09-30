@@ -9,7 +9,7 @@ pub static RULES: &[Rule] = &[Rule {
     id: "mask-web",
     category: Category::Mask,
     severity: Severity::Error,
-    summary: "pads of different nets whose mask openings leave less than min_mask_web between them",
+    summary: "pads of different nets whose mask openings leave less than min_mask_web between them; a footprint with `mask_web = false` is skipped within itself",
     when: "every board",
     applies: every,
     check: mask_web,
@@ -40,6 +40,7 @@ fn mask_web(cx: &Ctx, r: &mut Report) {
             for (pb, kb, bb) in &openings[i + 1..] {
                 let b = &parts[*pb].pads[*kb];
                 if (a.net.is_some() && a.net == b.net)
+                    || (pa == pb && !parts[*pa].footprint.mask_web)
                     || !(grown.overlaps(bb) || grown.contains(bb) || bb.contains(&grown))
                 {
                     continue;
