@@ -715,9 +715,10 @@ Check reports pins in two nets, pins in no net, single-pin nets, several outputs
 hand wires that miss a pin or touch another net's pin, overlapping parts, and footprints whose
 pads do not cover the symbol's pins. Every net in the `Default` netclass is a warning, whether it
 names no class or names `Default`: the class sets the net's width, clearance, vias and routing
-order, so each net should say what it is. Give the board a class per kind of net (`Signal`,
-`Data`, `Clock`, `Analog`, `Ground`, `Power`, `RF`, pairs) and keep `Default` as the fallback the
-layout uses for rules no class covers. `agentee show sch:lna` prints every pin's position.
+order, so each net should say what it is. The warning needs a board and a layout of the
+schematic; a schematic only simulated (like `examples/logic`) skips it. Give the board a class
+per kind of net (`Signal`, `Data`, `Clock`, `Analog`, `Ground`, `Power`, `RF`, pairs) and keep
+`Default` as the fallback the layout uses for rules no class covers. `agentee show sch:lna` prints every pin's position.
 
 ## Layout (`*.pcb.toml`)
 

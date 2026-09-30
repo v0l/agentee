@@ -411,10 +411,10 @@ impl Schematic {
     }
 
     pub fn check(&self, lib: &Library, d: &mut Diags) {
-        self.check_as(lib, d, false);
+        self.check_as(lib, d, false, true);
     }
 
-    pub fn check_as(&self, lib: &Library, d: &mut Diags, sheet: bool) {
+    pub fn check_as(&self, lib: &Library, d: &mut Diags, sheet: bool, laid_out: bool) {
         let mut seen: HashMap<(&str, u32), usize> = HashMap::new();
         for (i, p) in self.parts.iter().enumerate() {
             let at = format!("part {}", p.reference);
@@ -475,7 +475,7 @@ impl Schematic {
                     format!("only one pin ({}), nothing to connect", self.pin_label(n.pins[0])),
                 );
             }
-            if n.class == "Default" && !sheet {
+            if n.class == "Default" && !sheet && laid_out && lib.netclasses.is_some() {
                 let others: Vec<&str> = lib
                     .netclasses
                     .iter()
@@ -1054,7 +1054,7 @@ pins = ["{part}.2"]
         let top: SchematicFile = toml::from_str("name = \"top\"\nsheets = [\"a\", \"b\"]").unwrap();
         let mut d = Diags::new("a");
         let sa = a.resolve(&lib, &mut d);
-        sa.check_as(&lib, &mut d, true);
+        sa.check_as(&lib, &mut d, true, true);
         let noise = |d: &Diags| d.list.iter().filter(|x| !x.message.contains("footprint")).count();
         assert_eq!(noise(&d), 0, "{:?}", d.list);
         let bounds = |f: &SchematicFile| f.resolve(&lib, &mut Diags::new("x")).bounds();
@@ -1077,7 +1077,7 @@ pins = ["{part}.2"]
     }
 
     #[test]
-    fn a_net_left_in_default_is_a_warning_on_the_whole_design_only() {
+    fn a_net_left_in_default_warns_only_on_a_whole_laid_out_design() {
         let r = resistor();
         let classes = vec!["Default".to_string(), "Signal".to_string()];
         let lib = Library {
@@ -1095,11 +1095,18 @@ pins = ["{part}.2"]
         let default_warnings =
             |d: &Diags| d.list.iter().filter(|x| x.message.contains("Default netclass")).count();
         let mut d = Diags::new("s");
-        s.check_as(&lib, &mut d, false);
+        s.check_as(&lib, &mut d, false, true);
         assert_eq!(default_warnings(&d), 2, "{:?}", d.list);
         assert!(d.list.iter().any(|x| x.message.contains("one of Signal")));
         let mut d = Diags::new("s");
-        s.check_as(&lib, &mut d, true);
+        s.check_as(&lib, &mut d, true, true);
+        assert_eq!(default_warnings(&d), 0);
+        let mut d = Diags::new("s");
+        s.check_as(&lib, &mut d, false, false);
+        assert_eq!(default_warnings(&d), 0);
+        let boardless = Library { netclasses: None, ..lib };
+        let mut d = Diags::new("s");
+        s.check_as(&boardless, &mut d, false, true);
         assert_eq!(default_warnings(&d), 0);
     }
 
