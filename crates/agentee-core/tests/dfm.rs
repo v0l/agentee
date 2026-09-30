@@ -531,3 +531,16 @@ fn a_via_of_another_net_on_a_pad_is_a_short_not_a_cut() {
         assert!(s.len() == 1 && s[0].1.contains("R1.1 touches via at"), "{s:?}");
     }
 }
+
+#[test]
+fn pads_that_share_a_number_are_starved_once() {
+    let dup = format!(
+        "{TWO_PADS}\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [-1.0, 0]\nsize = [1.0, 1.0]\n"
+    );
+    let zone = "\n[[zones]]\nnet = \"A\"\nlayers = [\"F.Cu\"]\n\
+                outline = [[4.4, 4.9], [5.2, 4.9], [5.2, 5.1], [4.4, 5.1]]\n\
+                min_width = 0.1\nmin_island_area = 0.0\n";
+    let p = load(&Fixture { footprints: &[("TWO", &dup)], pcb: zone, ..Default::default() });
+    let w = hits(&p, "starved-thermal");
+    assert!(w.len() == 1 && w[0].1.contains("by 1 spoke"), "{w:?}");
+}

@@ -299,6 +299,7 @@ fn boundary_samples(outlines: &[Vec<P>], step: f64, off: f64) -> Vec<P> {
 fn starved_thermal(cx: &Ctx, r: &mut Report) {
     let w = cx.board.rules.min_track_width.to_mm();
     let step = 0.02;
+    let mut reported: Vec<(usize, &str, &str)> = Vec::new();
     for (pi, p) in cx.parts.iter().enumerate() {
         for (k, q) in p.pads.iter().enumerate() {
             let Some(net) = q.net else { continue };
@@ -336,9 +337,11 @@ fn starved_thermal(cx: &Ctx, r: &mut Report) {
                 let spokes = runs.iter().filter(|x| **x + 1e-9 >= w).count();
                 let contact: f64 = runs.iter().sum();
                 let size = pb.size()[0].min(pb.size()[1]);
-                if spokes >= 2 || contact + 1e-9 >= size {
+                let key = (pi, q.number.as_str(), z.layer.as_str());
+                if spokes >= 2 || contact + 1e-9 >= size || reported.contains(&key) {
                     continue;
                 }
+                reported.push(key);
                 r.emit(
                     format!("pad {}", cx.pad_name(pi, k)),
                     format!(
