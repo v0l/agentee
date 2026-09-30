@@ -602,6 +602,8 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(copper::RULES)
         .chain(track::RULES)
         .chain(zone::RULES)
+        .chain(courtyard::RULES)
+        .chain(mask::RULES)
         .chain(assembly::RULES)
 }
 
@@ -681,7 +683,9 @@ pub fn list(items: &[String]) -> String {
 
 mod assembly;
 mod copper;
+mod courtyard;
 mod drill;
+mod mask;
 mod track;
 mod via;
 mod zone;
