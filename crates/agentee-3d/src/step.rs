@@ -7,6 +7,7 @@ use truck_stepio::r#in::{
         BSplineSurface, Curve3D, KnotVec, Line, Surface, Tolerance, control_point::ControlPoint,
     },
 };
+use truck_topology::compress::{CompressedEdge, CompressedFace, CompressedShell};
 
 type M = [[f64; 4]; 3];
 
@@ -518,6 +519,204 @@ fn finite_curve(c: &Curve3D) -> bool {
         })
 }
 
+const CURVE_DEPTH: usize = 10;
+const SURFACE_DIVISIONS: usize = 64;
+
+fn divide_curve(c: &Curve3D, range: (f64, f64), tol: f64) -> (Vec<f64>, Vec<Point3>) {
+    fn split(
+        c: &Curve3D,
+        (t0, t1): (f64, f64),
+        (a, b): (Point3, Point3),
+        tol: f64,
+        depth: usize,
+        out: &mut (Vec<f64>, Vec<Point3>),
+    ) {
+        let p = 0.45;
+        let probe = c.subs(t0 + (t1 - t0) * p);
+        let chord = a + (b - a) * p;
+        let d2 = probe.distance2(chord);
+        if depth > 0 && d2.is_finite() && d2 > tol * tol {
+            let tm = (t0 + t1) / 2.0;
+            let m = c.subs(tm);
+            split(c, (t0, tm), (a, m), tol, depth - 1, out);
+            split(c, (tm, t1), (m, b), tol, depth - 1, out);
+        } else {
+            out.0.push(t1);
+            out.1.push(b);
+        }
+    }
+    let (a, b) = (c.subs(range.0), c.subs(range.1));
+    let mut out = (vec![range.0], vec![a]);
+    split(c, range, (a, b), tol, CURVE_DEPTH, &mut out);
+    out
+}
+
+fn divide_surface(
+    s: &Surface,
+    ((u0, u1), (v0, v1)): ((f64, f64), (f64, f64)),
+    tol: f64,
+) -> (Vec<f64>, Vec<f64>) {
+    let (mut ud, mut vd) = (vec![u0, u1], vec![v0, v1]);
+    let (p, q) = (0.45, 0.45);
+    loop {
+        let mut uf = vec![false; ud.len() - 1];
+        let mut vf = vec![false; vd.len() - 1];
+        for (i, u) in ud.windows(2).enumerate() {
+            for (j, v) in vd.windows(2).enumerate() {
+                if uf[i] && vf[j] {
+                    continue;
+                }
+                let corner = |a: f64, b: f64| EuclideanSpace::to_vec(s.subs(a, b));
+                let flat = corner(u[0], v[0]) * ((1.0 - p) * (1.0 - q))
+                    + corner(u[0], v[1]) * ((1.0 - p) * q)
+                    + corner(u[1], v[0]) * (p * (1.0 - q))
+                    + corner(u[1], v[1]) * (p * q);
+                let at = s.subs(u[0] + (u[1] - u[0]) * p, v[0] + (v[1] - v[0]) * q);
+                let d2 = EuclideanSpace::to_vec(at).distance2(flat);
+                if d2.is_finite() && d2 > tol * tol {
+                    uf[i] = true;
+                    vf[j] = true;
+                }
+            }
+        }
+        let refine = |div: &mut Vec<f64>, flags: &[bool]| {
+            let n = flags.iter().filter(|f| **f).count();
+            if n == 0 || div.len() - 1 + n > SURFACE_DIVISIONS {
+                return false;
+            }
+            let mut out = vec![div[0]];
+            for (w, &f) in div.windows(2).zip(flags) {
+                if f {
+                    out.push((w[0] + w[1]) / 2.0);
+                }
+                out.push(w[1]);
+            }
+            *div = out;
+            true
+        };
+        let grew_u = refine(&mut ud, &uf);
+        let grew_v = refine(&mut vd, &vf);
+        if !grew_u && !grew_v {
+            return (ud, vd);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct BoundedCurve3D(Curve3D);
+
+impl ParametricCurve for BoundedCurve3D {
+    type Point = Point3;
+    type Vector = Vector3;
+    fn subs(&self, t: f64) -> Point3 {
+        self.0.subs(t)
+    }
+    fn der(&self, t: f64) -> Vector3 {
+        self.0.der(t)
+    }
+    fn der2(&self, t: f64) -> Vector3 {
+        self.0.der2(t)
+    }
+    fn parameter_range(&self) -> ParameterRange {
+        self.0.parameter_range()
+    }
+    fn period(&self) -> Option<f64> {
+        self.0.period()
+    }
+}
+
+impl BoundedCurve for BoundedCurve3D {}
+
+impl ParameterDivision1D for BoundedCurve3D {
+    type Point = Point3;
+    fn parameter_division(&self, range: (f64, f64), tol: f64) -> (Vec<f64>, Vec<Point3>) {
+        match &self.0 {
+            Curve3D::Line(_) | Curve3D::Polyline(_) | Curve3D::Conic(_) => {
+                self.0.parameter_division(range, tol)
+            }
+            c => divide_curve(c, range, tol),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct BoundedSurface3D(Surface);
+
+impl ParametricSurface for BoundedSurface3D {
+    type Point = Point3;
+    type Vector = Vector3;
+    fn subs(&self, u: f64, v: f64) -> Point3 {
+        self.0.subs(u, v)
+    }
+    fn uder(&self, u: f64, v: f64) -> Vector3 {
+        self.0.uder(u, v)
+    }
+    fn vder(&self, u: f64, v: f64) -> Vector3 {
+        self.0.vder(u, v)
+    }
+    fn uuder(&self, u: f64, v: f64) -> Vector3 {
+        self.0.uuder(u, v)
+    }
+    fn uvder(&self, u: f64, v: f64) -> Vector3 {
+        self.0.uvder(u, v)
+    }
+    fn vvder(&self, u: f64, v: f64) -> Vector3 {
+        self.0.vvder(u, v)
+    }
+    fn parameter_range(&self) -> (ParameterRange, ParameterRange) {
+        self.0.parameter_range()
+    }
+    fn u_period(&self) -> Option<f64> {
+        self.0.u_period()
+    }
+    fn v_period(&self) -> Option<f64> {
+        self.0.v_period()
+    }
+}
+
+impl ParametricSurface3D for BoundedSurface3D {
+    fn normal(&self, u: f64, v: f64) -> Vector3 {
+        self.0.normal(u, v)
+    }
+}
+
+impl ParameterDivision2D for BoundedSurface3D {
+    fn parameter_division(
+        &self,
+        range: ((f64, f64), (f64, f64)),
+        tol: f64,
+    ) -> (Vec<f64>, Vec<f64>) {
+        match &self.0 {
+            Surface::ElementarySurface(_) => self.0.parameter_division(range, tol),
+            s => divide_surface(s, range, tol),
+        }
+    }
+}
+
+impl SearchParameter<D2> for BoundedSurface3D {
+    type Point = Point3;
+    fn search_parameter<H: Into<SPHint2D>>(
+        &self,
+        point: Point3,
+        hint: H,
+        trials: usize,
+    ) -> Option<(f64, f64)> {
+        self.0.search_parameter(point, hint, trials)
+    }
+}
+
+impl SearchNearestParameter<D2> for BoundedSurface3D {
+    type Point = Point3;
+    fn search_nearest_parameter<H: Into<SPHint2D>>(
+        &self,
+        point: Point3,
+        hint: H,
+        trials: usize,
+    ) -> Option<(f64, f64)> {
+        self.0.search_nearest_parameter(point, hint, trials)
+    }
+}
+
 type FaceTris = Vec<(Option<u64>, Vec<[[f64; 3]; 2]>)>;
 
 fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<FaceTris> {
@@ -570,6 +769,26 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
     if kept.len() < compressed.faces.len() {
         compressed.faces = kept.iter().map(|&i| compressed.faces[i].clone()).collect();
     }
+    let bounded = CompressedShell {
+        vertices: compressed.vertices.clone(),
+        edges: compressed
+            .edges
+            .iter()
+            .map(|e| CompressedEdge {
+                vertices: e.vertices,
+                curve: BoundedCurve3D(e.curve.clone()),
+            })
+            .collect(),
+        faces: compressed
+            .faces
+            .iter()
+            .map(|f| CompressedFace {
+                boundaries: f.boundaries.clone(),
+                orientation: f.orientation,
+                surface: BoundedSurface3D(f.surface.clone()),
+            })
+            .collect(),
+    };
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut lo = [f64::MAX; 3];
         let mut hi = [f64::MIN; 3];
@@ -582,7 +801,7 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
         let diag = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
         let tol =
             if diag.is_finite() && diag > 0.0 { (diag * 0.002).max(0.002 / unit) } else { 0.01 };
-        compressed.robust_triangulation(tol)
+        bounded.robust_triangulation(tol)
     }))
     .ok()?;
     let mut out = Vec::new();
@@ -705,6 +924,53 @@ mod tests {
         assert!(finite_curve(&Curve3D::NurbsCurve(nurbs)));
         let line = Curve3D::Line(Line(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)));
         assert!(finite_curve(&line));
+    }
+
+    #[test]
+    fn curve_division_stops_on_nan_and_at_its_depth() {
+        let t = std::f64::consts::TAU / 3.0;
+        let knots =
+            KnotVec::from(vec![-t, 0.0, 0.0, t, t, 2.0 * t, 2.0 * t, 3.0 * t, 3.0 * t, 4.0 * t]);
+        let w = [1.0, 0.5, 1.0, 0.5, 1.0, 0.5, 1.0];
+        let control = (0..7).map(|i| Vector4::new(i as f64 * w[i], 0.0, 0.0, w[i])).collect();
+        let nan = Curve3D::NurbsCurve(NurbsCurve::new(BSplineCurve::new(knots, control)));
+        let (params, _) = divide_curve(&nan, nan.range_tuple(), 1e-6);
+        assert!(params.len() <= (1 << CURVE_DEPTH) + 1);
+        let wiggle = Curve3D::BSplineCurve(BSplineCurve::new(
+            KnotVec::uniform_knot(3, 200),
+            (0..203).map(|i| Point3::new(i as f64, (i % 2) as f64, 0.0)).collect(),
+        ));
+        let (params, pts) = divide_curve(&wiggle, (0.0, 1.0), 1e-9);
+        assert_eq!(params.len(), (1 << CURVE_DEPTH) + 1);
+        assert_eq!(params.len(), pts.len());
+        assert!(params.windows(2).all(|w| w[1] > w[0]));
+    }
+
+    #[test]
+    fn surface_division_is_bounded() {
+        let n = 120;
+        let control = (0..n)
+            .map(|i| {
+                (0..n).map(|j| Point3::new(i as f64, j as f64, ((i + j) % 2) as f64)).collect()
+            })
+            .collect();
+        let knots = KnotVec::uniform_knot(2, n - 2);
+        let wavy =
+            Surface::BSplineSurface(Box::new(BSplineSurface::new((knots.clone(), knots), control)));
+        let (ud, vd) = divide_surface(&wavy, ((0.0, 1.0), (0.0, 1.0)), 1e-6);
+        assert!(ud.len() > 16 && ud.len() <= SURFACE_DIVISIONS + 1, "{}", ud.len());
+        assert!(vd.len() > 16 && vd.len() <= SURFACE_DIVISIONS + 1, "{}", vd.len());
+        let flat = Surface::BSplineSurface(Box::new(BSplineSurface::new(
+            (KnotVec::bezier_knot(1), KnotVec::bezier_knot(1)),
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+        )));
+        assert_eq!(
+            divide_surface(&flat, ((0.0, 1.0), (0.0, 1.0)), 1e-6),
+            (vec![0.0, 1.0], vec![0.0, 1.0])
+        );
     }
 
     #[test]
