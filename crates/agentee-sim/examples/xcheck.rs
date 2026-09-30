@@ -33,7 +33,12 @@ fn throughput(n: usize, pml: usize, steps: &[usize], reps: usize) {
     let pulse = Pulse { f0: 5e9, fc: 4e9 };
     let mut best = Vec::new();
     for &s in steps {
-        let extras = Extras { max_steps: s, decay_db: f64::INFINITY, ..Default::default() };
+        let extras = Extras {
+            max_steps: s,
+            decay_db: f64::INFINITY,
+            fused_e: agentee_sim::fdtd::run::fused_update(),
+            ..Default::default()
+        };
         let mut times = Vec::new();
         for _ in 0..reps {
             let t = std::time::Instant::now();
