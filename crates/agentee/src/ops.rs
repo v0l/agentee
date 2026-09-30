@@ -1909,7 +1909,6 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     drop(p);
 
     let mut labels: std::collections::BTreeMap<String, Value> = Default::default();
-    let mut placed = placed;
     let mut settled = None;
     for pass in 0..2 {
         let p = load(root)?;
