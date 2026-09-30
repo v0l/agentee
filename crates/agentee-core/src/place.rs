@@ -3286,67 +3286,87 @@ impl<'a> Placer<'a> {
                 coords[y] = coords[y].min(ceil);
             }
             let level = self.b.outline.iter().map(|q| dot(*q, e.normal())).fold(f64::MIN, f64::max);
-            let outline = self.b.outline.clone();
             for (y, &x) in on.iter().enumerate() {
                 let i = list[x];
                 let rot = rotation_for(geo[x].u, e.normal(), bottom);
                 let nrm = e.normal();
-                let (s0, s1) = spans[y];
-                let base = |t: f64| -> P {
-                    let t = snap(t);
-                    let depth = level - geo[x].e_loc;
+                let depth = level - geo[x].e_loc;
+                let target = {
+                    let t = snap(coords[y]);
                     [tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth]
                 };
-                let flush = |t: f64| -> Option<P> {
-                    let t = snap(t);
-                    let depth = edge_level(&outline, nrm, tg, t + s0, t + s1)? - geo[x].e_loc;
-                    Some([tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth])
-                };
                 let labels = self.take_labels(i);
-                let mut done = false;
-                let mut steps = 0i64;
-                while !done && (steps as f64) * GRID < (hi - lo) {
-                    for sgn in [1.0, -1.0] {
-                        let Some(at) = flush(coords[y] + sgn * steps as f64 * GRID) else {
-                            continue;
-                        };
-                        let st = St { at, rot, bottom };
-                        if self.legal(i, st, &[]) {
-                            self.parts[i].st = st;
-                            self.label_where_it_fits(i, st, labels.clone());
-                            self.insert(i);
-                            done = true;
-                            break;
-                        }
-                        if steps == 0 {
+                let mut edge = e;
+                let mut slid = self.slide_to_edge(i, e, &geo[x], spans[y], coords[y], (lo, hi));
+                if slid.is_none() && pins_of[x].is_none() {
+                    let mut others: Vec<Edge> = EDGES.into_iter().filter(|o| *o != e).collect();
+                    others.sort_by(|a, b| dist_to(x, *a).total_cmp(&dist_to(x, *b)));
+                    for o in others {
+                        let (olo, ohi) = range(o);
+                        let (a0, a1) = span(x, o);
+                        let start =
+                            dot(pos[i], o.tangent()).clamp(olo - a0, (ohi - a1).max(olo - a0));
+                        slid = self.slide_to_edge(i, o, &geo[x], (a0, a1), start, (olo, ohi));
+                        if slid.is_some() {
+                            edge = o;
                             break;
                         }
                     }
-                    steps += 1;
                 }
-                if !done {
-                    let target = base(coords[y]);
-                    let found =
-                        self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0).or_else(|| {
-                            self.parts[i].over_silk = true;
-                            self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0)
-                        });
-                    match found {
-                        Some(st) => {
-                            self.parts[i].st = st;
-                            self.label_where_it_fits(i, st, labels);
-                            self.insert(i);
-                        }
-                        None => {
-                            self.parts[i].label = labels.0;
-                            failed.push(self.parts[i].reference.clone());
-                        }
+                let found = slid.or_else(|| {
+                    self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0).or_else(|| {
+                        self.parts[i].over_silk = true;
+                        self.nearest(i, target, rot, bottom, 60.0, &|_| 0.0)
+                    })
+                });
+                match found {
+                    Some(st) => {
+                        self.parts[i].st = st;
+                        self.label_where_it_fits(i, st, labels);
+                        self.insert(i);
+                    }
+                    None => {
+                        self.parts[i].label = labels.0;
+                        failed.push(self.parts[i].reference.clone());
                     }
                 }
-                out.insert(self.parts[i].reference.clone(), e);
+                out.insert(self.parts[i].reference.clone(), edge);
             }
         }
         out
+    }
+
+    fn slide_to_edge(
+        &self,
+        i: usize,
+        e: Edge,
+        geo: &EdgeGeom,
+        span: (f64, f64),
+        start: f64,
+        (lo, hi): (f64, f64),
+    ) -> Option<St> {
+        let bottom = self.sides == Sides::Bottom;
+        let rot = rotation_for(geo.u, e.normal(), bottom);
+        let (tg, nrm) = (e.tangent(), e.normal());
+        let mut steps = 0i64;
+        while (steps as f64) * GRID < (hi - lo) {
+            for sgn in [1.0, -1.0] {
+                let t = snap(start + sgn * steps as f64 * GRID);
+                if let Some(level) = edge_level(&self.b.outline, nrm, tg, t + span.0, t + span.1) {
+                    let depth = level - geo.e_loc;
+                    let at = [tg[0] * t + nrm[0] * depth, tg[1] * t + nrm[1] * depth];
+                    let st = St { at, rot, bottom };
+                    if self.legal(i, st, &[]) {
+                        return Some(st);
+                    }
+                }
+                if steps == 0 {
+                    break;
+                }
+            }
+            steps += 1;
+        }
+        None
     }
 
     fn on_parts(&self, side: u8, poly: &[P]) -> bool {
