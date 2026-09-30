@@ -25,6 +25,13 @@ name = "bd"
 drill = "0.3mm"
 diameter = "0.6mm"
 backdrill = { from = "B.Cu", to = "In2.Cu", max_stub = "0.2mm" }
+[[vias]]
+name = "ub"
+drill = "0.1mm"
+diameter = "0.25mm"
+type = "microvia"
+from = "In4.Cu"
+to = "B.Cu"
 "#;
 
 fn project(pcb_vias: &str) -> (Project, PathBuf) {
@@ -135,5 +142,22 @@ fn each_span_gets_its_own_drill_file_and_fab_note() {
         .filter(|l| l.contains("VIA"))
         .map(|l| &l[l.find("PA").unwrap() + 1..][..3])
         .collect();
-    assert_eq!(access, ["A00", "A01", "A01", "A02", "A00"], "{d356}");
+    assert_eq!(access, ["A00", "A01", "A01", "A02", "A01"], "{d356}");
+}
+
+#[test]
+fn netlist_access_codes_name_the_layer_count_for_the_bottom() {
+    let pcb = ["side = \"bottom\"\n".to_string(), via("ub", [10.0, 10.0]), via("bu", [12.0, 10.0])]
+        .concat();
+    let out = package(&pcb);
+    let d356 = std::fs::read_to_string(out.join("t.d356")).unwrap();
+    let code = |l: &str| l[l.find("  A").unwrap() + 2..][..3].to_string();
+    let pads: Vec<String> = d356.lines().filter(|l| l.contains("R1    -")).map(code).collect();
+    assert_eq!(pads, ["A06", "A06"], "{d356}");
+    let vias: Vec<String> = d356
+        .lines()
+        .filter(|l| l.contains("VIA"))
+        .map(|l| l[l.find("PA").unwrap() + 1..][..3].to_string())
+        .collect();
+    assert_eq!(vias, ["A06", "A02"], "{d356}");
 }
