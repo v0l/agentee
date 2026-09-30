@@ -476,7 +476,10 @@ steps in 45 degree directions and charges for every bend, so paths come out as s
 degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
 at another angle. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
 each routed connection that uses vias is tried again on one layer at a time with the rest held
-fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. The second net of a pair is drawn toward its
+fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. A net in an
+interface with `max_vias` keeps the trace (every net of the lane, through series parts) within
+it: a route with too many vias is tried again with dearer vias, then on one layer, and fails with
+the reason if neither fits. The second net of a pair is drawn toward its
 partner at the pair gap; `--pairs` tries to route both halves together as one coupled track
 first. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand

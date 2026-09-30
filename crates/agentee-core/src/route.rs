@@ -393,6 +393,19 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         })
     };
 
+    let mut lanes: Vec<(Vec<usize>, usize, String)> = Vec::new();
+    for iface in &layout.interfaces {
+        let Some(m) = iface.spec.max_vias else { continue };
+        for lane in &iface.lanes {
+            let nets: Vec<usize> = lane
+                .nets
+                .iter()
+                .filter_map(|n| layout.nets.iter().position(|x| &x.name == n))
+                .collect();
+            lanes.push((nets, m as usize, iface.name.clone()));
+        }
+    }
+
     let mut out = RouteResult::default();
     let edge = board.rules.min_copper_to_edge.to_mm();
     for (class, nets) in by_class {
@@ -470,6 +483,35 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         });
         let conns: Vec<(P, P, usize)> = order.into_iter().map(|i| conns[i]).collect();
         out.connections += conns.len();
+        let spent: Vec<usize> = lanes
+            .iter()
+            .map(|(ns, _, _)| {
+                layout.vias.iter().filter(|v| ns.contains(&v.net)).count()
+                    + out
+                        .vias
+                        .iter()
+                        .filter(|v| ns.iter().any(|&n| layout.nets[n].name == v.net))
+                        .count()
+            })
+            .collect();
+        let room = |net: usize, routed: &[Option<Conn>], skip: &[usize]| -> Option<(usize, &str)> {
+            lanes
+                .iter()
+                .zip(&spent)
+                .filter(|((ns, _, _), _)| ns.contains(&net))
+                .map(|((ns, m, name), used)| {
+                    let fresh: usize = routed
+                        .iter()
+                        .enumerate()
+                        .filter(|(k, _)| !skip.contains(k))
+                        .filter_map(|(_, r)| r.as_ref())
+                        .filter(|r| ns.contains(&r.net))
+                        .map(|r| r.vias.len())
+                        .sum();
+                    (m.saturating_sub(used + fresh), name.as_str())
+                })
+                .min()
+        };
         let mut routed: Vec<Option<Conn>> = vec![None; conns.len()];
         let mut locked = vec![false; conns.len()];
         if let Some(gap) = gap.filter(|_| opts.pairs) {
@@ -480,13 +522,17 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                 };
                 let (Some(cp), Some(cn)) = (find(pair.p), find(pair.n)) else { continue };
                 match route_pair(&mut grid, &obstacles, &ctx, gap, conns[cp], conns[cn]) {
-                    Some((pc, nc)) => {
+                    Some((pc, nc))
+                        if [(pc.net, pc.vias.len()), (nc.net, nc.vias.len())].iter().all(
+                            |&(n, v)| room(n, &routed, &[]).is_none_or(|(left, _)| v <= left),
+                        ) =>
+                    {
                         routed[cp] = Some(pc);
                         routed[cn] = Some(nc);
                         locked[cp] = true;
                         locked[cn] = true;
                     }
-                    None => {
+                    _ => {
                         grid.clear_routed();
                         for r in routed.iter().flatten() {
                             grid.mark_routed(r, &ctx);
@@ -587,7 +633,24 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     }
                 }
             };
-            let conn = conn_of(&grid, &path, a, b, net);
+            let mut conn = conn_of(&grid, &path, a, b, net);
+            if let Some((left, iface)) = room(net, &routed, &[ci])
+                && conn.vias.len() > left
+            {
+                match fewer_vias(&grid, &obstacles, &fresh, net, a, b, &ctx, left) {
+                    Some(c) => conn = c,
+                    None => {
+                        failed.push((
+                            ci,
+                            format!(
+                                "needs {} vias, interface {iface} leaves room for {left}",
+                                conn.vias.len()
+                            ),
+                        ));
+                        continue;
+                    }
+                }
+            }
             grid.mark_routed(&conn, &ctx);
             routed[ci] = Some(conn);
         }
@@ -721,6 +784,36 @@ fn one_layer(
         }
     }
     best
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fewer_vias(
+    grid: &Grid,
+    obstacles: &[Obstacle],
+    fresh: &[Obstacle],
+    net: usize,
+    a: P,
+    b: P,
+    ctx: &Ctx,
+    left: usize,
+) -> Option<Conn> {
+    if left > 0 {
+        let dear = RouteOptions {
+            nets: Vec::new(),
+            layers: Vec::new(),
+            via: None,
+            via_cost: ctx.opts.via_cost * 10.0 + 10.0,
+            ..*ctx.opts
+        };
+        let wary = Ctx { widths: ctx.widths.clone(), opts: &dear, ..*ctx };
+        if let Ok(p) = search(grid, obstacles, fresh, net, a, b, &wary, false, None) {
+            let c = conn_of(grid, &p, a, b, net);
+            if c.vias.len() <= left {
+                return Some(c);
+            }
+        }
+    }
+    one_layer(grid, obstacles, fresh, net, a, b, ctx)
 }
 
 fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
@@ -1764,6 +1857,36 @@ mod tests {
         for t in &tracks {
             octilinear_and_forward(&t.1);
         }
+    }
+
+    #[test]
+    fn a_via_budget_of_zero_keeps_one_layer() {
+        let mut grid = open_grid(60, 40, 2);
+        block(&mut grid, 0, 30..31, 0..36);
+        let opts = RouteOptions { via_cost: 0.1, ..Default::default() };
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            widths: vec![0.1; 2],
+            clearance: 0.1,
+            via_r: 0.2,
+            via_layers: &[0, 1],
+            routing: &[0, 1],
+            opts: &opts,
+        };
+        let (a, b) = (grid.center(5, 5), grid.center(55, 5));
+        let pad = |at: P| Obstacle {
+            net: Some(0),
+            layers: vec![0],
+            shape: Shape::Circle(at, 0.05),
+            clearance: 0.1,
+        };
+        let pads = [pad(a), pad(b)];
+        let path = search(&grid, &pads, &[], 0, a, b, &ctx, false, None).unwrap();
+        assert_eq!(conn_of(&grid, &path, a, b, 0).vias.len(), 2);
+        let c = fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 0).unwrap();
+        assert!(c.vias.is_empty() && c.tracks.iter().all(|t| t.0 == 0));
+        assert!(fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 2).unwrap().vias.len() <= 2);
     }
 
     #[test]
