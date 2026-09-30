@@ -1,5 +1,5 @@
 use agentee_sim::fdtd::engine::{Debye, Edge, Grid, Materials, Media, PortDef, Sim};
-use agentee_sim::fdtd::model::{Copper, Dielectric, ModelPort, PcbModel, Sheet};
+use agentee_sim::fdtd::model::{Copper, Dielectric, ModelPort, PcbModel, Rings, Sheet};
 use agentee_sim::fdtd::run::{Extras, Pulse, run};
 use agentee_sim::fdtd::surface::Surface;
 use agentee_sim::fdtd::{execute, plan, touchstone};
@@ -22,6 +22,7 @@ fn throughput(n: usize, pml: usize, steps: &[usize], reps: usize) {
         name: "src".into(),
         columns: vec![vec![Edge { comp: 2, at: [c, c, c] }]],
         r: 50.0,
+        reference_above: false,
     };
     let w0 = 2.0 * std::f64::consts::PI * 5e9;
     let media =
@@ -61,6 +62,47 @@ fn throughput(n: usize, pml: usize, steps: &[usize], reps: usize) {
     }
 }
 
+fn strip(x0: f64, x1: f64, w: f64) -> Copper {
+    Copper::Poly(vec![[x0, -w / 2.0], [x1, -w / 2.0], [x1, w / 2.0], [x0, w / 2.0]])
+}
+
+fn through_via(m: &mut PcbModel, via: &Value, len: f64, w: f64, h: f64, copper: f64) {
+    let d = |k: &str| via[k].as_f64().unwrap();
+    let (drill, pad, antipad) = (d("drill"), d("pad"), d("antipad"));
+    let at = [len / 2.0, 0.0];
+    let circle = |r: f64| -> Vec<[f64; 2]> {
+        (0..64)
+            .map(|k| {
+                let a = k as f64 * std::f64::consts::TAU / 64.0;
+                [at[0] + r * a.cos(), at[1] + r * a.sin()]
+            })
+            .collect()
+    };
+    let er = m.dielectrics[0].er;
+    let tan = m.dielectrics[0].tan;
+    m.sheets = vec![
+        Sheet { name: "F.Cu".into(), z: 0.0, thickness: copper },
+        Sheet { name: "In1.Cu".into(), z: -h, thickness: copper },
+        Sheet { name: "B.Cu".into(), z: -2.0 * h, thickness: copper },
+    ];
+    m.dielectrics = vec![
+        Dielectric { z0: -h, z1: 0.0, er, tan, pinned: true },
+        Dielectric { z0: -2.0 * h, z1: -h, er, tan, pinned: true },
+    ];
+    m.copper = vec![
+        (0, strip(0.5, at[0], w)),
+        (0, Copper::Circle(at, pad / 2.0)),
+        (1, Copper::Rings(Rings::new(vec![m.outline.clone(), circle(antipad / 2.0)]))),
+        (2, strip(at[0], len - 0.5, w)),
+        (2, Copper::Circle(at, pad / 2.0)),
+    ];
+    m.vias = vec![(at, drill / 2.0, 0, 2)];
+    m.ports[0].reference = 1;
+    m.ports[1].sheet = 2;
+    m.ports[1].reference = 1;
+    m.features_x.extend([at[0] - antipad / 2.0, at[0] + antipad / 2.0]);
+}
+
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("throughput") {
         let arg =
@@ -93,10 +135,7 @@ fn main() {
                 [x - 0.05, w / 2.0],
             ]
         };
-        let mut cu = vec![
-            (0, Copper::Seg([0.5, 0.0], [len - 0.5, 0.0], w)),
-            (1, Copper::Poly(board.clone())),
-        ];
+        let mut cu = vec![(0, strip(0.5, len - 0.5, w)), (1, Copper::Poly(board.clone()))];
         let mut features_x = vec![];
         let mut features_y_extra: Vec<f64> = vec![];
         if let Some(stub) = c["stub"].as_f64() {
@@ -113,7 +152,7 @@ fn main() {
             features_x.extend([x - w / 2.0, x + w / 2.0]);
             features_y_extra.push(stub);
         }
-        let m = PcbModel {
+        let mut m = PcbModel {
             outline: board,
             board_cutouts: Vec::new(),
             sheets: vec![
@@ -148,6 +187,9 @@ fn main() {
             roughness: Default::default(),
             plating: None,
         };
+        if let Some(via) = c.get("via") {
+            through_via(&mut m, via, len, w, h, copper);
+        }
         let f = &c["f"];
         let t_plan = std::time::Instant::now();
         let p = plan(

@@ -273,6 +273,68 @@ mod tests {
     }
 
     #[test]
+    fn enig_lands_only_on_pads_under_solder_mask() {
+        use crate::fdtd::engine::unidx;
+        use crate::fdtd::model::{Copper, Dielectric, Exposure, Meshing, PcbModel, Plating, Sheet};
+        let pad = vec![[4.5, -0.6], [5.5, -0.6], [5.5, 0.6], [4.5, 0.6]];
+        let board = vec![[0.0, -3.0], [6.0, -3.0], [6.0, 3.0], [0.0, 3.0]];
+        let model = |top: Exposure| PcbModel {
+            outline: board.clone(),
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.035 },
+                Sheet { name: "B.Cu".into(), z: -0.2, thickness: 0.035 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.2, z1: 0.0, er: 4.0, tan: 0.0, pinned: true }],
+            copper: vec![
+                (0, Copper::Seg([0.5, 0.0], [5.0, 0.0], 0.4)),
+                (0, Copper::Poly(pad.clone())),
+                (1, Copper::Poly(board.clone())),
+            ],
+            features_x: vec![4.5, 5.5],
+            features_y: vec![-0.6, -0.2, 0.2, 0.6],
+            plating: Some(Plating { enig: Enig::default(), top, bottom: Exposure::Covered }),
+            ..Default::default()
+        };
+        let opt = Meshing { cell: 0.1, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let masked = model(Exposure::Pads(vec![pad.clone()])).build(&opt).unwrap();
+        let w = 2.0 * std::f64::consts::PI * 6e9;
+        let (copper, enig) = (masked.surface.impedance(0, w), masked.surface.impedance(1, w));
+        assert!(enig.re > 1.5 * copper.re, "{enig:?} {copper:?}");
+        let top_k = masked.grid.nearest(2, 0.0);
+        let n = masked.dims();
+        let (mut on_pad, mut off_pad) = (0, 0);
+        for s in &masked.sheets {
+            let at = unidx(n, s.id);
+            let g = &masked.grid;
+            let mid = |a: usize, i: usize| {
+                let v = g.axis(a);
+                if s.comp == a { 0.5 * (v[i] + v[i + 1]) } else { v[i] }
+            };
+            let p = [mid(0, at[0]) * 1e3, mid(1, at[1]) * 1e3];
+            if at[2] != top_k {
+                assert_eq!(s.faces, [0, 0], "bottom sheet edge at {p:?}");
+                continue;
+            }
+            let inside = agentee_core::geom::point_in_polygon(p, &pad);
+            assert_eq!(s.faces, [inside as usize, 0], "top sheet edge at {p:?}");
+            if inside {
+                on_pad += 1;
+            } else {
+                off_pad += 1;
+            }
+        }
+        eprintln!("{on_pad} plated pad edges, {off_pad} masked trace edges");
+        assert!(on_pad > 20 && off_pad > 20, "{on_pad} {off_pad}");
+        let bare = model(Exposure::All).build(&opt).unwrap();
+        let top_k = bare.grid.nearest(2, 0.0);
+        let n = bare.dims();
+        for s in &bare.sheets {
+            let top = unidx(n, s.id)[2] == top_k;
+            assert_eq!(s.faces, [top as usize, 0]);
+        }
+    }
+
+    #[test]
     fn the_sheet_table_steps_the_bilinear_image_of_the_fit() {
         let w0 = 2.0 * std::f64::consts::PI * 1e9;
         let (lo, hi) = (w0 / 20.0, w0 * 50.0);

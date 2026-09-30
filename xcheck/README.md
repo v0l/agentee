@@ -8,7 +8,7 @@ sets of S-parameters side by side with scikit-rf.
 cargo run --release -p agentee-sim --example xcheck -- xcheck/cases.json target/xcheck
 source ~/opt/openEMS/venv/bin/activate          # openEMS built with --python
 python xcheck/openems_cases.py xcheck/cases.json target/xcheck
-python xcheck/compare.py target/xcheck msl50 msl50_lossy stub stub_fine thin_lossy
+python xcheck/compare.py target/xcheck msl50 msl50_lossy stub stub_fine thin_lossy via
 ```
 
 `openems_cases.py` takes the engine from `XCHECK_ENGINE` (e.g. `gpu` for the GPU engine of openEMS PR
@@ -38,6 +38,7 @@ runs.
 |---|---|---|---|
 | `msl50` | 30 mm, 2.9 mm on 1.51 mm er 4.5, PEC | S21 within 0.08 dB, phase within 1.3 deg to 6 GHz | |
 | `msl50` | power not in S11 or S21 at 5 GHz (radiation) | 0.032 dB | 0.089 dB |
+| `msl50` | the same, square strip ends and the port current over the whole port height | 0.067 dB | 0.089 dB |
 | `msl50` | Z0 at 1.5 / 3.5 GHz from a 30 and a 45 mm line, 0.2 and 0.1 mm cells | 50.0 / 50.3, 49.9 / 50.3 ohm | 48.8 / 49.4, 48.9 / 49.5 ohm |
 | `msl50_lossy` | same with tan 0.02 and 35 um copper, S21 at 1 / 3 / 5 GHz | -0.304 / -0.329 / -0.368 dB | -0.315 / -0.359 / -0.424 dB |
 | `msl50_lossy` | agentee Djordjevic-Sarkar, openEMS conductivity still fixed at 3.25 GHz | -0.103 / -0.307 / -0.535 dB | -0.315 / -0.359 / -0.424 dB |
@@ -47,6 +48,8 @@ runs.
 | `thin_lossy` | the same, earlier model with the sheet resistance fixed at 3.5 GHz | 0.078 / 0.053 / 0.044 dB | |
 | `stub` | 12 mm open stub, notch, 0.2 mm cells | 3.725 GHz | 3.525 GHz |
 | `stub_fine` | the same, 0.1 mm cells | 3.725 GHz | 3.625 GHz |
+| `via` | 20 mm, 0.95 mm strips on F.Cu and B.Cu, In1.Cu plane, 2 x 0.5 mm er 4.5, 0.3 mm via, S21 at 3 / 5 GHz | -0.003 / -0.024 dB, -135.5 / 133.8 deg | -0.007 / -0.059 dB, -137.1 / 131.3 deg |
+| `via` | the same, the via as one line of edges and port 2 read upside down | -0.037 / -0.116 dB, 180 deg off | |
 
 Hammerstad-Jensen gives 49.4 ohm for `msl50` on an infinite substrate at DC.
 
@@ -66,8 +69,18 @@ Findings:
   0.060 dB. Halfway between the two runs, which approximates the averaged pole, the gap to
   agentee is 0.005 / 0.028 / 0.053 dB, within 0.004 dB of the lossless line's radiation gap
   (0.004 / 0.025 / 0.049 dB). Dielectric and copper loss therefore agree to about 0.004 dB.
-- Delay on plain lines agrees closely. agentee reads less radiation than openEMS; moving
-  agentee's air box out from 1.5 mm to 8 mm does not change it, so the cause is still open.
+- Delay on plain lines agrees closely. agentee read less radiation than openEMS; moving
+  agentee's air box out from 1.5 mm to 8 mm, doubling its PML to 16 cells or capping its
+  cells at 0.4 mm does not change it. Two causes were found. The strips here were tracks with
+  round ends reaching 1.45 mm past the ports and off the board edge, where openEMS has square
+  ends at the ports; they are boxes now. And the port current was read on one loop at the
+  middle edge of the port while the voltage sums every edge; it is now the length weighted mean
+  of a loop round every edge. The current moved the 5 GHz figure by 0.022 dB and the ends by
+  0.013 dB, together 0.032 to 0.067 dB against openEMS's 0.089 dB (0.034 against 0.037 dB at
+  3 GHz).
+- The first via run read S21 180 deg off (a port whose reference plane is above it measured
+  reference minus signal) and put the via in as one line of edges, which added about 0.1 dB of
+  mismatch loss at 5 GHz. Every node inside the drill is PEC now.
 - Copper loss first matched only at the band centre, off by sqrt(f) away from it, because the
   FDTD sheet resistance was fixed there while openEMS's sheet model is dispersive. The sheets
   now carry the full sqrt(j w) surface impedance and agree within 8% across the band.

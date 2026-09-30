@@ -1,7 +1,6 @@
 use super::edge;
 use super::engine::{self, Edge, Element, Grid, Lumped, Materials, PortDef, Sim};
 use super::surface::Surface;
-use crate::xsection::lines;
 use agentee_core::board::{Board, LayerKind};
 use agentee_core::geom::{self, P};
 use agentee_core::graphic::Bounds;
@@ -488,7 +487,7 @@ impl PcbModel {
                 if *s <= lo - opt.margin || *s >= hi + opt.margin {
                     continue;
                 }
-                if fixed.iter().all(|f| (f - s).abs() > opt.cell * 0.6) {
+                if fixed.iter().all(|f| (f - s).abs() > opt.cell * FILL) {
                     fixed.push(*s);
                 }
             }
@@ -497,7 +496,7 @@ impl PcbModel {
             for v in fixed {
                 let keep = pinned.iter().any(|p| (p - v).abs() < 1e-9);
                 match spaced.last() {
-                    Some(l) if v - l < opt.cell * 0.6 => {
+                    Some(l) if v - l < opt.cell * FILL => {
                         if keep {
                             *spaced.last_mut().unwrap() = v;
                         }
@@ -507,7 +506,7 @@ impl PcbModel {
             }
             let fixed = spaced;
             let features: Vec<(f64, f64)> = fixed.iter().map(|v| (*v, opt.cell)).collect();
-            let inner = lines(&fixed, &features, coarse, ratio);
+            let inner = mesh_lines(&fixed, &features, coarse, ratio);
             pad_pml(inner, opt.pml)
         };
         let pinned = |f: &dyn Fn(P) -> f64| -> Vec<f64> {
@@ -544,7 +543,7 @@ impl PcbModel {
             }
         }
         let fz = kept;
-        let z = pad_pml(lines(&fz, &feat_z, coarse, ratio), opt.pml);
+        let z = pad_pml(mesh_lines(&fz, &feat_z, coarse, ratio), opt.pml);
         let insets: Vec<f64> = self
             .sheets
             .iter()
@@ -734,18 +733,29 @@ impl PcbModel {
             }
         }
         let mut via_edges: std::collections::HashSet<(usize, usize, usize)> = Default::default();
-        for (c, _, a, b) in &self.vias {
+        for (c, r, a, b) in &self.vias {
             let (i, j) = (grid.nearest(0, c[0]), grid.nearest(1, c[1]));
-            if i <= grid.pml
-                || i + 2 + grid.pml >= grid.x.len()
-                || j <= grid.pml
-                || j + 2 + grid.pml >= grid.y.len()
-            {
+            let outside = |i: usize, j: usize| {
+                i <= grid.pml
+                    || i + 2 + grid.pml >= grid.x.len()
+                    || j <= grid.pml
+                    || j + 2 + grid.pml >= grid.y.len()
+            };
+            if outside(i, j) {
                 continue;
             }
             let (lo, hi) = (ks[*a].min(ks[*b]), ks[*a].max(ks[*b]));
-            for k in lo..hi {
-                via_edges.insert((i, j, k));
+            let (i0, i1) = (grid.cell_of(0, c[0] - r), grid.cell_of(0, c[0] + r) + 1);
+            let (j0, j1) = (grid.cell_of(1, c[1] - r), grid.cell_of(1, c[1] + r) + 1);
+            for ii in i0..=i1 {
+                for jj in j0..=j1 {
+                    let inside = geom::dist([grid.x[ii], grid.y[jj]], *c) <= *r;
+                    if (inside && !outside(ii, jj)) || (ii, jj) == (i, j) {
+                        for k in lo..hi {
+                            via_edges.insert((ii, jj, k));
+                        }
+                    }
+                }
             }
         }
         let mut ports = Vec::new();
@@ -778,7 +788,7 @@ impl PcbModel {
                 .iter()
                 .map(|(ii, jj)| (lo..hi).map(|k| Edge { comp: 2, at: [*ii, *jj, k] }).collect())
                 .collect();
-            ports.push(PortDef { name: p.name.clone(), columns, r: p.r });
+            ports.push(PortDef { name: p.name.clone(), columns, r: p.r, reference_above: a > b });
         }
         let mut lumped = Vec::new();
         for e in &self.elements {
@@ -997,6 +1007,41 @@ impl PcbModel {
     }
 }
 
+const FILL: f64 = 0.8;
+
+fn mesh_lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
+    let mut fixed: Vec<f64> = fixed.to_vec();
+    fixed.sort_by(f64::total_cmp);
+    fixed.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+    let size = |x: f64| {
+        features.iter().map(|(at, s)| s + (ratio - 1.0) * (x - at).abs()).fold(coarse, f64::min)
+    };
+    let mut out = vec![fixed[0]];
+    for w in fixed.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let steps = 256;
+        let mut acc = vec![0.0; steps + 1];
+        for k in 0..steps {
+            let x = a + (b - a) * (k as f64 + 0.5) / steps as f64;
+            acc[k + 1] = acc[k] + (b - a) / steps as f64 / size(x);
+        }
+        let fine = acc[steps].ceil().max(1.0) as usize;
+        let n = if acc[steps] / fine as f64 >= FILL {
+            fine
+        } else {
+            ((acc[steps] / FILL).floor() as usize).max(1)
+        };
+        for c in 1..n {
+            let target = acc[steps] * c as f64 / n as f64;
+            let k = acc.partition_point(|v| *v < target).clamp(1, steps);
+            let t = (target - acc[k - 1]) / (acc[k] - acc[k - 1]).max(1e-30);
+            out.push(a + (b - a) * ((k - 1) as f64 + t) / steps as f64);
+        }
+        out.push(b);
+    }
+    out
+}
+
 fn pad_pml(mut line: Vec<f64>, pml: usize) -> Vec<f64> {
     let first = line[1] - line[0];
     let last = line[line.len() - 1] - line[line.len() - 2];
@@ -1005,4 +1050,72 @@ fn pad_pml(mut line: Vec<f64>, pml: usize) -> Vec<f64> {
     pre.append(&mut line);
     pre.extend(post);
     pre
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mesh_lines_stay_most_of_a_cell_apart() {
+        let cell = 0.1;
+        let edges: Vec<f64> =
+            (0..12).map(|k| 1.0 + 0.113 * k as f64 * (1.0 + 0.3 * k as f64)).collect();
+        let m = PcbModel {
+            outline: vec![[0.0, 0.0], [12.0, 0.0], [12.0, 6.0], [0.0, 6.0]],
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.0 },
+                Sheet { name: "B.Cu".into(), z: -0.4, thickness: 0.0 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.4, z1: 0.0, er: 4.0, tan: 0.0, pinned: true }],
+            ports: vec![ModelPort {
+                name: "P".into(),
+                at: [3.07, 2.93],
+                area: vec![],
+                sheet: 0,
+                reference: 1,
+                r: 50.0,
+            }],
+            features_x: edges.clone(),
+            features_y: edges.iter().map(|v| v * 0.5).collect(),
+            ..Default::default()
+        };
+        let opt = Meshing { cell, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let grid = m.mesh(&opt);
+        for (axis, pinned) in [(&grid.x, 3.07), (&grid.y, 2.93)] {
+            let inner = &axis[opt.pml..axis.len() - opt.pml];
+            let smallest = inner.windows(2).map(|w| w[1] - w[0]).fold(f64::MAX, f64::min);
+            assert!(smallest >= FILL * cell - 1e-9, "{smallest}");
+            assert!(inner.iter().any(|v| (v - pinned).abs() < 1e-12));
+        }
+        let lines = mesh_lines(&[0.0, 0.11, 0.3, 1.0], &[(0.0, cell), (1.0, cell)], 0.5, 1.3);
+        assert_eq!(&lines[..3], &[0.0, 0.11, 0.3]);
+        assert!(lines.windows(2).all(|w| w[1] - w[0] >= FILL * cell - 1e-9), "{lines:?}");
+    }
+
+    #[test]
+    fn a_port_under_its_reference_reads_the_signal_side() {
+        let port = |name: &str, x: f64, sheet: usize, reference: usize| ModelPort {
+            name: name.into(),
+            at: [x, 0.0],
+            area: vec![],
+            sheet,
+            reference,
+            r: 50.0,
+        };
+        let m = PcbModel {
+            outline: vec![[0.0, -2.0], [6.0, -2.0], [6.0, 2.0], [0.0, 2.0]],
+            sheets: vec![
+                Sheet { name: "F.Cu".into(), z: 0.0, thickness: 0.0 },
+                Sheet { name: "B.Cu".into(), z: -0.4, thickness: 0.0 },
+            ],
+            dielectrics: vec![Dielectric { z0: -0.4, z1: 0.0, er: 4.0, tan: 0.0, pinned: true }],
+            ports: vec![port("top", 1.0, 0, 1), port("bottom", 5.0, 1, 0)],
+            ..Default::default()
+        };
+        let opt = Meshing { cell: 0.1, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
+        let sim = m.build(&opt).unwrap();
+        assert!(!sim.ports[0].reference_above);
+        assert!(sim.ports[1].reference_above);
+    }
 }

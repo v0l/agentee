@@ -126,6 +126,7 @@ pub fn execute(
             freqs: plan.fields.clone(),
             plane_k: if plan.fields.is_empty() { None } else { plan.plane_k },
             ntff: patches.as_ref().map(|p| p.gpu.clone()),
+            fused_e: run::fused_update(),
         };
         let rec = run::run(sim, j, &pulse, &extras, &mut |n, db| progress(&label, n, db))?;
         extra_outputs(plan, &rec, j, &label, &patches, &mut maps, &mut readings);
