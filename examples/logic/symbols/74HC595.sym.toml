@@ -1,0 +1,160 @@
+# imported from KiCad 74xx:74HC595
+name = "74HC595"
+reference = "U"
+description = "8-bit serial in/out Shift Register 3-State Outputs"
+footprint = "SOIC-16_3.9x9.9mm_P1.27mm"
+datasheet = "http://www.ti.com/lit/ds/symlink/sn74hc595.pdf"
+keywords = ["HCMOS", "SR", "3State"]
+footprint_filters = ["DIP*W7.62mm*", "SOIC*3.9x9.9mm*P1.27mm*", "TSSOP*4.4x5mm*P0.65mm*", "SOIC*5.3x10.2mm*P1.27mm*", "SOIC*7.5x10.3mm*P1.27mm*"]
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-7.62, -12.7]
+end = [7.62, 15.24]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "14"
+name = "SER"
+type = "input"
+at = [-10.16, -10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "SRCLK"
+type = "input"
+at = [-10.16, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "10"
+name = "~{SRCLR}"
+type = "input"
+at = [-10.16, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "12"
+name = "RCLK"
+type = "input"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "13"
+name = "~{OE}"
+type = "input"
+at = [-10.16, 5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "16"
+name = "VCC"
+type = "power_in"
+at = [0.0, -15.24]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "GND"
+type = "power_in"
+at = [0.0, 17.78]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "15"
+name = "QA"
+type = "tri_state"
+at = [10.16, -10.16]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "QB"
+type = "tri_state"
+at = [10.16, -7.62]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "QC"
+type = "tri_state"
+at = [10.16, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "QD"
+type = "tri_state"
+at = [10.16, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "QE"
+type = "tri_state"
+at = [10.16, 0.0]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "QF"
+type = "tri_state"
+at = [10.16, 2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "QG"
+type = "tri_state"
+at = [10.16, 5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "QH"
+type = "tri_state"
+at = [10.16, 7.62]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "9"
+name = "QH'"
+type = "output"
+at = [10.16, 12.7]
+side = "right"
+length = 2.54
+unit = 1

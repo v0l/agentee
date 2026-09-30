@@ -1696,7 +1696,10 @@ models do with their notifiers, until it is clocked, set or reset cleanly again.
 Readings: assertions passed and failed, contentions, timing violations, cells and events. Check
 lists every failed assertion, contention, timing violation or stopped run as an error on the
 sim, while the result is current. The result goes stale when the spec or the schematic's
-netlist changes. `examples/logic` is a 74HC161 counting into a 74HC138.
+netlist changes. `examples/logic` holds two: `counter`, a 74HC161 counting into a 74HC138,
+and `i2c`, an open-drain bus where a controller (two 74LVC1G07) and a target (a 74LVC1G06
+pulling SDA low for its ACK) share 4.7k pull-ups, and a 74HC595 clocked by SCL captures the
+byte, checked for START, the bits, the ACK, the byte (a `record` bus) and STOP.
 
 ## Graphics
 

@@ -1,0 +1,128 @@
+name = "i2c"
+no_connect = ["U3.1", "U4.1", "U5.1", "U6.9"]
+description = "An I2C-style open-drain bus: a controller and a target share SDA through open-drain buffers, 4.7k pull-ups make the 1, and a 74HC595 clocked by SCL captures the byte"
+
+[[parts]]
+ref = "J3"
+symbol = "Conn_01x05"
+value = "HOST"
+at = [25.4, 50.8]
+mirror = true
+
+[[parts]]
+ref = "U3"
+symbol = "74LVC1G07"
+value = "74LVC1G07"
+at = [63.5, 38.1]
+fields = { mpn = "TI SN74LVC1G07DCKR", role = "controller SCL" }
+
+[[parts]]
+ref = "U4"
+symbol = "74LVC1G07"
+value = "74LVC1G07"
+at = [63.5, 63.5]
+fields = { mpn = "TI SN74LVC1G07DCKR", role = "controller SDA" }
+
+[[parts]]
+ref = "U5"
+symbol = "74LVC1G06"
+value = "74LVC1G06"
+at = [63.5, 88.9]
+fields = { mpn = "TI SN74LVC1G06DCKR", role = "target ACK, pulls SDA low while ACK is high" }
+
+[[parts]]
+ref = "R2"
+symbol = "R"
+value = "4.7k"
+at = [88.9, 30.48]
+
+[[parts]]
+ref = "R3"
+symbol = "R"
+value = "4.7k"
+at = [96.52, 30.48]
+
+[[parts]]
+ref = "U6"
+symbol = "74HC595"
+value = "74HC595"
+at = [124.46, 63.5]
+fields = { mpn = "Nexperia 74HC595D", role = "bus monitor, shifts SDA on SCL" }
+
+[[parts]]
+ref = "J4"
+symbol = "Conn_01x08"
+value = "RX"
+at = [160.02, 63.5]
+
+[[parts]]
+ref = "C3"
+symbol = "C"
+value = "100n"
+at = [139.7, 30.48]
+
+[[nets]]
+name = "+3V3"
+style = "power"
+pins = ["U3.5", "U4.5", "U5.5", "U6.16", "U6.10", "R2.1", "R3.1", "C3.1"]
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = ["U3.3", "U4.3", "U5.3", "U6.8", "U6.13", "C3.2", "J3.5"]
+
+[[nets]]
+name = "M_SCL"
+pins = ["J3.1", "U3.2"]
+
+[[nets]]
+name = "M_SDA"
+pins = ["J3.2", "U4.2"]
+
+[[nets]]
+name = "ACK"
+pins = ["J3.3", "U5.2"]
+
+[[nets]]
+name = "RCK"
+pins = ["J3.4", "U6.12"]
+
+[[nets]]
+name = "SCL"
+pins = ["U3.4", "R2.2", "U6.11"]
+
+[[nets]]
+name = "SDA"
+pins = ["U4.4", "U5.4", "R3.2", "U6.14"]
+
+[[nets]]
+name = "RX0"
+pins = ["U6.15", "J4.1"]
+
+[[nets]]
+name = "RX1"
+pins = ["U6.1", "J4.2"]
+
+[[nets]]
+name = "RX2"
+pins = ["U6.2", "J4.3"]
+
+[[nets]]
+name = "RX3"
+pins = ["U6.3", "J4.4"]
+
+[[nets]]
+name = "RX4"
+pins = ["U6.4", "J4.5"]
+
+[[nets]]
+name = "RX5"
+pins = ["U6.5", "J4.6"]
+
+[[nets]]
+name = "RX6"
+pins = ["U6.6", "J4.7"]
+
+[[nets]]
+name = "RX7"
+pins = ["U6.7", "J4.8"]

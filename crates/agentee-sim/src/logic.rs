@@ -1559,6 +1559,49 @@ mod tests {
     }
 
     #[test]
+    fn i2c_example_pulls_up_acks_and_catches_a_late_latch() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/logic");
+        let p = agentee_core::Project::load(&root).unwrap();
+        let s = p.sims.iter().find(|s| s.name == "i2c").unwrap();
+        let spec = s.item.logic.as_ref().unwrap();
+        let drivers: Vec<&Cell> = spec
+            .circuit
+            .cells
+            .iter()
+            .filter(|c| ["U3", "U4", "U5"].contains(&c.part.as_str()))
+            .collect();
+        assert_eq!(drivers.len(), 3);
+        assert!(drivers.iter().all(|c| c.open_drain));
+        let (res, _) = run(spec, "i2c", 0, "i2c.vcd");
+        assert_eq!(res.failures, Vec::<String>::new());
+        assert_eq!(res.passed, spec.expects.len());
+        assert!(res.marks.is_empty());
+        assert_eq!(res.buses[0].name, "RX");
+        let mut floating = spec.clone();
+        floating.circuit.cells.retain(|c| c.part != "R3");
+        let (res, _) = run(&floating, "i2c", 0, "i2c.vcd");
+        assert!(
+            res.failures.iter().any(|f| f.contains("expected 1 at 2.4us, got z")),
+            "{:?}",
+            res.failures
+        );
+        let mut late = spec.clone();
+        let rck = late.stimuli.iter_mut().find(|x| x.name == "RCK").unwrap();
+        rck.wave = Wave::Steps(vec![(0, L), (8_505_000, H), (8_700_000, L)]);
+        let (res, _) = run(&late, "i2c", 0, "i2c.vcd");
+        assert!(
+            res.failures[0].starts_with("setup: U6 CLK edge 1ns before the LATCH edge at 8.505us"),
+            "{:?}",
+            res.failures
+        );
+        let timing = res.marks.iter().find(|m| m.kind == MarkKind::Timing).unwrap();
+        assert_eq!(timing.nets, vec!["SCL".to_string(), "RCK".into()]);
+        let failed = res.marks.iter().find(|m| m.kind == MarkKind::Assertion).unwrap();
+        assert_eq!(failed.time, 9_000_000);
+        assert!(failed.text.contains("got xxxxxxxx"), "{}", failed.text);
+    }
+
+    #[test]
     fn logic_example_counts_and_decodes() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/logic");
         let p = agentee_core::Project::load(&root).unwrap();
