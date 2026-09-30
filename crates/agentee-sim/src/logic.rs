@@ -1,5 +1,5 @@
 use agentee_core::logic::{
-    Check, Circuit, Edge, GateOp, Input, Level, LogicResult, LogicSpec, Mark, MarkKind,
+    Check, Circuit, Clocked, Edge, GateOp, Input, Level, LogicResult, LogicSpec, Mark, MarkKind,
     OnViolation, Prim, Stimulus, Trace, Wave, fmt_time,
 };
 use agentee_core::sim::Reading;
@@ -338,6 +338,7 @@ struct Engine<'a> {
     state: Vec<Vec<Level>>,
     changed_at: Vec<Vec<Option<u64>>>,
     last_edge: Vec<Vec<Option<u64>>>,
+    clocked: Vec<Vec<Clocked>>,
     on_violation: OnViolation,
     queue: BinaryHeap<Reverse<(u64, u64, usize, u8)>>,
     seq: u64,
@@ -364,6 +365,7 @@ impl<'a> Engine<'a> {
             state: Vec::new(),
             changed_at: Vec::new(),
             last_edge: c.cells.iter().map(|x| vec![None; x.prim.clocked().len()]).collect(),
+            clocked: c.cells.iter().map(|x| x.prim.clocked()).collect(),
             on_violation,
             queue: BinaryHeap::new(),
             seq: 0,
@@ -507,7 +509,7 @@ impl Engine<'_> {
         t: u64,
     ) -> Vec<std::ops::Range<usize>> {
         let cell = &self.c.cells[ci];
-        let checks = cell.prim.clocked();
+        let checks = &self.clocked[ci];
         if checks.is_empty() {
             return Vec::new();
         }
