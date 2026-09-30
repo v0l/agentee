@@ -1586,7 +1586,9 @@ In the waveform view the mouse wheel (or pinch, or ctrl and the wheel) zooms abo
 a drag or a sideways scroll pans, a double click fits the whole run, and a click sets the time
 cursor, snapped to an edge of the row under it within a few pixels. `+` and `-` zoom about the
 cursor, the arrow keys pan, `F` or `Home` fits, `Escape` drops the cursor, and `N` and `P` jump
-the cursor to the next and previous marker. The column beside the names reads every row at the
+the cursor to the next and previous marker. With more rows than fit, the wheel over the names,
+a drag or click on the bar at the right edge, and `Page Up` and `Page Down` scroll the rows
+(`top=N` in `--show` starts at row N). The column beside the names reads every row at the
 cursor (at the pointer with no cursor, else at the right edge of the view), and the hover tip gives the
 time from the cursor. Nets named `X[0]` to `X[n]`, or `X0` to `Xn` (also `X0_N` to `Xn_N`),
 fold into one bus row drawn in hex, MSB first, with a nibble of x for any unknown bit and z for
@@ -1596,7 +1598,8 @@ The VCD holds the same buses as vectors in place of their bits: `Q0` to `Q3` as
 `NAME [n-1:0]`, MSB first.
 Markers along the top show each failed assertion (red, at the time it was checked), timing
 violation (amber) and contention (violet), with a dot on the rows of the nets involved; hover
-one for its message, click it to put the cursor there. `agentee render NAME --show
+one for its message, click it to put the cursor there. A run keeps its first 10000 markers,
+and the header says capped when it reached that. `agentee render NAME --show
 from=300ns,to=900ns,cursor=550ns,open=Q[3:0]` draws the same view headless.
 
 ```toml

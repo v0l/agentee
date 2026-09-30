@@ -17,6 +17,8 @@ pub struct WaveView {
     pub to: u64,
     pub cursor: Option<u64>,
     pub open: Vec<String>,
+    pub top: usize,
+    pub wheel_rows: f32,
 }
 
 impl WaveView {
@@ -54,6 +56,13 @@ impl WaveView {
         self.to = self.from + span;
     }
 
+    pub fn scroll_rows(&mut self, rows: f32, most: usize) {
+        self.wheel_rows += rows;
+        let whole = self.wheel_rows.trunc();
+        self.wheel_rows -= whole;
+        self.top = (self.top as f32 + whole).clamp(0.0, most as f32) as usize;
+    }
+
     pub fn show(&mut self, t: u64, end: u64) {
         if t < self.from || t > self.to {
             let span = self.to - self.from;
@@ -70,6 +79,7 @@ impl WaveView {
                 "from" => self.from = ps(v).unwrap_or(self.from),
                 "to" => self.to = ps(v).unwrap_or(self.to),
                 "cursor" => self.cursor = ps(v).or(self.cursor),
+                "top" => self.top = v.trim().parse().unwrap_or(self.top),
                 "open" => self.open.push(v.trim().to_string()),
                 _ => {}
             }
@@ -241,8 +251,9 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
     let end = r.end_ps.max(1);
     let (mut from, mut to) = view.window(&r.name, end);
     let rows = rows(&r.traces, &r.buses, &view.open);
+    let capped = if r.marks.len() >= agentee_sim::logic::MARK_LIMIT { " (capped)" } else { "" };
     let sub = format!(
-        "{} nets, {} to {} of {}, {} markers; wheel zooms, drag pans, click sets the cursor, N and P step markers, F fits",
+        "{} nets, {} to {} of {}, {} markers{capped}; wheel zooms, drag pans, click sets the cursor, N and P step markers, F fits",
         r.traces.len(),
         fmt_time(from),
         fmt_time(to),
@@ -250,27 +261,57 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
         r.marks.len()
     );
     section(ui, "waveforms", &sub, |ui| {
-        let height = (rows.len() as f32 * ROW + 34.0 + STRIP).max(120.0);
+        let full = rows.len() as f32 * ROW + 34.0 + STRIP;
+        let height = full.min(ui.available_height()).max(120.0);
         let sense = if interactive { Sense::click_and_drag() } else { Sense::hover() };
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), sense);
         let area = Rect::from_min_max(
             rect.min + Vec2::new(LABEL_W + VALUE_W, 8.0 + STRIP),
             rect.max - Vec2::new(14.0, 26.0),
         );
+        let visible = ((area.height() / ROW).floor() as usize).max(1);
+        let most = rows.len().saturating_sub(visible);
+        view.top = view.top.min(most);
+        let bar = Rect::from_min_max(
+            Pos2::new(area.right() + 4.0, area.top()),
+            Pos2::new(rect.right() - 4.0, area.bottom()),
+        );
         let t_at = |x: f32, from: u64, to: u64| -> u64 {
             let f = ((x - area.left()) / area.width()).clamp(0.0, 1.0) as f64;
             from + (f * (to - from) as f64).round() as u64
         };
-        let row_at = |y: f32| -> Option<usize> {
+        let row_at = |y: f32, top: usize| -> Option<usize> {
             let k = ((y - area.top()) / ROW).floor();
-            (k >= 0.0 && (k as usize) < rows.len()).then_some(k as usize)
+            let k = k as usize + top;
+            (y >= area.top() && k < rows.len() && k < top + visible).then_some(k)
         };
         if interactive {
             let px = (to - from) as f64 / area.width().max(1.0) as f64;
+            if most > 0 {
+                let drag = ui.interact(bar, resp.id.with("rows"), Sense::click_and_drag());
+                if (drag.dragged() || drag.clicked())
+                    && let Some(p) = drag.interact_pointer_pos()
+                {
+                    let f = (p.y - area.top()) / area.height();
+                    let centre = f * rows.len() as f32 - visible as f32 / 2.0;
+                    view.top = centre.round().clamp(0.0, most as f32) as usize;
+                }
+                let pressed = |k: Key| ui.input(|i| i.key_pressed(k));
+                if !ui.ctx().egui_wants_keyboard_input() {
+                    if pressed(Key::PageDown) {
+                        view.top = (view.top + visible).min(most);
+                    }
+                    if pressed(Key::PageUp) {
+                        view.top = view.top.saturating_sub(visible);
+                    }
+                }
+            }
             if let Some(hp) = resp.hover_pos() {
                 let (scroll, zoom) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
                 let at = t_at(hp.x, from, to);
-                if scroll.y != 0.0 {
+                if scroll.y != 0.0 && hp.x < area.left() {
+                    view.scroll_rows(-scroll.y / ROW, most);
+                } else if scroll.y != 0.0 {
                     view.zoom(at, (-scroll.y as f64 * 0.004).exp(), end);
                 }
                 if scroll.x != 0.0 {
@@ -289,7 +330,7 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
                 && let Some(p) = resp.interact_pointer_pos()
             {
                 if p.x < area.left() {
-                    if let Some(Row::Bus { name, .. }) = row_at(p.y).map(|k| &rows[k]) {
+                    if let Some(Row::Bus { name, .. }) = row_at(p.y, view.top).map(|k| &rows[k]) {
                         match view.open.iter().position(|n| n == name) {
                             Some(k) => {
                                 view.open.remove(k);
@@ -303,7 +344,7 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
                     view.cursor = near.filter(|m| (m.abs_diff(t) as f64) < 8.0 * px).or(Some(t));
                 } else {
                     let t = t_at(p.x, from, to);
-                    let snap = row_at(p.y).and_then(|k| {
+                    let snap = row_at(p.y, view.top).and_then(|k| {
                         edges_of(&r.traces, &rows[k])
                             .into_iter()
                             .filter(|e| (*e as f64 - t as f64).abs() < 6.0 * px)
@@ -315,6 +356,8 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
             keys(ui, view, &r.marks, end);
             (from, to) = (view.from, view.to);
         }
+        let top = view.top;
+        let shown = |i: usize| (i >= top && i < top + visible).then(|| (i - top) as f32);
         let p = ui.painter_at(rect);
         p.rect_filled(rect, 0.0, WELL);
         let span = (to - from).max(1) as f64;
@@ -356,7 +399,8 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
         let float = Stroke::new(1.0, LEGEND);
         let unknown = Color32::from_rgba_unmultiplied(0xE2, 0x6D, 0x5A, 70);
         for (i, row) in rows.iter().enumerate() {
-            let top = area.top() + i as f32 * ROW + 4.0;
+            let Some(slot) = shown(i) else { continue };
+            let top = area.top() + slot * ROW + 4.0;
             let bottom = top + ROW - 8.0;
             let mid = (top + bottom) / 2.0;
             let (label, indent) = match row {
@@ -461,6 +505,15 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
                 }
             }
         }
+        if most > 0 {
+            p.rect_filled(bar, 2.0, BAND);
+            let (h, n) = (bar.height(), rows.len() as f32);
+            let thumb = Rect::from_min_max(
+                Pos2::new(bar.left(), bar.top() + h * top as f32 / n),
+                Pos2::new(bar.right(), bar.top() + h * (top + visible) as f32 / n),
+            );
+            p.rect_filled(thumb, 2.0, LEGEND);
+        }
         let mut tip: Option<String> = None;
         for m in r.marks.iter().filter(|m| m.time >= from && m.time <= to) {
             let c = mark_colour(m.kind);
@@ -479,9 +532,9 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
                 c,
                 Stroke::NONE,
             ));
-            for (i, row) in rows.iter().enumerate() {
+            for (i, row) in rows.iter().enumerate().skip(top).take(visible) {
                 if row_has(&r.traces, row, &m.nets) {
-                    let cy = area.top() + i as f32 * ROW + ROW / 2.0;
+                    let cy = area.top() + (i - top) as f32 * ROW + ROW / 2.0;
                     p.circle_filled(Pos2::new(mx, cy), 3.5, c);
                 }
             }
@@ -510,7 +563,7 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
                 [Pos2::new(hp.x, area.top()), Pos2::new(hp.x, area.bottom())],
                 Stroke::new(1.0, LEGEND),
             );
-            let mut text = match row_at(hp.y).map(|k| &rows[k]) {
+            let mut text = match row_at(hp.y, top).map(|k| &rows[k]) {
                 Some(row) => {
                     let name = match row {
                         Row::Bit { trace, .. } => r.traces[*trace].name.clone(),
@@ -769,6 +822,98 @@ mod tests {
         assert_eq!(view.to - view.from, 500_000);
         frame(vec![key(Key::Escape)], &mut view);
         assert_eq!(view.cursor, None);
+    }
+
+    #[test]
+    fn many_rows_scroll_by_the_names_wheel_the_bar_and_page_keys() {
+        use egui::{Event, Modifiers, MouseWheelUnit, RawInput, TouchPhase};
+        let ctx = egui::Context::default();
+        egui_bench::install(&ctx);
+        let letters = |k: usize| {
+            let a = (b'A' + (k / 26) as u8) as char;
+            let b = (b'A' + (k % 26) as u8) as char;
+            format!("S{a}{b}")
+        };
+        let traces: Vec<Trace> = (0..60).map(|k| trace(&letters(k), &[0, 500_000], "01")).collect();
+        let r = LogicResult {
+            name: "many".into(),
+            kind: "logic".into(),
+            spec_hash: 0,
+            duration_ps: 1_000_000,
+            end_ps: 1_000_000,
+            traces,
+            buses: Vec::new(),
+            marks: Vec::new(),
+            passed: 0,
+            failures: Vec::new(),
+            readings: Vec::new(),
+            events: 0,
+            seconds: 0.0,
+            vcd: String::new(),
+        };
+        let mut view = WaveView::default();
+        let mut time = 0.0;
+        let mut frame = |events: Vec<Event>, view: &mut WaveView| {
+            time += 1.0 / 60.0;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 400.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run_ui(input, |ui| canvas(ui, &r, view, true));
+        };
+        let wheel = |dy: f32| Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, dy),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        };
+        let button = |pos: Pos2, pressed: bool| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        let key = |key: Key| Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        };
+        frame(Vec::new(), &mut view);
+        assert_eq!((view.top, view.from, view.to), (0, 0, 1_000_000));
+        let names = Pos2::new(40.0, 150.0);
+        frame(vec![Event::PointerMoved(names)], &mut view);
+        frame(vec![wheel(-120.0)], &mut view);
+        for _ in 0..60 {
+            frame(Vec::new(), &mut view);
+        }
+        assert!(view.top >= 4, "{view:?}");
+        assert_eq!((view.from, view.to), (0, 1_000_000));
+        let scrolled = view.top;
+        frame(vec![key(Key::PageDown)], &mut view);
+        let page = view.top - scrolled;
+        assert!(page >= 8, "{view:?}");
+        frame(vec![key(Key::PageUp)], &mut view);
+        assert_eq!(view.top, scrolled);
+        let bar_x = 982.0;
+        frame(vec![Event::PointerMoved(Pos2::new(bar_x, 80.0))], &mut view);
+        frame(vec![button(Pos2::new(bar_x, 80.0), true)], &mut view);
+        for y in [150.0, 250.0, 395.0] {
+            frame(vec![Event::PointerMoved(Pos2::new(bar_x, y))], &mut view);
+        }
+        frame(vec![button(Pos2::new(bar_x, 395.0), false)], &mut view);
+        assert_eq!(view.top, 60 - page, "{view:?}");
+        assert_eq!((view.from, view.to, view.cursor), (0, 1_000_000, None));
+        frame(vec![Event::PointerMoved(Pos2::new(600.0, 150.0))], &mut view);
+        frame(vec![wheel(120.0)], &mut view);
+        for _ in 0..60 {
+            frame(Vec::new(), &mut view);
+        }
+        assert!(view.to - view.from < 900_000, "{view:?}");
+        assert_eq!(view.top, 60 - page);
     }
 
     fn count(rgba: &[u8], c: Color32) -> usize {

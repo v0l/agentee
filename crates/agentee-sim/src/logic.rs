@@ -9,7 +9,7 @@ use std::collections::BinaryHeap;
 pub const DELTA_LIMIT: usize = 1000;
 pub const EVENT_LIMIT: u64 = 50_000_000;
 const MESSAGE_LIMIT: usize = 20;
-pub const MARK_LIMIT: usize = 1000;
+pub const MARK_LIMIT: usize = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Transition {
