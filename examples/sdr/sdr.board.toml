@@ -7,92 +7,10 @@ size = [65, 45]
 corner_radius = 1.5
 
 [stackup]
+preset = "JLC06161H-1080B"
 finish = "ENIG"
 mask_color = "black"
 silk_color = "white"
-
-[[stackup.layers]]
-kind = "silk"
-[[stackup.layers]]
-kind = "paste"
-[[stackup.layers]]
-kind = "mask"
-thickness = "15.2um"
-er = 3.8
-[[stackup.layers]]
-kind = "copper"
-thickness = "1oz"
-[[stackup.layers]]
-kind = "prepreg"
-material = "1080"
-thickness = "0.0764mm"
-er = 3.91
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "0.5oz"
-[[stackup.layers]]
-kind = "core"
-material = "FR4"
-thickness = "0.3mm"
-er = 4.41
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "0.5oz"
-[[stackup.layers]]
-kind = "prepreg"
-material = "7628"
-thickness = "0.2104mm"
-er = 4.4
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "0.5oz"
-[[stackup.layers]]
-kind = "core"
-material = "FR4"
-thickness = "0.3mm"
-er = 4.41
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "0.5oz"
-[[stackup.layers]]
-kind = "prepreg"
-material = "7628"
-thickness = "0.2104mm"
-er = 4.4
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "0.5oz"
-[[stackup.layers]]
-kind = "core"
-material = "FR4"
-thickness = "0.3mm"
-er = 4.41
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "0.5oz"
-[[stackup.layers]]
-kind = "prepreg"
-material = "1080"
-thickness = "0.0764mm"
-er = 3.91
-loss_tangent = 0.02
-[[stackup.layers]]
-kind = "copper"
-thickness = "1oz"
-[[stackup.layers]]
-kind = "mask"
-thickness = "15.2um"
-er = 3.8
-[[stackup.layers]]
-kind = "paste"
-[[stackup.layers]]
-kind = "silk"
 
 [rules]
 min_track_width = "0.09mm"
@@ -115,7 +33,7 @@ diameter = "0.35mm"
 
 [[netclasses]]
 name = "Default"
-description = "Control and low speed logic. Layers: F signal, In1 ground, In2 signal, In3 ground, In4 core power (1V0, 1V8), In5 IO power (3V3, 2V5, 1V3A), In6 ground, B signal"
+description = "Control and low speed logic. Layers: F signal, In1 ground, In2 signal, In3 power (1V0, 1V8, 3V3, 2V5, 1V3A, VSYS split), In4 ground, B signal"
 track_width = "0.1mm"
 clearance = "0.1mm"
 via = "bga"
@@ -133,7 +51,7 @@ via = "std"
 
 [[netclasses]]
 name = "PowerHi"
-description = "VBUS, VSYS and the 1V0 core rail: up to 2 A, carried by the In4.Cu plane and short outer runs"
+description = "VBUS, VSYS and the 1V0 core rail: up to 2 A, carried by the In3.Cu plane and short outer runs"
 track_width = "0.9mm"
 clearance = "0.2mm"
 current = "2A"
@@ -144,7 +62,7 @@ via = "std"
 
 [[netclasses]]
 name = "USB_SS"
-description = "USB 3.2 Gen 1 lanes, 5 Gbps, the FX5 muxes them by plug orientation: 85 ohm pairs on F.Cu over In1.Cu, or B.Cu over In6.Cu for the connector's back row, same geometry"
+description = "USB 3.2 Gen 1 lanes, 5 Gbps, the FX5 muxes them by plug orientation: 85 ohm pairs on F.Cu over In1.Cu, or B.Cu over In4.Cu for the connector's back row, same geometry"
 impedance = "85ohm"
 impedance_tolerance = "10%"
 diff_gap = "0.15mm"
@@ -170,10 +88,10 @@ via = "bga"
 
 [[netclasses]]
 name = "LVDS"
-description = "FPGA to FX5 LVDS receive link, 100 ohm pairs on In2.Cu between the In1 and In3 grounds, via in pad at both ends"
+description = "FPGA to FX5 LVDS receive link, 100 ohm pairs on In2.Cu, 0.1 mm over the In1 ground, via in pad at both ends"
 impedance = "100ohm"
 impedance_tolerance = "10%"
-diff_gap = "0.125mm"
+diff_gap = "0.25mm"
 clearance = "0.1mm"
 layers = ["In2.Cu"]
 solver = "field"
