@@ -741,6 +741,39 @@ fn small_chips_with_unbalanced_pads_risk_tombstoning() {
 }
 
 #[test]
+fn tombstone_weighs_a_thermal_relief_by_its_spokes_and_skips_unrouted_pads() {
+    let even = chip([0.96, 0.0], [0.56, 0.62]);
+    let fixture = |board: &str, pcb: &str| {
+        let p = load(&Fixture {
+            board,
+            footprints: &[("R_0402_1005Metric", even.as_str())],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb,
+            ..Default::default()
+        });
+        hits(&p, "tombstone-risk")
+    };
+    let relief = format!(
+        "{}\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\n\
+         outline = [[10.6, 9.85], [10.91, 9.85], [10.91, 8.0], [14.0, 8.0], [14.0, 12.0], [10.91, 12.0], [10.91, 10.15], [10.6, 10.15]]\n\
+         min_island_area = 0.0\n",
+        track("A", "F.Cu", "[[9.52, 10.0], [7.0, 10.0]]")
+    );
+    let t = fixture("", &relief);
+    assert!(t.is_empty(), "{t:?}");
+    let t = fixture("[drc]\ntombstone_ratio = 1.2\n", &relief);
+    assert!(
+        t.len() == 1
+            && t[0].1.contains("pad 2 is fed by 0.3mm of spokes and tracks and pad 1 by 0.2mm"),
+        "{t:?}"
+    );
+    let unrouted = "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\n\
+                    outline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\n";
+    let t = fixture("", unrouted);
+    assert!(t.is_empty(), "{t:?}");
+}
+
+#[test]
 fn small_chips_keep_a_tall_part_height_away() {
     let tall = format!("height = \"4mm\"\n{TWO_PADS}{FAB_BODY}");
     let small = chip([0.96, 0.0], [0.56, 0.62]);

@@ -266,7 +266,7 @@ fn edge_pad_reach(cx: &Ctx, r: &mut Report) {
     }
 }
 
-fn boundary_samples(outlines: &[Vec<P>], step: f64, off: f64) -> Vec<P> {
+pub(super) fn boundary_samples(outlines: &[Vec<P>], step: f64, off: f64) -> Vec<P> {
     let mut out = Vec::new();
     for (k, o) in outlines.iter().enumerate() {
         for i in 0..o.len() {

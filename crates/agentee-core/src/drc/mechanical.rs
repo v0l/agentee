@@ -402,7 +402,72 @@ fn attached_copper(cx: &Ctx, pi: usize, k: usize) -> f64 {
     hit as f64 * STEP * STEP
 }
 
+struct Feed {
+    spokes: f64,
+    tracks: f64,
+    vias: usize,
+}
+
+impl Feed {
+    fn unfed(&self) -> bool {
+        self.spokes <= 0.0 && self.tracks <= 0.0 && self.vias == 0
+    }
+}
+
+fn pad_feed(cx: &Ctx, pi: usize, k: usize) -> Option<Feed> {
+    let q = &cx.parts[pi].pads[k];
+    let net = q.net?;
+    let step = 0.02;
+    let pb = rings_bounds(&q.outlines);
+    let mut spokes = 0.0;
+    for (z, f) in cx.zones.iter().zip(cx.fills()) {
+        if z.net != net
+            || !q.copper.contains(&z.layer)
+            || !super::near(&f.bounds, pb.center(), pb.size()[0].max(pb.size()[1]))
+        {
+            continue;
+        }
+        let samples = super::copper::boundary_samples(&q.outlines, step, 0.05);
+        let hit = samples.iter().filter(|s| f.contains(**s)).count();
+        if hit * 2 >= samples.len() && hit > 0 {
+            return None;
+        }
+        spokes += hit as f64 * step;
+    }
+    let items = cx.copper_items();
+    let mut fed: Vec<usize> = Vec::new();
+    let mut vias = 0;
+    for i in cx.items_near(&pb, 0.0) {
+        let c = &items[i];
+        if c.net != Some(net) || !c.layers.iter().any(|l| q.copper.contains(l)) {
+            continue;
+        }
+        if let (Owner::Via(_), super::CuShape::Circle(o, rv)) = (&c.owner, &c.shape) {
+            if rings_point_gap(&q.outlines, *o) <= *rv + 1e-6 {
+                vias += 1;
+            }
+            continue;
+        }
+        let Owner::Track(ti) = c.owner else { continue };
+        if fed.contains(&ti) {
+            continue;
+        }
+        let super::CuShape::Seg(a, b, hw) = c.shape else { continue };
+        let touches = q.outlines.iter().any(|o| {
+            geom::point_in_polygon(a, o)
+                || geom::point_in_polygon(b, o)
+                || geom::polyline_polygon_distance(&[a, b], o) <= hw + 1e-6
+        });
+        if touches {
+            fed.push(ti);
+        }
+    }
+    let tracks = fed.iter().map(|&t| cx.tracks[t].width).sum();
+    Some(Feed { spokes, tracks, vias })
+}
+
 fn tombstone_risk(cx: &Ctx, r: &mut Report) {
+    let ratio = cx.board.drc.tombstone_ratio.unwrap_or(3.0);
     let vip = vias_in_pads(cx.parts, cx.vias);
     for (pi, p) in cx.parts.iter().enumerate() {
         let Some(c) = chip(pi, p).filter(Chip::small) else { continue };
@@ -430,10 +495,33 @@ fn tombstone_risk(cx: &Ctx, r: &mut Report) {
             (false, true) => why.push(format!("pad {nb} has a via in it and pad {na} not")),
             _ => {}
         }
-        if qa.net.is_some() && qb.net.is_some() {
+        let feeds = (pad_feed(cx, pi, ka), pad_feed(cx, pi, kb));
+        let unfed = |f: &Option<Feed>| f.as_ref().is_some_and(|f| f.unfed());
+        let necks = match &feeds {
+            _ if unfed(&feeds.0) || unfed(&feeds.1) => None,
+            (Some(fa), Some(fb))
+                if fa.spokes + fb.spokes > 0.0
+                    && fa.spokes + fa.tracks > 0.0
+                    && fb.spokes + fb.tracks > 0.0 =>
+            {
+                Some((fa.spokes + fa.tracks, fb.spokes + fb.tracks))
+            }
+            _ => None,
+        };
+        if let Some((wa, wb)) = necks {
+            let (lo, hi) = (wa.min(wb), wa.max(wb));
+            if hi > ratio * lo {
+                let (big, small) = if wa >= wb { (na, nb) } else { (nb, na) };
+                why.push(format!(
+                    "pad {big} is fed by {} of spokes and tracks and pad {small} by {}",
+                    mm(hi),
+                    mm(lo)
+                ));
+            }
+        } else if qa.net.is_some() && qb.net.is_some() && !unfed(&feeds.0) && !unfed(&feeds.1) {
             let (ca, cb) = (attached_copper(cx, pi, ka), attached_copper(cx, pi, kb));
             let (lo, hi) = (ca.min(cb), ca.max(cb));
-            if hi >= 0.1 && hi > 3.0 * lo.max(0.02) {
+            if hi >= 0.1 && hi > ratio * lo.max(0.02) {
                 let (big, small) = if ca >= cb { (na, nb) } else { (nb, na) };
                 why.push(format!(
                     "pad {big} has {hi:.2} mm2 of copper within {} and pad {small} {lo:.2} mm2",
