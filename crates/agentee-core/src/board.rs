@@ -1562,6 +1562,11 @@ impl Board {
         }
     }
 
+    pub fn via_drill_error(&self, v: &Via) -> Option<String> {
+        let e = self.stackup.drills_via(v).err()?;
+        Some(format!("{} to {} cannot be drilled: {e}", v.from, v.to))
+    }
+
     fn check_via(&self, i: usize, v: &Via, copper: &[String], d: &mut Diags) {
         let r = &self.rules;
         let at = format!("vias[{i}]");
@@ -1679,8 +1684,8 @@ impl Board {
                 );
             }
         }
-        if let Err(e) = self.stackup.drills_via(v) {
-            d.error(&at, format!("{span} cannot be drilled: {e}"));
+        if let Some(e) = self.via_drill_error(v) {
+            d.error(&at, e);
         }
         if let Some(bd) = &v.backdrill {
             self.check_backdrill(&at, v, bd, a, b, copper, d);

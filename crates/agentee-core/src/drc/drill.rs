@@ -531,10 +531,14 @@ fn via_lamination(cx: &Ctx, r: &mut Report) {
         }
     }
     for ((name, from, to), (n, at, e)) in bad {
+        let def = match cx.board.vias.iter().position(|b| b.name == name) {
+            Some(i) => format!(" (board vias[{i}])"),
+            None => String::new(),
+        };
         r.emit(
             format!("vias {name}"),
             format!(
-                "{n} vias `{name}` from {from} to {to} cannot be drilled, first at [{:.3}, {:.3}]: {e}",
+                "{n} vias `{name}`{def} from {from} to {to} cannot be drilled, first at [{:.3}, {:.3}]: {e}",
                 at[0], at[1]
             ),
         );

@@ -158,9 +158,10 @@ dielectric; mask, paste and silk sit outside the outer copper.
 The lamination is the build-up sequence: the drill steps the fab runs between presses, in build
 order, each a copper span and a drill kind (`mechanical`, `laser` or `controlled_depth`). A via is
 drillable only when its span and drill kind match a step (a `stacked` microvia: when every hop of
-the stack is a laser step). Check reports any other via type as an error, the `via-lamination`
-rule reports the layout's vias of it, and the router leaves such a class via out; each lists the
-spans the lamination drills.
+the stack is a laser step). A via type a layout places is reported once, by the layout's
+`via-lamination` rule, which counts its vias and names the board entry (`vias[i]`) to fix; Check
+reports a via type no layout places as a board error. The router leaves such a class via out.
+Each lists the spans the lamination drills.
 
 Without `lamination` the sequence comes from the stackup. The build-up layers on each side are the
 prepreg-only dielectrics on the outside before the first core, counted per side, so a build can be
@@ -472,7 +473,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
 | `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair; only holes whose spans share a dielectric count, so a microvia beside a buried via is not a pair |
 | `stacked-via` | error | always | a via on the same spot as another via of its net through the same dielectric (drilled twice), stacked on another via at one layer when `stacked_microvias` is off or out of the lamination's build order (the via under a stack drilled at a later step than the one on top), or stacked with a controlled depth via at all |
-| `via-lamination` | error | always | vias whose span and drill kind match no drill step of the lamination (see Lamination), per via type and span; the message lists every span the lamination drills, by drill kind |
+| `via-lamination` | error | always | vias whose span and drill kind match no drill step of the lamination (see Lamination), per via type and span; the message names the board `[[vias]]` entry and lists every span the lamination drills, by drill kind. The board check leaves a via type a layout places to this rule |
 | `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
 | `class-width` | error | always | a track narrower than its class width that is not a neck-down |
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |

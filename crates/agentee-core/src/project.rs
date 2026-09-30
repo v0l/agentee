@@ -325,6 +325,7 @@ impl Project {
             let item = file.resolve(&cx, &mut d);
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
+        p.leave_placed_via_types_to_layouts();
         let cascade = |f: &SimFile| {
             matches!(
                 f.kind,
@@ -431,6 +432,25 @@ impl Project {
         }
         p.measure_interfaces();
         Ok(p)
+    }
+
+    fn leave_placed_via_types_to_layouts(&mut self) {
+        for b in &mut self.boards {
+            let placed = |name: &str| {
+                self.layouts
+                    .iter()
+                    .any(|l| l.item.board == b.name && l.item.vias.iter().any(|v| v.name == name))
+            };
+            let dropped: Vec<(String, String)> = b
+                .item
+                .vias
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| placed(&v.name))
+                .filter_map(|(i, v)| Some((format!("vias[{i}]"), b.item.via_drill_error(v)?)))
+                .collect();
+            b.diags.retain(|d| !dropped.iter().any(|(at, m)| d.at == *at && d.message == *m));
+        }
     }
 
     fn measure_interfaces(&mut self) {
@@ -906,6 +926,7 @@ impl Project {
         let mut d = Diags::new(&file.name);
         let item = file.resolve(&cx, &mut d);
         self.layouts[i] = Entry { name: item.name.clone(), diags: tag(d, &path), path, item };
+        self.leave_placed_via_types_to_layouts();
         Ok(())
     }
 }

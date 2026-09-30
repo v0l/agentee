@@ -1266,13 +1266,26 @@ fn a_via_off_the_lamination_lists_the_spans_it_drills() {
     assert_eq!(e.len(), 1, "{e:?}");
     assert!(
         e[0].0 == Severity::Error
-            && e[0].1.starts_with("2 vias `split` from F.Cu to In4.Cu cannot be drilled"),
+            && e[0].1.starts_with(
+                "2 vias `split` (board vias[2]) from F.Cu to In4.Cu cannot be drilled"
+            ),
         "{e:?}"
     );
     assert!(e[0].1.contains("1+4+1") && e[0].1.contains("laser F.Cu-In1.Cu, In4.Cu-B.Cu"), "{e:?}");
+    let undrillable = |p: &Project| {
+        p.boards[0]
+            .diags
+            .iter()
+            .filter(|d| d.message.starts_with("F.Cu to In4.Cu cannot be drilled"))
+            .map(|d| d.at.clone())
+            .collect::<Vec<_>>()
+    };
+    assert!(undrillable(&p).is_empty(), "{:?}", p.boards[0].diags);
     let fine =
         format!("{}{}", typed_via("A", [10.0, 12.0], "uv"), typed_via("A", [14.0, 12.0], "cd"));
-    assert!(hits(&hdi(&fine, DEPTH_AND_SPLIT_VIAS), "via-lamination").is_empty());
+    let p = hdi(&fine, DEPTH_AND_SPLIT_VIAS);
+    assert!(hits(&p, "via-lamination").is_empty());
+    assert_eq!(undrillable(&p), ["vias[2]"]);
 }
 
 #[test]
