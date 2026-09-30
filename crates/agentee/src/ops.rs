@@ -1789,6 +1789,41 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     }
     std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
     let p = load(root)?;
+    let i = layout_index(&p, &layout_name)?;
+    let layout = &p.layouts[i].item;
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let (moved, failing) = layout.settle_labels(board);
+    if !moved.is_empty() {
+        let parts = doc
+            .get_mut("footprints")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .ok_or("[[footprints]] is not an array of tables")?;
+        for f in &moved {
+            let (Some(at), Some(t)) = (
+                f.at,
+                parts
+                    .iter_mut()
+                    .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(f.reference.as_str())),
+            ) else {
+                continue;
+            };
+            let mut label =
+                t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
+            let mut pt = toml_edit::Array::new();
+            pt.push(at[0]);
+            pt.push(at[1]);
+            label.insert("at", pt.into());
+            if f.rotation != 0.0 {
+                label.insert("rotation", f.rotation.into());
+            } else {
+                label.remove("rotation");
+            }
+            t["label"] = toml_edit::value(label);
+        }
+        std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    out["labels_moved"] = json!(moved.len());
+    out["labels_failing"] = json!(failing);
     let fills = write_fills(&p, &layout_name)?;
     out["written"] = json!(true);
     out["fills"] = fills["fills"].clone();

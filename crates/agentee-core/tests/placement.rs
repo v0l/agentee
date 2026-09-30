@@ -241,6 +241,8 @@ fn place_lna_is_legal_and_deterministic() {
         .collect();
     assert!(bad.is_empty(), "{bad:#?}");
     assert!(rule(&p, "placement-connector-not-at-edge").is_empty());
+    assert!(rule(&p, "mlcc-flex-zone").is_empty());
+    assert!(rule(&p, "mlcc-flex-zone-case").is_empty());
     let holes: Vec<_> =
         p.layouts[0].item.parts.iter().filter(|q| q.reference.starts_with('H')).collect();
     for h in holes {
@@ -373,4 +375,39 @@ fn fiducials_go_to_corners_clear_of_the_edge_and_parts() {
     corners.sort();
     corners.dedup();
     assert_eq!(corners.len(), 3, "{corners:?}");
+}
+
+#[test]
+fn settled_labels_clear_the_silk_errors_of_a_fresh_placement() {
+    let dir = temp_dir("labels");
+    copy_dir(&lna(), &dir, false);
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    write_placements(&dir, "", &r);
+    let p = Project::load(&dir).unwrap();
+    let before = rule(&p, "silk-text").len();
+    let (moved, failing) = p.layouts[0].item.settle_labels(&p.boards[0].item);
+    assert!(before > 0 && !moved.is_empty());
+    assert!(failing.is_empty(), "{failing:?}");
+    let mut text = std::fs::read_to_string(dir.join("lna.pcb.toml")).unwrap();
+    for f in &moved {
+        let at = f.at.unwrap();
+        let from = format!("ref = \"{}\"\n", f.reference);
+        let to =
+            format!("{from}label = {{ at = [{}, {}], rotation = {} }}\n", at[0], at[1], f.rotation);
+        text = text.replacen(&from, &to, 1);
+    }
+    std::fs::write(dir.join("lna.pcb.toml"), text).unwrap();
+    let p = Project::load(&dir).unwrap();
+    let after = rule(&p, "silk-text");
+    assert!(after.len() < before, "{after:#?}");
+    let labels: Vec<_> = after
+        .iter()
+        .filter(|(_, m)| r.placements.iter().any(|q| m.starts_with(&format!("`{}`", q.reference))))
+        .collect();
+    assert!(labels.is_empty(), "{labels:#?}");
 }
