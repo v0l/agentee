@@ -809,6 +809,34 @@ fn small_chips_keep_a_tall_part_height_away() {
 }
 
 #[test]
+fn a_shield_frame_shadows_only_near_its_wall() {
+    let rect = |layer: &str, h: f64| {
+        format!(
+            "\n[[graphics]]\nkind = \"rect\"\nlayer = \"{layer}\"\nstart = [-{h}, -{h}]\nend = [{h}, {h}]\n"
+        )
+    };
+    let frame = format!(
+        "height = \"4mm\"\n{TWO_PADS}{}{}{}",
+        rect("F.Fab", 15.0),
+        rect("F.CrtYd", 15.5),
+        rect("F.CrtYd", 14.0)
+    );
+    let small = chip([0.96, 0.0], [0.56, 0.62]);
+    let near = |x: f64| {
+        let p = load(&Fixture {
+            footprints: &[("FRAME", frame.as_str()), ("R_0402_1005Metric", small.as_str())],
+            parts: &[("J1", "FRAME", [20.0, 20.0]), ("R1", "R_0402_1005Metric", [x, 20.0])],
+            nets: &[],
+            ..Default::default()
+        });
+        hits(&p, "tall-part-shadow")
+    };
+    assert!(near(20.0).is_empty(), "{:?}", near(20.0));
+    let w = near(32.0);
+    assert!(w.len() == 1 && w[0].1.contains("0402 chip 1.24mm from J1"), "{w:?}");
+}
+
+#[test]
 fn disabled_silk_rules_skip_the_silk_text_search() {
     let fp = format!(
         "{}\n[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [0, -1.5]\ntext = \"${{REFERENCE}}\"\nsize = 1.0\n",

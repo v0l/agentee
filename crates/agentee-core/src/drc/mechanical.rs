@@ -1,4 +1,4 @@
-use super::courtyard::body_outlines;
+use super::courtyard::{body_region, region_gap};
 use super::{
     Category, Ctx, HoleOf, Owner, Report, Rule, Setup, is_smd, list, rings_bounds, rings_point_gap,
     vias_in_pads,
@@ -558,7 +558,7 @@ fn tall_part_shadow(cx: &Ctx, r: &mut Report) {
         .filter_map(|(i, p)| {
             crate::height::body_height(&p.footprint)
                 .filter(|h| *h > TALL)
-                .map(|h| (i, h, body_outlines(p).1))
+                .map(|h| (i, h, body_region(p)))
         })
         .collect();
     for (pi, p) in cx.parts.iter().enumerate() {
@@ -569,10 +569,7 @@ fn tall_part_shadow(cx: &Ctx, r: &mut Report) {
             if *ti == pi || cx.parts[*ti].bottom != p.bottom {
                 continue;
             }
-            let gap = rings
-                .iter()
-                .flat_map(|a| body.iter().map(move |b| geom::polygon_distance(a, b)))
-                .fold(f64::MAX, f64::min);
+            let gap = rings.iter().map(|a| region_gap(a, body)).fold(f64::MAX, f64::min);
             if gap + 1e-6 < *h && worst.is_none_or(|w| gap / h < w.0 / w.1) {
                 worst = Some((gap, *h, *ti));
             }
