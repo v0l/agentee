@@ -568,6 +568,13 @@ impl PcbModel {
         let mut via_edges: std::collections::HashSet<(usize, usize, usize)> = Default::default();
         for (c, _, a, b) in &self.vias {
             let (i, j) = (grid.nearest(0, c[0]), grid.nearest(1, c[1]));
+            if i <= grid.pml
+                || i + 2 + grid.pml >= grid.x.len()
+                || j <= grid.pml
+                || j + 2 + grid.pml >= grid.y.len()
+            {
+                continue;
+            }
             let (lo, hi) = (ks[*a].min(ks[*b]), ks[*a].max(ks[*b]));
             for k in lo..hi {
                 via_edges.insert((i, j, k));
