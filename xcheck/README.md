@@ -11,6 +11,14 @@ python xcheck/openems_cases.py xcheck/cases.json target/xcheck
 python xcheck/compare.py target/xcheck msl50 msl50_lossy stub stub_fine thin_lossy via
 ```
 
+`via.py` takes the via on its own: `via_line` (the 20 mm line, no via) as an IEEE P370 2x-thru
+(scikit-rf's NZC de-embedding), the result renormalised to the line Z0 from `via_line` and
+`via_line30`, and the series L and shunt C of its ABCD matrix:
+
+```sh
+python xcheck/via.py target/xcheck via via_line via_line30 agentee,openems 1,3,5
+```
+
 `z0.py` takes Z0 and the effective permittivity of a line from two lengths of it (the eigenvectors
 and eigenvalues of one line's ABCD matrix times the inverse of the other's; the geometric mean of
 the forward and backward wave impedances cancels a port's series or shunt error to first order):
@@ -22,7 +30,9 @@ python xcheck/z0.py target/xcheck msl50 msl50_45 agentee,openems 1.5,3.5,5
 `openems_cases.py` takes the engine from `XCHECK_ENGINE` (e.g. `gpu` for the GPU engine of openEMS PR
 225, `multithreaded`), `XCHECK_EXACT=1` evaluates the end criteria every Nyquist period (GPU branch
 only), and `XCHECK_TAG` names the results (`<case>.<tag>.s2p`, default `openems`), `XCHECK_SHEET_DZ` adds
-mesh lines that far above and below each copper plane (mm); `compare.py`
+mesh lines that far above and below each copper plane (mm), `XCHECK_FINE` caps the cells at that
+size (mm) across the strip and 0.2 mm past it in y, and over the same span round the via in x, with
+the thirds rule on that size; `compare.py`
 compares the tags in `XCHECK_A` and `XCHECK_B` (default `agentee` and `openems`).
 
 Engine throughput on the free-space grid of openEMS's `FreeSpace_Benchmark.py` (n^3 cells of 1 mm,
@@ -57,6 +67,8 @@ runs.
 | `msl50` | the same, openEMS with z cells of 0.05 / 0.02 mm beside the copper (`XCHECK_SHEET_DZ`) | | 49.4 / 50.1, 49.3 / 50.0 ohm |
 | `msl50` | eeff at 1.5 GHz from the same pair | 3.487 | 3.487 |
 | line | 0.95 mm on 0.5 mm er 4.5 (the `via` strips), Z0 at 1.5 GHz from 20 and 30 mm, 0.1 mm cells | 49.5 ohm | 48.2 ohm |
+| line | the same (`via_line`, `via_line30`), agentee 0.05 / 0.025 mm cells | 49.56 / 49.62 ohm | |
+| line | the same, openEMS z cells 0.05 / 0.02 mm, then z 0.02 mm with `XCHECK_FINE` 0.05 / 0.025 mm | | 48.69 / 48.86, 49.08 / 49.22 ohm |
 | `msl50_lossy` | same with tan 0.02 and 35 um copper, S21 at 1 / 3 / 5 GHz | -0.304 / -0.329 / -0.368 dB | -0.315 / -0.359 / -0.424 dB |
 | `msl50_lossy` | agentee Djordjevic-Sarkar, openEMS conductivity still fixed at 3.25 GHz | -0.103 / -0.307 / -0.535 dB | -0.315 / -0.359 / -0.424 dB |
 | `msl50_lossy` | Djordjevic-Sarkar on both sides, the same 15 Debye poles | -0.103 / -0.307 / -0.535 dB | -0.115 / -0.353 / -0.617 dB |
@@ -75,6 +87,15 @@ runs.
 | `via` | agentee S11 at 5 GHz, cells 0.1 / 0.05 / 0.025 / 0.0125 mm, port columns on the copper only, square strip ends at the ports | -29.9 / -32.6 / -28.3 / -29.9 dB | |
 | `via` | the same with mesh lines at the drill, pad and antipad edges (from 0.05 mm) | -29.9 / -31.5 / -30.5 / -31.1 dB | |
 | `via` | the same lines at 0.1 mm too, pad and antipad lines moved like strip edges / not moved | -27.5 / -25.5 dB | |
+| `via` | S11 at 1 / 3 / 5 GHz, openEMS z cells 0.05 mm | | -37.1 / -36.2 / -22.5 dB |
+| `via` | the same, z 0.02 mm and `XCHECK_FINE` 0.05 / 0.025 mm; agentee 0.025 mm | -56.0 / -35.2 / -30.5 dB | -41.3 / -37.6 / -26.2, -42.2 / -38.2 / -27.1 dB |
+| `via` | S21 at 3 / 5 GHz, the same runs | -0.006 / -0.029 dB, -135.1 / 134.5 deg | -0.010 / -0.042 dB, -135.8 / 133.4 deg |
+| `via` | S11 renormalised to each side's line Z0, openEMS `XCHECK_FINE` 0.05 / 0.025 mm | | -46.2 / -31.8 / -28.9, -48.4 / -32.8 / -29.7 dB |
+| `via` | the via alone (`via.py`), 1 / 3 / 5 GHz, agentee 0.1 / 0.05 / 0.025 mm | -43.6 / -34.9 / -32.0, -41.1 / -34.9 / -34.7, -41.6 / -35.5 / -34.8 dB | |
+| `via` | the via alone, openEMS base / z 0.02 mm / z 0.02 and `XCHECK_FINE` 0.05 / 0.025 mm | | -42.9 / -31.6 / -26.5, -42.5 / -31.6 / -26.7, -43.3 / -34.5 / -31.6, -45.0 / -35.9 / -32.5 dB |
+| `via` | the via alone, series L and shunt C at 0.5 / 5 GHz, finest runs | 339 / 288 pH, 79 / 92 fF | 294 / 283 pH, 85 / 86 fF |
+| `via` | agentee via alone with `via_line` and `via_line30` on the via case's own y and z lines (x too for `via_line`), 0.1 / 0.05 / 0.025 mm | -43.6 / -34.4 / -31.1, -44.3 / -35.2 / -31.9, -44.0 / -34.9 / -31.7 dB | |
+| `via` | the same, series L and shunt C at 0.5 / 5 GHz | 333 / 324, 315 / 305, 311 / 300 pH; 93 / 94, 88 / 89, 85 / 86 fF | |
 
 Hammerstad-Jensen gives 49.4 ohm for `msl50` on an infinite substrate at DC. agentee's 2D field
 solver (`xsection`) on the cross-section as simulated, a 12 mm board and ground, gives 49.8 ohm
@@ -145,6 +166,44 @@ Findings:
   crosses the via, its edge cells stop being a whole cell, and S11 moves away from the fine runs
   (0.019 against 0.007 largest difference, -45 dB at 1 GHz where the line alone reads -57 dB).
   The lines are therefore only added for a drill radius of at least two cells.
+- The via gap was openEMS's mesh, and the renormalised S11 overstated it. Refining openEMS in z
+  alone (0.05, 0.02 mm beside the copper) lifts its line Z0 from 48.2 to 48.9 ohm but leaves the
+  via where it was (-25.2 dB renormalised at 5 GHz). Cells of 0.05 and 0.025 mm across the strips
+  and round the via (`XCHECK_FINE`, 6.8 and 8.9 M cells) move it to -28.9 and -29.7 dB and its
+  line Z0 to 49.1 and 49.2 ohm, towards agentee's 49.6. The renormalised figure still carries
+  each side's ports: the 20 mm line alone, renormalised the same way, reads -38 dB at 5 GHz in
+  openEMS at every mesh and -42 to -48 dB in agentee. `via.py` removes them by de-embedding
+  `via_line` as a 2x-thru, which puts both reference planes on the via axis. The via alone then
+  reads -26.5 dB in openEMS at its first mesh, -31.6 and -32.5 dB at 0.05 and 0.025 mm, and
+  -32.0 to -34.8 dB in agentee at 0.1 to 0.025 mm; at 1 and 3 GHz the finest runs read -45.0 /
+  -35.9 dB and -41.6 / -35.5 dB.
+- The agentee via-alone figures from 0.05 mm down were not flat in frequency: series L fell from
+  339 to 288 pH and shunt C rose from 79 to 92 fF over 0.5 to 5 GHz, where a 1 mm structure
+  should hold within about 2%. That is the de-embedding, not the via: agentee's mesh lines at the
+  drill, pad and antipad edges run the length of the board, so the strips in `via` sit on other
+  y lines than `via_line`, the two Z0 differ, and the 9.5 mm fixtures do not cancel. With
+  `via_line` and `via_line30` meshed on the via case's own lines (a scratch override of the
+  mesh, not in the tree), L and C hold within 4% (311 to 300 pH, 85 to 86 fF at 0.025 mm) and
+  the via alone reads -44.0 / -34.9 / -31.7 dB at 1 / 3 / 5 GHz, and -31.1 to -31.9 dB at 5 GHz
+  from 0.1 to 0.025 mm cells. openEMS's first mesh has the same flaw the other way (L rising
+  from 352 to 368 pH); at 0.025 mm its L and C hold within 4% (294 to 283 pH, 85 to 86 fF).
+- The two tools now agree on the via to 0.8 dB (agentee -31.7, openEMS -32.5 dB at 5 GHz), the
+  same shunt C (85 to 86 fF) and a series L within 6% (300 to 311 against 283 to 294 pH).
+  agentee moves by 5 pH from 0.05 to 0.025 mm and openEMS by 15 to 20 pH, still falling, so the
+  0.8 dB is inside openEMS's own convergence. S21 at 5 GHz is -0.029 against -0.042 dB and
+  134.5 against 133.4 deg (openEMS -0.059 dB, 131.3 deg at its first mesh). In agentee the drill
+  as a filled node set against one whose inner x and y edges are PEC too (a hollow plated tube and
+  a filled drill are the same to a PEC FDTD, only the inner edges differ) moves the via alone by
+  0.5 dB at most, and pad and antipad edges left where they are instead of moved like strip edges
+  by 0.8 dB at most, at 0.05 and 0.025 mm. Nothing changed in the agentee model.
+- Against closed forms: Goldfarb and Pucel give 80 pH for a 0.5 mm barrel of 0.15 mm radius over
+  its plane, 161 pH for the two halves, which alone would reflect wL / 2 Z0, -26 dB at 5 GHz. The
+  de-embedded via carries about 300 pH and 85 fF: the barrel plus the strips' last 0.6 mm over the
+  antipad hole in L, and the pad and barrel to the antipad edge less what those strips lose over
+  the hole in C. As a lumped T, (L / Z0 - C Z0) / 2 is 0.88 ps in agentee and 0.74 ps in openEMS,
+  -31.2 and -32.7 dB at 5 GHz, matching the de-embedded S11. Closed forms for a strip over a hole
+  and for the fringe C are not good to the 5% that separates the tools, so they bound the via
+  (below the -26 dB of the barrel alone) rather than pick a side.
 - At cells finer than 0.05 mm the xcheck ports (0.1 mm long, centred on the strip end) got node
   columns off the copper, and a 20 mm line read S11 near -13 dB. A port now keeps only the node
   columns that touch copper on its sheet; the same line at 0.025 mm reads -43.4 / -54.4 / -38.6

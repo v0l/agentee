@@ -56,6 +56,18 @@ engine = os.environ.get("XCHECK_ENGINE")
 exact = os.environ.get("XCHECK_EXACT") == "1"
 tag = os.environ.get("XCHECK_TAG", "openems")
 sheet_dz = float(os.environ.get("XCHECK_SHEET_DZ", "0"))
+fine = float(os.environ.get("XCHECK_FINE", "0"))
+
+
+def fill(lines, lo, hi, d):
+    lines = sorted(set(lines))
+    out = list(lines)
+    for a, b in zip(lines, lines[1:]):
+        if b <= lo or a >= hi:
+            continue
+        n = int(np.ceil((b - a) / d - 1e-9))
+        out += [a + (b - a) * k / n for k in range(1, n)]
+    return sorted(out)
 
 
 def run_logged(fdtd, path, log):
@@ -159,9 +171,14 @@ for c in cases:
         )
 
     air = 8.0
-    third = cell / 3
+    third = (fine or cell) / 3
     xs = sorted(set(xs + [-air, L + air]))
     ys = sorted(set(ys + [y0 - air, y1 + air, -w / 2 - third, -w / 2 + 2 * third, w / 2 + third, w / 2 - 2 * third]))
+    if fine:
+        span = w / 2 + 0.2
+        ys = fill(ys + [-span, span], -span, span, fine)
+        if via:
+            xs = fill(xs + [L / 2 - span, L / 2 + span], L / 2 - span, L / 2 + span, fine)
     zs = list(np.linspace(0, top, 7 if top == h else 13)) + [-air, top + air]
     if sheet_dz:
         zs += [z + s * sheet_dz for z in sorted({0, h, top}) for s in (-1, 1)]
