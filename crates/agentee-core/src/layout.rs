@@ -1,6 +1,6 @@
 use crate::board::{Board, Netclass};
 use crate::diag::Diags;
-use crate::footprint::{Footprint, PadKind};
+use crate::footprint::{Footprint, PadKind, PadShape};
 use crate::geom::{self, P, Transform};
 use crate::graphic::Bounds;
 use crate::schematic::{Schematic, UnionFind};
@@ -13,7 +13,7 @@ mod pour;
 
 pub use pour::{
     FillCase, FillFile, FillKey, ZonesCase, capture_fill_cases, take_fill_cases, take_zones_cases,
-    to_file as fill_file,
+    to_file as fill_file, without_fills,
 };
 
 pub(crate) const DRC_EPSILON: f64 = 5e-4;
@@ -142,6 +142,8 @@ pub struct ZoneFile {
     pub relief_gap: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spoke_width: Option<Length>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub relief_tht_only: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -150,6 +152,28 @@ pub enum PadConnection {
     #[default]
     Solid,
     Relief,
+    None,
+}
+
+impl ZoneFile {
+    pub fn connection_of(&self, part: &Placed, k: usize) -> PadConnection {
+        let Some(pad) = part.footprint.pads.get(k) else { return PadConnection::Solid };
+        if let Some(c) = pad.zone_connect {
+            return c;
+        }
+        if pad.kind == PadKind::Smd
+            && pad.shape == PadShape::Circle
+            && part.footprint.is_ball_grid()
+        {
+            return PadConnection::Solid;
+        }
+        match self.pad_connection.unwrap_or_default() {
+            PadConnection::Relief if self.relief_tht_only && pad.kind != PadKind::Tht => {
+                PadConnection::Solid
+            }
+            c => c,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1234,6 +1258,13 @@ impl LayoutFile {
             Owner::Pad(pi, _) => parts[pi].footprint.clearance,
             _ => None,
         };
+        let net_tied = |pad: &Item, other: &Item| {
+            let Owner::Pad(pi, k) = pad.owner else { return false };
+            let p = &parts[pi];
+            let Some(group) = p.footprint.net_tie_group(&p.pads[k].number) else { return false };
+            other.net.is_some()
+                && p.pads.iter().any(|q| q.net == other.net && group.contains(&q.number))
+        };
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1259,7 +1290,7 @@ impl LayoutFile {
                     continue;
                 }
                 let same = a.net.is_some() && a.net == b.net;
-                if !same && !copper_rules {
+                if !same && (!copper_rules || net_tied(a, b) || net_tied(b, a)) {
                     continue;
                 }
                 let dist = a.shape.distance(&b.shape);
@@ -1413,20 +1444,23 @@ impl LayoutFile {
                     d.error(&at, format!("`{layer}` is not a copper layer"));
                     continue;
                 }
-                let reliefs = if z.pad_connection.unwrap_or_default() == PadConnection::Relief {
-                    let min_width = z.min_width.map(Length::to_mm).unwrap_or(0.25);
-                    relief_cutouts(
-                        &items,
-                        &parts,
-                        net,
-                        layer,
-                        &poly,
-                        z.relief_gap.map(Length::to_mm).unwrap_or(clearance),
-                        z.spoke_width.map(Length::to_mm).unwrap_or(nets[net].width.max(min_width)),
-                    )
-                } else {
-                    Vec::new()
-                };
+                let min_width = z.min_width.map(Length::to_mm).unwrap_or(0.25);
+                let reliefs = relief_cutouts(
+                    &items,
+                    &parts,
+                    net,
+                    layer,
+                    &poly,
+                    ReliefSpec {
+                        zone: z,
+                        gap: z.relief_gap.map(Length::to_mm).unwrap_or(clearance),
+                        clearance,
+                        spoke: z
+                            .spoke_width
+                            .map(Length::to_mm)
+                            .unwrap_or(nets[net].width.max(min_width)),
+                    },
+                );
                 let layer_cutouts: Vec<&Vec<P>> = cutouts
                     .iter()
                     .filter(|(ls, _)| ls.contains(layer))
@@ -1481,6 +1515,9 @@ impl LayoutFile {
                 let (fill, touched) = match fresh.or(hit.as_ref()) {
                     Some(f) => spec.stored(&items, f),
                     None if pour::capturing() => spec.stored(&items, &FillFile::default()),
+                    None if pour::unfilled() => {
+                        spec.stored(&items, stored.unwrap_or(&FillFile::default()))
+                    }
                     None => fill_zone(
                         net,
                         layer,
@@ -1496,7 +1533,7 @@ impl LayoutFile {
                         spec.min_island_area,
                     ),
                 };
-                if fresh.is_none() && hit.is_none() && !pour::capturing() {
+                if fresh.is_none() && hit.is_none() && !pour::capturing() && !pour::unfilled() {
                     pour::cache(hash, &fill);
                 }
                 if stored.is_some() && fresh.is_none() {
@@ -3139,14 +3176,20 @@ fn arc_steps(r: f64) -> usize {
         .clamp(12, 180)
 }
 
+struct ReliefSpec<'a> {
+    zone: &'a ZoneFile,
+    gap: f64,
+    clearance: f64,
+    spoke: f64,
+}
+
 fn relief_cutouts(
     items: &[Item],
     parts: &[Placed],
     net: usize,
     layer: &str,
     poly: &[P],
-    gap: f64,
-    spoke: f64,
+    spec: ReliefSpec,
 ) -> Vec<Vec<P>> {
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
@@ -3166,11 +3209,26 @@ fn relief_cutouts(
         let (Owner::Pad(pi, k), Shape::Poly(rings)) = (it.owner, &it.shape) else { continue };
         let part = &parts[pi];
         if it.net != Some(net)
-            || part.pads[k].kind != PadKind::Smd
+            || !matches!(part.pads[k].kind, PadKind::Smd | PadKind::Tht)
             || !it.layers.iter().any(|l| l == layer)
             || !(zone.overlaps(&it.bounds) || zone.contains(&it.bounds))
-            || gap <= 0.0
         {
+            continue;
+        }
+        let connection = spec.zone.connection_of(part, k);
+        let gap = match connection {
+            PadConnection::Solid => continue,
+            PadConnection::Relief => spec.gap,
+            PadConnection::None => spec.clearance,
+        };
+        if gap <= 0.0 {
+            continue;
+        }
+        let pad: Vec<Vec<P>> = rings.iter().cloned().map(ccw).collect();
+        let step = 2.0 * (1.0 - 0.002f64.min(gap * 0.5) / gap).acos();
+        let ring = pad.outline(&OutlineStyle::new(gap).line_join(LineJoin::Round(step)));
+        if connection == PadConnection::None {
+            out.extend(ring.into_iter().flatten().filter(|r| r.len() >= 3).map(ccw));
             continue;
         }
         let pad_rotation = part.footprint.pads.get(k).map(|f| f.rotation).unwrap_or(0.0);
@@ -3179,7 +3237,7 @@ fn relief_cutouts(
         let c = it.bounds.center();
         let [w, h] = it.bounds.size();
         let reach = w.max(h) + gap + 1.0;
-        let half = spoke / 2.0;
+        let half = spec.spoke / 2.0;
         let bar = |d: P, n: P| {
             ccw(vec![
                 [c[0] - d[0] * reach - n[0] * half, c[1] - d[1] * reach - n[1] * half],
@@ -3188,9 +3246,6 @@ fn relief_cutouts(
                 [c[0] - d[0] * reach + n[0] * half, c[1] - d[1] * reach + n[1] * half],
             ])
         };
-        let pad: Vec<Vec<P>> = rings.iter().cloned().map(ccw).collect();
-        let step = 2.0 * (1.0 - 0.002f64.min(gap * 0.5) / gap).acos();
-        let ring = pad.outline(&OutlineStyle::new(gap).line_join(LineJoin::Round(step)));
         let mut clip = pad;
         clip.push(bar(u, v));
         clip.push(bar(v, u));
@@ -3289,7 +3344,7 @@ fn fill_clip(
     let mut clip: Vec<Vec<P>> = Vec::new();
     if board.is_closed() && edge_clear > 0.0 {
         for (a, b) in board.segments().filter(|(a, b)| edge_near(*a, *b, edge_clear)) {
-            clip.push(capsule(a, b, edge_clear));
+            clip.push(capsule(a, b, edge_clear + pour::SNAP_MARGIN));
         }
     }
     if board.is_closed() {
@@ -3311,7 +3366,7 @@ fn fill_clip(
         .map(|(it, gap)| (&it.shape, gap))
         .collect();
     for (shape, gap) in &keepouts {
-        clip.extend(inflated(shape, *gap));
+        clip.extend(inflated(shape, *gap + pour::SNAP_MARGIN));
     }
     if min_width > 0.0 {
         clip.extend(gap_bridges(&keepouts, min_width));
@@ -3355,7 +3410,7 @@ fn fill_clip(
         let gap = clearance.max(clearance_of(Some(z.net)));
         let shapes: Vec<Vec<Vec<P>>> =
             ring_shapes(&z.rings).into_iter().filter(|s| near(ring_bounds(s), gap)).collect();
-        clip.extend(grown(&shapes, gap).into_iter().flatten());
+        clip.extend(grown(&shapes, gap + pour::SNAP_MARGIN).into_iter().flatten());
     }
     (subject, clip)
 }

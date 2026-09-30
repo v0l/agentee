@@ -2,6 +2,7 @@ use crate::board::Rules;
 use crate::diag::Diags;
 use crate::geom::{self, P};
 use crate::graphic::{self, Bounds, Graphic, GraphicDefaults, GraphicFile, Shape};
+use crate::layout::PadConnection;
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
 
@@ -110,6 +111,8 @@ pub struct PadFile {
     pub number_step: Option<i64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub edge: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone_connect: Option<PadConnection>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -141,6 +144,8 @@ pub struct FootprintFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mlcc: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub net_tie_pad_groups: Vec<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphics: Vec<GraphicFile>,
@@ -160,6 +165,7 @@ pub struct Pad {
     pub layers: Vec<String>,
     pub points: Vec<Point>,
     pub edge: bool,
+    pub zone_connect: Option<PadConnection>,
 }
 
 fn merge_overlapping(mut rings: Vec<Vec<P>>) -> Vec<Vec<P>> {
@@ -263,6 +269,7 @@ pub struct Footprint {
     pub clearance: Option<f64>,
     pub overhang: bool,
     pub mlcc: Option<bool>,
+    pub net_tie_pad_groups: Vec<Vec<String>>,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
 }
@@ -330,6 +337,7 @@ impl FootprintFile {
                     layers: p.layers.clone().unwrap_or_else(|| default_layers(p.kind)),
                     points: p.points.clone().unwrap_or_default(),
                     edge: p.edge,
+                    zone_connect: p.zone_connect,
                 });
             }
         }
@@ -384,6 +392,7 @@ impl FootprintFile {
             clearance: self.clearance.map(Length::to_mm),
             overhang: self.overhang,
             mlcc: self.mlcc,
+            net_tie_pad_groups: self.net_tie_pad_groups.clone(),
             pads,
             graphics,
         }
@@ -415,6 +424,15 @@ pub fn graphic_path(g: &Graphic) -> Vec<P> {
 }
 
 impl Footprint {
+    pub fn net_tie_group(&self, number: &str) -> Option<&[String]> {
+        self.net_tie_pad_groups.iter().find(|g| g.iter().any(|n| n == number)).map(Vec::as_slice)
+    }
+
+    pub fn is_ball_grid(&self) -> bool {
+        self.pads.iter().filter(|q| q.kind == PadKind::Smd && q.shape == PadShape::Circle).count()
+            >= 16
+    }
+
     pub fn bounds(&self) -> Bounds {
         let mut b = Bounds::EMPTY;
         for p in &self.pads {

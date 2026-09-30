@@ -594,6 +594,9 @@ model_scale = [1, 1, 1]                # optional
                                # skips it, its SMD pads still keep min_part_to_edge
 # mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules
                                # skip it; true marks one that the name does not give away
+# net_tie_pad_groups = [["1", "2"]]  # as KiCad's net tie: copper of these pads' nets may touch or
+                               # come near any pad of the group (a bridged solder jumper's strip
+                               # and the tracks landing on it) without a short or clearance error
 
 [[pads]]
 number = "1"
@@ -626,6 +629,8 @@ drill = 1.0                    # round, or [w, h] for a slot
 # edge = true                  # the copper is meant to reach the board edge (edge-launch
                                # connector, castellation, edge finger): exempt from the edge
                                # clearance, listed in the fab notes
+# zone_connect = "solid"       # solid | relief | none: this pad's join to a same-net zone,
+                               # over the zone's pad_connection (KiCad's pad zone_connect)
 
 [[graphics]]
 kind = "rect"
@@ -772,8 +777,13 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 # clearance = 0.25             # default: the net class clearance
 # priority = 1                # higher fills first; other nets' zones on the layer pour around it
 # min_island_area = 2.0       # mm2; a piece touching one item of the net is kept only this big
-# pad_connection = "relief"    # solid (default) | relief: SMD pads of the net join the pour by four
-                               # spokes across a gap, so they heat like a track-fed pad
+# pad_connection = "relief"    # solid (default) | relief: pads of the net join the pour by four
+                               # spokes across a gap, so they heat like a track-fed pad;
+                               # none: the pour keeps its clearance from the pads. A pad's
+                               # own zone_connect wins, and BGA balls (16 or more round SMD
+                               # pads) stay solid, since spokes starve a ball of solder heat
+# relief_tht_only = true       # relief on through-hole pads only, SMD pads solid (KiCad's
+                               # thru_hole_only)
 # relief_gap = "0.3mm"         # default: the zone clearance
 # spoke_width = "0.3mm"        # default: the net class track width, at least min_width
 
@@ -835,8 +845,12 @@ with no `kind = "silk"` layer is a `watermark` error asking for one.
 Test access: by default the nets that need a probe are power nets (a class with `current`, or a
 name like `3V3`, `1V8`, `+5V`, `VCC*`, `VDD*`, `VBUS*`, `VBAT*`, `VIN*`, `VSYS*`), ground (`GND`,
 `*GND`, `GND*`) and nets named like `*RST*`, `*RESET*`, `*EN*`, `*PG*`, `*CLK*`, `*TX*`, `*RX*`,
-`*SCL*`, `*SDA*`, `*SWD*`, `*TCK*`, `*TMS*`, `*TDI*`, `*TDO*`. `nets` replaces that list and
-`exclude` takes nets out of it. A test point is a part with a reference `TP` and a number, or a
+`*SCL*`, `*SDA*`, `*SWD*`, `*TCK*`, `*TMS*`, `*TDI*`, `*TDO*`. The defaults leave out switch
+nodes and regulator feedback, soft-start and noise-reduction nets (`SW*`, `*_SW`, `LX*`, `FB*`,
+`SS*`, `NR*`, matched on the whole name or its last `/` segment), even when their class is power:
+a probe's capacitance and the stub to the pad couple switching noise into a feedback divider or
+slow a soft-start or noise filter, and a stub on a switch node radiates. `nets` replaces that list
+(name such a net there to probe it anyway) and `exclude` takes nets out of it. A test point is a part with a reference `TP` and a number, or a
 footprint named `TestPoint*`; like every part it must be in the schematic. The built in
 `TestPoint_Pad_D1.0mm` footprint (a 1.0 mm round SMD pad, mask open, no paste) and `TestPoint`
 symbol are written into `footprints/` and `symbols/` by `agentee testpoints`.

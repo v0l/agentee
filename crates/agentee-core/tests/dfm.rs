@@ -264,6 +264,29 @@ fn a_via_hole_near_another_net_is_flagged() {
     );
 }
 
+#[test]
+fn a_pour_keeps_the_via_hole_rule_after_snapping() {
+    let board = "[rules]\nmin_via_hole_to_copper = \"0.25mm\"\n[[vias]]\nname = \"tiny\"\ndrill = \"0.3mm\"\ndiameter = \"0.4mm\"\n";
+    let mut pcb = String::from(
+        "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[1.0, 1.0], [29.0, 1.0], [29.0, 19.0], [1.0, 19.0]]\nmin_island_area = 0.0\n",
+    );
+    for k in 0..108 {
+        let (x, y) = (2.0 + (k % 12) as f64 * 2.21237, 2.5 + (k / 12) as f64 * 1.61119);
+        let t = k as f64 * 0.7371;
+        for (dx, dy) in [(0.0, 0.0), (0.93 * t.cos(), 0.93 * t.sin())] {
+            pcb += &format!(
+                "\n[[vias]]\nnet = \"A\"\nat = [{:.6}, {:.6}]\nvia = \"tiny\"\n",
+                x + dx + 0.0000371 * k as f64,
+                y + dy + 0.0000533 * k as f64
+            );
+        }
+    }
+    let parts = &[("R1", "TWO", [5.0, 18.0])];
+    let e =
+        hits(&load(&Fixture { pcb: &pcb, board, parts, ..Default::default() }), "hole-to-copper");
+    assert!(e.is_empty(), "{e:?}");
+}
+
 const THT: &str = r#"
 [[pads]]
 number = "1"
@@ -809,6 +832,34 @@ fn small_chips_keep_a_tall_part_height_away() {
 }
 
 #[test]
+fn a_shield_frame_shadows_only_near_its_wall() {
+    let rect = |layer: &str, h: f64| {
+        format!(
+            "\n[[graphics]]\nkind = \"rect\"\nlayer = \"{layer}\"\nstart = [-{h}, -{h}]\nend = [{h}, {h}]\n"
+        )
+    };
+    let frame = format!(
+        "height = \"4mm\"\n{TWO_PADS}{}{}{}",
+        rect("F.Fab", 15.0),
+        rect("F.CrtYd", 15.5),
+        rect("F.CrtYd", 14.0)
+    );
+    let small = chip([0.96, 0.0], [0.56, 0.62]);
+    let near = |x: f64| {
+        let p = load(&Fixture {
+            footprints: &[("FRAME", frame.as_str()), ("R_0402_1005Metric", small.as_str())],
+            parts: &[("J1", "FRAME", [20.0, 20.0]), ("R1", "R_0402_1005Metric", [x, 20.0])],
+            nets: &[],
+            ..Default::default()
+        });
+        hits(&p, "tall-part-shadow")
+    };
+    assert!(near(20.0).is_empty(), "{:?}", near(20.0));
+    let w = near(32.0);
+    assert!(w.len() == 1 && w[0].1.contains("0402 chip 1.24mm from J1"), "{w:?}");
+}
+
+#[test]
 fn disabled_silk_rules_skip_the_silk_text_search() {
     let fp = format!(
         "{}\n[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [0, -1.5]\ntext = \"${{REFERENCE}}\"\nsize = 1.0\n",
@@ -862,6 +913,48 @@ fn a_relief_zone_joins_smd_pads_by_four_spokes() {
     assert!(fill.filled([11.4, 10.46]));
     assert!(p.layouts[0].item.nets.iter().all(|n| n.unrouted == 0));
     assert!(hits(&p, "starved-thermal").is_empty());
+}
+
+#[test]
+fn relief_follows_pad_overrides_through_hole_only_and_leaves_bga_balls_solid() {
+    let zone = |extra: &str| {
+        format!(
+            "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[10.3, 8.0], [14.0, 8.0], [14.0, 12.0], [10.3, 12.0]]\nmin_island_area = 0.0\nrelief_gap = \"0.3mm\"\nspoke_width = \"0.3mm\"\n{extra}"
+        )
+    };
+    let filled = |fp: &str, pcb: &str, at: [f64; 2]| {
+        let p = load(&Fixture {
+            footprints: &[("R_0402_1005Metric", fp)],
+            parts: &[("R1", "R_0402_1005Metric", [10.0, 10.0])],
+            pcb,
+            ..Default::default()
+        });
+        p.layouts[0].item.zones[0].filled(at)
+    };
+    let relief = zone("pad_connection = \"relief\"\n");
+    let corner = [10.91, 10.46];
+    let fp = chip([0.96, 0.0], [0.56, 0.62]);
+    assert!(!filled(&fp, &relief, corner));
+    assert!(filled(&fp, &zone("pad_connection = \"relief\"\nrelief_tht_only = true\n"), corner));
+    let solid_pad = format!("{fp}zone_connect = \"solid\"\n");
+    assert!(filled(&solid_pad, &relief, corner));
+    let relief_pad = format!("{fp}zone_connect = \"relief\"\n");
+    assert!(!filled(&relief_pad, &zone(""), corner));
+    let isolated = format!("{fp}zone_connect = \"none\"\n");
+    assert!(!filled(&isolated, &zone(""), [11.3, 10.0]));
+    assert!(filled(&fp, &zone(""), [11.3, 10.0]));
+    let balls = format!(
+        "{}\n[[pads]]\nnumber = \"3\"\nkind = \"smd\"\nshape = \"circle\"\nat = [-4, -3]\nsize = [0.3, 0.3]\ncount = 14\npitch = [0.6, 0]\n",
+        chip([0.96, 0.0], [0.56, 0.56]).replace("roundrect", "circle")
+    );
+    let diagonal = [10.73, 10.25];
+    assert!(filled(&balls, &relief, diagonal));
+    let few = chip([0.96, 0.0], [0.56, 0.56]).replace("roundrect", "circle");
+    assert!(!filled(&few, &relief, diagonal));
+    let tht = "\n[[pads]]\nnumber = \"1\"\nkind = \"tht\"\nshape = \"circle\"\nat = [-0.75, 0]\nsize = [1.0, 1.0]\ndrill = \"0.5mm\"\ncount = 2\npitch = [1.5, 0]\n";
+    let gap = [11.17, 10.42];
+    assert!(filled(tht, &zone(""), gap));
+    assert!(!filled(tht, &zone("pad_connection = \"relief\"\nrelief_tht_only = true\n"), gap));
 }
 
 const SLOT: &str = "[[outline.cutouts]]\norigin = [14, 8]\nsize = [2, 4]\n";
@@ -1312,4 +1405,32 @@ fn stitching_vias_keep_off_a_board_cutout() {
     let inside = |at: [f64; 2]| (13.4..=16.6).contains(&at[0]) && (7.4..=12.6).contains(&at[1]);
     assert!(open.layouts[0].item.vias.iter().any(|v| inside(v.at)));
     assert!(!l.vias.iter().any(|v| inside(v.at)));
+}
+
+#[test]
+fn a_track_on_a_net_tie_bridge_is_not_a_clearance_error_to_the_other_pad() {
+    let jumper = |groups: &str| {
+        format!(
+            "{groups}\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [-0.65, 0]\nsize = [1.0, 1.5]\ncount = 2\npitch = [1.3, 0]\n\n[[graphics]]\nkind = \"polygon\"\nlayer = \"F.Cu\"\npoints = [[0.25, -0.3], [-0.25, -0.3], [-0.25, 0.3], [0.25, 0.3]]\nfill = \"solid\"\n"
+        )
+    };
+    let diags = |fp: &str| {
+        let p = load(&Fixture {
+            footprints: &[("JP", fp)],
+            parts: &[("JP1", "JP", [10.0, 10.0])],
+            nets: &[("A", &["JP1.1"]), ("B", &["JP1.2"])],
+            pcb: &track("A", "F.Cu", "[[10.0, 10.0], [10.0, 6.0]]"),
+            ..Default::default()
+        });
+        p.layouts[0]
+            .diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+    };
+    let plain = diags(&jumper(""));
+    assert!(plain.iter().any(|m| m.contains("JP1.2 is")), "{plain:?}");
+    let tied = diags(&jumper("net_tie_pad_groups = [[\"1\", \"2\"]]\n"));
+    assert!(tied.is_empty(), "{tied:?}");
 }

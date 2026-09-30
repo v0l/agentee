@@ -7,8 +7,9 @@ use crate::graphic::Bounds;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
-const FILL_VERSION: u64 = 1;
+const FILL_VERSION: u64 = 2;
 const STORE_GRID: f64 = 1e4;
+pub(super) const SNAP_MARGIN: f64 = 1.0 / STORE_GRID;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -235,6 +236,18 @@ pub(super) fn snap(rings: &mut Vec<Vec<P>>) {
 thread_local! {
     static CAPTURE: RefCell<Option<Vec<FillCase>>> = const { RefCell::new(None) };
     static ZONES: RefCell<Vec<ZonesCase>> = const { RefCell::new(Vec::new()) };
+    static UNFILLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn without_fills<T>(f: impl FnOnce() -> T) -> T {
+    let before = UNFILLED.with(|u| u.replace(true));
+    let out = f();
+    UNFILLED.with(|u| u.set(before));
+    out
+}
+
+pub(super) fn unfilled() -> bool {
+    UNFILLED.with(|u| u.get())
 }
 
 pub(super) fn capturing() -> bool {

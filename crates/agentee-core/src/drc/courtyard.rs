@@ -174,6 +174,51 @@ pub fn body_outlines(p: &Placed) -> (BodyFrom, Vec<Vec<P>>) {
     (BodyFrom::Pads, p.pads.iter().flat_map(|q| q.outlines.iter().cloned()).collect())
 }
 
+pub fn body_region(p: &Placed) -> Vec<Vec<P>> {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    let (from, rings) = body_outlines(p);
+    let holes: Vec<Vec<P>> = if from == BodyFrom::Fab {
+        let court: Vec<Vec<P>> =
+            ["F.CrtYd", "B.CrtYd"].iter().flat_map(|l| outlines_on(p, l)).collect();
+        nest_rings(court).into_iter().filter(|r| geom::signed_area(r) < 0.0).collect()
+    } else {
+        Vec::new()
+    };
+    if rings.len() < 2 && holes.is_empty() {
+        return rings;
+    }
+    rings
+        .overlay(&holes, OverlayRule::Difference, FillRule::EvenOdd)
+        .into_iter()
+        .flatten()
+        .filter(|r| r.len() >= 3)
+        .collect()
+}
+
+pub fn region_gap(poly: &[P], region: &[Vec<P>]) -> f64 {
+    if poly.is_empty() || region.is_empty() {
+        return f64::MAX;
+    }
+    let inside = region.iter().filter(|r| geom::point_in_polygon(poly[0], r)).count() % 2 == 1;
+    if inside || region.iter().any(|r| geom::point_in_polygon(r[0], poly)) {
+        return 0.0;
+    }
+    let n = poly.len();
+    let mut best = f64::MAX;
+    for i in 0..n {
+        let (a, b) = (poly[i], poly[(i + 1) % n]);
+        for r in region {
+            let m = r.len();
+            for j in 0..m {
+                best = best.min(geom::segment_segment_distance(a, b, r[j], r[(j + 1) % m]));
+            }
+        }
+    }
+    best
+}
+
 fn overlap_area(a: &[Vec<P>], b: &[Vec<P>]) -> f64 {
     use i_overlay::core::fill_rule::FillRule;
     use i_overlay::core::overlay_rule::OverlayRule;
