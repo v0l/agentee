@@ -1,7 +1,7 @@
 name = "power"
-description = "USB VBUS load switch, three TPS62130 bucks sequenced by power good (1V0, 1V8, 3V3), 1V3 LDO for the AD9364, 2V5 LDO for the LVDS banks"
+description = "USB VBUS through an SMF12A TVS and a TPS25200 eFuse (5.4 V clamp, 1.6 A limit, fault flag to the FX5), three TPS62130 bucks sequenced by power good (1V0, 1V8, 3V3), whose last power good holds the FX5 in reset, two TPS7A91 LDOs for the AD9364 (1V3A analog, 1V3S synthesizers), 2V5 LDO for the LVDS banks"
 board = "sdr"
-no_connect = ["U5.5", "U9.5"]
+no_connect = ["U9.5", "U24.5"]
 
 [[parts]]
 ref = "C95"
@@ -12,20 +12,20 @@ at = [25.4, 50.8]
 [[parts]]
 ref = "R1"
 symbol = "R"
-value = "10k"
+value = "300k"
 at = [38.1, 38.1]
 
 [[parts]]
 ref = "U5"
-symbol = "TPS22917DBV"
-value = "TPS22917"
+symbol = "TPS25200"
+value = "TPS25200"
 at = [63.5, 50.8]
-fields = { mpn = "TI TPS22917DBVR" }
+fields = { mpn = "TI TPS25200DRVR" }
 
 [[parts]]
 ref = "C2"
 symbol = "C"
-value = "2.2n"
+value = "100n"
 at = [88.9, 63.5]
 
 [[parts]]
@@ -312,31 +312,90 @@ symbol = "MountingHole_Pad"
 value = "M2.5"
 at = [330.2, 203.2]
 
+[[parts]]
+ref = "D6"
+symbol = "SMF12A"
+value = "SMF12A"
+at = [25.4, 76.2]
+fields = { mpn = "Littelfuse SMF12A" }
+
+[[parts]]
+ref = "R61"
+symbol = "R"
+value = "56k 1%"
+at = [50.8, 76.2]
+
+[[parts]]
+ref = "R62"
+symbol = "R"
+value = "10k"
+at = [114.3, 38.1]
+
+[[parts]]
+ref = "U24"
+symbol = "TPS7A91"
+value = "TPS7A91"
+at = [63.5, 279.4]
+fields = { mpn = "TI TPS7A9101DSKR" }
+
+[[parts]]
+ref = "C124"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [38.1, 266.7]
+
+[[parts]]
+ref = "C125"
+symbol = "C"
+value = "10n"
+at = [38.1, 292.1]
+
+[[parts]]
+ref = "R63"
+symbol = "R"
+value = "6.19k 1%"
+at = [88.9, 279.4]
+
+[[parts]]
+ref = "R64"
+symbol = "R"
+value = "10k 1%"
+at = [88.9, 292.1]
+
+[[parts]]
+ref = "C126"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [101.6, 266.7]
+
 [[nets]]
 name = "GND"
 style = "power"
 pins = [
-  "C95.2", "U5.2", "C2.2", "C3.2",
+  "C95.2", "U5.5", "U5.7", "C2.2", "C3.2", "D6.2", "R61.2",
   "U6.6", "U6.15", "U6.16", "U6.17", "U6.8", "U6.7", "C4.2", "C5.2", "C6.2", "C7.2", "R3.2",
   "U7.6", "U7.15", "U7.16", "U7.17", "U7.8", "U7.7", "C8.2", "C9.2", "C10.2", "C11.2", "R6.2",
   "U8.6", "U8.15", "U8.16", "U8.17", "U8.8", "U8.7", "C12.2", "C13.2", "C14.2", "C15.2", "R9.2",
   "U9.4", "U9.11", "U9.6", "C16.2", "C17.2", "C18.2", "R12.2", "U10.2", "C19.2", "C20.2", "D2.1",
   "H1.1", "H2.1", "H3.1", "H4.1",
+  "U24.4", "U24.11", "U24.6", "C124.2", "C125.2", "C126.2", "R64.2",
 ]
 
 [[nets]]
 name = "VBUS"
 class = "Power"
 style = "power"
-pins = ["C95.1", "R1.1", "U5.1"]
+pins = ["C95.1", "R1.1", "U5.6", "C2.1", "D6.1"]
 
 [[nets]]
 name = "VSYS"
 class = "PowerHi"
 style = "power"
 pins = [
-  "U5.6", "C3.1", "U6.10", "U6.11", "U6.12", "U6.13", "C5.1", "R4.1",
-  "U7.10", "U7.11", "U7.12", "C9.1", "R7.1", "U8.10", "U8.11", "U8.12", "C13.1", "R10.1",
+  "U5.1", "C3.1", "U6.10", "U6.11", "U6.12", "U6.13", "C5.1", "R4.1",
+  "U7.10", "U7.11", "U7.12", "C9.1", "R7.1", "U8.10", "U8.11", "U8.12", "C13.1",
 ]
 
 [[nets]]
@@ -349,13 +408,13 @@ pins = ["U6.14", "L1.2", "R2.1", "C6.1", "C7.1"]
 name = "1V8"
 class = "Power"
 style = "power"
-pins = ["U7.14", "L2.2", "R5.1", "C10.1", "C11.1", "U9.9", "U9.10", "C17.1"]
+pins = ["U7.14", "L2.2", "R5.1", "C10.1", "C11.1", "U9.9", "U9.10", "C17.1", "U24.9", "U24.10", "C124.1"]
 
 [[nets]]
 name = "3V3"
 class = "Power"
 style = "power"
-pins = ["U8.14", "L3.2", "R8.1", "C14.1", "C15.1", "U10.1", "U10.3", "C19.1", "R13.1"]
+pins = ["U8.14", "L3.2", "R8.1", "C14.1", "C15.1", "U10.1", "U10.3", "C19.1", "R13.1", "R10.1", "R62.1"]
 
 [[nets]]
 name = "2V5"
@@ -371,11 +430,16 @@ pins = ["U9.1", "U9.2", "R11.1", "C18.1"]
 
 [[nets]]
 name = "USB_ON"
-pins = ["R1.2", "U5.3"]
+pins = ["R1.2", "U5.4"]
 
 [[nets]]
-name = "LS_CT"
-pins = ["U5.4", "C2.1"]
+name = "VBUS_ILIM"
+pins = ["U5.2", "R61.1"]
+
+[[nets]]
+name = "VBUS_FAULT_N"
+style = "label"
+pins = ["U5.3", "R62.2"]
 
 [[nets]]
 name = "SW_1V0"
@@ -409,7 +473,7 @@ pins = ["U7.9", "C8.1"]
 
 [[nets]]
 name = "PG_1V8"
-pins = ["U7.4", "R7.2", "U8.13", "U9.7"]
+pins = ["U7.4", "R7.2", "U8.13", "U9.7", "U24.7"]
 
 [[nets]]
 name = "SW_3V3"
@@ -425,7 +489,8 @@ name = "SS_3V3"
 pins = ["U8.9", "C12.1"]
 
 [[nets]]
-name = "PG_3V3"
+name = "FX_XRES"
+style = "label"
 pins = ["U8.4", "R10.2"]
 
 [[nets]]
@@ -439,3 +504,17 @@ pins = ["U9.3", "R11.2", "R12.1"]
 [[nets]]
 name = "LED_PWR"
 pins = ["R13.2", "D2.2"]
+
+[[nets]]
+name = "1V3S"
+class = "Power"
+style = "power"
+pins = ["U24.1", "U24.2", "R63.1", "C126.1"]
+
+[[nets]]
+name = "NR_1V3S"
+pins = ["U24.8", "C125.1"]
+
+[[nets]]
+name = "FB_1V3S"
+pins = ["U24.3", "R63.2", "R64.1"]

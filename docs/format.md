@@ -44,7 +44,7 @@ corner_radius = 1              # half the width makes a slot
 # points = [[x, y], ...]       # ...or a polygon
 
 [stackup]
-preset = "jlcpcb-4l-1.6mm-7628"
+preset = "JLC04161H-7628"         # a fab build, see Stackup presets
 finish = "ENIG"
 mask_color = "green"
 silk_color = "white"
@@ -105,13 +105,27 @@ thermal and DC models, where a cutout is air. A stored fill goes stale when a cu
 
 ### Stackup presets
 
-| preset | build |
-|---|---|
-| `jlcpcb-2l-1.6mm` | 2 layer FR4, 1 oz outer |
-| `jlcpcb-4l-1.6mm-7628` | JLC04161H-7628, 7628 prepreg |
-| `jlcpcb-4l-1.6mm-3313` | JLC04161H-3313, 3313 prepreg |
-| `hdi-6l-1n1` | 6 layer 1+4+1, 0.8 mm: 1080 build-up prepreg (0.07 mm) over a core, 2116, core sub-stack |
-| `hdi-8l-2n2` | 8 layer 2+4+2, 1.0 mm: two 1080 build-up layers each side over the same sub-stack |
+`preset` names a fab's standard build. The presets ship with agentee, in
+`crates/agentee-core/stackups/*.toml`:
+
+| fab | names | builds |
+|---|---|---|
+| JLCPCB | the fab's code, `JLC06161H-1080` (layers, thickness, outer and inner copper, prepreg) | every impedance controlled build, 4 to 20 layers, 0.4 to 3.0 mm, plus `jlcpcb-2l-1.6mm` |
+| PCBWay | `pcbway-6l-1.6mm-1oz-1oz-70-2116-7628` (layers, thickness, outer and inner oz, inner copper %, prepregs) | the standard through-hole builds, 4 to 18 layers |
+| generic HDI | `hdi-6l-1n1`: 6 layer 1+4+1, 0.8 mm, 1080 build-up prepreg (0.07 mm) over a core, 2116, core sub-stack; `hdi-8l-2n2`: 8 layer 2+4+2, 1.0 mm, two 1080 build-up layers each side over the same sub-stack | not a fab's published build |
+
+`agentee stackups` lists them (`--fab`, `--layers`, `--thickness`, `--search`) and
+`agentee stackups NAME` prints one preset's layers; over MCP it is the `stackups` tool. Names
+match without regard to case. `jlcpcb-4l-1.6mm-7628` and `jlcpcb-4l-1.6mm-3313` are the old names
+of `JLC04161H-7628` and `JLC04161H-3313`.
+
+JLCPCB layer thicknesses come from the data behind jlcpcb.com/impedance. Their er comes from the
+calculator guide: Nan Ya NP-155F by core thickness and prepreg for 4 to 8 layers, Shengyi
+S1000-2M for 10 and more. Where a table lacks an entry the value is the other system's for the
+same prepreg, or the nearest core thickness in the same system. PCBWay thicknesses are after
+lamination, split between stacked prepreg plies by their raw thickness, with the DK printed on
+each build. Loss tangent is 0.02 throughout; neither fab publishes it per build.
+`crates/agentee-core/stackups/fetch.py` refetches both.
 
 Or list the layers yourself, top to bottom. Use either `preset` or `layers`, not both.
 

@@ -1,6 +1,6 @@
 name = "sdr-1v0"
 kind = "dc"
-description = "FPGA core rail at 0.9 A (an XC7A50T with a busy design, split evenly over its nine VCCINT/VCCBRAM balls), from the L1 output node through the In4 1V0 plane and the fanout vias, returning through the ground planes to the output caps. Artix-7 -1 wants 0.95 to 1.05 V at the balls."
+description = "FPGA core rail at 0.9 A (an XC7A50T with a busy design, split evenly over its nine VCCINT/VCCBRAM balls), from the L1 output node through the In3 1V0 plane and the fanout vias, returning through the ground planes to the output caps. Artix-7 -1 wants 0.95 to 1.05 V at the balls."
 layout = "sdr"
 cell = 0.05
 

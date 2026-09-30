@@ -1,0 +1,169 @@
+# imported from KiCad Package_LGA:Infineon_PG-TSNP-6-10_0.7x1.1mm_0.7x1.1mm_P0.4mm
+name = "Infineon_PG-TSNP-6-10_0.7x1.1mm_0.7x1.1mm_P0.4mm"
+description = "6 lead, 1.1x0.7mm body, 0.37mm height, TSNP (https://www.infineon.com/cms/en/product/packages/PG-TSNP/PG-TSNP-6-10/)"
+tags = ["PG-TSNP-6-10", "TSNP"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_LGA.3dshapes/Infineon_PG-TSNP-6-10_0.7x1.1mm_0.7x1.1mm_P0.4mm.step"
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [-0.2, -0.4]
+size = [0.25, 0.25]
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [-0.2, 0.0]
+size = [0.25, 0.25]
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [-0.2, 0.4]
+size = [0.25, 0.25]
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [0.2, -0.4]
+size = [0.25, 0.25]
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [0.2, 0.0]
+size = [0.25, 0.25]
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "circle"
+at = [0.2, 0.4]
+size = [0.25, 0.25]
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.2, -0.4]
+size = [0.25, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask"]
+count = 3
+pitch = [0.0, 0.4]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [0.2, 0.4]
+size = [0.25, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask"]
+count = 3
+pitch = [0.0, -0.4]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -1.6]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.2]
+text = "${VALUE}"
+size = 0.5
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.585, 0.785]
+end = [-0.585, -0.585]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.585, 0.785]
+end = [0.585, 0.785]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.385, -0.785]
+end = [0.585, -0.785]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.585, 0.785]
+end = [0.585, -0.785]
+width = 0.15
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-0.6, -0.8], [-0.96, -0.8], [-0.6, -1.16], [-0.6, -0.8]]
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-0.6, -0.8]
+end = [0.6, 0.8]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, -0.25]
+end = [-0.35, 0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, -0.25]
+end = [-0.05, -0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.35, 0.55]
+end = [0.35, 0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.35, -0.55]
+end = [-0.05, -0.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.35, 0.55]
+end = [0.35, -0.55]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.77, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

@@ -1006,7 +1006,7 @@ exclude = ["U3", "U6", "U7", "U8", "J4", "J5", "J1", "C23", "C24", "C25", "C26",
 
 [[zones]]
 net = "GND"
-layers = ["In1.Cu", "In3.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In4.Cu"]
 clearance = 0.13
 
 [[zones]]
@@ -1023,23 +1023,23 @@ outline = [[6.6, 36.3], [47.0, 36.3], [47.0, 44.7], [6.6, 44.7]]
 
 [[zones]]
 net = "VSYS"
-layers = ["In4.Cu"]
+layers = ["In3.Cu"]
 priority = 3
 outline = [[6.0, 0.3], [9.1, 0.3], [9.1, 9.0], [9.9, 9.0], [9.9, 44.7], [7.2, 44.7], [7.2, 36.0], [7.7, 36.0], [7.7, 9.0], [6.0, 9.0]]
 
 [[zones]]
 net = "GND"
-layers = ["In4.Cu"]
+layers = ["In3.Cu"]
 clearance = 0.13
 priority = 2
 outline = [[0.0, 9.5], [7.6, 9.5], [7.6, 39.5], [0.0, 39.5]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu"]
+layers = ["In1.Cu", "In2.Cu"]
 points = [[-0.5, 18.5], [5.4, 18.5], [5.4, 20.5], [-0.5, 20.5]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu"]
+layers = ["In1.Cu", "In2.Cu"]
 points = [[-0.5, 30.1], [5.4, 30.1], [5.4, 32.1], [-0.5, 32.1]]
 
 [[zones]]
@@ -1074,58 +1074,58 @@ points = [[14.565, 33.06], [16.615, 33.06], [16.615, 34.22], [14.565, 34.22]]
 
 [[zones]]
 net = "1V8"
-layers = ["In4.Cu"]
+layers = ["In3.Cu"]
 
 [[zones]]
 net = "1V0"
-layers = ["In4.Cu"]
+layers = ["In3.Cu"]
 priority = 1
 outline = [[9.2, 0.3], [42.0, 0.3], [42.0, 7.4], [52.0, 7.4], [52.0, 9.5], [50.0, 9.5], [50.0, 14.5], [38.0, 14.5], [38.0, 8.9], [9.2, 8.9]]
 
 [[zones]]
 net = "1V8_USB"
-layers = ["In4.Cu"]
+layers = ["In3.Cu"]
 priority = 2
 outline = [[45.6, 29.6], [54.2, 29.6], [54.2, 31.2], [47.4, 31.2], [47.4, 34.4], [45.6, 34.4]]
 
 [[zones]]
 net = "3V3"
-layers = ["In5.Cu"]
+layers = ["In3.Cu"]
 
 [[zones]]
 net = "1V3A"
-layers = ["In5.Cu"]
+layers = ["In3.Cu"]
 priority = 1
 outline = [[8.0, 6.6], [31.8, 6.6], [31.8, 28.5], [8.0, 28.5]]
 
 [[zones]]
 net = "2V5"
-layers = ["In5.Cu"]
+layers = ["In3.Cu"]
 priority = 1
 outline = [[32.0, 1.5], [48.0, 1.5], [48.0, 7.4], [46.0, 7.4], [46.0, 32.7], [42.0, 32.7], [42.0, 35.5], [32.0, 35.5]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu", "In5.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In2.Cu", "In4.Cu"]
 points = [[22.94, 2.75], [24.44, 2.75], [24.44, 4.25], [22.94, 4.25]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu", "In5.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In2.Cu", "In4.Cu"]
 points = [[30.56, 1.734], [32.06, 1.734], [32.06, 3.234], [30.56, 3.234]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu", "In5.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In2.Cu", "In4.Cu"]
 points = [[30.56, 3.766], [32.06, 3.766], [32.06, 5.266], [30.56, 5.266]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu", "In5.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In2.Cu", "In4.Cu"]
 points = [[60.734, 20.71], [62.234, 20.71], [62.234, 22.21], [60.734, 22.21]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu", "In5.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In2.Cu", "In4.Cu"]
 points = [[62.766, 20.71], [64.266, 20.71], [64.266, 22.21], [62.766, 22.21]]
 
 [[cutouts]]
-layers = ["In1.Cu", "In2.Cu", "In3.Cu", "In5.Cu", "In6.Cu"]
+layers = ["In1.Cu", "In2.Cu", "In4.Cu"]
 points = [[61.75, 25.79], [63.25, 25.79], [63.25, 27.29], [61.75, 27.29]]
 
 [[tracks]]

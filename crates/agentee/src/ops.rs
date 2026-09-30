@@ -1794,3 +1794,44 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     out["total_ms"] = json!(started.elapsed().as_millis());
     Ok(out)
 }
+
+pub struct StackupQuery<'a> {
+    pub fab: Option<&'a str>,
+    pub layers: Option<usize>,
+    pub thickness_mm: Option<f64>,
+    pub search: Option<&'a str>,
+}
+
+pub fn stackups(q: &StackupQuery) -> Vec<&'static agentee_core::stackups::StackupPreset> {
+    let has =
+        |hay: &str, needle: &str| hay.to_ascii_lowercase().contains(&needle.to_ascii_lowercase());
+    agentee_core::stackups::stackup_presets()
+        .iter()
+        .filter(|p| q.fab.is_none_or(|f| p.fab.eq_ignore_ascii_case(f)))
+        .filter(|p| q.layers.is_none_or(|n| p.copper_layers == n))
+        .filter(|p| q.thickness_mm.is_none_or(|t| (p.thickness_mm - t).abs() <= 0.1 * t))
+        .filter(|p| q.search.is_none_or(|s| has(&p.name, s) || has(&p.description, s)))
+        .collect()
+}
+
+pub fn stackups_text(list: &[&agentee_core::stackups::StackupPreset]) -> String {
+    let w = list.iter().map(|p| p.name.len()).max().unwrap_or(0);
+    let mut t: String = list
+        .iter()
+        .map(|p| format!("{:w$}  {:.2} mm  {}\n", p.name, p.thickness_mm, p.description))
+        .collect();
+    t.push_str(&format!("{} presets\n", list.len()));
+    t
+}
+
+pub fn stackup(name: &str) -> Result<Value, String> {
+    let p = agentee_core::stackups::find_stackup_preset(name).ok_or_else(|| {
+        format!(
+            "no stackup preset `{name}`, close: {}",
+            agentee_core::stackups::suggest_stackup_presets(name, 5).join(", ")
+        )
+    })?;
+    let mut v = serde_json::to_value(p).unwrap_or_default();
+    v["layers"] = serde_json::to_value(&p.layers).unwrap_or_default();
+    Ok(v)
+}

@@ -1,0 +1,41 @@
+fab = "generic"
+source = "IPC-2226 style HDI builds for microvia work, not a fab's published stackup"
+fetched = "2026-09-30"
+
+[[stackups]]
+name = "hdi-6l-1n1"
+description = "6 layer HDI 1+4+1 (IPC-2226 type I/II), 0.8 mm: 1080 build-up prepreg over a core, 2116, core sub-stack"
+layers = [
+  { copper = 0.035 },
+  { prepreg = 0.07, material = "1080", er = 4.0 },
+  { copper = 0.018 },
+  { core = 0.2, er = 4.6 },
+  { copper = 0.018 },
+  { prepreg = 0.12, material = "2116", er = 4.2 },
+  { copper = 0.018 },
+  { core = 0.2, er = 4.6 },
+  { copper = 0.018 },
+  { prepreg = 0.07, material = "1080", er = 4.0 },
+  { copper = 0.035 },
+]
+
+[[stackups]]
+name = "hdi-8l-2n2"
+description = "8 layer HDI 2+4+2 (IPC-2226 type III), 1.0 mm: two 1080 build-up layers each side over the 1+4+1 sub-stack"
+layers = [
+  { copper = 0.035 },
+  { prepreg = 0.07, material = "1080", er = 4.0 },
+  { copper = 0.018 },
+  { prepreg = 0.07, material = "1080", er = 4.0 },
+  { copper = 0.018 },
+  { core = 0.2, er = 4.6 },
+  { copper = 0.018 },
+  { prepreg = 0.12, material = "2116", er = 4.2 },
+  { copper = 0.018 },
+  { core = 0.2, er = 4.6 },
+  { copper = 0.018 },
+  { prepreg = 0.07, material = "1080", er = 4.0 },
+  { copper = 0.018 },
+  { prepreg = 0.07, material = "1080", er = 4.0 },
+  { copper = 0.035 },
+]

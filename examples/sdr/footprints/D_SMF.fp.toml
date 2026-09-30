@@ -1,0 +1,164 @@
+# imported from KiCad Diode_SMD:D_SMF
+name = "D_SMF"
+description = "Diode SMF (DO-219AB), http://www.vishay.com/docs/95572/smf_do-219ab.pdf"
+tags = ["Diode", "SMF", "(DO-214AB)"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Diode_SMD.3dshapes/D_SMF.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.45, 0.0]
+size = [1.3, 1.4]
+roundrect_ratio = 0.1923076923
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [1.45, 0.0]
+size = [1.3, 1.4]
+roundrect_ratio = 0.1923076923
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.0]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 2.0]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.36, -1.01]
+end = [-2.36, 1.01]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.36, -1.01]
+end = [1.4, -1.01]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.36, 1.01]
+end = [1.4, 1.01]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.35, -1.15]
+end = [2.35, -1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.35, 1.15]
+end = [-2.35, -1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.35, -1.15]
+end = [2.35, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.35, 1.15]
+end = [-2.35, 1.15]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.4, 0.9]
+end = [-1.4, -0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.3, -0.4]
+end = [-0.3, 0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.3, 0.0]
+end = [-0.9, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.3, 0.0]
+end = [0.3, -0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.3, 0.00102]
+end = [0.3, 0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.3, 0.0]
+end = [0.9, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.3, 0.4]
+end = [0.3, -0.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.4, -0.9]
+end = [-1.4, -0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.4, -0.9]
+end = [1.4, 0.9]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.4, 0.9]
+end = [-1.4, 0.9]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -2.0]
+text = "${REFERENCE}"
+size = 1.0

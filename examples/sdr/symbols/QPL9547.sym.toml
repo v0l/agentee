@@ -1,0 +1,97 @@
+# imported from KiCad RF_Amplifier:QPL9547
+name = "QPL9547"
+reference = "U"
+description = "100-6000MHz RF/IF +19.5dB gain block, DFN-8"
+datasheet = "https://www.qorvo.com/products/d/da007268"
+keywords = ["RF", "GAIN", "BLOCK"]
+footprint = "DFN-8-1EP_2x2mm_P0.5mm_EP0.8x1.6mm"
+footprint_filters = ["DFN*1EP*2x2mm*P0.5mm*"]
+
+[[graphics]]
+kind = "polygon"
+points = [[5.08, 0.0], [-5.08, -5.08], [-5.08, 5.08]]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "2"
+type = "input"
+at = [-7.62, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "Vb"
+type = "power_in"
+at = [-2.54, -7.62]
+side = "top"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "3"
+name = "GND"
+type = "power_in"
+at = [-2.54, 7.62]
+side = "bottom"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "4"
+name = "GND"
+type = "passive"
+at = [-2.54, 7.62]
+side = "bottom"
+length = 3.81
+unit = 1
+hidden = true
+
+[[pins]]
+number = "5"
+name = "GND"
+type = "passive"
+at = [-2.54, 7.62]
+side = "bottom"
+length = 3.81
+unit = 1
+hidden = true
+
+[[pins]]
+number = "8"
+name = "GND"
+type = "passive"
+at = [-2.54, 7.62]
+side = "bottom"
+length = 3.81
+unit = 1
+hidden = true
+
+[[pins]]
+number = "9"
+name = "GND"
+type = "passive"
+at = [-2.54, 7.62]
+side = "bottom"
+length = 3.81
+unit = 1
+hidden = true
+
+[[pins]]
+number = "6"
+name = "~{EN}"
+type = "passive"
+at = [0.0, 7.62]
+side = "bottom"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "7"
+type = "output"
+at = [7.62, 0.0]
+side = "right"
+length = 2.54
+unit = 1

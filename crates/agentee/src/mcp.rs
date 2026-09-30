@@ -40,6 +40,17 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "stackups",
+            "description": "Stackup presets for a board's `stackup.preset`: JLCPCB and PCBWay builds and generic HDI builds with layer thicknesses and er. Filter the list, or give name to get one preset's layers.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "one preset, returns its layers" },
+                "fab": { "type": "string", "description": "jlcpcb, pcbway or generic" },
+                "layers": { "type": "integer", "description": "copper layer count" },
+                "thickness": { "type": "number", "description": "finished thickness in mm, within 10%" },
+                "search": { "type": "string", "description": "substring of name or description" },
+            }), &[]),
+        },
+        {
             "name": "list_items",
             "description": "Every board, symbol and footprint in the project with its file and error counts.",
             "inputSchema": s(json!({}), &[]),
@@ -305,6 +316,18 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let p = ops::load(root)?;
             let (t, _) = ops::drc(&p, arg(a, "name").ok_or("name is required")?, flag(a, "list"))?;
             Ok(ok(vec![text(t)]))
+        }
+        "stackups" => {
+            if let Some(n) = arg(a, "name") {
+                return Ok(ok(vec![text(pretty(&ops::stackup(n)?))]));
+            }
+            let q = ops::StackupQuery {
+                fab: arg(a, "fab"),
+                layers: a.get("layers").and_then(Value::as_u64).map(|n| n as usize),
+                thickness_mm: a.get("thickness").and_then(Value::as_f64),
+                search: arg(a, "search"),
+            };
+            Ok(ok(vec![text(ops::stackups_text(&ops::stackups(&q)))]))
         }
         "list_items" => Ok(ok(vec![text(pretty(&ops::list(&ops::load(root)?)))])),
         "show_item" => {

@@ -21,6 +21,7 @@ pub mod route;
 pub mod schematic;
 pub mod sim;
 pub mod sparam;
+pub mod stackups;
 pub mod symbol;
 pub mod testpoint;
 pub mod tune;

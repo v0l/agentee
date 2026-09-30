@@ -1,0 +1,335 @@
+name = "frontend"
+description = "RF front end between the baluns and the SMAs. RX: an SPDT pair (BGS12WN6) picks a QPL9547 LNA (0.1 to 6 GHz, 5 V) or a bypass. TX: the same pair around a TRF37A73 driver (1 to 6000 MHz, 12 dB). CTRL high is the bypass (RF2), and the pull-ups keep the bypass selected and both amplifiers off until the gateware drives the pins"
+board = "sdr"
+
+[[parts]]
+ref = "J3"
+symbol = "Conn_Coaxial"
+value = "RX"
+at = [38.10, 101.60]
+fields = { mpn = "Amphenol 132289" }
+
+[[parts]]
+ref = "U14"
+symbol = "BGS12WN6E6327"
+value = "BGS12WN6"
+at = [88.90, 101.60]
+fields = { mpn = "Infineon BGS12WN6E6327" }
+
+[[parts]]
+ref = "C96"
+symbol = "C"
+value = "100p"
+at = [139.70, 88.90]
+rotation = 90
+fields = { mpn = "Murata GRM1555C1H101JA01" }
+
+[[parts]]
+ref = "U16"
+symbol = "QPL9547"
+value = "QPL9547"
+at = [203.20, 88.90]
+fields = { mpn = "Qorvo QPL9547TR7" }
+
+[[parts]]
+ref = "L6"
+symbol = "L"
+value = "100n"
+footprint = "L_0603_1608Metric"
+at = [254.00, 76.20]
+fields = { mpn = "Murata LQW18ANR10G00" }
+
+[[parts]]
+ref = "C97"
+symbol = "C"
+value = "100p"
+at = [292.10, 88.90]
+rotation = 90
+fields = { mpn = "Murata GRM1555C1H101JA01" }
+
+[[parts]]
+ref = "U15"
+symbol = "BGS12WN6E6327"
+value = "BGS12WN6"
+at = [355.60, 101.60]
+fields = { mpn = "Infineon BGS12WN6E6327" }
+
+[[parts]]
+ref = "R37"
+symbol = "R"
+value = "3.32k 1%"
+at = [165.10, 63.50]
+
+[[parts]]
+ref = "R38"
+symbol = "R"
+value = "10k"
+at = [215.90, 127.00]
+
+[[parts]]
+ref = "R39"
+symbol = "R"
+value = "100k"
+at = [114.30, 139.70]
+
+[[parts]]
+ref = "C100"
+symbol = "C"
+value = "10n"
+at = [76.20, 139.70]
+
+[[parts]]
+ref = "C101"
+symbol = "C"
+value = "10n"
+at = [342.90, 139.70]
+
+[[parts]]
+ref = "FB6"
+symbol = "FerriteBead_Small"
+value = "220R@100MHz"
+at = [292.10, 50.80]
+rotation = 90
+fields = { mpn = "Murata BLM15PX221SN1D" }
+
+[[parts]]
+ref = "C98"
+symbol = "C"
+value = "1u"
+at = [330.20, 63.50]
+
+[[parts]]
+ref = "C99"
+symbol = "C"
+value = "100p"
+at = [355.60, 63.50]
+fields = { mpn = "Murata GRM1555C1H101JA01" }
+
+[[parts]]
+ref = "J2"
+symbol = "Conn_Coaxial"
+value = "TX"
+at = [406.40, 228.60]
+rotation = 180
+fields = { mpn = "Amphenol 132289" }
+
+[[parts]]
+ref = "U17"
+symbol = "BGS12WN6E6327"
+value = "BGS12WN6"
+at = [88.90, 228.60]
+fields = { mpn = "Infineon BGS12WN6E6327" }
+
+[[parts]]
+ref = "C102"
+symbol = "C"
+value = "1n"
+at = [139.70, 215.90]
+rotation = 90
+fields = { mpn = "Murata GRM1555C1H102JA01" }
+
+[[parts]]
+ref = "U18"
+symbol = "TRF37A73"
+value = "TRF37A73"
+at = [203.20, 215.90]
+fields = { mpn = "TI TRF37A73IDSGR" }
+
+[[parts]]
+ref = "L7"
+symbol = "L"
+value = "100n"
+footprint = "L_0603_1608Metric"
+at = [254.00, 190.50]
+fields = { mpn = "Murata LQW18ANR10G00" }
+
+[[parts]]
+ref = "C103"
+symbol = "C"
+value = "1n"
+at = [292.10, 215.90]
+rotation = 90
+fields = { mpn = "Murata GRM1555C1H102JA01" }
+
+[[parts]]
+ref = "U19"
+symbol = "BGS12WN6E6327"
+value = "BGS12WN6"
+at = [355.60, 228.60]
+fields = { mpn = "Infineon BGS12WN6E6327" }
+
+[[parts]]
+ref = "C106"
+symbol = "C"
+value = "1n"
+at = [165.10, 177.80]
+
+[[parts]]
+ref = "R40"
+symbol = "R"
+value = "10k"
+at = [215.90, 266.70]
+
+[[parts]]
+ref = "R41"
+symbol = "R"
+value = "100k"
+at = [114.30, 266.70]
+
+[[parts]]
+ref = "C107"
+symbol = "C"
+value = "10n"
+at = [76.20, 266.70]
+
+[[parts]]
+ref = "C108"
+symbol = "C"
+value = "10n"
+at = [342.90, 266.70]
+
+[[parts]]
+ref = "FB7"
+symbol = "FerriteBead_Small"
+value = "220R@100MHz"
+at = [292.10, 165.10]
+rotation = 90
+fields = { mpn = "Murata BLM15PX221SN1D" }
+
+[[parts]]
+ref = "C104"
+symbol = "C"
+value = "1u"
+at = [330.20, 177.80]
+
+[[parts]]
+ref = "C105"
+symbol = "C"
+value = "100p"
+at = [355.60, 177.80]
+fields = { mpn = "Murata GRM1555C1H101JA01" }
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = ["J3.2", "J2.2", "U14.2", "U15.2", "U17.2", "U19.2", "U16.3", "U16.4", "U16.5", "U16.8", "U16.9", "U18.3", "U18.4", "U18.6", "U18.8", "U18.9", "C98.2", "C99.2", "C100.2", "C101.2", "C104.2", "C105.2", "C106.2", "C107.2", "C108.2"]
+
+[[nets]]
+name = "3V3"
+class = "Power"
+style = "power"
+pins = ["U14.4", "U15.4", "U17.4", "U19.4", "C100.1", "C101.1", "C107.1", "C108.1", "R38.1", "R39.1", "R40.1", "R41.1", "FB7.1"]
+
+[[nets]]
+name = "VSYS"
+class = "PowerHi"
+style = "power"
+pins = ["FB6.1"]
+
+[[nets]]
+name = "5V_LNA"
+class = "Power"
+style = "power"
+pins = ["FB6.2", "C98.1", "C99.1", "L6.2", "R37.1"]
+
+[[nets]]
+name = "3V3_TXA"
+class = "Power"
+style = "power"
+pins = ["FB7.2", "C104.1", "C105.1", "L7.2", "U18.1", "C106.1"]
+
+[[nets]]
+name = "RX_ANT"
+class = "RF"
+pins = ["J3.1", "U14.5"]
+
+[[nets]]
+name = "RXL_IN"
+class = "RF"
+pins = ["U14.3", "C96.1"]
+
+[[nets]]
+name = "RXL_IN_AC"
+class = "RF"
+pins = ["C96.2", "U16.2"]
+
+[[nets]]
+name = "RXL_OUT"
+class = "RF"
+pins = ["U16.7", "L6.1", "C97.1"]
+
+[[nets]]
+name = "RXL_OUT_AC"
+class = "RF"
+pins = ["C97.2", "U15.3"]
+
+[[nets]]
+name = "RX_BYP"
+class = "RF"
+pins = ["U14.1", "U15.1"]
+
+[[nets]]
+name = "RX_RF"
+class = "RF"
+style = "label"
+pins = ["U15.5"]
+
+[[nets]]
+name = "LNA_VB"
+pins = ["R37.2", "U16.1"]
+
+[[nets]]
+name = "RX_LNA_SD"
+style = "label"
+pins = ["U16.6", "R38.2"]
+
+[[nets]]
+name = "RX_BYPASS"
+style = "label"
+pins = ["U14.6", "U15.6", "R39.2"]
+
+[[nets]]
+name = "TX_RF"
+class = "RF"
+style = "label"
+pins = ["U17.5"]
+
+[[nets]]
+name = "TXA_IN"
+class = "RF"
+pins = ["U17.3", "C102.1"]
+
+[[nets]]
+name = "TXA_IN_AC"
+class = "RF"
+pins = ["C102.2", "U18.2"]
+
+[[nets]]
+name = "TXA_OUT"
+class = "RF"
+pins = ["U18.7", "L7.1", "C103.1"]
+
+[[nets]]
+name = "TXA_OUT_AC"
+class = "RF"
+pins = ["C103.2", "U19.3"]
+
+[[nets]]
+name = "TX_BYP"
+class = "RF"
+pins = ["U17.1", "U19.1"]
+
+[[nets]]
+name = "TX_ANT"
+class = "RF"
+pins = ["U19.5", "J2.1"]
+
+[[nets]]
+name = "TX_AMP_PD"
+style = "label"
+pins = ["U18.5", "R40.2"]
+
+[[nets]]
+name = "TX_BYPASS"
+style = "label"
+pins = ["U17.6", "U19.6", "R41.2"]

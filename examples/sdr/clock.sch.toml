@@ -1,0 +1,540 @@
+name = "clock"
+description = "External 10 MHz reference: SMA, 50 ohm termination, Schottky clamp, LTC6957-3 squarer (one output to the PLL, one to the FPGA). An ADF4002 locks the 40 MHz VCTCXO to it (R = 1, N = 4 at 10 MHz PFD) through a passive loop filter, and a TS5A3159 picks the VCTCXO tuning voltage: AUXDAC1 (VC_DAC high) or the loop (low). A PPS input through a Schmitt buffer, and an eight bit 3.3 V GPIO header with ESD"
+board = "sdr"
+no_connect = ["U23.1", "U25.6", "U25.7", "U25.9", "U25.10", "U26.6", "U26.7", "U26.9", "U26.10"]
+
+[[parts]]
+ref = "J6"
+symbol = "Conn_Coaxial"
+value = "REF"
+at = [38.10, 88.90]
+fields = { mpn = "Amphenol 132289" }
+
+[[parts]]
+ref = "C109"
+symbol = "C"
+value = "100n"
+at = [76.20, 76.20]
+rotation = 90
+
+[[parts]]
+ref = "R42"
+symbol = "R"
+value = "49.9"
+at = [101.60, 101.60]
+
+[[parts]]
+ref = "R43"
+symbol = "R"
+value = "100"
+at = [127.00, 76.20]
+rotation = 90
+
+[[parts]]
+ref = "D7"
+symbol = "BAT54S"
+value = "BAT54S"
+at = [152.40, 114.30]
+fields = { mpn = "Nexperia BAT54S" }
+
+[[parts]]
+ref = "C110"
+symbol = "C"
+value = "100n"
+at = [177.80, 76.20]
+rotation = 90
+
+[[parts]]
+ref = "C111"
+symbol = "C"
+value = "100n"
+at = [177.80, 127.00]
+
+[[parts]]
+ref = "U20"
+symbol = "LTC6957xDD-3"
+value = "LTC6957-3"
+at = [241.30, 101.60]
+fields = { mpn = "Analog Devices LTC6957IDD-3#PBF" }
+
+[[parts]]
+ref = "C112"
+symbol = "C"
+value = "100n"
+at = [215.90, 38.10]
+
+[[parts]]
+ref = "C113"
+symbol = "C"
+value = "100n"
+at = [266.70, 38.10]
+
+[[parts]]
+ref = "FB8"
+symbol = "FerriteBead_Small"
+value = "220R@100MHz"
+at = [304.80, 25.40]
+rotation = 90
+fields = { mpn = "Murata BLM15PX221SN1D" }
+
+[[parts]]
+ref = "C114"
+symbol = "C"
+value = "1u"
+at = [342.90, 38.10]
+
+[[parts]]
+ref = "R44"
+symbol = "R"
+value = "33"
+at = [304.80, 88.90]
+rotation = 90
+
+[[parts]]
+ref = "R45"
+symbol = "R"
+value = "33"
+at = [304.80, 127.00]
+rotation = 90
+
+[[parts]]
+ref = "U21"
+symbol = "ADF4002BCPZ"
+value = "ADF4002"
+at = [431.80, 114.30]
+fields = { mpn = "Analog Devices ADF4002BCPZ" }
+
+[[parts]]
+ref = "C115"
+symbol = "C"
+value = "100n"
+at = [393.70, 38.10]
+
+[[parts]]
+ref = "C116"
+symbol = "C"
+value = "100n"
+at = [419.10, 38.10]
+
+[[parts]]
+ref = "C117"
+symbol = "C"
+value = "100n"
+at = [444.50, 38.10]
+
+[[parts]]
+ref = "R46"
+symbol = "R"
+value = "5.1k 1%"
+at = [393.70, 177.80]
+
+[[parts]]
+ref = "R47"
+symbol = "R"
+value = "470"
+at = [355.60, 152.40]
+rotation = 90
+
+[[parts]]
+ref = "C118"
+symbol = "C"
+value = "100p"
+at = [381.00, 152.40]
+rotation = 90
+
+[[parts]]
+ref = "C119"
+symbol = "C"
+value = "100p"
+at = [381.00, 190.50]
+
+[[parts]]
+ref = "C120"
+symbol = "C"
+value = "47n"
+at = [495.30, 152.40]
+fields = { mpn = "C0G" }
+
+[[parts]]
+ref = "R48"
+symbol = "R"
+value = "15k"
+at = [520.70, 139.70]
+
+[[parts]]
+ref = "C121"
+symbol = "C"
+value = "470n"
+at = [520.70, 165.10]
+
+[[parts]]
+ref = "R49"
+symbol = "R"
+value = "1k"
+at = [546.10, 114.30]
+rotation = 90
+
+[[parts]]
+ref = "U22"
+unit = 1
+symbol = "TS5A3159DBV"
+value = "TS5A3159"
+at = [609.60, 114.30]
+fields = { mpn = "TI TS5A3159DBVR" }
+
+[[parts]]
+ref = "U22"
+unit = 2
+symbol = "TS5A3159DBV"
+value = "TS5A3159"
+at = [647.70, 63.50]
+
+[[parts]]
+ref = "C122"
+symbol = "C"
+value = "100n"
+at = [609.60, 50.80]
+
+[[parts]]
+ref = "R50"
+symbol = "R"
+value = "100k"
+at = [571.50, 177.80]
+
+[[parts]]
+ref = "J7"
+symbol = "Conn_Coaxial"
+value = "PPS"
+at = [38.10, 254.00]
+fields = { mpn = "Amphenol 132289" }
+
+[[parts]]
+ref = "D8"
+symbol = "PESD5V0S1UL"
+value = "PESD5V0S1UL"
+at = [76.20, 279.40]
+rotation = 90
+
+[[parts]]
+ref = "R51"
+symbol = "R"
+value = "1k"
+at = [114.30, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R52"
+symbol = "R"
+value = "100k"
+at = [139.70, 279.40]
+
+[[parts]]
+ref = "U23"
+symbol = "74LVC1G17"
+value = "74LVC1G17"
+footprint = "SOT-23-5"
+at = [190.50, 254.00]
+fields = { mpn = "TI SN74LVC1G17DBVR" }
+
+[[parts]]
+ref = "C123"
+symbol = "C"
+value = "100n"
+at = [190.50, 203.20]
+
+[[parts]]
+ref = "J8"
+symbol = "Conn_02x05_Odd_Even"
+value = "GPIO"
+footprint = "PinHeader_2x05_P1.27mm_Vertical_SMD"
+at = [520.70, 279.40]
+
+[[parts]]
+ref = "U25"
+symbol = "TPD4E05U06DQA"
+value = "TPD4E05U06"
+at = [444.50, 330.20]
+
+[[parts]]
+ref = "U26"
+symbol = "TPD4E05U06DQA"
+value = "TPD4E05U06"
+at = [596.90, 330.20]
+
+[[parts]]
+ref = "R53"
+symbol = "R"
+value = "33"
+at = [317.50, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R54"
+symbol = "R"
+value = "33"
+at = [342.90, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R55"
+symbol = "R"
+value = "33"
+at = [368.30, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R56"
+symbol = "R"
+value = "33"
+at = [393.70, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R57"
+symbol = "R"
+value = "33"
+at = [419.10, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R58"
+symbol = "R"
+value = "33"
+at = [444.50, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R59"
+symbol = "R"
+value = "33"
+at = [469.90, 241.30]
+rotation = 90
+
+[[parts]]
+ref = "R60"
+symbol = "R"
+value = "33"
+at = [495.30, 241.30]
+rotation = 90
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = ["J6.2", "J7.2", "R42.2", "D7.1", "D7.2", "C111.2", "U20.5", "U20.13", "U20.8", "U20.12", "U20.7", "C112.2", "C113.2", "C114.2", "U21.1", "U21.2", "U21.3", "U21.9", "U21.10", "U21.21", "C115.2", "C116.2", "C117.2", "R46.2", "C119.2", "C120.2", "C121.2", "U22.2", "C122.2", "D8.2", "R52.2", "U23.3", "C123.2", "J8.2", "U25.3", "U25.8", "U26.3", "U26.8"]
+
+[[nets]]
+name = "3V3"
+class = "Power"
+style = "power"
+pins = ["FB8.1", "R50.1", "U23.5", "C123.1", "J8.1"]
+
+[[nets]]
+name = "3V3_REF"
+class = "Power"
+style = "power"
+pins = ["FB8.2", "C114.1", "U20.2", "U20.11", "U20.1", "U20.6", "C112.1", "C113.1", "U21.6", "U21.7", "U21.16", "U21.17", "U21.18", "U21.11", "C115.1", "C116.1", "C117.1"]
+
+[[nets]]
+name = "3V3_TCXO"
+class = "Power"
+style = "power"
+pins = ["U22.5", "C122.1"]
+
+[[nets]]
+name = "REF_IN"
+class = "RF"
+pins = ["J6.1", "C109.1"]
+
+[[nets]]
+name = "REF_AC"
+pins = ["C109.2", "R42.1", "R43.1"]
+
+[[nets]]
+name = "REF_CLAMP"
+pins = ["R43.2", "D7.3", "C110.1"]
+
+[[nets]]
+name = "REF_P"
+pins = ["C110.2", "U20.3"]
+
+[[nets]]
+name = "REF_N"
+pins = ["U20.4", "C111.1"]
+
+[[nets]]
+name = "REF_OUT1"
+pins = ["U20.10", "R44.1"]
+
+[[nets]]
+name = "REF_OUT2"
+pins = ["U20.9", "R45.1"]
+
+[[nets]]
+name = "REF_CMOS"
+pins = ["R44.2", "U21.8"]
+
+[[nets]]
+name = "REF_10M"
+style = "label"
+pins = ["R45.2"]
+
+[[nets]]
+name = "TCXO_OUT"
+style = "label"
+pins = ["R47.1"]
+
+[[nets]]
+name = "PLL_RFA"
+pins = ["R47.2", "C118.1"]
+
+[[nets]]
+name = "PLL_RFIN"
+pins = ["C118.2", "U21.5"]
+
+[[nets]]
+name = "PLL_RFINB"
+pins = ["U21.4", "C119.1"]
+
+[[nets]]
+name = "PLL_RSET"
+pins = ["U21.19", "R46.1"]
+
+[[nets]]
+name = "PLL_CP"
+pins = ["U21.20", "C120.1", "R48.1", "R49.1"]
+
+[[nets]]
+name = "PLL_Z"
+pins = ["R48.2", "C121.1"]
+
+[[nets]]
+name = "PLL_VC"
+pins = ["R49.2", "U22.3"]
+
+[[nets]]
+name = "TCXO_DAC"
+style = "label"
+pins = ["U22.1"]
+
+[[nets]]
+name = "TCXO_VC"
+style = "label"
+pins = ["U22.4"]
+
+[[nets]]
+name = "VC_DAC"
+style = "label"
+pins = ["U22.6", "R50.2"]
+
+[[nets]]
+name = "PLL_CLK"
+style = "label"
+pins = ["U21.12"]
+
+[[nets]]
+name = "PLL_DATA"
+style = "label"
+pins = ["U21.13"]
+
+[[nets]]
+name = "PLL_LE"
+style = "label"
+pins = ["U21.14"]
+
+[[nets]]
+name = "PLL_MUXOUT"
+style = "label"
+pins = ["U21.15"]
+
+[[nets]]
+name = "PPS_RAW"
+pins = ["J7.1", "D8.1", "R51.1"]
+
+[[nets]]
+name = "PPS_A"
+pins = ["R51.2", "R52.1", "U23.2"]
+
+[[nets]]
+name = "PPS_IN"
+style = "label"
+pins = ["U23.4"]
+
+[[nets]]
+name = "GPIO0"
+style = "label"
+pins = ["R53.1"]
+
+[[nets]]
+name = "GPIO0_H"
+style = "label"
+pins = ["R53.2", "J8.3", "U25.1"]
+
+[[nets]]
+name = "GPIO1"
+style = "label"
+pins = ["R54.1"]
+
+[[nets]]
+name = "GPIO1_H"
+style = "label"
+pins = ["R54.2", "J8.4", "U25.2"]
+
+[[nets]]
+name = "GPIO2"
+style = "label"
+pins = ["R55.1"]
+
+[[nets]]
+name = "GPIO2_H"
+style = "label"
+pins = ["R55.2", "J8.5", "U25.4"]
+
+[[nets]]
+name = "GPIO3"
+style = "label"
+pins = ["R56.1"]
+
+[[nets]]
+name = "GPIO3_H"
+style = "label"
+pins = ["R56.2", "J8.6", "U25.5"]
+
+[[nets]]
+name = "GPIO4"
+style = "label"
+pins = ["R57.1"]
+
+[[nets]]
+name = "GPIO4_H"
+style = "label"
+pins = ["R57.2", "J8.7", "U26.1"]
+
+[[nets]]
+name = "GPIO5"
+style = "label"
+pins = ["R58.1"]
+
+[[nets]]
+name = "GPIO5_H"
+style = "label"
+pins = ["R58.2", "J8.8", "U26.2"]
+
+[[nets]]
+name = "GPIO6"
+style = "label"
+pins = ["R59.1"]
+
+[[nets]]
+name = "GPIO6_H"
+style = "label"
+pins = ["R59.2", "J8.9", "U26.4"]
+
+[[nets]]
+name = "GPIO7"
+style = "label"
+pins = ["R60.1"]
+
+[[nets]]
+name = "GPIO7_H"
+style = "label"
+pins = ["R60.2", "J8.10", "U26.5"]
