@@ -772,8 +772,9 @@ aims the camera at that area.
 
 Common parts are drawn from the footprint without loading a model: chip resistors, capacitors,
 inductors, LEDs and diodes (names with a `Metric` size), vertical pin headers and sockets, SOIC,
-SOT, QFP, QFN, DFN, SON, TSLP and BGA packages, crystals and oscillators, and shield frames
-(`Shield` in the name or description). The body is the `F.Fab` outline, the height comes from
+SOT, QFP, QFN, DFN, SON, TSLP and BGA packages, crystals and oscillators, edge mount SMA
+connectors, and shield frames (`Shield` in the name or description, with the cover on when the
+description says `Two Piece`). The body is the `F.Fab` outline, the height comes from
 `height`, an `_h1.25mm` part of the name, or the package family, and leads sit on the pads outside
 the body. Mounting holes, fiducials, pad test points, solder jumpers and Tag-Connect footprints
 get no body. A model file in the project (`3dmodels/` or a path relative to it) still wins over a
@@ -1173,7 +1174,7 @@ Plus `width` (stroke), `fill` (`none` / `solid` / `background`), and `layer` (fo
 | file | from |
 |---|---|
 | `NAME.board.toml` | the Edge.Cuts outline (inner loops become cutouts), the stackup with thickness, er and loss tangent, the copper finish and mask colour, the design rules and net classes from `NAME.kicad_pro` |
-| `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones, with agentee's zone fills stored |
+| `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones, with agentee's zone fills stored, and the silk and fab text and lines drawn on the board, with `${TITLE}`, `${DATE}` and the project's text variables filled in |
 | `NAME.sch.toml` | every part with its value, and each net as a list of pins, drawn with net labels |
 | `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept |
 | `symbols/` | one box symbol per footprint with a pin per pad number |

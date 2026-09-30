@@ -10,6 +10,7 @@ const CERAMIC: [f32; 3] = [0.78, 0.66, 0.48];
 const FERRITE: [f32; 3] = [0.3, 0.3, 0.32];
 const LED_BODY: [f32; 3] = [0.95, 0.95, 0.92];
 const MARK: [f32; 3] = [0.55, 0.55, 0.57];
+const LID: [f32; 3] = [0.86, 0.86, 0.88];
 
 type R = [f64; 2];
 
@@ -70,6 +71,49 @@ impl Builder {
                 let v = [p(a, z0), p(b, z0), p(b, z1), p(a, z1)];
                 self.mesh.push(colour, [(v[0], n), (v[1], n), (v[2], n)]);
                 self.mesh.push(colour, [(v[0], n), (v[2], n), (v[3], n)]);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tube(
+        &mut self,
+        colour: [f32; 3],
+        axis: usize,
+        a0: f64,
+        a1: f64,
+        c: [f64; 2],
+        r: f64,
+        sides: usize,
+    ) {
+        let point = |a: f64, u: f64, z: f64| {
+            let (x, y) = if axis == 0 { (a, u) } else { (u, a) };
+            [x as f32, -y as f32, z as f32]
+        };
+        let dir = |u: f64, z: f64| {
+            let (x, y) = if axis == 0 { (0.0, u) } else { (u, 0.0) };
+            [x as f32, -y as f32, z as f32]
+        };
+        let ring: Vec<(f64, f64)> = (0..sides)
+            .map(|k| {
+                let t = std::f64::consts::TAU * (k as f64 + 0.5) / sides as f64;
+                (t.cos(), t.sin())
+            })
+            .collect();
+        for k in 0..sides {
+            let (p, q) = (ring[k], ring[(k + 1) % sides]);
+            let (np, nq) = (dir(p.0, p.1), dir(q.0, q.1));
+            let v = |e: (f64, f64), at: f64| point(at, c[0] + r * e.0, c[1] + r * e.1);
+            self.mesh.push(colour, [(v(p, a0), np), (v(q, a0), nq), (v(q, a1), nq)]);
+            self.mesh.push(colour, [(v(p, a0), np), (v(q, a1), nq), (v(p, a1), np)]);
+        }
+        for (at, sign) in [(a0, -1.0), (a1, 1.0)] {
+            let n = if axis == 0 { [sign as f32, 0.0, 0.0] } else { [0.0, -sign as f32, 0.0] };
+            let centre = point(at, c[0], c[1]);
+            for k in 0..sides {
+                let (p, q) = (ring[k], ring[(k + 1) % sides]);
+                let v = |e: (f64, f64)| point(at, c[0] + r * e.0, c[1] + r * e.1);
+                self.mesh.push(colour, [(centre, n), (v(p), n), (v(q), n)]);
             }
         }
     }
@@ -136,6 +180,9 @@ pub fn generate(fp: &Footprint) -> Option<Mesh> {
     }
     if upper.contains("SHIELD") || fp.description.to_uppercase().contains("SHIELD") {
         return shield(fp);
+    }
+    if upper.contains("SMA") && upper.contains("EDGEMOUNT") {
+        return sma_edge(fp);
     }
     if (has("PINHEADER_") || has("PINSOCKET_")) && upper.contains("_VERTICAL") {
         return header(fp, has("PINSOCKET_"));
@@ -223,6 +270,56 @@ fn header(fp: &Footprint, socket: bool) -> Option<Mesh> {
     Some(m.finish())
 }
 
+fn sma_edge(fp: &Footprint) -> Option<Mesh> {
+    let body = fab_bounds(fp)?;
+    let mut pads = Bounds::EMPTY;
+    for p in copper_pads(fp) {
+        let (lo, hi) = pad_box(p);
+        pads.add(lo);
+        pads.add(hi);
+    }
+    if pads.is_empty() {
+        return None;
+    }
+    let [w, h] = body.size();
+    let axis = if w >= h { 0 } else { 1 };
+    let other = 1 - axis;
+    let before = pads.min[axis] - body.min[axis];
+    let after = body.max[axis] - pads.max[axis];
+    let (edge, out) = if before >= after { (pads.min[axis], -1.0) } else { (pads.max[axis], 1.0) };
+    let far = if out < 0.0 { body.min[axis] } else { body.max[axis] };
+    let mid = (body.min[other] + body.max[other]) / 2.0;
+    let z = 0.65;
+    let at = |d: f64| edge + out * d;
+    let span = |a: f64, b: f64| (a.min(b), a.max(b));
+    let square = 3.175;
+    let reach = (far - edge).abs();
+    let mut m = Builder::new();
+    let (f0, f1) = span(at(0.0), at(2.0));
+    let cube = |lo: f64, hi: f64, c0: f64, c1: f64| {
+        if axis == 0 { ([lo, c0], [hi, c1]) } else { ([c0, lo], [c1, hi]) }
+    };
+    let (lo, hi) = cube(f0, f1, mid - square, mid + square);
+    m.cuboid(GOLD, lo, hi, z - square, z + square);
+    let (h0, h1) = span(at(2.0), at(4.0));
+    m.tube(GOLD, axis, h0, h1, [mid, z], 4.6, 6);
+    let (b0, b1) = span(at(4.0), at(reach));
+    m.tube(GOLD, axis, b0, b1, [mid, z], 3.1, 32);
+    let (d0, d1) = span(at(reach - 0.05), at(reach + 0.01));
+    m.tube(LED_BODY, axis, d0, d1, [mid, z], 2.05, 24);
+    let (p0, p1) = span(at(reach - 0.3), at(reach + 0.02));
+    m.tube(GOLD, axis, p0, p1, [mid, z], 0.45, 12);
+    let (l0, l1) = span(edge, if out < 0.0 { pads.max[axis] } else { pads.min[axis] });
+    let (lo, hi) = cube(l0, l1, mid - 0.4, mid + 0.4);
+    m.cuboid(GOLD, lo, hi, 0.0, 0.4);
+    for side in [-1.0, 1.0] {
+        let c = mid + side * 3.1;
+        let (lo, hi) = cube(l0, l1, c - 1.0, c + 1.0);
+        m.cuboid(GOLD, lo, hi, 0.0, 0.8);
+    }
+    Some(m.finish())
+}
+
 fn shield(fp: &Footprint) -> Option<Mesh> {
     let body = fab_bounds(fp)?;
     let height = fp.height.unwrap_or(3.0);
@@ -238,6 +335,16 @@ fn shield(fp: &Footprint) -> Option<Mesh> {
     m.cuboid(METAL, [lo[0] + wall, hi[1] - lip], [hi[0] - wall, hi[1] - wall], top, height);
     m.cuboid(METAL, [lo[0] + wall, lo[1] + lip], [lo[0] + lip, hi[1] - lip], top, height);
     m.cuboid(METAL, [hi[0] - lip, lo[1] + lip], [hi[0] - wall, hi[1] - lip], top, height);
+    if fp.description.to_uppercase().contains("TWO PIECE") {
+        let (t, skirt, gap) = (0.15, 1.5, 0.1);
+        let (a, b) = ([lo[0] - gap - t, lo[1] - gap - t], [hi[0] + gap + t, hi[1] + gap + t]);
+        m.cuboid(LID, a, b, height, height + t);
+        let z0 = height - skirt;
+        m.cuboid(LID, a, [b[0], a[1] + t], z0, height);
+        m.cuboid(LID, [a[0], b[1] - t], b, z0, height);
+        m.cuboid(LID, a, [a[0] + t, b[1]], z0, height);
+        m.cuboid(LID, [b[0] - t, a[1]], b, z0, height);
+    }
     Some(m.finish())
 }
 

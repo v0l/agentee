@@ -22507,6 +22507,167 @@ clearance = 0.2
 min_width = 0.15
 priority = 8
 
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [91.1, 73.2]
+text = "r1.2.1"
+size = 1.778
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.0, 30.55]
+text = "FPGA"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [51.0, 30.7]
+text = "2025-11-12"
+size = 1.778
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.0, 35.122]
+text = "RF"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [98.05, 24.25]
+text = "P26 LPC_JTAG"
+size = 1.016
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [7.2, 24.4]
+text = "DFU"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [71.65, 39.67704]
+text = "TP6"
+size = 1.016
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [71.65, 41.32296]
+text = "GND"
+size = 1.016
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [7.2, 11.4]
+text = "RESET"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [116.8, 57.1]
+text = "P1"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.0, 48.838]
+text = "TX"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [29.3, 25.9]
+text = "Praline"
+size = 1.778
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [3.17704, 66.7]
+text = "P3"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [4.82296, 66.7]
+text = "RF"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [67.3, 43.3]
+text = "P28"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [92.7608, 68.7516]
+text = "P22"
+size = 1.016
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.0, 44.266]
+text = "RX"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [116.8, 39.1]
+text = "P2"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [107.7976, 44.5454]
+text = "P20"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.0, 17.9]
+text = "MCU"
+size = 1.016
+rotation = 90.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.0, 39.694]
+text = "USB"
+size = 1.016
+rotation = 90.0
+
 [[fills]]
 zone = 18
 layer = "In4.Cu"

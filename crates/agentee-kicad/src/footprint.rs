@@ -34,7 +34,7 @@ fn layer(n: &Node) -> Option<String> {
     n.find("layer").and_then(|l| l.arg(0)).map(layer_name)
 }
 
-fn text(n: &Node, content: &str) -> Option<GraphicFile> {
+pub(crate) fn text(n: &Node, content: &str) -> Option<GraphicFile> {
     if n.flag("hide") || n.find("effects").is_some_and(|e| e.flag("hide")) {
         return None;
     }
@@ -60,8 +60,9 @@ fn text(n: &Node, content: &str) -> Option<GraphicFile> {
     })
 }
 
-fn graphic(n: &Node) -> Option<GraphicFile> {
-    let mut g = match n.head()? {
+pub(crate) fn graphic(n: &Node) -> Option<GraphicFile> {
+    let head = n.head()?.replacen("gr_", "fp_", 1);
+    let mut g = match head.as_str() {
         "fp_line" => GraphicFile {
             start: Some(pt(n.xy("start")?)),
             end: Some(pt(n.xy("end")?)),

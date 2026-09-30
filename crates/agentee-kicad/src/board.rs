@@ -252,6 +252,83 @@ fn glob(p: &str, s: &str) -> bool {
     go(p.as_bytes(), s.as_bytes())
 }
 
+fn text_variables(root: &Node, pro: &Value) -> HashMap<String, String> {
+    let mut vars = HashMap::new();
+    if let Some(tb) = root.find("title_block") {
+        for (key, var) in
+            [("title", "TITLE"), ("date", "DATE"), ("rev", "REVISION"), ("company", "COMPANY")]
+        {
+            if let Some(v) = tb.find(key).and_then(|n| n.arg(0)) {
+                vars.insert(var.to_string(), v.to_string());
+            }
+        }
+        for c in tb.all("comment") {
+            if let (Some(i), Some(v)) = (c.arg(0), c.arg(1)) {
+                vars.insert(format!("COMMENT{i}"), v.to_string());
+            }
+        }
+    }
+    if let Some(m) = pro["text_variables"].as_object() {
+        for (k, v) in m {
+            if let Some(v) = v.as_str() {
+                vars.insert(k.clone(), v.to_string());
+            }
+        }
+    }
+    vars
+}
+
+fn substitute(text: &str, vars: &HashMap<String, String>) -> String {
+    let mut out = text.to_string();
+    for (k, v) in vars {
+        out = out.replace(&format!("${{{k}}}"), v);
+    }
+    out
+}
+
+fn text_lines(n: &Node, content: &str) -> Vec<agentee_core::graphic::GraphicFile> {
+    let lines: Vec<&str> = content.trim_end_matches('\n').split('\n').collect();
+    let Some(first) = footprint::text(n, lines[0]) else { return Vec::new() };
+    let size = first.size.map(|s| s.to_mm()).unwrap_or(1.0);
+    let rot = first.rotation.unwrap_or(0.0);
+    let at = first.at.map(|a| a.to_mm()).unwrap_or([0.0, 0.0]);
+    let pitch = size * 1.62;
+    let middle = (lines.len() as f64 - 1.0) / 2.0;
+    lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let off = rotate_kicad([0.0, (i as f64 - middle) * pitch], rot);
+            agentee_core::graphic::GraphicFile {
+                text: Some(line.to_string()),
+                at: Some(agentee_core::units::Point::mm(at[0] + off[0], at[1] + off[1])),
+                ..first.clone()
+            }
+        })
+        .collect()
+}
+
+fn shift_graphic(g: &mut agentee_core::graphic::GraphicFile, shift: &dyn Fn(P) -> P) {
+    use agentee_core::units::Point;
+    let mv = |p: &mut Option<Point>| {
+        if let Some(q) = p {
+            let [x, y] = shift(q.to_mm());
+            *q = Point::mm(x, y);
+        }
+    };
+    mv(&mut g.start);
+    mv(&mut g.mid);
+    mv(&mut g.end);
+    mv(&mut g.center);
+    mv(&mut g.at);
+    if let Some(pts) = &mut g.points {
+        for q in pts.iter_mut() {
+            let [x, y] = shift(q.to_mm());
+            *q = Point::mm(x, y);
+        }
+    }
+}
+
 pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<BoardImport, String> {
     let root = sexpr::parse(text).map_err(|e| e.to_string())?;
     if root.head() != Some("kicad_pcb") {
@@ -770,7 +847,7 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         "netclasses": classes,
     }))
     .map_err(|e| format!("board: {e}"))?;
-    let layout: LayoutFile = serde_json::from_value(json!({
+    let mut layout: LayoutFile = serde_json::from_value(json!({
         "name": name,
         "board": name,
         "schematic": name,
@@ -781,6 +858,34 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         "cutouts": cutouts,
     }))
     .map_err(|e| format!("layout: {e}"))?;
+    let vars = text_variables(&root, &pro);
+    let mut skipped = 0;
+    for item in root.items().iter().skip(1) {
+        let Some(head) = item.head().filter(|h| h.starts_with("gr_")) else { continue };
+        let Some(l) = item.find("layer").and_then(|l| l.arg(0)) else { continue };
+        if l == "Edge.Cuts" {
+            continue;
+        }
+        if !agentee_core::layout::ART_LAYERS.contains(&l) {
+            skipped += 1;
+            continue;
+        }
+        let found = if head == "gr_text" {
+            let content = substitute(item.arg(0).unwrap_or(""), &vars);
+            text_lines(item, &content)
+        } else {
+            footprint::graphic(item).into_iter().collect()
+        };
+        for mut g in found {
+            shift_graphic(&mut g, &shift);
+            layout.graphics.push(g);
+        }
+    }
+    if skipped > 0 {
+        notes.push(format!(
+            "{skipped} board graphics on copper, mask and user layers were left out"
+        ));
+    }
     let schematic: SchematicFile = serde_json::from_value(json!({
         "name": name,
         "board": name,
