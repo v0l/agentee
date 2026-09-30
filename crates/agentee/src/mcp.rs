@@ -719,8 +719,10 @@ mod tests {
         let path = dir.join("starter.sim.toml");
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("kind = \"logic\""));
-        std::fs::write(&path, text.replace("# ignore = [\"J1\"]", "ignore = [\"J1\", \"J2\"]"))
-            .unwrap();
+        let text = text
+            .replace("# ignore = [\"J1\"]", "ignore = [\"J1\", \"J2\"]")
+            .replace("# schematic = \"top\"", "schematic = \"counter\"");
+        std::fs::write(&path, text).unwrap();
         let p = agentee_core::Project::load(&dir).unwrap();
         let s = p.sims.iter().find(|s| s.name == "starter").unwrap();
         let errors: Vec<&str> = s
