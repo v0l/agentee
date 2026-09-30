@@ -1,6 +1,6 @@
 pub mod gerber;
 
-use agentee_core::board::{Board, LayerKind};
+use agentee_core::board::{Board, LayerKind, ViaKind};
 use agentee_core::font;
 use agentee_core::footprint::{PadKind, graphic_path};
 use agentee_core::geom::P;
@@ -193,25 +193,118 @@ struct Hole {
     size: [f64; 2],
     rotation: f64,
     plated: bool,
+    span: Option<(usize, usize)>,
 }
 
 fn holes(layout: &Layout) -> Vec<Hole> {
+    let last = layout.copper.len().saturating_sub(1);
     let mut v: Vec<Hole> = layout
         .vias
         .iter()
-        .map(|x| Hole { at: x.at, size: [x.drill, x.drill], rotation: 0.0, plated: true })
+        .map(|x| Hole {
+            at: x.at,
+            size: [x.drill, x.drill],
+            rotation: 0.0,
+            plated: true,
+            span: x.span_of(&layout.copper).filter(|s| *s != (0, last)),
+        })
         .collect();
     for part in &layout.parts {
         for pad in &part.pads {
             if let Some((at, size, rot)) = pad.drill {
-                v.push(Hole { at, size, rotation: rot, plated: pad.kind != PadKind::Npth });
+                v.push(Hole {
+                    at,
+                    size,
+                    rotation: rot,
+                    plated: pad.kind != PadKind::Npth,
+                    span: None,
+                });
             }
         }
     }
     v
 }
 
+struct DrillSpan<'a> {
+    file: String,
+    function: String,
+    comment: String,
+    holes: Vec<&'a Hole>,
+}
+
+fn span_function(a: usize, b: usize, layers: usize) -> &'static str {
+    if a == 0 || b + 1 == layers { "Blind" } else { "Buried" }
+}
+
+fn drill_spans<'a>(hs: &'a [Hole], layout: &Layout) -> Vec<DrillSpan<'a>> {
+    let cu = &layout.copper;
+    let mut spans: Vec<(usize, usize)> = hs.iter().filter_map(|h| h.span).collect();
+    spans.sort_unstable();
+    spans.dedup();
+    spans
+        .into_iter()
+        .map(|(a, b)| {
+            let kinds: Vec<&str> = layout
+                .vias
+                .iter()
+                .filter(|v| v.span_of(cu) == Some((a, b)))
+                .map(|v| v.kind.name())
+                .fold(Vec::new(), |mut k, n| {
+                    if !k.contains(&n) {
+                        k.push(n);
+                    }
+                    k
+                });
+            DrillSpan {
+                file: format!("drill-{}-{}.drl", cu[a], cu[b]),
+                function: format!("Plated,{},{},{}", a + 1, b + 1, span_function(a, b, cu.len())),
+                comment: format!("; span {} to {}, {} vias", cu[a], cu[b], kinds.join(" and ")),
+                holes: hs.iter().filter(|h| h.span == Some((a, b))).collect(),
+            }
+        })
+        .collect()
+}
+
+fn backdrills(layout: &Layout) -> Vec<(String, String, Vec<Hole>)> {
+    let cu = &layout.copper;
+    let mut out: Vec<(String, String, Vec<Hole>)> = Vec::new();
+    for v in &layout.vias {
+        let Some(bd) = &v.backdrill else { continue };
+        let (Some(side), Some(stop)) =
+            (cu.iter().position(|c| *c == bd.from), cu.iter().position(|c| *c == bd.to))
+        else {
+            continue;
+        };
+        let (a, b) = (side.min(stop), side.max(stop));
+        let file = format!("drill-backdrill-{}-{}.drl", bd.from, bd.to);
+        let function = format!("NonPlated,{},{},{}", a + 1, b + 1, span_function(a, b, cu.len()));
+        let comment = format!(
+            "; backdrill from {} stopping before {}, max stub {:.3} mm",
+            bd.from,
+            bd.to,
+            bd.max_stub.to_mm()
+        );
+        let d = bd.diameter.to_mm();
+        let hole = Hole { at: v.at, size: [d, d], rotation: 0.0, plated: false, span: None };
+        match out.iter_mut().find(|x| x.0 == file) {
+            Some(x) => x.2.push(hole),
+            None => out.push((file, format!("{function}\n{comment}"), vec![hole])),
+        }
+    }
+    out
+}
+
 fn excellon(holes: &[&Hole], plated: bool, layers: usize) -> String {
+    let function = format!(
+        "{},1,{},{}",
+        if plated { "Plated" } else { "NonPlated" },
+        layers,
+        if plated { "PTH" } else { "NPTH" }
+    );
+    excellon_with(holes, &function)
+}
+
+fn excellon_with(holes: &[&Hole], function: &str) -> String {
     let mut tools: Vec<f64> = Vec::new();
     for h in holes {
         let d = (h.size[0].min(h.size[1]) * 1000.0).round() / 1000.0;
@@ -222,13 +315,7 @@ fn excellon(holes: &[&Hole], plated: bool, layers: usize) -> String {
     tools.sort_by(f64::total_cmp);
     let mut out = String::new();
     out += "M48\n";
-    let _ = writeln!(
-        out,
-        "; #@! TF.FileFunction,{},1,{},{}",
-        if plated { "Plated" } else { "NonPlated" },
-        layers,
-        if plated { "PTH" } else { "NPTH" }
-    );
+    let _ = writeln!(out, "; #@! TF.FileFunction,{function}");
     out += "FMAT,2\nMETRIC\n";
     for (i, t) in tools.iter().enumerate() {
         let _ = writeln!(out, "T{}C{:.3}", i + 1, t);
@@ -397,10 +484,11 @@ fn notes(layout: &Layout, board: &Board) -> String {
             );
         }
     }
+    out += &drill_notes(layout);
     let mut in_pad: Vec<usize> =
         agentee_core::drc::vias_in_pads(&layout.parts, &layout.vias).iter().map(|x| x.0).collect();
     in_pad.dedup();
-    let n = in_pad.len();
+    let n = in_pad.iter().filter(|&&v| layout.vias[v].fill.is_none()).count();
     if n > 0 {
         let _ = writeln!(out, "\n{n} vias sit in SMD pads: fill and cap them (IPC-4761 type VII).");
     }
@@ -439,6 +527,62 @@ fn notes(layout: &Layout, board: &Board) -> String {
         );
     }
     out += "\nCoordinates are mm, origin at the board's top-left corner, Y up in the Gerbers.\n";
+    out
+}
+
+fn drill_notes(layout: &Layout) -> String {
+    let cu = &layout.copper;
+    let mut out = String::new();
+    if layout
+        .vias
+        .iter()
+        .all(|v| v.kind == ViaKind::Through && v.backdrill.is_none() && v.fill.is_none())
+    {
+        return out;
+    }
+    out += "\nVia types (IPC-4761 fill types), one drill file per span:\n";
+    let mut names: Vec<&str> = layout.vias.iter().map(|v| v.name.as_str()).collect();
+    names.sort_unstable();
+    names.dedup();
+    for name in names {
+        let all: Vec<&agentee_core::layout::Via> =
+            layout.vias.iter().filter(|v| v.name == name).collect();
+        let v = all[0];
+        let (a, b) = v.span_of(cu).unwrap_or((0, cu.len().saturating_sub(1)));
+        let file = if v.kind == ViaKind::Through {
+            "drill-PTH.drl".to_string()
+        } else {
+            format!("drill-{}-{}.drl", cu[a], cu[b])
+        };
+        let how =
+            if v.kind == ViaKind::Microvia { "laser drilled" } else { "mechanically drilled" };
+        let fill = v
+            .fill
+            .map(|f| format!(", {} (type {})", f.describe(), f.ipc4761()))
+            .unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "  {name}: {} {} to {}, {how}, {:.3} mm drill, {:.3} mm pad, {} holes{fill}, {file}",
+            v.kind.name(),
+            cu[a],
+            cu[b],
+            v.drill,
+            v.diameter,
+            all.len()
+        );
+        if let Some(bd) = &v.backdrill {
+            let _ = writeln!(
+                out,
+                "    backdrill from {} with a {:.3} mm drill, keep {} connected, leave at most {:.3} mm of stub, drill-backdrill-{}-{}.drl",
+                bd.from,
+                bd.diameter.to_mm(),
+                bd.to,
+                bd.max_stub.to_mm(),
+                bd.from,
+                bd.to
+            );
+        }
+    }
     out
 }
 
@@ -540,12 +684,20 @@ fn ipc356(layout: &Layout) -> String {
         }
     }
     let probe_cu = layout.test.copper();
+    let n = layout.copper.len();
     for v in &layout.vias {
         let probed = layout.test.vias && v.layers.contains(&probe_cu);
+        let (a, b) = v.span_of(&layout.copper).unwrap_or((0, n.saturating_sub(1)));
+        let side = match (a == 0, b + 1 == n) {
+            (true, true) => "A00".to_string(),
+            (true, false) => "A01".to_string(),
+            (false, true) => format!("A{n:02}"),
+            (false, false) => format!("A{:02}", a + 1),
+        };
         let (mid, access, mask) = match (probed, layout.test.bottom()) {
-            (false, _) => ('M', "A00", "S3"),
-            (true, true) => (' ', "A02", "S1"),
-            (true, false) => (' ', "A01", "S2"),
+            (false, _) => ('M', side, "S3"),
+            (true, true) => (' ', "A02".to_string(), "S1"),
+            (true, false) => (' ', "A01".to_string(), "S2"),
         };
         let _ = writeln!(
             out,
@@ -605,11 +757,26 @@ pub fn package(
     }
     write("Edge_Cuts.gbr".into(), edge(layout).finish())?;
     let hs = holes(layout);
-    let pth: Vec<&Hole> = hs.iter().filter(|h| h.plated).collect();
+    let pth: Vec<&Hole> = hs.iter().filter(|h| h.plated && h.span.is_none()).collect();
     let npth: Vec<&Hole> = hs.iter().filter(|h| !h.plated).collect();
     write("drill-PTH.drl".into(), excellon(&pth, true, cu.len()))?;
     if !npth.is_empty() {
         write("drill-NPTH.drl".into(), excellon(&npth, false, cu.len()))?;
+    }
+    for span in drill_spans(&hs, layout) {
+        let body = excellon_with(&span.holes, &span.function).replacen(
+            "M48\n",
+            &format!("M48\n{}\n", span.comment),
+            1,
+        );
+        write(span.file, body)?;
+    }
+    for (file, head, bd) in backdrills(layout) {
+        let refs: Vec<&Hole> = bd.iter().collect();
+        let (function, comment) = head.split_once('\n').unwrap_or((&head, ""));
+        let body =
+            excellon_with(&refs, function).replacen("M48\n", &format!("M48\n{comment}\n"), 1);
+        write(file, body)?;
     }
     let (generic, jlc, lines) = bom(layout, sch);
     write("bom.csv".into(), generic)?;
