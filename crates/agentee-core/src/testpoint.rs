@@ -365,10 +365,7 @@ pub struct Placement {
 
 fn class_via<'a>(board: &'a Board, net: &LayoutNet) -> Option<&'a crate::board::Via> {
     let class = board.netclasses.iter().find(|c| c.name == net.class);
-    class
-        .and_then(|c| c.via.as_ref())
-        .and_then(|n| board.vias.iter().find(|v| &v.name == n))
-        .or(board.vias.first())
+    board.via_for(None, class, &[])
 }
 
 pub fn place(

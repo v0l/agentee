@@ -412,6 +412,41 @@ pub struct Via {
     pub drill: f64,
     pub diameter: f64,
     pub layers: Vec<String>,
+    pub name: String,
+    pub kind: crate::board::ViaKind,
+    pub hole: Vec<String>,
+    pub fill: Option<crate::board::ViaFill>,
+    pub backdrill: Option<crate::board::Backdrill>,
+}
+
+impl Via {
+    pub fn of(spec: &crate::board::Via, net: usize, at: P, copper: &[String]) -> Via {
+        Via {
+            net,
+            at,
+            drill: spec.drill.to_mm(),
+            diameter: spec.diameter.to_mm(),
+            layers: spec.copper_layers(copper),
+            name: spec.name.clone(),
+            kind: spec.kind,
+            hole: spec.hole_layers(copper),
+            fill: spec.fill,
+            backdrill: spec.backdrill.clone(),
+        }
+    }
+
+    pub fn span_of(&self, copper: &[String]) -> Option<(usize, usize)> {
+        let a = copper.iter().position(|c| Some(c) == self.hole.first())?;
+        let b = copper.iter().position(|c| Some(c) == self.hole.last())?;
+        Some((a.min(b), a.max(b)))
+    }
+
+    pub fn shares_dielectric(&self, other: &Via, copper: &[String]) -> bool {
+        match (self.span_of(copper), other.span_of(copper)) {
+            (Some((a, b)), Some((c, d))) => a.max(c) < b.min(d),
+            _ => true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -851,22 +886,12 @@ impl LayoutFile {
                 d.error(&at, format!("net `{}` is not in the schematic", v.net));
                 continue;
             };
-            let kind = v
-                .via
-                .clone()
-                .or_else(|| class_of(board, &nets[net].class).and_then(|c| c.via.clone()));
-            let Some(spec) = kind
-                .as_ref()
-                .and_then(|k| board.vias.iter().find(|x| &x.name == k))
-                .or(board.vias.first())
+            let Some(spec) =
+                board.via_for(v.via.as_deref(), class_of(board, &nets[net].class), &[])
             else {
                 d.error(&at, "the board defines no [[vias]]");
                 continue;
             };
-            let (a, b) = (
-                copper.iter().position(|c| *c == spec.from).unwrap_or(0),
-                copper.iter().position(|c| *c == spec.to).unwrap_or(copper.len().saturating_sub(1)),
-            );
             let count = v.count.unwrap_or(1).max(1);
             if count > 1 && v.pitch.is_none() {
                 d.error(&at, "`count` needs a `pitch`");
@@ -874,13 +899,12 @@ impl LayoutFile {
             let pitch = v.pitch.unwrap_or(Point::ZERO).to_mm();
             for k in 0..count {
                 let [x, y] = v.at.to_mm();
-                vias.push(Via {
+                vias.push(Via::of(
+                    spec,
                     net,
-                    at: [x + pitch[0] * k as f64, y + pitch[1] * k as f64],
-                    drill: spec.drill.to_mm(),
-                    diameter: spec.diameter.to_mm(),
-                    layers: copper[a..=b].to_vec(),
-                });
+                    [x + pitch[0] * k as f64, y + pitch[1] * k as f64],
+                    &copper,
+                ));
             }
         }
 
@@ -940,32 +964,14 @@ impl LayoutFile {
                     if ring < rings && !f.always.contains(&nets[net].name) {
                         continue;
                     }
-                    let kind = f
-                        .via
-                        .clone()
-                        .or_else(|| class_of(board, &nets[net].class).and_then(|c| c.via.clone()));
-                    let Some(spec) = kind
-                        .as_ref()
-                        .and_then(|k| board.vias.iter().find(|x| &x.name == k))
-                        .or(board.vias.first())
+                    let reach: Vec<&str> = pad.copper.iter().map(String::as_str).collect();
+                    let Some(spec) =
+                        board.via_for(f.via.as_deref(), class_of(board, &nets[net].class), &reach)
                     else {
                         d.error(&at, "the board defines no [[vias]]");
                         break;
                     };
-                    let (a, b) = (
-                        copper.iter().position(|x| *x == spec.from).unwrap_or(0),
-                        copper
-                            .iter()
-                            .position(|x| *x == spec.to)
-                            .unwrap_or(copper.len().saturating_sub(1)),
-                    );
-                    vias.push(Via {
-                        net,
-                        at: *c,
-                        drill: spec.drill.to_mm(),
-                        diameter: spec.diameter.to_mm(),
-                        layers: copper[a..=b].to_vec(),
-                    });
+                    vias.push(Via::of(spec, net, *c, &copper));
                     placed += 1;
                 }
             }
@@ -1044,23 +1050,13 @@ impl LayoutFile {
                 d.error(&at, format!("net `{}` is not in the schematic", st.net));
                 continue;
             };
-            let kind = st
-                .via
-                .clone()
-                .or_else(|| class_of(board, &nets[net].class).and_then(|c| c.via.clone()));
-            let Some(spec) = kind
-                .as_ref()
-                .and_then(|k| board.vias.iter().find(|x| &x.name == k))
-                .or(board.vias.first())
+            let Some(spec) =
+                board.via_for(st.via.as_deref(), class_of(board, &nets[net].class), &[])
             else {
                 d.error(&at, "the board defines no [[vias]]");
                 continue;
             };
-            let (la, lb) = (
-                copper.iter().position(|c| *c == spec.from).unwrap_or(0),
-                copper.iter().position(|c| *c == spec.to).unwrap_or(copper.len().saturating_sub(1)),
-            );
-            let layers = copper[la..=lb].to_vec();
+            let layers = spec.copper_layers(&copper);
             let (r, drill) = (spec.diameter.to_mm() / 2.0, spec.drill.to_mm());
             let mut candidates: Vec<P> = Vec::new();
             if st.fence.is_empty() {
@@ -1179,7 +1175,7 @@ impl LayoutFile {
                 if blocked {
                     continue;
                 }
-                vias.push(Via { net, at: c, drill, diameter: 2.0 * r, layers: layers.clone() });
+                vias.push(Via::of(spec, net, c, &copper));
                 items.push(Item {
                     owner: Owner::Via(vias.len() - 1),
                     net: Some(net),

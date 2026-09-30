@@ -510,24 +510,39 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
     let edge = board.rules.min_copper_to_edge.to_mm();
     for (class, nets) in by_class {
         let nc = board.netclasses.iter().find(|c| c.name == class);
-        let spec_name = opts.via.clone().or_else(|| nc.and_then(|c| c.via.clone()));
-        let spec = spec_name
-            .as_ref()
-            .and_then(|n| board.vias.iter().find(|v| &v.name == n))
-            .or(board.vias.first())
-            .ok_or("the board defines no [[vias]]")?;
+        let names: Vec<String> = match &opts.via {
+            Some(v) => vec![v.clone()],
+            None => nc.map(|c| c.via.clone()).unwrap_or_default(),
+        };
+        let mut specs: Vec<&crate::board::Via> =
+            names.iter().filter_map(|n| board.vias.iter().find(|v| &v.name == n)).collect();
+        if specs.is_empty() {
+            specs.extend(board.vias.first());
+        }
+        if specs.is_empty() {
+            return Err("the board defines no [[vias]]".into());
+        }
+        let options: Vec<ViaOption> = specs
+            .iter()
+            .map(|s| ViaOption {
+                name: s.name.clone(),
+                layers: s.copper_layers(copper).iter().filter_map(|c| layer_of(c)).collect(),
+                via_r: s.diameter.to_mm() / 2.0,
+                drill_r: s.drill.to_mm() / 2.0,
+                cost: s.cost,
+            })
+            .collect();
         let width = layout.nets[nets[0]].width;
         let widths: Vec<f64> =
             copper.iter().map(|l| nc.map(|c| c.width_on(l).to_mm()).unwrap_or(width)).collect();
         let halves: Vec<f64> = widths.iter().map(|w| w / 2.0).collect();
         let clearance = layout.nets[nets[0]].clearance;
         let gap = nc.and_then(|c| c.diff_gap).map(|g| g.to_mm());
-        let via_r = spec.diameter.to_mm() / 2.0;
-        let via_layers: Vec<usize> = {
-            let a = layer_of(&spec.from).unwrap_or(0);
-            let b = layer_of(&spec.to).unwrap_or(copper.len() - 1);
-            (a.min(b)..=a.max(b)).collect()
-        };
+        let via_r = options.iter().map(|o| o.via_r).fold(0.0, f64::max);
+        let drill_r = options.iter().map(|o| o.drill_r).fold(0.0, f64::max);
+        let mut via_layers: Vec<usize> = options.iter().flat_map(|o| o.layers.clone()).collect();
+        via_layers.sort_unstable();
+        via_layers.dedup();
         let class_routing: Vec<usize> = match nc.filter(|c| !c.layers.is_empty()) {
             Some(c) => routing
                 .iter()
@@ -555,17 +570,18 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             board: layout.edge(),
         };
         let ctx = Ctx {
-            drill_r: spec.drill.to_mm() / 2.0,
+            drill_r,
             hole_gap: board.rules.min_hole_to_hole.to_mm(),
             hole_cu,
             hole_smd: board.rules.min_hole_to_smd_pad.to_mm(),
             in_pad: opts.via_in_pad
-                && spec.drill.to_mm() <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
+                && 2.0 * drill_r <= board.rules.max_filled_via_drill.to_mm() + 1e-6,
             smd: &smd,
             widths: widths.clone(),
             clearance,
             via_r,
             via_layers: &via_layers,
+            vias: &options,
             routing,
             opts,
             necking: Some(&necking),
@@ -813,6 +829,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         }
         for conn in routed.into_iter().flatten() {
             out.routed += 1;
+            let placed = placed_vias(&conn, &options);
             let name = layout.nets[conn.net].name.clone();
             for (l, pts) in conn.tracks {
                 for w in pts.windows(2) {
@@ -844,19 +861,57 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                     points: vec![n.from, n.to],
                 });
             }
-            for at in conn.vias {
-                drills.push((at, spec.drill.to_mm() / 2.0));
+            for (at, o) in placed {
+                drills.push((at, o.drill_r));
                 obstacles.push(Obstacle {
                     net: Some(conn.net),
-                    layers: via_layers.clone(),
-                    shape: Shape::Circle(at, via_r),
+                    layers: o.layers.clone(),
+                    shape: Shape::Circle(at, o.via_r),
                     clearance: ctx.via_keep(),
                 });
-                out.vias.push(RoutedVia { net: name.clone(), at, via: spec.name.clone() });
+                out.vias.push(RoutedVia { net: name.clone(), at, via: o.name.clone() });
             }
         }
     }
     Ok(out)
+}
+
+struct ViaOption {
+    name: String,
+    layers: Vec<usize>,
+    via_r: f64,
+    drill_r: f64,
+    cost: f64,
+}
+
+impl ViaOption {
+    fn joins(&self, a: usize, b: usize) -> bool {
+        self.layers.contains(&a) && self.layers.contains(&b)
+    }
+}
+
+fn cheapest(options: &[ViaOption], a: usize, b: usize) -> Option<&ViaOption> {
+    options
+        .iter()
+        .filter(|o| o.joins(a, b))
+        .min_by(|x, y| x.cost.total_cmp(&y.cost).then(x.layers.len().cmp(&y.layers.len())))
+}
+
+fn placed_vias<'o>(c: &Conn, options: &'o [ViaOption]) -> Vec<(P, &'o ViaOption)> {
+    let mut out: Vec<(P, &ViaOption, usize, usize)> = Vec::new();
+    for (k, &at) in c.vias.iter().enumerate() {
+        let (a, b) = c.hops.get(k).copied().unwrap_or((usize::MAX, usize::MAX));
+        if let Some(last) = out.last_mut()
+            && geom::dist(last.0, at) < 1e-6
+            && let Some(o) = cheapest(options, last.2.min(a).min(b), last.3.max(a).max(b))
+        {
+            *last = (at, o, last.2.min(a).min(b), last.3.max(a).max(b));
+            continue;
+        }
+        let o = cheapest(options, a, b).unwrap_or(&options[0]);
+        out.push((at, o, a.min(b), a.max(b)));
+    }
+    out.into_iter().map(|(at, o, _, _)| (at, o)).collect()
 }
 
 struct Ctx<'a> {
@@ -870,6 +925,7 @@ struct Ctx<'a> {
     clearance: f64,
     via_r: f64,
     via_layers: &'a [usize],
+    vias: &'a [ViaOption],
     routing: &'a [usize],
     opts: &'a RouteOptions,
     necking: Option<&'a Necking<'a>>,
@@ -893,6 +949,7 @@ struct Conn {
     net: usize,
     tracks: Vec<(usize, Vec<P>)>,
     vias: Vec<P>,
+    hops: Vec<(usize, usize)>,
     necks: Vec<Neck>,
 }
 
@@ -913,7 +970,7 @@ struct Found {
 
 fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Conn {
     let (tracks, vias) = geometry(grid, path, a, b, net);
-    Conn { net, tracks, vias, necks: Vec::new() }
+    Conn { net, tracks, vias, hops: hops_of(grid, path), necks: Vec::new() }
 }
 
 fn conn_found(grid: &Grid, f: &Found, net: usize) -> Conn {
@@ -1704,9 +1761,9 @@ fn search_between(
     let (sources, goals) = (sources.as_slice(), goals.as_slice());
     let plane = grid.w * grid.h;
     let unpack = |i: usize| (i / plane, (i % plane) % grid.w, (i % plane) / grid.w);
-    let via_here = |x: usize, y: usize| -> Option<bool> {
+    let via_here = |x: usize, y: usize, layers: &[usize]| -> Option<bool> {
         let mut clash = false;
-        for &vl in via_layers {
+        for &vl in layers {
             let (ok, c) = grid.ok(grid.idx(vl, x, y), net, true, soft);
             if !ok {
                 return None;
@@ -1714,6 +1771,24 @@ fn search_between(
             clash |= c;
         }
         Some(clash)
+    };
+    let hop = |x: usize, y: usize, l: usize, ul: usize, clash: bool| -> Option<f64> {
+        let price = |cost: f64, layers: &[usize]| {
+            let via_clash = via_here(x, y, layers)?;
+            Some(
+                opts.via_cost * cost
+                    + layers.len() as f64 * 1e-4
+                    + if clash || via_clash { penalty } else { 0.0 },
+            )
+        };
+        if ctx.vias.is_empty() {
+            return price(1.0, via_layers);
+        }
+        ctx.vias
+            .iter()
+            .filter(|o| o.joins(l, ul))
+            .filter_map(|o| price(o.cost, &o.layers))
+            .min_by(f64::total_cmp)
     };
     let enter = |j: usize, diagonal: bool| -> Option<f64> {
         let (ok, clash) = grid.ok(j, net, false, soft);
@@ -1805,14 +1880,14 @@ fn search_between(
             if !via_layers.contains(&l) {
                 continue;
             }
-            let Some(via_clash) = via_here(x, y) else { continue };
             let clash = grid.ok(i, net, false, soft).1;
-            let c = f + opts.via_cost + if clash || via_clash { penalty } else { 0.0 };
             for &ul in routing.iter().filter(|&&ul| ul != l && via_layers.contains(&ul)) {
                 let u = grid.idx(ul, x, y);
                 if !grid.ok(u, net, false, soft).0 {
                     continue;
                 }
+                let Some(cost) = hop(x, y, ul, l, clash) else { continue };
+                let c = f + cost;
                 let ku = local(u).unwrap();
                 if (c as f32) < rest[ku] {
                     rest[ku] = c as f32;
@@ -1874,7 +1949,6 @@ fn search_between(
                 if !via_layers.contains(&l) {
                     continue;
                 }
-                let Some(via_clash) = via_here(x, y) else { continue };
                 for &nl in routing.iter().filter(|&&nl| nl != l && via_layers.contains(&nl)) {
                     let j = grid.idx(nl, x, y);
                     let (ok, clash) = grid.ok(j, net, false, soft);
@@ -1883,7 +1957,8 @@ fn search_between(
                     if !ok || h == f32::MAX as f64 {
                         continue;
                     }
-                    let c = here + opts.via_cost + if clash || via_clash { penalty } else { 0.0 };
+                    let Some(cost) = hop(x, y, l, nl, clash) else { continue };
+                    let c = here + cost;
                     if (c as f32) < states.cost(kj, NODIR) {
                         states.set(kj, NODIR, c as f32, state);
                         heap.push(Node { f: c + h, i: j * 9 + NODIR });
@@ -1961,6 +2036,11 @@ impl States {
 }
 
 type Geometry = (Vec<(usize, Vec<P>)>, Vec<P>);
+
+fn hops_of(grid: &Grid, path: &[usize]) -> Vec<(usize, usize)> {
+    let plane = grid.w * grid.h;
+    path.windows(2).map(|w| (w[0] / plane, w[1] / plane)).filter(|(a, b)| a != b).collect()
+}
 
 fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
     let plane = grid.w * grid.h;
@@ -2176,10 +2256,20 @@ fn route_pair(
         let straight = geom::dist(left[0], ap) + geom::dist(right[0], an);
         let swapped = geom::dist(left[0], an) + geom::dist(right[0], ap);
         let (pp, np) = if straight <= swapped { (left, right) } else { (right, left) };
-        let pc =
-            Conn { net: p, tracks: vec![(l, pp.clone())], vias: Vec::new(), necks: Vec::new() };
-        let nc =
-            Conn { net: n, tracks: vec![(l, np.clone())], vias: Vec::new(), necks: Vec::new() };
+        let pc = Conn {
+            net: p,
+            tracks: vec![(l, pp.clone())],
+            vias: Vec::new(),
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
+        let nc = Conn {
+            net: n,
+            tracks: vec![(l, np.clone())],
+            vias: Vec::new(),
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
         grid.mark_routed(&pc, ctx);
         grid.mark_routed(&nc, ctx);
         let mut parts: Vec<Conn> = Vec::new();
@@ -2237,6 +2327,7 @@ fn route_pair(
             net,
             tracks: a.tracks.iter().chain(b.tracks.iter()).cloned().chain([(l, main)]).collect(),
             vias: a.vias.iter().chain(b.vias.iter()).cloned().collect(),
+            hops: a.hops.iter().chain(b.hops.iter()).cloned().collect(),
             necks: Vec::new(),
         };
         return Some((join(p, pp, &parts[0], &parts[2]), join(n, np, &parts[1], &parts[3])));
@@ -2433,6 +2524,7 @@ mod tests {
             clearance: 0.1,
             via_r: 0.2,
             via_layers: layers,
+            vias: &[],
             routing: layers,
             opts: &opts,
             necking: None,
@@ -2505,6 +2597,7 @@ mod tests {
             clearance: 0.1,
             via_r: 0.2,
             via_layers: &[0, 1],
+            vias: &[],
             routing: &[0, 1],
             opts: &opts,
             necking: None,
@@ -2539,6 +2632,7 @@ mod tests {
             clearance: 0.1,
             via_r: 0.2,
             via_layers: &[0, 1],
+            vias: &[],
             routing: &[0, 1],
             opts: &opts,
             necking: None,
@@ -2547,6 +2641,7 @@ mod tests {
             net,
             tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
             vias: vec![[x, y]],
+            hops: Vec::new(),
             necks: Vec::new(),
         };
         let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
@@ -2595,6 +2690,7 @@ mod tests {
                 clearance: 0.1,
                 via_r: 0.2,
                 via_layers: &[0, 1],
+                vias: &[],
                 routing: &[0, 1],
                 opts: &opts,
                 necking: None,
@@ -2642,6 +2738,7 @@ mod tests {
             clearance: 0.1,
             via_r: 0.2,
             via_layers: &[0, 1],
+            vias: &[],
             routing: &[0, 1],
             opts: &opts,
             necking: None,
@@ -2650,6 +2747,7 @@ mod tests {
             net,
             tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
             vias: vec![[x, y]],
+            hops: Vec::new(),
             necks: Vec::new(),
         };
         let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
@@ -2673,6 +2771,7 @@ mod tests {
             clearance: 0.1,
             via_r: 0.2,
             via_layers: &[0],
+            vias: &[],
             routing: &[0],
             opts: &opts,
             necking: None,
@@ -2687,15 +2786,28 @@ mod tests {
         grid.add(&track, &[0.05], ctx.via_r, ctx.clearance, ctx.drill_r + ctx.hole_cu);
         assert!(!grid.ok(grid.idx(0, 14, 20), 0, true, false).0, "hole 0.35 mm from the track");
         assert!(grid.ok(grid.idx(0, 17, 20), 0, true, false).0, "hole 0.65 mm from the track");
-        let via = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.45, 2.05]], necks: Vec::new() };
+        let via = Conn {
+            net: 0,
+            tracks: Vec::new(),
+            vias: vec![[1.45, 2.05]],
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
         let near = Conn {
             net: 1,
             tracks: vec![(0, vec![[1.0, 0.5], [1.0, 3.5]])],
             vias: Vec::new(),
+            hops: Vec::new(),
             necks: Vec::new(),
         };
         assert!(conflicts(&near, &via, &ctx) && conflicts(&via, &near, &ctx));
-        let far = Conn { net: 0, tracks: Vec::new(), vias: vec![[1.65, 2.05]], necks: Vec::new() };
+        let far = Conn {
+            net: 0,
+            tracks: Vec::new(),
+            vias: vec![[1.65, 2.05]],
+            hops: Vec::new(),
+            necks: Vec::new(),
+        };
         assert!(!conflicts(&near, &far, &ctx));
     }
 
@@ -2715,6 +2827,7 @@ mod tests {
             clearance: 0.1,
             via_r: 0.2,
             via_layers: &[0],
+            vias: &[],
             routing: &[0],
             opts: &opts,
             necking: None,
@@ -2752,6 +2865,7 @@ mod tests {
             clearance: 0.15,
             via_r: 0.2,
             via_layers: &[0],
+            vias: &[],
             routing: &[0],
             opts: &opts,
             necking,
@@ -2827,6 +2941,7 @@ mod tests {
             clearance: 0.15,
             via_r: 0.2,
             via_layers: &[0],
+            vias: &[],
             routing: &[0],
             opts: &opts,
             necking: Some(&necking),
@@ -2864,6 +2979,7 @@ mod tests {
             clearance: 0.15,
             via_r: 0.2,
             via_layers: &[0],
+            vias: &[],
             routing: &[0],
             opts: &opts,
             necking: None,
@@ -2872,6 +2988,7 @@ mod tests {
             net,
             tracks: Vec::new(),
             vias: Vec::new(),
+            hops: Vec::new(),
             necks: vec![Neck { layer: 0, from: [0.0, y], to: [0.5, y], width: 0.2 }],
         };
         assert!(!conflicts(&neck(0, 0.0), &neck(1, 0.36), &ctx));
@@ -2880,6 +2997,7 @@ mod tests {
             net: 1,
             tracks: vec![(0, vec![[0.0, 0.46], [0.5, 0.46]])],
             vias: Vec::new(),
+            hops: Vec::new(),
             necks: Vec::new(),
         };
         assert!(!conflicts(&neck(0, 0.0), &wide, &ctx));
