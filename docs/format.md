@@ -205,9 +205,53 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `bga-pitch` | error | a BGA | ball pitch finer than `min_bga_pitch` |
 | `bga-pad-ratio` | warning | a BGA | pad diameter outside 40% to 65% of the pitch (IPC-7351 land sizes) |
 | `paste-without-mask` | warning | parts | a copper pad with paste but no mask opening on that side, so the stencil prints onto mask |
+| `short` | error | always | copper of two different nets touches |
+| `clearance` | error | always | copper of two nets closer than the larger of their class clearances, or copper run into a non-plated hole |
+| `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
+| `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
+| `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
+| `copper-to-edge` | error | always | a track or via closer than `min_copper_to_edge` to the board outline, or off the board |
+| `pad-off-board` | error | always | pads outside the outline; pads marked `edge = true` are exempt |
+| `stitching` | info | always | counts the vias each `[[stitching]]` entry placed |
+| `stitching-empty` | warning | always | a `[[stitching]]` entry that placed no via |
+| `fanout-empty` | warning | always | a `[[fanouts]]` entry that placed no via |
+| `hole-to-hole` | error | always | holes of different parts or vias closer than `min_hole_to_hole`, wall to wall, counted with the first pair |
+| `stacked-via` | error | always | a via on the same spot as another via of its net |
+| `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
+| `class-width` | error | always | a track narrower than its class width that is not a neck-down |
+| `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
+| `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
+| `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap |
+| `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |
+| `zone-to-zone` | error | zones | fills of two nets on one layer closer than their clearance |
+| `zone-clearance` | error | zones | a fill that covers or comes too close to copper of another net |
+| `zone-tips` | warning | zones | fill tips sharper than 30 degrees; raise the zone's `min_width` |
+| `zone-islands` | info | always | fill islands that reach nothing of the zone's net and were removed |
+| `courtyard-overlap` | error | parts | courtyards of two parts on one side overlap by their outline |
+| `courtyard-hole` | error | parts | a courtyard that covers a mounting hole or a non-plated hole of another part |
+| `mask-web` | error | always | pads of different nets whose mask openings leave less than `min_mask_web`, one line per pair of parts |
+| `silk-text` | error | always | silk text that crowds other text, sits on pads, prints over vias, crosses a silk outline or runs off the board; a reference gets a clear spot (`agentee silk` moves it there) |
+| `silk-hidden` | warning | always | silk text only hidden under another part's body |
+| `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
+| `silk-artwork` | error | always | silk artwork on pads, over silk text or off the board |
+| `pair-skew` | error | pairs | a pair skewed over its `max_skew` or the class `max_skew`, with the net to lengthen |
+| `pair-skew-info` | info | pairs | the skew of each pair within its limit |
+| `pair-gap` | error | pairs | a pair run side by side at another gap than the class `diff_gap`, beyond `max_uncoupled` |
+| `pair-coupling` | warning | pairs | less than 80% of a pair runs side by side at the pair gap |
+| `match-length` | error | match groups | a member of a match group off its target by more than the tolerance |
+| `interface-pair` | error | interfaces | a net of a differential interface with no pair partner |
+| `interface-impedance` | error | interfaces | an interface net whose class has no impedance target, one outside the window, or no pair gap on a differential interface |
+| `interface-skew` | error | interfaces | a pair skewed over the interface's `max_skew` |
+| `interface-bus-skew` | error | interfaces | the data signals spread more than `max_bus_skew` |
+| `interface-clock-window` | error | interfaces | a data signal arriving outside `clock_window` from the clock |
+| `interface-vias` | error | interfaces | a lane with more vias than `max_vias` |
+| `interface-stub` | error | interfaces | a via stub longer than `max_stub` |
+| `interface-return-via` | error | interfaces | a signal via with no reference via within `return_via` |
+| `interface-length` | error | interfaces | a lane longer than `max_length` |
+| `interface-reference` | error | interfaces | a lane running more than `max_unreferenced` with no reference plane next to it |
 
-An id that names no rule is a warning. The older checks described under Layout (clearance,
-shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
+An id that names no rule is a warning. Errors in the files themselves (a net that is not in the
+schematic, a layer that is not copper, a bad preset) are not rules and cannot be disabled.
 
 ### What check computes
 

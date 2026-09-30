@@ -496,3 +496,26 @@ fn assembly_advisories() {
     assert_eq!(hits(&p, "fiducials")[0].0, Severity::Info);
     assert_eq!(hits(&p, "tooling-holes")[0].0, Severity::Info);
 }
+
+#[test]
+fn layout_checks_carry_rule_ids_and_follow_the_drc_table() {
+    let pcb = "\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[4, 5], [6, 5]]\n\n\
+               [[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[4, 5], [4, 8]]\n";
+    let p = load(&Fixture { pcb, ..Default::default() });
+    let s = hits(&p, "short");
+    assert!(
+        s.len() == 1 && s[0].0 == Severity::Error && s[0].1.contains("R1.2 touches track 0 (A)"),
+        "{s:?}"
+    );
+    let w = hits(&p, "dangling-track");
+    assert!(w.len() == 2 && w[1].1.contains("end at [4.000, 8.000] connects to nothing"), "{w:?}");
+    let p = load(&Fixture {
+        pcb,
+        board: "[drc]\ndisable = [\"dangling-track\"]\nseverity = { \"short\" = \"warning\" }\n",
+        ..Default::default()
+    });
+    assert!(hits(&p, "dangling-track").is_empty());
+    let s = hits(&p, "short");
+    assert!(s.len() == 1 && s[0].0 == Severity::Warning, "{s:?}");
+    assert!(!p.layouts[0].diags.iter().any(|d| d.message.contains("connects to nothing")));
+}
