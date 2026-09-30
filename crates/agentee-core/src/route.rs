@@ -507,7 +507,13 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                 let geo: Vec<&Conn> = routed.iter().flatten().filter(|c| c.net == other).collect();
                 (!geo.is_empty()).then(|| attraction(&grid, &geo, gap, &widths))
             });
-            let hard = search(&grid, &obstacles, net, a, b, &ctx, false, attract.as_ref());
+            let fresh: Vec<Obstacle> = routed
+                .iter()
+                .flatten()
+                .filter(|c| c.net == net)
+                .flat_map(|c| copper_of(c, &ctx))
+                .collect();
+            let hard = search(&grid, &obstacles, &fresh, net, a, b, &ctx, false, attract.as_ref());
             let path = match hard {
                 Ok(p) => p,
                 Err(reason) if budget == 0 || ripped[ci] > 30 => {
@@ -516,7 +522,8 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                 }
                 Err(reason) => {
                     budget -= 1;
-                    match search(&grid, &obstacles, net, a, b, &ctx, true, attract.as_ref()) {
+                    match search(&grid, &obstacles, &fresh, net, a, b, &ctx, true, attract.as_ref())
+                    {
                         Ok(p) => {
                             for &i in &p {
                                 if grid.ok(i, net, false, true).1 {
@@ -652,6 +659,29 @@ fn conn_of(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Conn {
     Conn { net, tracks, vias }
 }
 
+fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
+    let mut out = Vec::new();
+    for (l, pts) in &c.tracks {
+        for w in pts.windows(2) {
+            out.push(Obstacle {
+                net: Some(c.net),
+                layers: vec![*l],
+                shape: Shape::Seg(w[0], w[1], ctx.widths[*l] / 2.0),
+                clearance: ctx.clearance,
+            });
+        }
+    }
+    for v in &c.vias {
+        out.push(Obstacle {
+            net: Some(c.net),
+            layers: ctx.via_layers.to_vec(),
+            shape: Shape::Circle(*v, ctx.via_r),
+            clearance: ctx.clearance,
+        });
+    }
+    out
+}
+
 fn conflicts(r: &Conn, c: &Conn, ctx: &Ctx) -> bool {
     let need = |l: usize| ctx.widths[l] + ctx.clearance - 1e-6;
     let via_need = |l: usize| ctx.via_r + ctx.widths[l] / 2.0 + ctx.clearance - 1e-6;
@@ -724,7 +754,8 @@ fn attraction(
 fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) -> Grid {
     let layers = halves.len();
     let b = layout.bounds();
-    let (x0, y0) = (b.min[0] - g, b.min[1] - g);
+    let snap = |v: f64| ((v / g).floor() - 1.5) * g;
+    let (x0, y0) = (snap(b.min[0]), snap(b.min[1]));
     let w = ((b.max[0] - x0) / g).ceil() as usize + 2;
     let h = ((b.max[1] - y0) / g).ceil() as usize + 2;
     let mut grid = Grid {
@@ -783,8 +814,16 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], via_r: f64, edge: f64) ->
     grid
 }
 
-fn anchors(grid: &Grid, obstacles: &[Obstacle], net: usize, p: P, routing: &[usize]) -> Vec<usize> {
-    let own: Vec<&Obstacle> = obstacles.iter().filter(|o| o.net == Some(net)).collect();
+fn anchors(
+    grid: &Grid,
+    obstacles: &[Obstacle],
+    fresh: &[Obstacle],
+    net: usize,
+    p: P,
+    routing: &[usize],
+) -> Vec<usize> {
+    let own: Vec<&Obstacle> =
+        obstacles.iter().chain(fresh).filter(|o| o.net == Some(net)).collect();
     let mut seen = vec![false; own.len()];
     let mut stack: Vec<usize> = (0..own.len()).filter(|&i| own[i].shape.dist(p) < 1e-6).collect();
     stack.iter().for_each(|&i| seen[i] = true);
@@ -845,6 +884,7 @@ fn touch(a: &Shape, b: &Shape) -> bool {
 fn search(
     grid: &Grid,
     obstacles: &[Obstacle],
+    fresh: &[Obstacle],
     net: usize,
     a: P,
     b: P,
@@ -852,8 +892,8 @@ fn search(
     soft: bool,
     attract: Option<&std::collections::HashSet<usize>>,
 ) -> Result<Vec<usize>, String> {
-    let sources = anchors(grid, obstacles, net, a, ctx.routing);
-    let goals = anchors(grid, obstacles, net, b, ctx.routing);
+    let sources = anchors(grid, obstacles, fresh, net, a, ctx.routing);
+    let goals = anchors(grid, obstacles, fresh, net, b, ctx.routing);
     search_between(grid, net, a, b, &sources, &goals, ctx, soft, attract, None)
 }
 
@@ -885,6 +925,34 @@ fn search_between(
     let (sources, goals) = (sources.as_slice(), goals.as_slice());
     let plane = grid.w * grid.h;
     let unpack = |i: usize| (i / plane, (i % plane) % grid.w, (i % plane) / grid.w);
+    let via_here = |x: usize, y: usize| -> Option<bool> {
+        let mut clash = false;
+        for &vl in via_layers {
+            let (ok, c) = grid.ok(grid.idx(vl, x, y), net, true, soft);
+            if !ok {
+                return None;
+            }
+            clash |= c;
+        }
+        Some(clash)
+    };
+    let enter = |j: usize, diagonal: bool| -> Option<f64> {
+        let (ok, clash) = grid.ok(j, net, false, soft);
+        if !ok {
+            return None;
+        }
+        let step = if diagonal { std::f64::consts::SQRT_2 } else { 1.0 };
+        let pull = if attract.is_some_and(|a| a.contains(&j)) { 0.5 } else { 1.0 };
+        let push = if repel.is_some_and(|r| r.contains(&j)) { 8.0 } else { 0.0 };
+        Some(
+            (step * pull + push) * grid.g + grid.hist[j] as f64 + if clash { penalty } else { 0.0 },
+        )
+    };
+    let corner_ok = |l: usize, x: usize, y: usize, nx: usize, ny: usize| {
+        (nx == x || ny == y)
+            || (grid.ok(grid.idx(l, nx, y), net, false, soft).0
+                && grid.ok(grid.idx(l, x, ny), net, false, soft).0)
+    };
     let mut margin = opts.margin;
     loop {
         let lo = grid.cell([a[0].min(b[0]) - margin, a[1].min(b[1]) - margin]);
@@ -893,136 +961,223 @@ fn search_between(
         let (wx1, wy1) =
             ((hi.0.max(0) as usize).min(grid.w - 1), (hi.1.max(0) as usize).min(grid.h - 1));
         let (ww, wh) = (wx1 - wx0 + 1, wy1 - wy0 + 1);
+        let inside = |x: i64, y: i64| {
+            x >= wx0 as i64 && y >= wy0 as i64 && x <= wx1 as i64 && y <= wy1 as i64
+        };
         let local = |i: usize| -> Option<usize> {
             let (l, x, y) = unpack(i);
             let rl = routing.iter().position(|&r| r == l)?;
-            (x >= wx0 && x <= wx1 && y >= wy0 && y <= wy1)
-                .then(|| (rl * wh + (y - wy0)) * ww + (x - wx0))
+            inside(x as i64, y as i64).then(|| (rl * wh + (y - wy0)) * ww + (x - wx0))
         };
         let n = routing.len() * ww * wh;
-        const NODIR: usize = 8;
-        let mut cost = vec![f32::MAX; n * 9];
-        let mut from = vec![usize::MAX; n * 9];
-        let mut goal = vec![false; n];
-        for &gi in goals {
-            if let Some(k) = local(gi) {
-                goal[k] = true;
-            }
-        }
-        let (gx, gy) = {
-            let c = grid.cell(b);
-            (c.0 as f64, c.1 as f64)
-        };
-        let heur = |x: usize, y: usize| {
-            let (dx, dy) = ((x as f64 - gx).abs(), (y as f64 - gy).abs());
-            (dx.max(dy) + (std::f64::consts::SQRT_2 - 1.0) * dx.min(dy)) * grid.g
-        };
-        let bend = |d0: usize, d1: usize| -> Option<f64> {
-            if d0 == NODIR {
-                return Some(0.0);
-            }
-            match (d0 as i64 - d1 as i64).rem_euclid(8).min((d1 as i64 - d0 as i64).rem_euclid(8)) {
-                0 => Some(0.0),
-                1 => Some(opts.bend_cost),
-                2 => Some(3.0 * opts.bend_cost),
-                _ => None,
-            }
-        };
-        let mut heap = BinaryHeap::new();
+        let mut rest = vec![f32::MAX; n];
+        let mut is_source = vec![false; n];
         for &s in sources {
             if let Some(k) = local(s) {
-                cost[k * 9 + NODIR] = 0.0;
-                let (_, x, y) = unpack(s);
-                heap.push(Node { f: heur(x, y), i: s * 9 + NODIR });
+                is_source[k] = true;
             }
         }
-        let mut hit = None;
-        while let Some(Node { i: state, f }) = heap.pop() {
-            let (i, d0) = (state / 9, state % 9);
+        let mut heap = BinaryHeap::new();
+        for &gi in goals {
+            if let Some(k) = local(gi) {
+                rest[k] = 0.0;
+                heap.push(Node { f: 0.0, i: gi });
+            }
+        }
+        let mut stop = f64::MAX;
+        let mut bound = f64::MAX;
+        while let Some(Node { i, f }) = heap.pop() {
             let k = local(i).unwrap();
-            let here = cost[k * 9 + d0] as f64;
-            let (l, x, y) = unpack(i);
-            if f > here + heur(x, y) + 1e-6 {
+            if f > rest[k] as f64 + 1e-6 {
                 continue;
             }
-            if goal[k] {
-                hit = Some(state);
+            if f > stop {
+                bound = f;
                 break;
             }
-            for (d, (dx, dy)) in DIRS.iter().enumerate() {
-                let Some(turn) = bend(d0, d) else { continue };
-                let (nx, ny) = (x as i64 + dx, y as i64 + dy);
-                if nx < wx0 as i64 || ny < wy0 as i64 || nx > wx1 as i64 || ny > wy1 as i64 {
+            if is_source[k] && stop == f64::MAX {
+                stop = f * 1.25 + 30.0 * opts.bend_cost + 1.0;
+            }
+            let (l, x, y) = unpack(i);
+            let mut arrive: [Option<f64>; 2] = [None, None];
+            for (dx, dy) in DIRS {
+                let (px, py) = (x as i64 - dx, y as i64 - dy);
+                if !inside(px, py) {
                     continue;
                 }
-                let (nx, ny) = (nx as usize, ny as usize);
-                let j = grid.idx(l, nx, ny);
-                let (ok, clash) = grid.ok(j, net, false, soft);
-                if !ok {
+                let (px, py) = (px as usize, py as usize);
+                let u = grid.idx(l, px, py);
+                if !grid.ok(u, net, false, soft).0 || !corner_ok(l, px, py, x, y) {
                     continue;
                 }
-                if dx.abs() + dy.abs() == 2
-                    && (!grid.ok(grid.idx(l, nx, y), net, false, soft).0
-                        || !grid.ok(grid.idx(l, x, ny), net, false, soft).0)
-                {
-                    continue;
+                let diagonal = dx != 0 && dy != 0;
+                let slot = &mut arrive[diagonal as usize];
+                if slot.is_none() {
+                    *slot = enter(i, diagonal);
                 }
-                let step = if dx.abs() + dy.abs() == 2 { std::f64::consts::SQRT_2 } else { 1.0 };
-                let pull = if attract.is_some_and(|a| a.contains(&j)) { 0.5 } else { 1.0 };
-                let push = if repel.is_some_and(|r| r.contains(&j)) { 8.0 } else { 0.0 };
-                let c = here
-                    + (step * pull + push) * grid.g
-                    + turn
-                    + grid.hist[j] as f64
-                    + if clash { penalty } else { 0.0 };
-                let kj = local(j).unwrap() * 9 + d;
-                if (c as f32) < cost[kj] {
-                    cost[kj] = c as f32;
-                    from[kj] = state;
-                    heap.push(Node { f: c + heur(nx, ny), i: j * 9 + d });
+                let Some(c) = *slot else { continue };
+                let ku = local(u).unwrap();
+                let c = f + c;
+                if (c as f32) < rest[ku] {
+                    rest[ku] = c as f32;
+                    heap.push(Node { f: c, i: u });
                 }
             }
-            let via_checks: Vec<(bool, bool)> =
-                via_layers.iter().map(|&vl| grid.ok(grid.idx(vl, x, y), net, true, soft)).collect();
-            if via_checks.iter().all(|c| c.0) {
-                let via_clash = via_checks.iter().any(|c| c.1);
+            if !via_layers.contains(&l) {
+                continue;
+            }
+            let Some(via_clash) = via_here(x, y) else { continue };
+            let clash = grid.ok(i, net, false, soft).1;
+            let c = f + opts.via_cost + if clash || via_clash { penalty } else { 0.0 };
+            for &ul in routing.iter().filter(|&&ul| ul != l && via_layers.contains(&ul)) {
+                let u = grid.idx(ul, x, y);
+                if !grid.ok(u, net, false, soft).0 {
+                    continue;
+                }
+                let ku = local(u).unwrap();
+                if (c as f32) < rest[ku] {
+                    rest[ku] = c as f32;
+                    heap.push(Node { f: c, i: u });
+                }
+            }
+        }
+        if stop < f64::MAX {
+            let heur = |k: usize| (rest[k] as f64).min(bound);
+            let mut is_goal = vec![false; n];
+            for &gi in goals {
+                if let Some(k) = local(gi) {
+                    is_goal[k] = true;
+                }
+            }
+            let mut states = States::new(n);
+            let mut heap = BinaryHeap::new();
+            for &s in sources {
+                if let Some(k) = local(s)
+                    && rest[k] < f32::MAX
+                {
+                    states.set(k, NODIR, 0.0, usize::MAX);
+                    heap.push(Node { f: heur(k), i: s * 9 + NODIR });
+                }
+            }
+            let mut hit = None;
+            while let Some(Node { i: state, f }) = heap.pop() {
+                let (i, d0) = (state / 9, state % 9);
+                let k = local(i).unwrap();
+                let here = states.cost(k, d0) as f64;
+                if f > here + heur(k) + 1e-3 {
+                    continue;
+                }
+                if is_goal[k] {
+                    hit = Some(state);
+                    break;
+                }
+                let (l, x, y) = unpack(i);
+                for (d, (dx, dy)) in DIRS.iter().enumerate() {
+                    let Some(turn) = bend(d0, d, opts.bend_cost) else { continue };
+                    let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                    if !inside(nx, ny) {
+                        continue;
+                    }
+                    let (nx, ny) = (nx as usize, ny as usize);
+                    let j = grid.idx(l, nx, ny);
+                    let kj = local(j).unwrap();
+                    let h = heur(kj);
+                    if h == f32::MAX as f64 || !corner_ok(l, x, y, nx, ny) {
+                        continue;
+                    }
+                    let Some(step) = enter(j, *dx != 0 && *dy != 0) else { continue };
+                    let c = here + step + turn;
+                    if (c as f32) < states.cost(kj, d) {
+                        states.set(kj, d, c as f32, state);
+                        heap.push(Node { f: c + h, i: j * 9 + d });
+                    }
+                }
+                if !via_layers.contains(&l) {
+                    continue;
+                }
+                let Some(via_clash) = via_here(x, y) else { continue };
                 for &nl in routing.iter().filter(|&&nl| nl != l && via_layers.contains(&nl)) {
                     let j = grid.idx(nl, x, y);
                     let (ok, clash) = grid.ok(j, net, false, soft);
-                    if !ok {
+                    let kj = local(j).unwrap();
+                    let h = heur(kj);
+                    if !ok || h == f32::MAX as f64 {
                         continue;
                     }
-                    let kj = local(j).unwrap() * 9 + NODIR;
                     let c = here + opts.via_cost + if clash || via_clash { penalty } else { 0.0 };
-                    if (c as f32) < cost[kj] {
-                        cost[kj] = c as f32;
-                        from[kj] = state;
-                        heap.push(Node { f: c + heur(x, y), i: j * 9 + NODIR });
+                    if (c as f32) < states.cost(kj, NODIR) {
+                        states.set(kj, NODIR, c as f32, state);
+                        heap.push(Node { f: c + h, i: j * 9 + NODIR });
                     }
                 }
             }
-        }
-        if let Some(end) = hit {
-            let mut path = vec![end / 9];
-            let mut cur = end;
-            loop {
-                let k = local(cur / 9).unwrap() * 9 + cur % 9;
-                let p = from[k];
-                if p == usize::MAX {
-                    break;
+            if let Some(end) = hit {
+                let mut path = vec![end / 9];
+                let mut cur = end;
+                loop {
+                    let p = states.from(local(cur / 9).unwrap(), cur % 9);
+                    if p == usize::MAX {
+                        break;
+                    }
+                    path.push(p / 9);
+                    cur = p;
                 }
-                path.push(p / 9);
-                cur = p;
+                path.reverse();
+                path.dedup();
+                return Ok(path);
             }
-            path.reverse();
-            path.dedup();
-            return Ok(path);
         }
         let whole = wx0 == 0 && wy0 == 0 && wx1 == grid.w - 1 && wy1 == grid.h - 1;
         if whole || (!soft && margin > opts.margin) {
             return Err("no path within the rules".into());
         }
         margin *= 3.0;
+    }
+}
+
+const NODIR: usize = 8;
+
+fn bend(d0: usize, d1: usize, cost: f64) -> Option<f64> {
+    if d0 == NODIR {
+        return Some(0.0);
+    }
+    match (d0 as i64 - d1 as i64).rem_euclid(8).min((d1 as i64 - d0 as i64).rem_euclid(8)) {
+        0 => Some(0.0),
+        1 => Some(cost),
+        2 => Some(3.0 * cost),
+        _ => None,
+    }
+}
+
+struct States {
+    slot: Vec<u32>,
+    blocks: Vec<([f32; 9], [usize; 9])>,
+}
+
+impl States {
+    fn new(n: usize) -> Self {
+        States { slot: vec![u32::MAX; n], blocks: Vec::new() }
+    }
+
+    fn cost(&self, k: usize, d: usize) -> f32 {
+        match self.slot[k] {
+            u32::MAX => f32::MAX,
+            s => self.blocks[s as usize].0[d],
+        }
+    }
+
+    fn from(&self, k: usize, d: usize) -> usize {
+        self.blocks[self.slot[k] as usize].1[d]
+    }
+
+    fn set(&mut self, k: usize, d: usize, cost: f32, from: usize) {
+        if self.slot[k] == u32::MAX {
+            self.slot[k] = self.blocks.len() as u32;
+            self.blocks.push(([f32::MAX; 9], [usize::MAX; 9]));
+        }
+        let b = &mut self.blocks[self.slot[k] as usize];
+        b.0[d] = cost;
+        b.1[d] = from;
     }
 }
 
@@ -1066,14 +1221,26 @@ fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
 
 fn clear_line(grid: &Grid, l: usize, p: P, q: P, net: usize) -> bool {
     let n = (geom::dist(p, q) / (grid.g * 0.25)).ceil().max(1.0) as usize;
-    (0..=n).all(|k| {
-        let t = k as f64 / n as f64;
-        let (x, y) = grid.cell([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+    let ok = |x: i64, y: i64| {
         x >= 0
             && y >= 0
             && (x as usize) < grid.w
             && (y as usize) < grid.h
             && grid.ok(grid.idx(l, x as usize, y as usize), net, false, false).0
+    };
+    (0..=n).all(|k| {
+        let t = k as f64 / n as f64;
+        let at = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+        let (x, y) = grid.cell(at);
+        if ok(x, y) {
+            return true;
+        }
+        let (fx, fy) = ((at[0] - grid.x0) / grid.g - 0.5, (at[1] - grid.y0) / grid.g - 0.5);
+        let (cx, cy) = (fx.floor() as i64, fy.floor() as i64);
+        [(cx, cy), (cx + 1, cy), (cx, cy + 1), (cx + 1, cy + 1)].into_iter().any(|(x, y)| {
+            let c = [grid.x0 + (x as f64 + 0.5) * grid.g, grid.y0 + (y as f64 + 0.5) * grid.g];
+            geom::dist(c, at) <= grid.g * 0.6 && ok(x, y)
+        })
     })
 }
 
@@ -1238,7 +1405,7 @@ fn route_pair(
         let ends = [(p, ap, pp[0]), (n, an, np[0]), (p, bp, *pp.last()?), (n, bn, *np.last()?)];
         let mut ok = true;
         for (net, pad, end) in ends {
-            let sources = anchors(grid, obstacles, net, pad, ctx.routing);
+            let sources = anchors(grid, obstacles, &[], net, pad, ctx.routing);
             let (x, y) = grid.cell(end);
             let goals: Vec<usize> = (-1..=1)
                 .flat_map(|dy| (-1..=1).map(move |dx| (x + dx, y + dy)))
@@ -1440,4 +1607,129 @@ fn band(grid: &Grid, geo: &[&Conn], gap: f64, widths: &[f64]) -> std::collection
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn open_grid(w: usize, h: usize, layers: usize) -> Grid {
+        Grid {
+            x0: 0.0,
+            y0: 0.0,
+            g: 0.1,
+            w,
+            h,
+            track: vec![FREE; layers * w * h],
+            via: vec![FREE; layers * w * h],
+            rt: vec![FREE; layers * w * h],
+            rv: vec![FREE; layers * w * h],
+            hist: vec![0.0; layers * w * h],
+        }
+    }
+
+    fn block(grid: &mut Grid, l: usize, x: std::ops::Range<usize>, y: std::ops::Range<usize>) {
+        for yy in y {
+            for xx in x.clone() {
+                let i = grid.idx(l, xx, yy);
+                grid.track[i] = BLOCK;
+                grid.via[i] = BLOCK;
+            }
+        }
+    }
+
+    fn route_one(grid: &Grid, layers: &[usize], a: (usize, usize), b: (usize, usize)) -> Geometry {
+        let opts = RouteOptions { margin: 10.0, ..Default::default() };
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            widths: vec![0.1; 2],
+            clearance: 0.1,
+            via_r: 0.2,
+            via_layers: layers,
+            routing: layers,
+            opts: &opts,
+        };
+        let (pa, pb) = (grid.center(a.0, a.1), grid.center(b.0, b.1));
+        let path = search_between(
+            grid,
+            0,
+            pa,
+            pb,
+            &[grid.idx(0, a.0, a.1)],
+            &[grid.idx(0, b.0, b.1)],
+            &ctx,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        geometry(grid, &path, pa, pb, 0)
+    }
+
+    fn octilinear_and_forward(pts: &[P]) {
+        for w in pts.windows(2) {
+            let a = (w[1][1] - w[0][1]).atan2(w[1][0] - w[0][0]).to_degrees().rem_euclid(45.0);
+            assert!(a.min(45.0 - a) < 1e-6, "{:?} -> {:?} is off 45", w[0], w[1]);
+        }
+        for w in pts.windows(3) {
+            let (u, v) = (heading(w[0], w[1]).unwrap(), heading(w[1], w[2]).unwrap());
+            assert!(u[0] * v[0] + u[1] * v[1] > 0.7, "{:?} turns more than 45", w[1]);
+        }
+    }
+
+    #[test]
+    fn routes_around_a_wall_in_45_degree_steps() {
+        let mut grid = open_grid(60, 40, 1);
+        block(&mut grid, 0, 25..30, 12..40);
+        let (tracks, vias) = route_one(&grid, &[0], (5, 30), (55, 32));
+        assert!(vias.is_empty());
+        assert_eq!(tracks.len(), 1);
+        let pts = &tracks[0].1;
+        octilinear_and_forward(pts);
+        assert!(pts.len() <= 8, "{} corners: {pts:?}", pts.len());
+    }
+
+    #[test]
+    fn a_blocked_layer_takes_a_via() {
+        let mut grid = open_grid(40, 20, 2);
+        block(&mut grid, 0, 20..21, 0..20);
+        let (tracks, vias) = route_one(&grid, &[0, 1], (5, 10), (35, 10));
+        assert_eq!(vias.len(), 2);
+        assert!(tracks.iter().any(|t| t.0 == 1));
+        for t in &tracks {
+            octilinear_and_forward(&t.1);
+        }
+    }
+
+    #[test]
+    fn no_path_fails_fast() {
+        let mut grid = open_grid(40, 20, 1);
+        block(&mut grid, 0, 20..21, 0..20);
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            widths: vec![0.1],
+            clearance: 0.1,
+            via_r: 0.2,
+            via_layers: &[0],
+            routing: &[0],
+            opts: &opts,
+        };
+        let (a, b) = (grid.center(5, 10), grid.center(35, 10));
+        let got = search_between(
+            &grid,
+            0,
+            a,
+            b,
+            &[grid.idx(0, 5, 10)],
+            &[grid.idx(0, 35, 10)],
+            &ctx,
+            false,
+            None,
+            None,
+        );
+        assert!(got.is_err());
+    }
 }
