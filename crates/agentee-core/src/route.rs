@@ -683,6 +683,9 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             }
         }
 
+        grid.clear_routed();
+        snap_vias(&grid, &obstacles, &mut routed, &locked, &ctx);
+
         for (ci, reason) in failed {
             if routed[ci].is_none() {
                 let (a, b, net) = conns[ci];
@@ -814,6 +817,299 @@ fn fewer_vias(
         }
     }
     one_layer(grid, obstacles, fresh, net, a, b, ctx)
+}
+
+struct Slide {
+    track: usize,
+    path: Vec<P>,
+}
+
+impl Slide {
+    fn cross(&self, axis: usize, target: f64) -> Option<(usize, P)> {
+        self.path.windows(2).enumerate().find_map(|(k, w)| {
+            let d = w[1][axis] - w[0][axis];
+            if d.abs() < 1e-9 {
+                return None;
+            }
+            let t = (target - w[0][axis]) / d;
+            (t > 1e-9 && t <= 1.0 + 1e-9).then(|| {
+                (k, [w[0][0] + (w[1][0] - w[0][0]) * t, w[0][1] + (w[1][1] - w[0][1]) * t])
+            })
+        })
+    }
+}
+
+fn slides(c: &Conn, vi: usize, ctx: &Ctx, reach: f64) -> Vec<Slide> {
+    let v = c.vias[vi];
+    let mut out = Vec::new();
+    for (j, (_, pts)) in c.tracks.iter().enumerate() {
+        let mut back: Vec<P> = if geom::dist(pts[0], v) < 1e-6 {
+            pts.clone()
+        } else if geom::dist(pts[pts.len() - 1], v) < 1e-6 {
+            pts.iter().rev().cloned().collect()
+        } else {
+            continue;
+        };
+        let keep = 2.0 * ctx.via_r + ctx.clearance;
+        let n = back.len();
+        let Some(dir) = heading(back[n - 1], back[n - 2]) else { continue };
+        let last = geom::dist(back[n - 2], back[n - 1]);
+        if last <= keep {
+            back.pop();
+        } else {
+            back[n - 1] = [back[n - 1][0] + dir[0] * keep, back[n - 1][1] + dir[1] * keep];
+        }
+        let mut path = vec![back[0]];
+        let mut walked = 0.0;
+        for w in back.windows(2) {
+            let l = geom::dist(w[0], w[1]);
+            if walked + l >= reach {
+                let t = (reach - walked) / l;
+                path.push([w[0][0] + (w[1][0] - w[0][0]) * t, w[0][1] + (w[1][1] - w[0][1]) * t]);
+                break;
+            }
+            walked += l;
+            path.push(w[1]);
+        }
+        if path.len() >= 2 {
+            out.push(Slide { track: j, path });
+        }
+    }
+    out
+}
+
+fn despike(pts: &[P]) -> Vec<P> {
+    let mut out: Vec<P> = Vec::new();
+    for &p in &simplify(pts) {
+        while out.len() >= 2 {
+            let (a, b) = (out[out.len() - 2], out[out.len() - 1]);
+            let cross = (b[0] - a[0]) * (p[1] - b[1]) - (b[1] - a[1]) * (p[0] - b[0]);
+            let dot = (b[0] - a[0]) * (p[0] - b[0]) + (b[1] - a[1]) * (p[1] - b[1]);
+            if cross.abs() < 1e-9 && dot < 0.0 {
+                out.pop();
+            } else {
+                break;
+            }
+        }
+        if out.last().is_none_or(|q| geom::dist(*q, p) > 1e-9) {
+            out.push(p);
+        }
+    }
+    simplify(&out)
+}
+
+fn move_via(c: &Conn, vi: usize, slide: &Slide, k: usize, to: P) -> Conn {
+    let v = c.vias[vi];
+    let mut out = c.clone();
+    for (j, (_, pts)) in out.tracks.iter_mut().enumerate() {
+        let n = pts.len();
+        let at_start = geom::dist(pts[0], v) < 1e-6;
+        if !at_start && geom::dist(pts[n - 1], v) >= 1e-6 {
+            continue;
+        }
+        if at_start {
+            pts.reverse();
+        }
+        if j == slide.track {
+            pts.truncate(n - 1 - k);
+            pts.push(to);
+        } else {
+            pts.extend_from_slice(&slide.path[1..=k]);
+            pts.push(to);
+        }
+        *pts = despike(pts);
+        if at_start {
+            pts.reverse();
+        }
+    }
+    out.tracks.retain(|(_, pts)| pts.len() >= 2);
+    out.vias[vi] = to;
+    out
+}
+
+fn via_fits(
+    grid: &Grid,
+    c: &Conn,
+    vi: usize,
+    run: &[P],
+    run_layers: &[usize],
+    others: &[&Conn],
+    ctx: &Ctx,
+) -> bool {
+    let to = c.vias[vi];
+    let drills = 2.0 * ctx.drill_r + ctx.hole_gap - 1e-6;
+    let (x, y) = grid.cell(to);
+    if x < 0 || y < 0 || x as usize >= grid.w || y as usize >= grid.h {
+        return false;
+    }
+    let cell_ok = ctx
+        .via_layers
+        .iter()
+        .all(|&l| grid.ok(grid.idx(l, x as usize, y as usize), c.net, true, false).0);
+    let own_ok = c.vias.iter().enumerate().all(|(k, w)| k == vi || geom::dist(*w, to) >= drills);
+    let lines_ok =
+        run_layers.iter().all(|&l| run.windows(2).all(|w| clear_line(grid, l, w[0], w[1], c.net)));
+    cell_ok
+        && own_ok
+        && lines_ok
+        && others
+            .iter()
+            .all(|r| !conflicts(r, c, ctx) && r.vias.iter().all(|w| geom::dist(*w, to) >= drills))
+}
+
+fn pad_gap(pad: &[P], p: P) -> f64 {
+    let edge = (0..pad.len())
+        .map(|i| geom::point_segment_distance(p, pad[i], pad[(i + 1) % pad.len()]))
+        .fold(f64::MAX, f64::min);
+    if geom::point_in_polygon(p, pad) { -edge } else { edge }
+}
+
+fn snap_vias(
+    grid: &Grid,
+    obstacles: &[Obstacle],
+    routed: &mut [Option<Conn>],
+    locked: &[bool],
+    ctx: &Ctx,
+) {
+    let reach = (10.0 * ctx.via_r).max(2.5);
+    let pads: Vec<&Vec<P>> = obstacles
+        .iter()
+        .filter(|o| o.layers.iter().any(|l| ctx.via_layers.contains(l)))
+        .filter_map(|o| match &o.shape {
+            Shape::Poly(v) => Some(v),
+            _ => None,
+        })
+        .collect();
+    let clear_of_pads = |from: P, to: P| {
+        pads.iter().all(|pad| {
+            let after = pad_gap(pad, to);
+            after >= ctx.via_r || after >= pad_gap(pad, from) - 1e-6
+        })
+    };
+    let lone = |ci: usize, routed: &[Option<Conn>]| {
+        let Some(c) = &routed[ci] else { return false };
+        !locked[ci] && routed.iter().flatten().filter(|r| r.net == c.net).count() == 1
+    };
+    let mut items: Vec<(usize, usize, P, Vec<P>)> = Vec::new();
+    for ci in 0..routed.len() {
+        if !lone(ci, routed) {
+            continue;
+        }
+        let c = routed[ci].as_ref().unwrap();
+        for vi in 0..c.vias.len() {
+            let dirs: Vec<P> = slides(c, vi, ctx, reach)
+                .iter()
+                .filter_map(|s| heading(s.path[0], s.path[1]))
+                .collect();
+            if !dirs.is_empty() {
+                items.push((ci, vi, c.vias[vi], dirs));
+            }
+        }
+    }
+    let mut root: Vec<usize> = (0..items.len()).collect();
+    fn find(root: &mut [usize], i: usize) -> usize {
+        let mut i = i;
+        while root[i] != i {
+            root[i] = root[root[i]];
+            i = root[i];
+        }
+        i
+    }
+    for i in 0..items.len() {
+        for j in i + 1..items.len() {
+            let (a, b) = (&items[i], &items[j]);
+            let parallel =
+                a.3.iter().any(|u| b.3.iter().any(|v| (u[0] * v[0] + u[1] * v[1]).abs() > 0.99));
+            if a.0 != b.0 && parallel && geom::dist(a.2, b.2) <= reach {
+                let (ri, rj) = (find(&mut root, i), find(&mut root, j));
+                root[ri] = rj;
+            }
+        }
+    }
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for i in 0..items.len() {
+        let r = find(&mut root, i);
+        match groups.iter_mut().find(|g| find(&mut root, g[0]) == r) {
+            Some(g) => g.push(i),
+            None => groups.push(vec![i]),
+        }
+    }
+    for group in groups.into_iter().filter(|g| g.len() >= 2) {
+        let mut best: Option<(usize, Vec<Option<Conn>>)> = None;
+        for axis in 0..2 {
+            let at = |m: usize, routed: &[Option<Conn>]| {
+                routed[items[m].0].as_ref().map(|c| c.vias[items[m].1][axis]).unwrap_or(f64::NAN)
+            };
+            let lined = |c: f64, routed: &[Option<Conn>]| {
+                group.iter().filter(|&&m| (at(m, routed) - c).abs() < 1e-6).count()
+            };
+            let now = group.iter().map(|&m| lined(at(m, routed), routed)).max().unwrap_or(0);
+            let mut targets: Vec<f64> = group.iter().map(|&m| at(m, routed)).collect();
+            let origin = if axis == 0 { grid.x0 } else { grid.y0 };
+            let lo = targets.iter().cloned().fold(f64::MAX, f64::min);
+            let hi = targets.iter().cloned().fold(f64::MIN, f64::max);
+            let first = ((lo - origin) / grid.g - 0.5).ceil() as i64;
+            let last = ((hi - origin) / grid.g - 0.5).floor() as i64;
+            targets.extend((first..=last).map(|k| origin + (k as f64 + 0.5) * grid.g));
+            targets.sort_by(|a, b| a.total_cmp(b));
+            targets.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+            for target in targets {
+                let mut trial: Vec<Option<Conn>> = routed.to_vec();
+                let mut moves: Vec<(f64, usize)> = group
+                    .iter()
+                    .map(|&m| ((at(m, &trial) - target).abs(), m))
+                    .filter(|(d, _)| *d > 1e-6)
+                    .collect();
+                moves.sort_by(|a, b| a.0.total_cmp(&b.0));
+                for (_, m) in moves {
+                    let (ci, vi) = (items[m].0, items[m].1);
+                    let old = trial[ci].clone().unwrap();
+                    let v = old.vias[vi];
+                    let Some((slide, k, to)) =
+                        slides(&old, vi, ctx, reach).into_iter().find_map(|s| {
+                            let (k, to) = s.cross(axis, target)?;
+                            Some((s, k, to))
+                        })
+                    else {
+                        continue;
+                    };
+                    let moved = move_via(&old, vi, &slide, k, to);
+                    let mut run = slide.path[..=k].to_vec();
+                    run.push(to);
+                    let run_layers: Vec<usize> = old
+                        .tracks
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, (_, pts))| {
+                            *j != slide.track
+                                && (geom::dist(pts[0], v) < 1e-6
+                                    || geom::dist(pts[pts.len() - 1], v) < 1e-6)
+                        })
+                        .map(|(_, (l, _))| *l)
+                        .collect();
+                    let others: Vec<&Conn> = trial
+                        .iter()
+                        .enumerate()
+                        .filter(|&(k, _)| k != ci)
+                        .filter_map(|(_, r)| r.as_ref())
+                        .collect();
+                    if track_length(&moved) <= track_length(&old) + 1e-6
+                        && clear_of_pads(v, to)
+                        && via_fits(grid, &moved, vi, &run, &run_layers, &others, ctx)
+                    {
+                        trial[ci] = Some(moved);
+                    }
+                }
+                let got = lined(target, &trial);
+                if got >= 2 && got > now && best.as_ref().is_none_or(|b| got > b.0) {
+                    best = Some((got, trial));
+                }
+            }
+        }
+        if let Some((_, trial)) = best {
+            routed.clone_from_slice(&trial);
+        }
+    }
 }
 
 fn copper_of(c: &Conn, ctx: &Ctx) -> Vec<Obstacle> {
@@ -1887,6 +2183,41 @@ mod tests {
         let c = fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 0).unwrap();
         assert!(c.vias.is_empty() && c.tracks.iter().all(|t| t.0 == 0));
         assert!(fewer_vias(&grid, &pads, &[], 0, a, b, &ctx, 2).unwrap().vias.len() <= 2);
+    }
+
+    #[test]
+    fn staggered_vias_of_parallel_connections_line_up() {
+        let grid = open_grid(80, 40, 2);
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            drill_r: 0.1,
+            hole_gap: 0.2,
+            widths: vec![0.1; 2],
+            clearance: 0.1,
+            via_r: 0.2,
+            via_layers: &[0, 1],
+            routing: &[0, 1],
+            opts: &opts,
+        };
+        let conn = |net: usize, y: f64, x: f64| Conn {
+            net,
+            tracks: vec![(0, vec![[1.05, y], [x, y]]), (1, vec![[x, y], [6.05, y]])],
+            vias: vec![[x, y]],
+        };
+        let mut routed = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
+        let before: Vec<f64> = routed.iter().flatten().map(track_length).collect();
+        snap_vias(&grid, &[], &mut routed, &[false, false], &ctx);
+        let got: Vec<&Conn> = routed.iter().flatten().collect();
+        assert!((got[0].vias[0][0] - got[1].vias[0][0]).abs() < 1e-9, "{:?}", got[0].vias);
+        for (c, len) in got.iter().zip(before) {
+            assert!((track_length(c) - len).abs() < 1e-9);
+            let v = c.vias[0];
+            assert!(c.tracks.iter().all(|(_, p)| p.contains(&v)));
+        }
+        let mut locked = vec![Some(conn(0, 1.05, 3.05)), Some(conn(1, 2.05, 4.05))];
+        snap_vias(&grid, &[], &mut locked, &[true, false], &ctx);
+        assert_eq!(locked[0].as_ref().unwrap().vias[0], [3.05, 1.05]);
+        assert_eq!(locked[1].as_ref().unwrap().vias[0], [4.05, 2.05]);
     }
 
     #[test]

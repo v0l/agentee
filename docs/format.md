@@ -574,7 +574,10 @@ steps in 45 degree directions and charges for every bend, so paths come out as s
 degree corner left is chamfered where it clears. Only the stub into an off-grid pad centre may sit
 at another angle. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
 each routed connection that uses vias is tried again on one layer at a time with the rest held
-fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. A net in an
+fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
+vias of neighbouring parallel connections that change layer near each other are slid along their
+own tracks onto a common row or column on the grid, where the spot is legal and the connection
+keeps its length (pair legs held by `--pairs` and nets with several connections stay put). A net in an
 interface with `max_vias` keeps the trace (every net of the lane, through series parts) within
 it: a route with too many vias is tried again with dearer vias, then on one layer, and fails with
 the reason if neither fits. The second net of a pair is drawn toward its
