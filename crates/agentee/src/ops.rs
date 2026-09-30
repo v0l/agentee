@@ -1506,7 +1506,7 @@ pub fn neck(
             .get_mut("tracks")
             .and_then(|v| v.as_array_of_tables_mut())
             .ok_or("the layout has no [[tracks]]")?;
-        let round = |v: f64| (v * 1e4).round() / 1e4;
+        let round = |v: f64| (v * 1e6).round() / 1e6;
         let points = |pts: &[[f64; 2]]| {
             let mut arr = toml_edit::Array::new();
             for q in pts {

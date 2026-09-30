@@ -103,8 +103,19 @@ fn along(line: &[P], s: f64) -> P {
     line[line.len() - 1]
 }
 
+fn cut_point(line: &[P], s: f64) -> P {
+    if s <= 1e-12 {
+        return line[0];
+    }
+    if s >= length(line) - 1e-12 {
+        return line[line.len() - 1];
+    }
+    let q = along(line, s);
+    [(q[0] * 1e4).round() / 1e4, (q[1] * 1e4).round() / 1e4]
+}
+
 fn sub(line: &[P], a: f64, b: f64) -> Vec<P> {
-    let mut out = vec![along(line, a)];
+    let mut out = vec![cut_point(line, a)];
     let mut s = 0.0;
     for w in line.windows(2) {
         s += geom::dist(w[0], w[1]);
@@ -112,7 +123,7 @@ fn sub(line: &[P], a: f64, b: f64) -> Vec<P> {
             out.push(w[1]);
         }
     }
-    out.push(along(line, b));
+    out.push(cut_point(line, b));
     out
 }
 
@@ -174,7 +185,7 @@ fn cut(
         if width >= wide - 1e-6 {
             continue;
         }
-        if narrow && geom::point_in_polygon(along(path, at), pad) {
+        if narrow && geom::point_in_polygon(cut_point(path, at), pad) {
             continue;
         }
         let tail = sub(path, at, window.max(at));
