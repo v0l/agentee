@@ -1,6 +1,6 @@
 use agentee_core::logic::{
-    Check, Circuit, Clocked, Edge, GateOp, Input, Level, LogicResult, LogicSpec, Mark, MarkKind,
-    OnViolation, Prim, Stimulus, Trace, Wave, fmt_time,
+    Bus, Check, Circuit, Clocked, Edge, GateOp, Input, Level, LogicResult, LogicSpec, Mark,
+    MarkKind, OnViolation, Prim, Stimulus, Trace, Wave, bus_groups, fmt_time,
 };
 use agentee_core::sim::Reading;
 use std::cmp::Reverse;
@@ -9,7 +9,7 @@ use std::collections::BinaryHeap;
 pub const DELTA_LIMIT: usize = 1000;
 pub const EVENT_LIMIT: u64 = 50_000_000;
 const MESSAGE_LIMIT: usize = 20;
-pub const MARK_LIMIT: usize = 1000;
+pub const MARK_LIMIT: usize = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Transition {
@@ -861,36 +861,64 @@ fn vcd_id(mut k: usize) -> String {
     }
 }
 
-pub fn vcd(name: &str, traces: &[Trace]) -> String {
+fn level_at(t: &Trace, time: u64) -> char {
+    match t.times.partition_point(|x| *x <= time) {
+        0 => 'z',
+        n => t.values.chars().nth(n - 1).unwrap_or('x'),
+    }
+}
+
+pub fn vcd(name: &str, traces: &[Trace], buses: &[Bus]) -> String {
     let clean =
         |s: &str| s.chars().map(|c| if c.is_whitespace() { '_' } else { c }).collect::<String>();
+    let groups = bus_groups(traces, buses);
+    let mut vars: Vec<(String, Vec<usize>)> = Vec::new();
+    for (k, t) in traces.iter().enumerate() {
+        match groups.iter().find(|g| g.bits.contains(&k)) {
+            None => vars.push((clean(&t.name), vec![k])),
+            Some(g) if g.bits.iter().min() == Some(&k) => {
+                vars.push((format!("{} [{}:{}]", clean(&g.stem), g.msb, g.lsb), g.bits.clone()))
+            }
+            Some(_) => {}
+        }
+    }
     let mut out = String::new();
     out.push_str("$version agentee logic $end\n$timescale 1ps $end\n");
     out.push_str(&format!("$scope module {} $end\n", clean(name)));
-    for (k, t) in traces.iter().enumerate() {
-        out.push_str(&format!("$var wire 1 {} {} $end\n", vcd_id(k), clean(&t.name)));
+    for (v, (reference, bits)) in vars.iter().enumerate() {
+        out.push_str(&format!("$var wire {} {} {reference} $end\n", bits.len(), vcd_id(v)));
     }
     out.push_str("$upscope $end\n$enddefinitions $end\n");
-    let mut events: Vec<(u64, usize, char)> = Vec::new();
-    for (k, t) in traces.iter().enumerate() {
-        for (time, c) in t.times.iter().zip(t.values.chars()) {
-            events.push((*time, k, c));
+    let value = |bits: &[usize], time: u64, v: usize| {
+        let levels: String = bits.iter().map(|b| level_at(&traces[*b], time)).collect();
+        match bits.len() {
+            1 => format!("{levels}{}", vcd_id(v)),
+            _ => format!("b{levels} {}", vcd_id(v)),
         }
-    }
-    events.sort_by_key(|e| (e.0, e.1));
+    };
     out.push_str("#0\n$dumpvars\n");
-    for (k, t) in traces.iter().enumerate() {
-        let first = t.times.first().filter(|x| **x == 0).map(|_| t.values.chars().next().unwrap());
-        out.push_str(&format!("{}{}\n", first.unwrap_or('z'), vcd_id(k)));
+    for (v, (_, bits)) in vars.iter().enumerate() {
+        out.push_str(&value(bits, 0, v));
+        out.push('\n');
     }
     out.push_str("$end\n");
+    let mut events: Vec<(u64, usize)> = Vec::new();
+    for (v, (_, bits)) in vars.iter().enumerate() {
+        let mut times: Vec<u64> =
+            bits.iter().flat_map(|b| traces[*b].times.iter().copied()).filter(|t| *t > 0).collect();
+        times.sort_unstable();
+        times.dedup();
+        events.extend(times.into_iter().map(|t| (t, v)));
+    }
+    events.sort_unstable();
     let mut last = 0;
-    for (time, k, c) in events.into_iter().filter(|e| e.0 > 0) {
+    for (time, v) in events {
         if time != last {
             out.push_str(&format!("#{time}\n"));
             last = time;
         }
-        out.push_str(&format!("{c}{}\n", vcd_id(k)));
+        out.push_str(&value(&vars[v].1, time, v));
+        out.push('\n');
     }
     out
 }
@@ -979,7 +1007,7 @@ pub fn run(spec: &LogicSpec, name: &str, spec_hash: u64, vcd_name: &str) -> (Log
         seconds: started.elapsed().as_secs_f64(),
         vcd: vcd_name.to_string(),
     };
-    let text = vcd(name, &result.traces);
+    let text = vcd(name, &result.traces, &result.buses);
     (result, text)
 }
 
@@ -1556,8 +1584,89 @@ mod tests {
         assert_eq!(res.failures, vec!["c: expected 1 at 360ns, got 0".to_string()]);
         assert_eq!(res.traces[0].values.chars().next(), Some('0'));
         assert!(text.contains("$timescale 1ps $end"));
-        assert!(text.contains("$var wire 1 ! n2 $end"));
-        assert!(text.contains("#201000\n1!"));
+        assert!(text.contains("$var wire 2 ! n [3:2] $end"), "{text}");
+        let at = text.split("#201000\n").nth(1).and_then(|r| r.lines().next());
+        assert_eq!(at.map(|l| (l.len(), &l[2..])), Some((5, "1 !")), "{text}");
+    }
+
+    type VcdVar = (usize, String, Vec<(u64, String)>);
+
+    fn read_vcd(text: &str) -> Vec<VcdVar> {
+        let mut vars: Vec<(String, VcdVar)> = Vec::new();
+        let mut time = 0;
+        let mut words = text.split_whitespace().peekable();
+        while let Some(w) = words.next() {
+            if w == "$var" {
+                let (_, width, id) = (words.next(), words.next().unwrap(), words.next().unwrap());
+                let mut reference = Vec::new();
+                for r in words.by_ref() {
+                    if r == "$end" {
+                        break;
+                    }
+                    reference.push(r);
+                }
+                let var = (width.parse().unwrap(), reference.join(" "), Vec::new());
+                vars.push((id.to_string(), var));
+            } else if let Some(t) = w.strip_prefix('#') {
+                time = t.parse().unwrap();
+            } else if let Some(bits) = w.strip_prefix('b') {
+                let id = words.next().unwrap();
+                let v = vars.iter_mut().find(|v| v.0 == id).unwrap();
+                v.1.2.push((time, bits.to_string()));
+            } else if !w.starts_with('$') && w.len() > 1 {
+                let (level, id) = w.split_at(1);
+                if let Some(v) = vars.iter_mut().find(|v| v.0 == id) {
+                    v.1.2.push((time, level.to_string()));
+                }
+            }
+        }
+        vars.into_iter().map(|v| v.1).collect()
+    }
+
+    fn assert_vectors_match_bits(vars: &[VcdVar], traces: &[Trace], names: &[(&str, &[&str])]) {
+        for (reference, bits) in names {
+            let (width, _, changes) = vars.iter().find(|v| v.1 == *reference).unwrap();
+            assert_eq!(*width, bits.len(), "{reference}");
+            let bits: Vec<&Trace> =
+                bits.iter().map(|b| traces.iter().find(|t| t.name == *b).unwrap()).collect();
+            let mut times: Vec<u64> = bits.iter().flat_map(|t| t.times.clone()).collect();
+            times.push(0);
+            times.sort_unstable();
+            times.dedup();
+            assert_eq!(changes.len(), times.len(), "{reference}");
+            for (time, value) in changes {
+                let want: String = bits.iter().map(|t| level_at(t, *time)).collect();
+                assert_eq!(*value, want, "{reference} at {time}");
+            }
+        }
+    }
+
+    #[test]
+    fn vcd_writes_buses_as_vectors_grouped_like_the_viewer() {
+        let t = |n: &str, times: &[u64], v: &str| Trace {
+            name: n.into(),
+            times: times.to_vec(),
+            values: v.into(),
+        };
+        let traces = vec![
+            t("CLK", &[0, 50, 100], "010"),
+            t("Q1", &[0, 100], "01"),
+            t("Q0", &[0, 50, 100], "010"),
+            t("SDA", &[0, 70], "1x"),
+            t("SCL", &[20], "0"),
+            t("A1", &[0], "1"),
+        ];
+        let buses = vec![Bus { name: "I2C".into(), nets: vec!["SCL".into(), "SDA".into()] }];
+        let vars = read_vcd(&vcd("t", &traces, &buses));
+        let refs: Vec<(usize, &str)> = vars.iter().map(|v| (v.0, v.1.as_str())).collect();
+        assert_eq!(refs, [(1, "CLK"), (2, "Q [1:0]"), (2, "I2C [1:0]"), (1, "A1")]);
+        assert_eq!(vars[1].2, [(0, "00".into()), (50, "01".into()), (100, "10".into())]);
+        assert_eq!(vars[2].2, [(0, "z1".into()), (20, "01".into()), (70, "0x".into())]);
+        assert_vectors_match_bits(
+            &vars,
+            &traces,
+            &[("Q [1:0]", &["Q1", "Q0"]), ("I2C [1:0]", &["SCL", "SDA"])],
+        );
     }
 
     #[test]
@@ -1574,7 +1683,9 @@ mod tests {
             .collect();
         assert_eq!(drivers.len(), 3);
         assert!(drivers.iter().all(|c| c.open_drain));
-        let (res, _) = run(spec, "i2c", 0, "i2c.vcd");
+        let (res, text) = run(spec, "i2c", 0, "i2c.vcd");
+        let rx = ["RX7", "RX6", "RX5", "RX4", "RX3", "RX2", "RX1", "RX0"];
+        assert_vectors_match_bits(&read_vcd(&text), &res.traces, &[("RX [7:0]", &rx)]);
         assert_eq!(res.failures, Vec::<String>::new());
         assert_eq!(res.passed, spec.expects.len());
         assert!(res.marks.is_empty());
@@ -1609,9 +1720,15 @@ mod tests {
         let p = agentee_core::Project::load(&root).unwrap();
         let s = p.sims.iter().find(|s| s.name == "counter").unwrap();
         let spec = s.item.logic.as_ref().unwrap();
-        let (res, _) = run(spec, "counter", 0, "counter.vcd");
+        let (res, text) = run(spec, "counter", 0, "counter.vcd");
         assert_eq!(res.failures, Vec::<String>::new());
         assert_eq!(res.passed, spec.expects.len());
+        let ys = ["Y7_N", "Y6_N", "Y5_N", "Y4_N", "Y3_N", "Y2_N", "Y1_N", "Y0_N"];
+        assert_vectors_match_bits(
+            &read_vcd(&text),
+            &res.traces,
+            &[("Q [3:0]", &["Q3", "Q2", "Q1", "Q0"]), ("Y_N [7:0]", &ys)],
+        );
         let mut broken = spec.clone();
         broken.circuit.cells.retain(|c| c.part != "R1");
         let (res, _) = run(&broken, "counter", 0, "counter.vcd");

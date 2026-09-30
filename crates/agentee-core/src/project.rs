@@ -290,7 +290,11 @@ impl Project {
             };
             let (whole, frames) = flatten(file, &sch_files, &lib, &mut Vec::new(), &mut d);
             let mut item = whole.resolve(&lib, &mut d);
-            item.check_as(&lib, &mut d, sheet_names.contains(&file.name));
+            let laid_out = pcb_files.iter().any(|(_, l)| match l.schematic.as_deref() {
+                Some(n) => n == file.name,
+                None => sch_files.len() == 1,
+            });
+            item.check_as(&lib, &mut d, sheet_names.contains(&file.name), laid_out);
             item.sheets = frames;
             item.parent = sch_files
                 .iter()

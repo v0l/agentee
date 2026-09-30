@@ -715,9 +715,10 @@ Check reports pins in two nets, pins in no net, single-pin nets, several outputs
 hand wires that miss a pin or touch another net's pin, overlapping parts, and footprints whose
 pads do not cover the symbol's pins. Every net in the `Default` netclass is a warning, whether it
 names no class or names `Default`: the class sets the net's width, clearance, vias and routing
-order, so each net should say what it is. Give the board a class per kind of net (`Signal`,
-`Data`, `Clock`, `Analog`, `Ground`, `Power`, `RF`, pairs) and keep `Default` as the fallback the
-layout uses for rules no class covers. `agentee show sch:lna` prints every pin's position.
+order, so each net should say what it is. The warning needs a board and a layout of the
+schematic; a schematic only simulated (like `examples/logic`) skips it. Give the board a class
+per kind of net (`Signal`, `Data`, `Clock`, `Analog`, `Ground`, `Power`, `RF`, pairs) and keep
+`Default` as the fallback the layout uses for rules no class covers. `agentee show sch:lna` prints every pin's position.
 
 ## Layout (`*.pcb.toml`)
 
@@ -1585,14 +1586,20 @@ In the waveform view the mouse wheel (or pinch, or ctrl and the wheel) zooms abo
 a drag or a sideways scroll pans, a double click fits the whole run, and a click sets the time
 cursor, snapped to an edge of the row under it within a few pixels. `+` and `-` zoom about the
 cursor, the arrow keys pan, `F` or `Home` fits, `Escape` drops the cursor, and `N` and `P` jump
-the cursor to the next and previous marker. The column beside the names reads every row at the
+the cursor to the next and previous marker. With more rows than fit, the wheel over the names,
+a drag or click on the bar at the right edge, and `Page Up` and `Page Down` scroll the rows
+(`top=N` in `--show` starts at row N). The column beside the names reads every row at the
 cursor (at the pointer with no cursor, else at the right edge of the view), and the hover tip gives the
 time from the cursor. Nets named `X[0]` to `X[n]`, or `X0` to `Xn` (also `X0_N` to `Xn_N`),
 fold into one bus row drawn in hex, MSB first, with a nibble of x for any unknown bit and z for
 a floating one; so does a `record` entry `{ name, nets }`. Click a bus name to open its bits.
+The VCD holds the same buses as vectors in place of their bits: `Q0` to `Q3` as
+`$var wire 4 # Q [3:0] $end`, `Y0_N` to `Y7_N` as `Y_N [7:0]` and a `record` bus of n nets as
+`NAME [n-1:0]`, MSB first.
 Markers along the top show each failed assertion (red, at the time it was checked), timing
 violation (amber) and contention (violet), with a dot on the rows of the nets involved; hover
-one for its message, click it to put the cursor there. `agentee render NAME --show
+one for its message, click it to put the cursor there. A run keeps its first 10000 markers,
+and the header says capped when it reached that. `agentee render NAME --show
 from=300ns,to=900ns,cursor=550ns,open=Q[3:0]` draws the same view headless.
 
 ```toml
@@ -1666,8 +1673,9 @@ The netlist becomes cells as follows:
   (pin 1, active low) floating the outputs. The 245 is eight `xcvr`: with `OE` (pin 19) low it
   drives B from A while `DIR` (pin 1) is high and A from B while it is low. The 01, 03 (quad
   NAND), 05, 06, 1G06 (inverters) and 07, 1G07 (buffers) are open drain: they pull low or let
-  go (z), and a pull-up resistor makes the 1. A 7401 or 74LS01 has the 7402 pinout (outputs on
-  1, 4, 10, 13); a CMOS 74HC01 has the 7400 one.
+  go (z), and a pull-up resistor makes the 1. Every 01 has the 7402 pinout (outputs on 1, 4,
+  10, 13, inputs after each), per TI SDLS026 (SN7401, SN74LS01) and Renesas REJ03D0532
+  (HD74HC01); the 03 has the 7400 one, per TI SCLS077 (SN74HC03).
 - A gate whose output pins are all `open_collector` in its symbol is open drain as well.
 - Parts whose value or symbol is a primitive name (`AND`, `NAND3`, `OR`, `NOR`, `XOR`, `XNOR`,
   `NOT`, `INV`, `BUF`, `TRIBUF`, `DFF`, `JKFF`, `SRLATCH`, `DLATCH`, `MUX2`) map their pins by
@@ -1677,17 +1685,36 @@ The netlist becomes cells as follows:
   the pin active low.
 - Any other part is an error naming it, unless it is in `ignore` or has a `[[parts]]` model.
 
-Family timing, from the family letters after 74 (propagation delay, setup, hold):
+Family timing, from the family letters after 74 (propagation delay, setup, hold, and the
+recovery and removal of an asynchronous set or reset):
 
-| Family | Delay | Setup | Hold |
-|---|---|---|---|
-| HC, HCT | 10 ns | 15 ns | 3 ns |
-| AHC, AHCT, VHC, VHCT | 6 ns | 5 ns | 1 ns |
-| AC, ACT | 6 ns | 4 ns | 1 ns |
-| LVC, ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns |
-| AUP, LV, LVX | 6 ns | 3 ns | 1 ns |
-| LS and plain 74 | 15 ns | 20 ns | 5 ns |
-| others | 10 ns | 10 ns | 2 ns |
+| Family | Delay | Setup | Hold | Recovery | Removal |
+|---|---|---|---|---|---|
+| HC, HCT | 10 ns | 15 ns | 3 ns | 8 ns | 0 |
+| AHC, AHCT, VHC, VHCT | 6 ns | 5 ns | 1 ns | 3.5 ns | 0 |
+| AC, ACT | 6 ns | 4 ns | 1 ns | 2.4 ns | 0 |
+| LVC, ALVC, LVT, ALVT, AUC, AVC | 4 ns | 2 ns | 1 ns | 2 ns | 0 |
+| AUP, LV, LVX | 6 ns | 3 ns | 1 ns | 3 ns | 1 ns |
+| LS and plain 74 | 15 ns | 20 ns | 5 ns | 25 ns | 3 ns |
+| others | 10 ns | 10 ns | 2 ns | 10 ns | 2 ns |
+
+Recovery and removal are datasheet minimums over -40 to 85 C at 4.5 V (5 V families) or
+3.3 V (LVC), the larger of TI and Nexperia where both list one:
+
+- HC, HCT: 8 ns trec of `nSD`, `nRD` to `nCP`, Nexperia 74HC_HCT74 rev 9 (TI SN74HC74
+  SCLS094F gives 6 ns, TI CD74HC74 SCHS124E 8 ns, named trem there).
+- AHC, AHCT: 3.5 ns trec of `nRD` to `nCP` for the 74AHCT74 (3.0 ns for the 74AHC74), Nexperia
+  74AHC_AHCT74 rev 11 (TI SN74AHC74 SCLS255N gives 3 ns).
+- AC, ACT: 2.4 ns trec at 5 V, TI CD74AC74 SCHS231E and CD74ACT74 SCHS321A (TI SN74AC74
+  SCAS521H gives 0).
+- LVC: 2 ns setup of `PRE` or `CLR` inactive before `CLK`, TI SN74LVC74A SCAS287W (Nexperia
+  74LVC74A gives 1.0 ns).
+- LS: 25 ns setup of `CLR` inactive and 3 ns hold at any input, TI SN74LS161A SDLS060 (the
+  SN74LS74A in SDLS119 lists neither).
+
+None of the CMOS sheets above (nor TI SN74HC161 SCLS297D or Nexperia 74LVC161, whose hold
+covers the synchronous inputs only) lists a removal time, so it is 0 there. The AUP, LV, LVX
+and other rows take their setup and hold.
 
 Primitives by name and generic symbols take 1 ns and no setup or hold.
 
@@ -1754,10 +1781,10 @@ the model's timing: a data input that changed less than `setup` before a rising 
 less than `hold` after it, is a violation (not checked while an asynchronous reset or set is
 active). A D latch checks its `D` against the closing (falling) edge of `EN` the same way. An
 asynchronous reset or set released less than `recovery` before a clock edge, or less than
-`removal` after one, is a violation too; the family table's setup and hold are the defaults for
-recovery and removal. A 595 also wants its `LATCH` (RCLK) rising edge at least `setup` after
-the last `CLK` (SRCLK) rising edge; the two clocks tied together (the same instant) is fine and
-latches the value from before the shift.
+`removal` after one, is a violation too, with the family table's recovery and removal. A 595
+also wants its `LATCH` (RCLK) rising edge at least `setup` after the last `CLK` (SRCLK) rising
+edge; the two clocks tied together (the same instant) is fine and latches the value from before
+the shift.
 
 On a violation the flip-flop, latch or register the check covers goes to x, as the Verilog
 models do with their notifiers, until it is clocked, set or reset cleanly again. Set

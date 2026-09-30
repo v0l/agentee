@@ -330,6 +330,84 @@ pub struct Trace {
     pub values: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BusGroup {
+    pub name: String,
+    pub stem: String,
+    pub msb: u32,
+    pub lsb: u32,
+    pub bits: Vec<usize>,
+}
+
+pub fn bus_bit(name: &str) -> Option<(String, u32, String)> {
+    if let Some(stem) = name.strip_suffix(']')
+        && let Some((prefix, idx)) = stem.rsplit_once('[')
+        && !prefix.is_empty()
+        && let Ok(i) = idx.parse()
+    {
+        return Some((prefix.to_string(), i, String::new()));
+    }
+    let end = name.rfind(|c: char| c.is_ascii_digit())? + 1;
+    let start = name[..end].rfind(|c: char| !c.is_ascii_digit())? + 1;
+    let suffix = &name[end..];
+    if !["", "_N", "_n", "#"].contains(&suffix) {
+        return None;
+    }
+    let i = name[start..end].parse().ok()?;
+    Some((name[..start].to_string(), i, suffix.to_string()))
+}
+
+type AutoBus = ((String, String), Vec<(u32, usize)>);
+
+pub fn bus_groups(traces: &[Trace], buses: &[Bus]) -> Vec<BusGroup> {
+    let find = |n: &str| traces.iter().position(|t| t.name == n);
+    let mut groups: Vec<BusGroup> = Vec::new();
+    let mut used = vec![false; traces.len()];
+    for b in buses {
+        let bits: Option<Vec<usize>> = b.nets.iter().map(|n| find(n)).collect();
+        if let Some(bits) = bits
+            && !bits.is_empty()
+        {
+            bits.iter().for_each(|k| used[*k] = true);
+            groups.push(BusGroup {
+                name: b.name.clone(),
+                stem: b.name.clone(),
+                msb: bits.len() as u32 - 1,
+                lsb: 0,
+                bits,
+            });
+        }
+    }
+    let mut auto: Vec<AutoBus> = Vec::new();
+    for (k, t) in traces.iter().enumerate() {
+        if used[k] {
+            continue;
+        }
+        let Some((prefix, i, suffix)) = bus_bit(&t.name) else { continue };
+        let key = (prefix, suffix);
+        match auto.iter_mut().find(|g| g.0 == key) {
+            Some(g) => g.1.push((i, k)),
+            None => auto.push((key, vec![(i, k)])),
+        }
+    }
+    for ((prefix, suffix), mut bits) in auto {
+        bits.sort_by_key(|b| std::cmp::Reverse(b.0));
+        let distinct = bits.windows(2).all(|w| w[0].0 != w[1].0);
+        if bits.len() < 2 || !distinct {
+            continue;
+        }
+        let (hi, lo) = (bits[0].0, bits[bits.len() - 1].0);
+        groups.push(BusGroup {
+            name: format!("{prefix}[{hi}:{lo}]{suffix}"),
+            stem: format!("{prefix}{suffix}"),
+            msb: hi,
+            lsb: lo,
+            bits: bits.into_iter().map(|b| b.1).collect(),
+        });
+    }
+    groups
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogicResult {
     pub name: String,
@@ -449,21 +527,21 @@ pub const GENERIC_TIMING: Timing =
     Timing { delay: 1_000, setup: 0, hold: 0, recovery: 0, removal: 0 };
 
 pub fn family_timing(family: &str) -> Timing {
-    let t = |d: u64, s: u64, h: u64| Timing {
+    let t = |d: u64, s: u64, h: u64, recovery: u64, removal: u64| Timing {
         delay: d * 1000,
         setup: s * 1000,
         hold: h * 1000,
-        recovery: s * 1000,
-        removal: h * 1000,
+        recovery,
+        removal,
     };
     match family {
-        "HC" | "HCT" => t(10, 15, 3),
-        "AHC" | "AHCT" | "VHC" | "VHCT" => t(6, 5, 1),
-        "AC" | "ACT" => t(6, 4, 1),
-        "LVC" | "ALVC" | "LVT" | "ALVT" | "AUC" | "AVC" => t(4, 2, 1),
-        "AUP" | "LV" | "LVX" => t(6, 3, 1),
-        "LS" | "" => t(15, 20, 5),
-        _ => t(10, 10, 2),
+        "HC" | "HCT" => t(10, 15, 3, 8_000, 0),
+        "AHC" | "AHCT" | "VHC" | "VHCT" => t(6, 5, 1, 3_500, 0),
+        "AC" | "ACT" => t(6, 4, 1, 2_400, 0),
+        "LVC" | "ALVC" | "LVT" | "ALVT" | "AUC" | "AVC" => t(4, 2, 1, 2_000, 0),
+        "AUP" | "LV" | "LVX" => t(6, 3, 1, 3_000, 1_000),
+        "LS" | "" => t(15, 20, 5, 25_000, 3_000),
+        _ => t(10, 10, 2, 10_000, 2_000),
     }
 }
 
@@ -481,13 +559,6 @@ const QUAD00: &[&[&str]] =
 const QUAD02: &[&[&str]] =
     &[&["2", "3", "1"], &["5", "6", "4"], &["8", "9", "10"], &["11", "12", "13"]];
 const AB: &[&str] = &["A", "B", "Y"];
-
-pub fn library_for(family: &str, code: &str) -> Option<Vec<Unit>> {
-    if code == "01" && matches!(family, "" | "LS" | "S" | "ALS") {
-        return Some(units_of("nand_od", AB, QUAD02));
-    }
-    library(code)
-}
 
 const OCT_IN: [&str; 8] = ["2", "3", "4", "5", "6", "7", "8", "9"];
 const OCT_OUT: [&str; 8] = ["19", "18", "17", "16", "15", "14", "13", "12"];
@@ -561,7 +632,8 @@ pub fn library(code: &str) -> Option<Vec<Unit>> {
     };
     Some(match code {
         "00" | "132" => units_of("nand", AB, QUAD00),
-        "01" | "03" => units_of("nand_od", AB, QUAD00),
+        "01" => units_of("nand_od", AB, QUAD02),
+        "03" => units_of("nand_od", AB, QUAD00),
         "05" | "06" => units_of("not_od", AY, HEX04),
         "07" => units_of("buf_od", AY, HEX04),
         "573" => octal(&["dlatch", "OE_N", "EN", "D", "Q"], &["1", "11"], OCT_OUT),
@@ -1172,8 +1244,8 @@ fn instantiate(
     Ok(())
 }
 
-fn library_templates(family: &str, code: &str) -> Vec<Template> {
-    library_for(family, code)
+fn library_templates(code: &str) -> Vec<Template> {
+    library(code)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(prim, keys)| {
@@ -1312,7 +1384,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
                             if custom.iter().all(|x| x.is_none()) {
                                 timing = family_timing(&f);
                             }
-                            Ok(library_templates(&f, &code))
+                            Ok(library_templates(&code))
                         }
                         _ => {
                             let keys: Vec<(String, String)> =
@@ -1374,8 +1446,8 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
         if PASSIVES.contains(&pre.as_str()) {
             continue;
         }
-        if let Some((f, code)) = &family {
-            for t in library_templates(f, code) {
+        if let Some((_, code)) = &family {
+            for t in library_templates(code) {
                 if let Err(e) = instantiate(info, &t, timing, &delays, true, &mut built) {
                     d.error(&at, e);
                 }
@@ -1707,6 +1779,50 @@ mod tests {
     }
 
     #[test]
+    fn bus_bits_read_brackets_digits_and_active_low() {
+        assert_eq!(bus_bit("D[12]"), Some(("D".into(), 12, "".into())));
+        assert_eq!(bus_bit("Q3"), Some(("Q".into(), 3, "".into())));
+        assert_eq!(bus_bit("Y7_N"), Some(("Y".into(), 7, "_N".into())));
+        assert_eq!(bus_bit("CLK"), None);
+        assert_eq!(bus_bit("5V"), None);
+        assert_eq!(bus_bit("U1_OUT"), None);
+    }
+
+    #[test]
+    fn family_recovery_and_removal_follow_the_datasheets() {
+        for (family, recovery, removal, source) in [
+            ("HC", 8_000, 0, "Nexperia 74HC_HCT74 rev 9 trec at 4.5 V"),
+            ("HCT", 8_000, 0, "Nexperia 74HC_HCT74 rev 9 trec at 4.5 V"),
+            ("AHC", 3_500, 0, "Nexperia 74AHC_AHCT74 rev 11 trec, AHCT at 4.5 V"),
+            ("AC", 2_400, 0, "TI CD74AC74 SCHS231E trec at 5 V"),
+            ("LVC", 2_000, 0, "TI SN74LVC74A SCAS287W tsu PRE or CLR inactive at 3.3 V"),
+            ("LS", 25_000, 3_000, "TI SN74LS161A SDLS060 tsu CLR inactive, th any input"),
+        ] {
+            let t = family_timing(family);
+            assert_eq!((t.recovery, t.removal), (recovery, removal), "{family} per {source}");
+        }
+    }
+
+    #[test]
+    fn x01_has_the_7401_pinout_in_ttl_and_cmos() {
+        let pin = |s: &Slot| s.pin.clone().unwrap_or_default();
+        for (part, source) in [
+            ("SN7401N", "TI SDLS026 SN7401/SN74LS01"),
+            ("SN74LS01N", "TI SDLS026 SN7401/SN74LS01"),
+            ("HD74HC01P", "Renesas REJ03D0532 HD74HC01"),
+        ] {
+            let (_, code) = part_code(part).unwrap();
+            let gates: Vec<(String, String, String)> = library_templates(&code)
+                .iter()
+                .map(|t| (pin(&t.inputs[0]), pin(&t.inputs[1]), pin(&t.outputs[0])))
+                .collect();
+            let expect = [("2", "3", "1"), ("5", "6", "4"), ("8", "9", "10"), ("11", "12", "13")]
+                .map(|(a, b, y)| (a.to_string(), b.to_string(), y.to_string()));
+            assert_eq!(gates, expect, "{part} per {source}");
+        }
+    }
+
+    #[test]
     fn every_library_part_binds() {
         for code in [
             "00", "02", "04", "08", "10", "11", "14", "20", "21", "27", "32", "74", "86", "125",
@@ -1717,14 +1833,14 @@ mod tests {
             "1G06", "1G07",
         ] {
             let units = library(code).unwrap();
-            assert_eq!(library_templates("HC", code).len(), units.len(), "{code}");
+            assert_eq!(library_templates(code).len(), units.len(), "{code}");
         }
     }
 
     #[test]
     fn octal_open_drain_and_schmitt_parts_bind() {
         let pin = |s: &Slot| s.pin.clone().unwrap_or_default();
-        let latch = library_templates("HC", "573");
+        let latch = library_templates("573");
         assert_eq!(latch.len(), 8);
         assert_eq!(latch[0].prim, Prim::Dlatch);
         let l0: Vec<(String, String, bool)> =
@@ -1737,10 +1853,10 @@ mod tests {
             (pin(&latch[7].inputs[0]), pin(&latch[7].outputs[0])),
             ("9".into(), "12".into())
         );
-        let reg = library_templates("HC", "574");
+        let reg = library_templates("574");
         assert_eq!(reg[3].prim, Prim::Dff);
         assert_eq!((pin(&reg[3].inputs[1]), pin(&reg[3].outputs[0])), ("11".into(), "16".into()));
-        let x = library_templates("HC", "245");
+        let x = library_templates("245");
         assert_eq!(x.len(), 8);
         assert_eq!(x[0].prim, Prim::Xcvr);
         let ins: Vec<String> = x[0].inputs.iter().map(pin).collect();
@@ -1749,18 +1865,16 @@ mod tests {
         let outs: Vec<String> = x[7].outputs.iter().map(pin).collect();
         assert_eq!(outs, ["9", "11"]);
         for code in ["01", "03", "05", "06", "07", "1G06", "1G07"] {
-            assert!(library_templates("HC", code).iter().all(|t| t.open_drain), "{code}");
+            assert!(library_templates(code).iter().all(|t| t.open_drain), "{code}");
         }
-        assert!(!library_templates("HC", "00")[0].open_drain);
+        assert!(!library_templates("00")[0].open_drain);
         let nand = Prim::Gate { op: GateOp::And, invert: true };
-        assert_eq!(library_templates("HC", "03")[0].prim, nand);
-        assert_eq!(pin(&library_templates("HC", "01")[0].outputs[0]), "3");
-        assert_eq!(pin(&library_templates("LS", "01")[0].outputs[0]), "1");
-        assert_eq!(pin(&library_templates("", "01")[3].outputs[0]), "13");
-        let buf = &library_templates("LVC", "1G07")[0];
+        assert_eq!(library_templates("03")[0].prim, nand);
+        assert_eq!(pin(&library_templates("03")[0].outputs[0]), "3");
+        let buf = &library_templates("1G07")[0];
         assert_eq!(buf.prim, Prim::Gate { op: GateOp::And, invert: false });
         assert_eq!((pin(&buf.inputs[0]), pin(&buf.outputs[0])), ("2".into(), "4".into()));
-        let schmitt = library_templates("HC", "14");
+        let schmitt = library_templates("14");
         assert_eq!(schmitt.len(), 6);
         assert!(schmitt.iter().all(|t| t.prim == nand && !t.open_drain));
         assert_eq!(part_code("SN74HC14N"), Some(("HC".into(), "14".into())));
