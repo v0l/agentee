@@ -575,21 +575,33 @@ fn near_box(b: &Bounds, v: P) -> bool {
 }
 
 fn polys_overlap(a: &[P], b: &[P]) -> bool {
-    let n = a.len();
-    let m = b.len();
-    for i in 0..n {
-        for j in 0..m {
-            if geom::segments_intersect(a[i], a[(i + 1) % n], b[j], b[(j + 1) % m]) {
+    let (box_a, box_b) = (poly_bounds(a), poly_bounds(b));
+    let edges = |poly: &[P], other: &Bounds| -> Vec<(P, P)> {
+        let n = poly.len();
+        (0..n)
+            .map(|i| (poly[i], poly[(i + 1) % n]))
+            .filter(|(p, q)| {
+                p[0].max(q[0]) >= other.min[0] - EPS
+                    && p[0].min(q[0]) <= other.max[0] + EPS
+                    && p[1].max(q[1]) >= other.min[1] - EPS
+                    && p[1].min(q[1]) <= other.max[1] + EPS
+            })
+            .collect()
+    };
+    let near_b = edges(b, &box_a);
+    if !near_b.is_empty() {
+        for (p, q) in edges(a, &box_b) {
+            if near_b.iter().any(|(u, v)| geom::segments_intersect(p, q, *u, *v)) {
                 return true;
             }
         }
     }
-    let inner = |p: P, q: &[P]| {
-        let c = poly_bounds(q).center();
+    let inner = |p: P, q: &[P], c: P| {
         let s = [p[0] + (c[0] - p[0]) * 1e-4, p[1] + (c[1] - p[1]) * 1e-4];
         geom::point_in_polygon(s, q)
     };
-    a.iter().any(|p| inner(*p, b)) || b.iter().any(|p| inner(*p, a))
+    let (ca, cb) = (box_a.center(), box_b.center());
+    a.iter().any(|p| inner(*p, b, cb)) || b.iter().any(|p| inner(*p, a, ca))
 }
 
 fn snap(v: f64) -> f64 {
