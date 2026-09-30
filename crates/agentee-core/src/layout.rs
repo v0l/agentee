@@ -840,6 +840,7 @@ impl LayoutFile {
                 .iter()
                 .filter(|p| glob(&f.reference, &p.reference))
                 .filter(|p| !f.exclude.iter().any(|x| glob(x, &p.reference)))
+                .filter(|p| p.reference == f.reference || !crate::testpoint::is_test_point(p))
                 .collect();
             if matched.is_empty() {
                 d.error(&at, format!("no placed part matches `{}`", f.reference));
@@ -2041,23 +2042,25 @@ fn silk_issues(
             format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }),
         ));
     }
+    let flipped = flip(&t.layer, true);
     let crossed: Vec<&str> = parts
         .iter()
         .filter(|p| {
             let tf = p.transform();
+            let layer = if p.bottom { &flipped } else { &t.layer };
             p.footprint.graphics.iter().any(|g| {
-                p.flip_layer(&g.layer) == t.layer
-                    && !matches!(g.shape, crate::graphic::Shape::Text { .. })
-                    && {
+                g.layer == *layer && !matches!(g.shape, crate::graphic::Shape::Text { .. }) && {
+                    let reach = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
+                    let b = g.bounds();
+                    let corners = [b.min, [b.max[0], b.min[1]], b.max, [b.min[0], b.max[1]]];
+                    ring_near(&corners.map(|q| tf.apply(q)), reach) && {
                         let path: Vec<P> = crate::footprint::graphic_path(g)
                             .into_iter()
                             .map(|q| tf.apply(q))
                             .collect();
-                        let reach = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
-                        path.len() >= 2
-                            && ring_near(&path, reach)
-                            && geom::polyline_polygon_distance(&path, bx) < reach
+                        path.len() >= 2 && geom::polyline_polygon_distance(&path, bx) < reach
                     }
+                }
             })
         })
         .map(|p| p.reference.as_str())

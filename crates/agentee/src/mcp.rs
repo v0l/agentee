@@ -659,6 +659,7 @@ mod tests {
                 }
             }
         }
+        ops::write_fills(&ops::load(&dir).unwrap(), "lna").unwrap();
         let call = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "testpoints", "arguments": { "name": "lna", "nets": "VCC,VBIAS" } } });
         let r = handle(&dir, &call).unwrap();
         assert_ne!(r["result"]["isError"], true, "{r}");
@@ -670,6 +671,9 @@ mod tests {
         let errors: Vec<_> =
             p.layouts[0].diags.iter().filter(|d| d.severity == Severity::Error).collect();
         assert!(errors.is_empty(), "{errors:?}");
+        assert!(v["fills"]["fills"].as_u64().is_some_and(|n| n > 0), "{v}");
+        let keys = &p.layouts[0].item.fill_keys;
+        assert!(!keys.is_empty() && keys.iter().all(|k| k.stored), "stored fills are stale");
         assert!(!p.layouts[0].diags.iter().any(|d| d.rule.as_deref() == Some("test-access")));
         let tps = p.layouts[0].item.parts.iter().filter(|q| q.reference.starts_with("TP"));
         assert!(tps.clone().count() == 2 && tps.clone().all(|q| q.bottom));

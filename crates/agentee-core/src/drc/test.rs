@@ -129,7 +129,6 @@ fn test_pad_geometry(cx: &Ctx, r: &mut Report) {
                 .filter(|(k, o)| {
                     *k != pi
                         && !tp::is_test_point(o)
-                        && o.bottom == spec.bottom()
                         && tp::body_rect(o, &spec.side).is_some_and(|b| {
                             tp::gap_to_rect(c, dia / 2.0, &b) + 1e-6 < spec.min_test_pad_to_body
                         })

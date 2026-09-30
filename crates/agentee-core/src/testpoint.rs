@@ -207,7 +207,7 @@ pub fn exempt(board: &Board, pairs: &[Pair], ni: usize, net: &LayoutNet) -> Opti
     if class.is_some_and(|c| c.impedance.is_some()) {
         return Some("impedance class");
     }
-    if class.is_some_and(|c| c.diff_gap.is_some()) || pairs.iter().any(|p| p.p == ni || p.n == ni) {
+    if pairs.iter().any(|p| p.p == ni || p.n == ni) {
         return Some("differential pair");
     }
     None
@@ -339,6 +339,24 @@ pub fn gap_to_rect(c: P, r: f64, rect: &[P]) -> f64 {
 
 const OWN_ROOM: f64 = 0.3;
 
+struct Added {
+    net: usize,
+    a: P,
+    b: P,
+    r: f64,
+    via: Option<f64>,
+}
+
+impl Added {
+    fn gap(&self, c: P, r: f64) -> f64 {
+        geom::point_segment_distance(c, self.a, self.b) - self.r - r
+    }
+
+    fn segment_gap(&self, a: P, b: P, r: f64) -> f64 {
+        geom::segment_segment_distance(self.a, self.b, a, b) - self.r - r
+    }
+}
+
 pub struct Placement {
     pub net: usize,
     pub at: Option<P>,
@@ -371,24 +389,25 @@ pub fn place(
     let hole_gap =
         board.rules.min_hole_to_smd_pad.to_mm().max(board.rules.min_via_hole_to_copper.to_mm());
     let tooling = tooling_holes(&layout.parts);
-    let side_parts: Vec<&Placed> =
-        layout.parts.iter().filter(|p| p.bottom == spec.bottom()).collect();
-    let bodies: Vec<Vec<P>> = side_parts
+    let bodies: Vec<Vec<P>> = layout
+        .parts
         .iter()
         .filter(|p| !is_test_point(p))
         .filter_map(|p| body_rect(p, &spec.side))
         .collect();
     let courts: Vec<Vec<P>> =
-        side_parts.iter().filter_map(|p| courtyard_rect(p, &spec.side)).collect();
+        layout.parts.iter().filter_map(|p| courtyard_rect(p, &spec.side)).collect();
     let texts: Vec<&Vec<P>> =
         layout.silk.iter().filter(|b| b.layer == silk).map(|b| &b.outline).collect();
     let mut taken: Vec<P> =
         probes(spec, &layout.parts, &layout.nets).iter().map(|p| p.at).collect();
     let mut ob = crate::graphic::Bounds::EMPTY;
     layout.outline.iter().for_each(|p| ob.add(*p));
+    let mut added: Vec<Added> = Vec::new();
     let mut out = Vec::new();
     for &ni in nets {
         let clearance = layout.nets[ni].clearance;
+        let apart = |n: usize| layout.nets[n].clearance.max(clearance);
         let mut anchors: Vec<P> = Vec::new();
         for p in &layout.parts {
             for q in p.pads.iter().filter(|q| q.net == Some(ni) && !q.copper.is_empty()) {
@@ -447,6 +466,12 @@ pub fn place(
             if texts.iter().any(|b| gap_to_rect(c, 0.8, b) < 0.2) {
                 return false;
             }
+            if added.iter().any(|o| {
+                o.net != ni && o.gap(c, r) < apart(o.net)
+                    || o.via.is_some_and(|h| geom::dist(o.a, c) - h - r < hole_gap)
+            }) {
+                return false;
+            }
             let mut bb = crate::graphic::Bounds::EMPTY;
             bb.add_circle(c, r);
             let reach = r + clearance + 1.0;
@@ -468,7 +493,7 @@ pub fn place(
             !holes.iter().any(|h| geom::dist(h.a, c).min(geom::dist(h.b, c)) - h.r - r < hole_gap)
         };
         let via = class_via(board, &layout.nets[ni]);
-        let mut found: Option<(P, Option<P>)> = None;
+        let mut found: Option<(P, P, f64, f64, f64)> = None;
         for (_, c) in candidates {
             if !clear(c, &taken) {
                 continue;
@@ -501,16 +526,29 @@ pub fn place(
                 .find(|q| {
                     via_clear(&cx, layout, board, ni, *q, vr, dr, clearance)
                         && stub_clear(&cx, layout, ni, c, *q, width / 2.0, &cu)
+                        && added.iter().all(|o| {
+                            let hh = board.rules.min_hole_to_hole.to_mm();
+                            let hole = match o.via {
+                                Some(h) => geom::dist(o.a, *q) - h - dr >= hh,
+                                None => o.net == ni || o.gap(*q, dr) >= hole_gap,
+                            };
+                            hole && (o.net == ni
+                                || (o.gap(*q, vr) >= apart(o.net)
+                                    && o.segment_gap(c, *q, width / 2.0) >= apart(o.net)))
+                        })
                 });
             if let Some(q) = spot {
-                found = Some((c, Some(q)));
+                found = Some((c, q, vr, dr, width / 2.0));
                 break;
             }
         }
-        if let Some((c, _)) = found {
+        if let Some((c, q, vr, dr, half)) = found {
             taken.push(c);
+            added.push(Added { net: ni, a: c, b: c, r, via: None });
+            added.push(Added { net: ni, a: c, b: q, r: half, via: None });
+            added.push(Added { net: ni, a: q, b: q, r: vr, via: Some(dr) });
         }
-        out.push(Placement { net: ni, at: found.map(|f| f.0), via: found.and_then(|f| f.1) });
+        out.push(Placement { net: ni, at: found.map(|f| f.0), via: found.map(|f| f.1) });
     }
     out
 }

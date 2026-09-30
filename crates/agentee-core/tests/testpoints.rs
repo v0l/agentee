@@ -168,3 +168,58 @@ fn test_points_resolve_with_the_default_spec() {
     assert_eq!((spec.side.as_str(), spec.min_test_pad, spec.min_test_pad_pitch), ("B", 1.0, 1.27));
     assert_eq!((spec.min_test_pad_to_body, spec.min_test_pad_to_edge), (1.0, 3.0));
 }
+
+#[test]
+fn a_pair_class_net_with_no_partner_still_needs_a_probe() {
+    let board = "[[netclasses]]\nname = \"Pair\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\ndiff_gap = \"0.2mm\"\n";
+    let nets: &[(&str, &str, &[&str])] =
+        &[("MCU_EN", "Pair", &["R1.1"]), ("SIG", "Default", &["R1.2"])];
+    let p = load(board, &[part("R1", [20.0, 15.0])], nets, "[test]\nnets = [\"*EN\"]\n");
+    let h = hits(&p, "test-access");
+    assert!(h.iter().any(|h| h.1.contains("from B: MCU_EN;")), "{h:?}");
+}
+
+#[test]
+fn placed_test_pads_keep_clear_of_each_other() {
+    let nets: &[(&str, &str, &[&str])] = &[
+        ("3V3", "Default", &["R1.1", "R2.1"]),
+        ("1V8", "Default", &["R1.2", "R2.2"]),
+        ("VBUS", "Default", &["R3.1"]),
+        ("VBAT", "Default", &["R3.2"]),
+    ];
+    let parts = [part("R1", [20.0, 15.0]), part("R2", [21.5, 15.0]), part("R3", [20.5, 16.5])];
+    let p = load("", &parts, nets, "");
+    let layout = &p.layouts[0].item;
+    let board = &p.boards[0].item;
+    let targets: Vec<usize> = (0..layout.nets.len()).collect();
+    let spots = testpoint::place(layout, board, &layout.test, &targets, 1.27);
+    let placed: Vec<([f64; 2], [f64; 2], usize)> =
+        spots.iter().filter_map(|s| Some((s.at?, s.via?, s.net))).collect();
+    assert!(placed.len() >= 3, "{}", placed.len());
+    let (pad_r, via_r, gap) = (0.5, 0.3, 0.15 - 1e-6);
+    let d = agentee_core::geom::dist;
+    let seg = agentee_core::geom::segment_segment_distance;
+    for (i, a) in placed.iter().enumerate() {
+        for b in &placed[i + 1..] {
+            assert!(d(a.0, b.0) - 2.0 * pad_r >= gap, "{a:?} {b:?}");
+            assert!(d(a.0, b.1) - pad_r - via_r >= gap, "{a:?} {b:?}");
+            assert!(d(a.1, b.0) - pad_r - via_r >= gap, "{a:?} {b:?}");
+            assert!(d(a.1, b.1) - 2.0 * via_r >= gap, "{a:?} {b:?}");
+            assert!(seg(a.0, a.1, b.0, b.1) - 0.2 >= gap, "{a:?} {b:?}");
+        }
+    }
+}
+
+#[test]
+fn a_glob_fanout_leaves_test_points_alone() {
+    let nets: &[(&str, &str, &[&str])] =
+        &[("3V3", "Default", &["R1.1", "TP1.1"]), ("SIG", "Default", &["R1.2"])];
+    let parts = [part("R1", [20.0, 15.0]), tp("TP1", [12.0, 15.0])];
+    let fanout = "\n[[fanouts]]\nref = \"*\"\nnets = [\"3V3\"]\n";
+    let p = load("", &parts, nets, fanout);
+    let vias = &p.layouts[0].item.vias;
+    assert!(!vias.iter().any(|v| agentee_core::geom::dist(v.at, [12.0, 15.0]) < 0.5), "{vias:?}");
+    let p = load("", &parts, nets, "\n[[fanouts]]\nref = \"TP1\"\n");
+    let vias = &p.layouts[0].item.vias;
+    assert!(vias.iter().any(|v| agentee_core::geom::dist(v.at, [12.0, 15.0]) < 0.5), "{vias:?}");
+}
