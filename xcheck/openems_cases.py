@@ -55,6 +55,7 @@ def debye_fit(er, tan, f_lo, f_hi):
 engine = os.environ.get("XCHECK_ENGINE")
 exact = os.environ.get("XCHECK_EXACT") == "1"
 tag = os.environ.get("XCHECK_TAG", "openems")
+sheet_dz = float(os.environ.get("XCHECK_SHEET_DZ", "0"))
 
 
 def run_logged(fdtd, path, log):
@@ -162,6 +163,8 @@ for c in cases:
     xs = sorted(set(xs + [-air, L + air]))
     ys = sorted(set(ys + [y0 - air, y1 + air, -w / 2 - third, -w / 2 + 2 * third, w / 2 + third, w / 2 - 2 * third]))
     zs = list(np.linspace(0, top, 7 if top == h else 13)) + [-air, top + air]
+    if sheet_dz:
+        zs += [z + s * sheet_dz for z in sorted({0, h, top}) for s in (-1, 1)]
     mesh.AddLine("x", xs)
     mesh.AddLine("y", ys)
     mesh.AddLine("z", zs)
