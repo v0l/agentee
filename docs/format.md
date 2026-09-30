@@ -260,8 +260,10 @@ outer layer, a buried via none) and to the fab:
   least `min_controlled_depth_drill` (and `min_via_drill`), its depth (outer copper through the
   target copper) over its drill at most `max_controlled_depth_aspect_ratio`, and nothing stacks on
   or under it: the drill stops by depth on a plain pad, so `stacked-via` reports any via at its
-  spot. The fab gets it in the drill file of its span with the other blind vias, noted as drilled
-  to a controlled depth from its side.
+  spot. The fab gets it in its own drill file, `drill-FROM-TO-controlled-depth.drl`, apart from
+  the sequentially drilled vias of the same span in `drill-FROM-TO.drl`, and the fab notes name
+  each via type with its drill file, the controlled depth ones as drilled to a controlled depth
+  from their side.
 - A microvia spans one dielectric unless `stacked` (a stack of single microvias, which needs
   `[rules] stacked_microvias = true` and copper filled microvias below) or `skip` (one laser hole
   over two dielectrics). Its drill is between `min_microvia_drill` and `max_microvia_drill`, its
@@ -1945,10 +1947,11 @@ imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 p
 | `Edge_Cuts.gbr` | the board outline and each board cutout as a closed profile; the fab routes cutouts from it, so they stay out of the drill files and `fab-notes.txt` counts them |
 | `drill-PTH.drl`, `drill-NPTH.drl` | Excellon, metric, slots as G85; the plated file holds the pad holes and the through vias, unchanged for a board with through vias only |
 | `drill-FROM-TO.drl` | one Excellon file per blind, buried or microvia span, as KiCad splits them, e.g. `drill-F.Cu-In1.Cu.drl`, with `TF.FileFunction,Plated,1,2,Blind` (`Buried` for inner spans, layers numbered from 1 at the top) and a `; span F.Cu to In1.Cu, microvia vias` comment |
+| `drill-FROM-TO-controlled-depth.drl` | the controlled depth vias of a span, kept apart from the vias drilled in a sub-stack or by laser over the same span since the fab drills them in a different pass, after the last press and by depth; same file function, with the drilled side and stop layer in a `; span In4.Cu to B.Cu, controlled depth blind vias drilled from B.Cu after the last press, stopping on In4.Cu` comment |
 | `drill-backdrill-FROM-TO.drl` | the backdrill holes of each side and stop layer, non-plated, at the backdrill diameter, with the stop layer and `max_stub` in a comment |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, each via type with its span, laser or mechanical drill, sizes, hole count, IPC-4761 fill and drill file, and each backdrill with its side, stop layer and stub, vias in pads to fill, edge pads to keep |
+| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, each via type with its span, laser, mechanical or controlled depth drill, sizes, hole count, IPC-4761 fill and drill file, and each backdrill with its side, stop layer and stub, vias in pads to fill, edge pads to keep |
 | `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them; test point pads are end points with the probe side access code (`A01` top, the copper layer count for the bottom, `A02` on 2 layers and `A08` on 8), vias are tented mid points unless `[test] vias = true` makes them probe side access; an unprobed via's access code follows the layers its copper reaches (a backdrill takes its side away): `A00` through, `A01` from the top, the bottom layer number from the bottom, the first layer's number for a buried via |
 | `testpoints.csv` | every test point pad for the fixture builder: ref, pad, net, X, Y (mm, Y up), side, pad diameter |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |

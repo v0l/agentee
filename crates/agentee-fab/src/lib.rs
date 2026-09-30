@@ -194,6 +194,7 @@ struct Hole {
     rotation: f64,
     plated: bool,
     span: Option<(usize, usize)>,
+    depth: bool,
 }
 
 fn holes(layout: &Layout) -> Vec<Hole> {
@@ -207,6 +208,7 @@ fn holes(layout: &Layout) -> Vec<Hole> {
             rotation: 0.0,
             plated: true,
             span: x.span_of(&layout.copper).filter(|s| *s != (0, last)),
+            depth: x.drill_kind == DrillKind::ControlledDepth,
         })
         .collect();
     for part in &layout.parts {
@@ -218,6 +220,7 @@ fn holes(layout: &Layout) -> Vec<Hole> {
                     rotation: rot,
                     plated: pad.kind != PadKind::Npth,
                     span: None,
+                    depth: false,
                 });
             }
         }
@@ -236,33 +239,47 @@ fn span_function(a: usize, b: usize, layers: usize) -> &'static str {
     if a == 0 || b + 1 == layers { "Blind" } else { "Buried" }
 }
 
+fn span_file(cu: &[String], a: usize, b: usize, depth: bool) -> String {
+    let suffix = if depth { "-controlled-depth" } else { "" };
+    format!("drill-{}-{}{suffix}.drl", cu[a], cu[b])
+}
+
 fn drill_spans<'a>(hs: &'a [Hole], layout: &Layout) -> Vec<DrillSpan<'a>> {
     let cu = &layout.copper;
-    let mut spans: Vec<(usize, usize)> = hs.iter().filter_map(|h| h.span).collect();
+    let mut spans: Vec<((usize, usize), bool)> =
+        hs.iter().filter_map(|h| Some((h.span?, h.depth))).collect();
     spans.sort_unstable();
     spans.dedup();
     spans
         .into_iter()
-        .map(|(a, b)| {
-            let kinds: Vec<&str> = layout
-                .vias
-                .iter()
-                .filter(|v| v.span_of(cu) == Some((a, b)))
-                .map(|v| match v.drill_kind {
-                    DrillKind::ControlledDepth => "controlled depth blind",
-                    _ => v.kind.name(),
-                })
-                .fold(Vec::new(), |mut k, n| {
-                    if !k.contains(&n) {
-                        k.push(n);
-                    }
-                    k
-                });
+        .map(|((a, b), depth)| {
+            let comment = if depth {
+                let (side, stop) = if a == 0 { (&cu[a], &cu[b]) } else { (&cu[b], &cu[a]) };
+                format!(
+                    "; span {} to {}, controlled depth blind vias drilled from {side} after the last press, stopping on {stop}",
+                    cu[a], cu[b]
+                )
+            } else {
+                let kinds: Vec<&str> = layout
+                    .vias
+                    .iter()
+                    .filter(|v| {
+                        v.span_of(cu) == Some((a, b)) && v.drill_kind != DrillKind::ControlledDepth
+                    })
+                    .map(|v| v.kind.name())
+                    .fold(Vec::new(), |mut k, n| {
+                        if !k.contains(&n) {
+                            k.push(n);
+                        }
+                        k
+                    });
+                format!("; span {} to {}, {} vias", cu[a], cu[b], kinds.join(" and "))
+            };
             DrillSpan {
-                file: format!("drill-{}-{}.drl", cu[a], cu[b]),
+                file: span_file(cu, a, b, depth),
                 function: format!("Plated,{},{},{}", a + 1, b + 1, span_function(a, b, cu.len())),
-                comment: format!("; span {} to {}, {} vias", cu[a], cu[b], kinds.join(" and ")),
-                holes: hs.iter().filter(|h| h.span == Some((a, b))).collect(),
+                comment,
+                holes: hs.iter().filter(|h| h.span == Some((a, b)) && h.depth == depth).collect(),
             }
         })
         .collect()
@@ -288,7 +305,8 @@ fn backdrills(layout: &Layout) -> Vec<(String, String, Vec<Hole>)> {
             bd.max_stub.to_mm()
         );
         let d = bd.diameter.to_mm();
-        let hole = Hole { at: v.at, size: [d, d], rotation: 0.0, plated: false, span: None };
+        let hole =
+            Hole { at: v.at, size: [d, d], rotation: 0.0, plated: false, span: None, depth: false };
         match out.iter_mut().find(|x| x.0 == file) {
             Some(x) => x.2.push(hole),
             None => out.push((file, format!("{function}\n{comment}"), vec![hole])),
@@ -543,7 +561,7 @@ fn drill_notes(layout: &Layout) -> String {
     {
         return out;
     }
-    out += "\nVia types (IPC-4761 fill types), one drill file per span:\n";
+    out += "\nVia types (IPC-4761 fill types), one drill file per span, controlled depth vias in their own:\n";
     let mut names: Vec<&str> = layout.vias.iter().map(|v| v.name.as_str()).collect();
     names.sort_unstable();
     names.dedup();
@@ -555,7 +573,7 @@ fn drill_notes(layout: &Layout) -> String {
         let file = if v.kind == ViaKind::Through {
             "drill-PTH.drl".to_string()
         } else {
-            format!("drill-{}-{}.drl", cu[a], cu[b])
+            span_file(cu, a, b, v.drill_kind == DrillKind::ControlledDepth)
         };
         let how = match v.drill_kind {
             DrillKind::Laser => "laser drilled".to_string(),

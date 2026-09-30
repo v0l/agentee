@@ -153,15 +153,33 @@ fn each_span_gets_its_own_drill_file_and_fab_note() {
 }
 
 #[test]
-fn a_controlled_depth_via_gets_its_span_file_and_a_depth_note() {
+fn a_controlled_depth_via_gets_its_own_file_beside_the_sequential_span() {
     let out = package(&[via("std", [10.0, 10.0]), via("cd", [14.0, 10.0])].concat());
-    assert_eq!(drill_files(&out), ["drill-In4.Cu-B.Cu.drl", "drill-PTH.drl"]);
-    let cd = std::fs::read_to_string(out.join("drill-In4.Cu-B.Cu.drl")).unwrap();
+    assert_eq!(drill_files(&out), ["drill-In4.Cu-B.Cu-controlled-depth.drl", "drill-PTH.drl"]);
+    let out = package(
+        &[via("std", [10.0, 10.0]), via("cd", [14.0, 10.0]), via("ub", [16.0, 10.0])].concat(),
+    );
+    assert_eq!(
+        drill_files(&out),
+        ["drill-In4.Cu-B.Cu-controlled-depth.drl", "drill-In4.Cu-B.Cu.drl", "drill-PTH.drl"]
+    );
+    let cd = std::fs::read_to_string(out.join("drill-In4.Cu-B.Cu-controlled-depth.drl")).unwrap();
     assert!(cd.contains("TF.FileFunction,Plated,5,6,Blind"), "{cd}");
-    assert!(cd.contains("; span In4.Cu to B.Cu, controlled depth blind vias"), "{cd}");
+    assert!(
+        cd.contains("; span In4.Cu to B.Cu, controlled depth blind vias drilled from B.Cu after the last press, stopping on In4.Cu"),
+        "{cd}"
+    );
+    assert!(cd.contains("T1C0.150") && cd.matches("\nX").count() == 1, "{cd}");
+    let ub = std::fs::read_to_string(out.join("drill-In4.Cu-B.Cu.drl")).unwrap();
+    assert!(ub.contains("; span In4.Cu to B.Cu, microvia vias"), "{ub}");
+    assert!(ub.contains("T1C0.100") && ub.matches("\nX").count() == 1, "{ub}");
     let notes = std::fs::read_to_string(out.join("fab-notes.txt")).unwrap();
     assert!(
-        notes.contains("cd: blind In4.Cu to B.Cu, mechanically drilled from B.Cu to a controlled depth, stopping on In4.Cu, 0.150 mm drill"),
+        notes.contains("cd: blind In4.Cu to B.Cu, mechanically drilled from B.Cu to a controlled depth, stopping on In4.Cu, 0.150 mm drill, 0.450 mm pad, 1 holes, drill-In4.Cu-B.Cu-controlled-depth.drl"),
+        "{notes}"
+    );
+    assert!(
+        notes.contains("ub: microvia In4.Cu to B.Cu, laser drilled, 0.100 mm drill, 0.250 mm pad, 1 holes, drill-In4.Cu-B.Cu.drl"),
         "{notes}"
     );
 }
