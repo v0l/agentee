@@ -99,6 +99,25 @@ fn test_access_lists_rails_and_control_nets_without_a_probe() {
 }
 
 #[test]
+fn switch_nodes_and_regulator_control_nets_get_no_default_probe() {
+    let board = "[[netclasses]]\nname = \"Power\"\ntrack_width = \"0.5mm\"\nclearance = \"0.2mm\"\ncurrent = \"2A\"\n";
+    let nets: &[(&str, &str, &[&str])] = &[
+        ("/buck/SW", "Power", &["R1.1"]),
+        ("FB_3V3", "Default", &["R1.2"]),
+        ("VCC_EN", "Default", &["R2.1"]),
+        ("NR_LDO", "Default", &["R2.2"]),
+    ];
+    let parts = &[part("R1", [20.0, 15.0]), part("R2", [25.0, 15.0])];
+    let h = hits(&load(board, parts, nets, ""), "test-access");
+    assert!(
+        h.len() == 1 && h[0].1.contains("1 nets have no probe access from B: VCC_EN;"),
+        "{h:?}"
+    );
+    let h = hits(&load(board, parts, nets, "[test]\nnets = [\"FB*\"]\n"), "test-access");
+    assert!(h.len() == 1 && h[0].1.contains("from B: FB_3V3;"), "{h:?}");
+}
+
+#[test]
 fn a_test_point_on_the_net_gives_access() {
     let nets: &[(&str, &str, &[&str])] =
         &[("3V3", "Default", &["R1.1", "TP1.1"]), ("SIG", "Default", &["R1.2"])];

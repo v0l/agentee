@@ -816,8 +816,12 @@ with no `kind = "silk"` layer is a `watermark` error asking for one.
 Test access: by default the nets that need a probe are power nets (a class with `current`, or a
 name like `3V3`, `1V8`, `+5V`, `VCC*`, `VDD*`, `VBUS*`, `VBAT*`, `VIN*`, `VSYS*`), ground (`GND`,
 `*GND`, `GND*`) and nets named like `*RST*`, `*RESET*`, `*EN*`, `*PG*`, `*CLK*`, `*TX*`, `*RX*`,
-`*SCL*`, `*SDA*`, `*SWD*`, `*TCK*`, `*TMS*`, `*TDI*`, `*TDO*`. `nets` replaces that list and
-`exclude` takes nets out of it. A test point is a part with a reference `TP` and a number, or a
+`*SCL*`, `*SDA*`, `*SWD*`, `*TCK*`, `*TMS*`, `*TDI*`, `*TDO*`. The defaults leave out switch
+nodes and regulator feedback, soft-start and noise-reduction nets (`SW*`, `*_SW`, `LX*`, `FB*`,
+`SS*`, `NR*`, matched on the whole name or its last `/` segment), even when their class is power:
+a probe's capacitance and the stub to the pad couple switching noise into a feedback divider or
+slow a soft-start or noise filter, and a stub on a switch node radiates. `nets` replaces that list
+(name such a net there to probe it anyway) and `exclude` takes nets out of it. A test point is a part with a reference `TP` and a number, or a
 footprint named `TestPoint*`; like every part it must be in the schematic. The built in
 `TestPoint_Pad_D1.0mm` footprint (a 1.0 mm round SMD pad, mask open, no paste) and `TestPoint`
 symbol are written into `footprints/` and `symbols/` by `agentee testpoints`.

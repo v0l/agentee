@@ -117,6 +117,8 @@ pub const DEFAULT_NETS: &[&str] = &[
     "*SDA*", "*SWD*", "*TCK*", "*TMS*", "*TDI*", "*TDO*",
 ];
 
+pub const DEFAULT_EXCLUDE: &[&str] = &["SW*", "*_SW", "LX*", "FB*", "SS*", "NR*"];
+
 const RAIL_PREFIXES: &[&str] =
     &["VCC", "VDD", "VBUS", "VBAT", "VIN", "VSYS", "VCORE", "VIO", "VREF", "VPP", "PWR", "+"];
 
@@ -219,6 +221,10 @@ pub fn wanted(spec: &TestSpec, board: &Board, net: &LayoutNet) -> bool {
     }
     if !spec.nets.is_empty() {
         return spec.nets.iter().any(|g| matches(g, &net.name));
+    }
+    let leaf = net.name.rsplit('/').next().unwrap_or(&net.name);
+    if DEFAULT_EXCLUDE.iter().any(|g| matches(g, &net.name) || matches(g, leaf)) {
+        return false;
     }
     is_power(board, net) || DEFAULT_NETS.iter().any(|g| matches(g, &net.name))
 }
