@@ -42,12 +42,17 @@ fn temp_project(name: &str, with_layout: bool) -> PathBuf {
     dir
 }
 
+fn load_once(name: &str, with_layout: bool) -> Project {
+    let dir = temp_project(name, with_layout);
+    let p = Project::load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    p
+}
+
 #[test]
 fn default_class_warning_needs_a_layout_of_the_schematic() {
-    let p = Project::load(&temp_project("laid", true)).unwrap();
-    assert_eq!(default_class_warnings(&p), 1);
-    let p = Project::load(&temp_project("bare", false)).unwrap();
-    assert_eq!(default_class_warnings(&p), 0);
+    assert_eq!(default_class_warnings(&load_once("laid", true)), 1);
+    assert_eq!(default_class_warnings(&load_once("bare", false)), 0);
 }
 
 #[test]
