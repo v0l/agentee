@@ -236,7 +236,7 @@ pub struct FanoutFile {
     #[serde(rename = "ref")]
     pub reference: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub via: Option<String>,
+    pub via: Option<crate::board::ViaNames>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skip_rings: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -969,8 +969,10 @@ impl LayoutFile {
                         continue;
                     }
                     let reach: Vec<&str> = pad.copper.iter().map(String::as_str).collect();
+                    let names =
+                        f.via.as_ref().map(crate::board::ViaNames::list).unwrap_or_default();
                     let Some(spec) =
-                        board.via_for(f.via.as_deref(), class_of(board, &nets[net].class), &reach)
+                        board.via_among(&names, class_of(board, &nets[net].class), &reach)
                     else {
                         d.error(&at, "the board defines no [[vias]]");
                         break;

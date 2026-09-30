@@ -214,9 +214,9 @@ enum Cmd {
         /// Grid cell in mm
         #[arg(long, default_value_t = 0.05)]
         grid: f64,
-        /// Via from the board to use, default the net class via
-        #[arg(long)]
-        via: Option<String>,
+        /// Vias from the board to use, comma separated or repeated, default the net class vias
+        #[arg(long, value_delimiter = ',')]
+        via: Vec<String>,
         /// Cost of a via in mm of track
         #[arg(long, default_value_t = 3.0)]
         via_cost: f64,

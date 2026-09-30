@@ -11,7 +11,7 @@ pub struct RouteOptions {
     pub nets: Vec<String>,
     pub layers: Vec<String>,
     pub grid: f64,
-    pub via: Option<String>,
+    pub via: Vec<String>,
     pub via_cost: f64,
     pub bend_cost: f64,
     pub margin: f64,
@@ -25,7 +25,7 @@ impl Default for RouteOptions {
             nets: Vec::new(),
             layers: Vec::new(),
             grid: 0.05,
-            via: None,
+            via: Vec::new(),
             via_cost: 3.0,
             bend_cost: 0.1,
             margin: 5.0,
@@ -510,9 +510,13 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
     let edge = board.rules.min_copper_to_edge.to_mm();
     for (class, nets) in by_class {
         let nc = board.netclasses.iter().find(|c| c.name == class);
-        let names: Vec<String> = match &opts.via {
-            Some(v) => vec![v.clone()],
-            None => nc.map(|c| c.via.clone()).unwrap_or_default(),
+        if let Some(n) = opts.via.iter().find(|n| !board.vias.iter().any(|v| &v.name == *n)) {
+            return Err(format!("the board has no via `{n}`"));
+        }
+        let names: Vec<String> = if opts.via.is_empty() {
+            nc.map(|c| c.via.clone()).unwrap_or_default()
+        } else {
+            opts.via.clone()
         };
         let mut specs: Vec<&crate::board::Via> =
             names.iter().filter_map(|n| board.vias.iter().find(|v| &v.name == n)).collect();
@@ -1040,7 +1044,7 @@ fn fewer_vias(
         let dear = RouteOptions {
             nets: Vec::new(),
             layers: Vec::new(),
-            via: None,
+            via: Vec::new(),
             via_cost: ctx.opts.via_cost * 10.0 + 10.0,
             ..*ctx.opts
         };

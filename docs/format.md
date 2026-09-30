@@ -718,7 +718,7 @@ at = [7.2, 8.9]
 
 [[fanouts]]                    # a via in every connected pad of a BGA
 ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans out every plane pad
-# via = "bga"                  # default: each net's first class via reaching the pad layer
+# via = "bga"                  # or a list, the first reaching the pad layer; default the class vias
 # skip_rings = 2               # leave the two outer rings for escape on the outer layer
 # always = ["GND", "3V3"]      # nets that get a via even in those rings
 # skip = ["A1", "B7"]          # pads to leave alone
@@ -967,7 +967,8 @@ the board edge, keeps new vias `min_hole_to_hole` from every drill and their hol
 net, its own too (the via copper may not touch one, `via-cuts-pad`, and the hole stays
 `min_hole_to_smd_pad` from it, `hole-to-smd-pad`, unless `--via-in-pad`, MCP `via_in_pad`, lets it sit
 wholly inside an SMD pad of its net with a drill of at most `max_filled_via_drill`), uses the class vias to change
-layer, the cheapest whose span holds both layers (`--via` to override with one, `--via-cost` in mm of
+layer, the cheapest whose span holds both layers (`--via uv-top,core` or MCP `via` to choose from other
+names instead, `--via-cost` in mm of
 track, default 3, times the via's `cost`), charges `--bend-cost` mm of track for
 each 45 degree bend (default 0.1, three times that for 90), and never moves what is already there
 unless `--reroute` is given, which deletes the named nets' tracks and vias first. A connection that finds no free path rips up the routed nets

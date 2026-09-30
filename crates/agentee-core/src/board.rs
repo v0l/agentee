@@ -1203,13 +1203,23 @@ impl Board {
         class: Option<&Netclass>,
         reach: &[&str],
     ) -> Option<&Via> {
+        let names: Vec<String> = name.map(|n| vec![n.to_string()]).unwrap_or_default();
+        self.via_among(&names, class, reach)
+    }
+
+    pub fn via_among(
+        &self,
+        names: &[String],
+        class: Option<&Netclass>,
+        reach: &[&str],
+    ) -> Option<&Via> {
         let copper = self.stackup.copper_names();
         let named = |n: &str| self.vias.iter().find(|v| v.name == n);
-        if let Some(n) = name {
-            return named(n).or(self.vias.first());
-        }
-        let listed: Vec<&Via> =
-            class.map(|c| c.via.iter().filter_map(|n| named(n)).collect()).unwrap_or_default();
+        let listed: Vec<&Via> = if names.is_empty() {
+            class.map(|c| c.via.iter().filter_map(|n| named(n)).collect()).unwrap_or_default()
+        } else {
+            names.iter().filter_map(|n| named(n)).collect()
+        };
         let reaches = |v: &&Via| {
             let on = v.copper_layers(&copper);
             reach.iter().all(|r| on.iter().any(|x| x == r))
@@ -1930,6 +1940,11 @@ severity = { "via-in-pad" = "error" }
         assert_eq!(b.via_for(None, fast, &["B.Cu"]).unwrap().name, "ub");
         assert_eq!(b.via_for(None, fast, &["F.Cu"]).unwrap().name, "std");
         assert_eq!(b.via_for(Some("std"), fast, &[]).unwrap().name, "std");
+        let both = ["std".to_string(), "ub".to_string()];
+        assert_eq!(b.via_among(&both, None, &["B.Cu", "In4.Cu"]).unwrap().name, "std");
+        assert_eq!(b.via_among(&both[1..], None, &["F.Cu"]).unwrap().name, "ub");
+        let ub_first = ["ub".to_string(), "std".to_string()];
+        assert_eq!(b.via_among(&ub_first, None, &["F.Cu"]).unwrap().name, "std");
     }
 
     #[test]

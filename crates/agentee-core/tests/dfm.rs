@@ -1180,6 +1180,21 @@ fn the_router_picks_the_cheapest_class_via_that_spans_the_layer_change() {
     assert_eq!(routed(1.0, &["F.Cu", "In1.Cu"]), ["uv"]);
     assert_eq!(routed(5.0, &["F.Cu", "In1.Cu"]), ["std"]);
     assert_eq!(routed(1.0, &["F.Cu", "In2.Cu"]), ["std"]);
+    let chosen = |via: &[&str]| {
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: vec!["F.Cu".into(), "In1.Cu".into()],
+            grid: 0.1,
+            via: via.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        agentee_core::route::route(l, &p.boards[0].item, &opts)
+            .map(|r| r.vias.iter().map(|v| v.via.clone()).collect::<Vec<_>>())
+    };
+    let uv = chosen(&["std", "uv"]).unwrap();
+    assert!(!uv.is_empty() && uv.iter().all(|v| v == "uv"), "{uv:?}");
+    assert!(chosen(&["std"]).unwrap().iter().all(|v| v == "std"));
+    assert!(chosen(&["std", "nope"]).unwrap_err().contains("nope"));
 }
 
 #[test]
@@ -1222,4 +1237,24 @@ fn the_router_staggers_vias_unless_the_fab_stacks_them() {
     assert_eq!(kinds.into_iter().collect::<Vec<_>>(), ["bu", "uv"]);
     let (stacked, _) = routed(true);
     assert!(stacked);
+}
+
+#[test]
+fn a_fanout_takes_the_first_listed_via_that_reaches_the_pad() {
+    let board = format!("{HDI_VIAS}{HDI_VIA_TYPES}");
+    let fanout = |via: &str| {
+        let pcb = format!("\n[[fanouts]]\nref = \"R1\"\nvia = {via}\n");
+        let p = load(&Fixture {
+            preset: "hdi-6l-1n1",
+            board: &board,
+            parts: &[("R1", "TWO", [5.0, 5.0])],
+            nets: &[("A", &["R1.1"]), ("B", &["R1.2"])],
+            pcb: &pcb,
+            ..Default::default()
+        });
+        let names: Vec<String> = p.layouts[0].item.vias.iter().map(|v| v.name.clone()).collect();
+        names
+    };
+    assert_eq!(fanout("[\"bu\", \"uv\"]"), ["uv", "uv"]);
+    assert_eq!(fanout("\"bu\""), ["bu", "bu"]);
 }
