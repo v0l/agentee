@@ -1,0 +1,42 @@
+# imported from KiCad Diode:PESD5V0S1UL
+name = "PESD5V0S1UL"
+reference = "D"
+description = "Unidirectional ESD protection diode, 5V, SOD-882"
+datasheet = "https://assets.nexperia.com/documents/data-sheet/PESD5V0S1UL.pdf"
+keywords = ["diode"]
+footprint = "D_SOD-882"
+footprint_filters = ["D*SOD?882"]
+pin_names = "hidden"
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 1.27], [-1.27, -1.27], [-0.762, -1.27]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[1.27, 0.0], [-1.27, 0.0]]
+
+[[graphics]]
+kind = "polygon"
+points = [[1.27, 1.27], [1.27, -1.27], [-1.27, 0.0]]
+width = 0.254
+
+[[pins]]
+number = "1"
+name = "K"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1

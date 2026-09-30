@@ -1,0 +1,62 @@
+name = "sdr-1v0"
+kind = "dc"
+description = "FPGA core rail at 0.9 A (an XC7A50T with a busy design, split evenly over its nine VCCINT/VCCBRAM balls), from the L1 output node through the In4 1V0 plane and the fanout vias, returning through the ground planes to the output caps. Artix-7 -1 wants 0.95 to 1.05 V at the balls."
+layout = "sdr"
+cell = 0.05
+
+[[supplies]]
+pad = "L1.2"
+voltage = "1.0V"
+
+[[supplies]]
+pad = "C6.2"
+voltage = "0V"
+
+[[supplies]]
+pad = "C7.2"
+voltage = "0V"
+
+[[loads]]
+pad = "U1.E10"
+current = "100mA"
+return = "U1.E9"
+
+[[loads]]
+pad = "U1.F7"
+current = "100mA"
+return = "U1.F6"
+
+[[loads]]
+pad = "U1.F9"
+current = "100mA"
+return = "U1.E9"
+
+[[loads]]
+pad = "U1.F11"
+current = "100mA"
+return = "U1.F10"
+
+[[loads]]
+pad = "U1.G6"
+current = "100mA"
+return = "U1.F6"
+
+[[loads]]
+pad = "U1.H9"
+current = "100mA"
+return = "U1.G9"
+
+[[loads]]
+pad = "U1.J6"
+current = "100mA"
+return = "U1.H6"
+
+[[loads]]
+pad = "U1.K9"
+current = "100mA"
+return = "U1.J9"
+
+[[loads]]
+pad = "U1.L8"
+current = "100mA"
+return = "U1.M8"

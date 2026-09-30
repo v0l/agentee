@@ -1,0 +1,113 @@
+# imported from KiCad Connector_Generic:Conn_02x03_Odd_Even
+name = "Conn_02x03_Odd_Even"
+reference = "J"
+description = "Generic connector, double row, 02x03, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)"
+keywords = ["connector"]
+footprint = "Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical"
+footprint_filters = ["Connector*:*_2x??_*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, -3.81]
+end = [3.81, 3.81]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, -2.667]
+end = [0.0, -2.413]
+width = 0.1524
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, -0.127]
+end = [0.0, 0.127]
+width = 0.1524
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-1.27, 2.413]
+end = [0.0, 2.667]
+width = 0.1524
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [3.81, -2.667]
+end = [2.54, -2.413]
+width = 0.1524
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [3.81, -0.127]
+end = [2.54, 0.127]
+width = 0.1524
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [3.81, 2.413]
+end = [2.54, 2.667]
+width = 0.1524
+
+[[pins]]
+number = "1"
+name = "Pin_1"
+type = "passive"
+at = [-5.08, -2.54]
+side = "left"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "3"
+name = "Pin_3"
+type = "passive"
+at = [-5.08, 0.0]
+side = "left"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "5"
+name = "Pin_5"
+type = "passive"
+at = [-5.08, 2.54]
+side = "left"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "2"
+name = "Pin_2"
+type = "passive"
+at = [7.62, -2.54]
+side = "right"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "4"
+name = "Pin_4"
+type = "passive"
+at = [7.62, 0.0]
+side = "right"
+length = 3.81
+unit = 1
+
+[[pins]]
+number = "6"
+name = "Pin_6"
+type = "passive"
+at = [7.62, 2.54]
+side = "right"
+length = 3.81
+unit = 1

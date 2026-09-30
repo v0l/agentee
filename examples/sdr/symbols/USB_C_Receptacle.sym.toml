@@ -1,0 +1,446 @@
+# imported from KiCad Connector:USB_C_Receptacle
+name = "USB_C_Receptacle"
+reference = "J"
+description = "USB Full-Featured Type-C Receptacle connector"
+datasheet = "https://www.usb.org/sites/default/files/documents/usb_type-c.zip"
+keywords = ["usb", "universal", "serial", "bus", "type-C", "full-featured"]
+footprint = "USB_C_Receptacle_Molex_105450-0101"
+footprint_filters = ["USB*C*Receptacle*"]
+pin_name_offset = 1.016
+
+[[graphics]]
+kind = "rect"
+start = [-0.254, 35.56]
+end = [0.254, 34.544]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -25.654]
+end = [9.144, -25.146]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -20.574]
+end = [9.144, -20.066]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -18.034]
+end = [9.144, -17.526]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -12.954]
+end = [9.144, -12.446]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -10.414]
+end = [9.144, -9.906]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -7.874]
+end = [9.144, -7.366]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -5.334]
+end = [9.144, -4.826]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, -0.254]
+end = [9.144, 0.254]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 2.286]
+end = [9.144, 2.794]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 7.366]
+end = [9.144, 7.874]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 9.906]
+end = [9.144, 10.414]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 14.986]
+end = [9.144, 15.494]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 17.526]
+end = [9.144, 18.034]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 22.606]
+end = [9.144, 23.114]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 25.146]
+end = [9.144, 25.654]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 30.226]
+end = [9.144, 30.734]
+
+[[graphics]]
+kind = "rect"
+start = [10.16, 32.766]
+end = [9.144, 33.274]
+
+[[graphics]]
+kind = "rect"
+start = [-10.16, -27.94]
+end = [10.16, 35.56]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[-8.89, 3.81], [-8.89, -3.81]]
+width = 0.508
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, 3.81]
+end = [-6.35, -3.81]
+width = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "arc"
+start = [-7.62, -3.81]
+mid = [-6.985, -4.4423]
+end = [-6.35, -3.81]
+width = 0.254
+
+[[graphics]]
+kind = "arc"
+start = [-7.62, -3.81]
+mid = [-6.985, -4.4423]
+end = [-6.35, -3.81]
+width = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "arc"
+start = [-8.89, -3.81]
+mid = [-6.985, -5.7067]
+end = [-5.08, -3.81]
+width = 0.508
+
+[[graphics]]
+kind = "arc"
+start = [-5.08, 3.81]
+mid = [-6.985, 5.7067]
+end = [-8.89, 3.81]
+width = 0.508
+
+[[graphics]]
+kind = "arc"
+start = [-6.35, 3.81]
+mid = [-6.985, 4.4423]
+end = [-7.62, 3.81]
+width = 0.254
+
+[[graphics]]
+kind = "arc"
+start = [-6.35, 3.81]
+mid = [-6.985, 4.4423]
+end = [-7.62, 3.81]
+width = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, -3.81], [-5.08, 3.81]]
+width = 0.508
+
+[[graphics]]
+kind = "circle"
+unit = 1
+center = [-2.54, -1.143]
+radius = 0.635
+width = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polygon"
+unit = 1
+points = [[-1.27, -4.318], [0.0, -6.858], [1.27, -4.318]]
+width = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 2.032], [2.54, -0.508], [2.54, -1.778]]
+width = 0.508
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 3.302], [-2.54, 0.762], [-2.54, -0.508]]
+width = 0.508
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.0, 5.842], [0.0, -4.318]]
+width = 0.508
+
+[[graphics]]
+kind = "circle"
+unit = 1
+center = [0.0, 5.842]
+radius = 1.27
+fill = "solid"
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [1.905, -1.778]
+end = [3.175, -3.048]
+width = 0.254
+fill = "solid"
+
+[[pins]]
+number = "S1"
+name = "SHIELD"
+type = "passive"
+at = [-7.62, 40.64]
+side = "bottom"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A1"
+name = "GND"
+type = "passive"
+at = [0.0, 40.64]
+side = "bottom"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A12"
+name = "GND"
+type = "passive"
+at = [0.0, 40.64]
+side = "bottom"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "B1"
+name = "GND"
+type = "passive"
+at = [0.0, 40.64]
+side = "bottom"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "B12"
+name = "GND"
+type = "passive"
+at = [0.0, 40.64]
+side = "bottom"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "A4"
+name = "VBUS"
+type = "passive"
+at = [15.24, -25.4]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A9"
+name = "VBUS"
+type = "passive"
+at = [15.24, -25.4]
+side = "right"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "B4"
+name = "VBUS"
+type = "passive"
+at = [15.24, -25.4]
+side = "right"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "B9"
+name = "VBUS"
+type = "passive"
+at = [15.24, -25.4]
+side = "right"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "A5"
+name = "CC1"
+type = "bidirectional"
+at = [15.24, -20.32]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B5"
+name = "CC2"
+type = "bidirectional"
+at = [15.24, -17.78]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A7"
+name = "D-"
+type = "bidirectional"
+at = [15.24, -12.7]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B7"
+name = "D-"
+type = "bidirectional"
+at = [15.24, -10.16]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A6"
+name = "D+"
+type = "bidirectional"
+at = [15.24, -7.62]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B6"
+name = "D+"
+type = "bidirectional"
+at = [15.24, -5.08]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B10"
+name = "RX1-"
+type = "bidirectional"
+at = [15.24, 0.0]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B11"
+name = "RX1+"
+type = "bidirectional"
+at = [15.24, 2.54]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A3"
+name = "TX1-"
+type = "bidirectional"
+at = [15.24, 7.62]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A2"
+name = "TX1+"
+type = "bidirectional"
+at = [15.24, 10.16]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A10"
+name = "RX2-"
+type = "bidirectional"
+at = [15.24, 15.24]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A11"
+name = "RX2+"
+type = "bidirectional"
+at = [15.24, 17.78]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B3"
+name = "TX2-"
+type = "bidirectional"
+at = [15.24, 22.86]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B2"
+name = "TX2+"
+type = "bidirectional"
+at = [15.24, 25.4]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "A8"
+name = "SBU1"
+type = "bidirectional"
+at = [15.24, 30.48]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "B8"
+name = "SBU2"
+type = "bidirectional"
+at = [15.24, 33.02]
+side = "right"
+length = 5.08
+unit = 1

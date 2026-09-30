@@ -1,0 +1,848 @@
+name = "fpga"
+description = "XC7A50T: bank 35 at 2V5 for the AD9364 CMOS port and control, bank 34 at 2V5 for the FX20 LVDS, bank 14 at 3V3 for the FX20 LVCMOS port and the config flash, bank 15 at 3V3 for LEDs"
+board = "sdr"
+no_connect = [
+  "U1.K12", "U1.M15", "U1.L14", "U1.K13", "U1.L13", "U1.M12", "U1.N13", "U1.P14", "U1.N9", "U1.M6", "U1.N6",
+  "U1.R5", "U1.T5", "U1.R6", "U1.P6",
+  "U1.D10", "U1.C8", "U1.C9", "U1.A8", "U1.A9", "U1.B9", "U1.A10", "U1.B10", "U1.B11", "U1.B12", "U1.A12",
+  "U1.D8", "U1.D9", "U1.C14", "U1.B14", "U1.B15", "U1.A15", "U1.C16", "U1.B16", "U1.C11", "U1.C12", "U1.D13",
+  "U1.C13", "U1.E12", "U1.E13", "U1.E11", "U1.D11", "U1.D14", "U1.D15", "U1.F12", "U1.F13", "U1.E16", "U1.D16",
+  "U1.F15", "U1.E15", "U1.H11", "U1.G12", "U1.H12", "U1.H13", "U1.G14", "U1.F14", "U1.H16", "U1.G16", "U1.J15",
+  "U1.J16", "U1.H14", "U1.G15", "U1.G11",
+  "U1.L5", "U1.M2", "U1.M1", "U1.P5", "U1.P4", "U1.P3", "U1.R3", "U1.T2",
+  "U1.B7", "U1.A7", "U1.B6", "U1.B5", "U1.A5", "U1.A4", "U1.C7", "U1.C6", "U1.D6", "U1.D5",
+  "U1.B4", "U1.D4", "U1.C4", "U1.G5",
+  "U1.K8", "U1.K7", "J4.7",
+]
+
+
+[[parts]]
+ref = "U1"
+unit = 1
+symbol = "XC7A50T-FTG256"
+value = "XC7A50T-1FTG256C"
+at = [152.4, 114.3]
+fields = { mpn = "AMD XC7A50T-1FTG256C" }
+
+[[parts]]
+ref = "U1"
+unit = 2
+symbol = "XC7A50T-FTG256"
+value = "XC7A50T-1FTG256C"
+at = [355.6, 114.3]
+
+[[parts]]
+ref = "U1"
+unit = 3
+symbol = "XC7A50T-FTG256"
+value = "XC7A50T-1FTG256C"
+at = [520.7, 76.2]
+
+[[parts]]
+ref = "U1"
+unit = 4
+symbol = "XC7A50T-FTG256"
+value = "XC7A50T-1FTG256C"
+at = [520.7, 190.5]
+
+[[parts]]
+ref = "C21"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [596.9, 50.8]
+
+[[parts]]
+ref = "C22"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [604.52, 50.8]
+
+[[parts]]
+ref = "C23"
+symbol = "C"
+value = "4.7u"
+footprint = "C_0201_0603Metric"
+at = [612.14, 50.8]
+
+[[parts]]
+ref = "C24"
+symbol = "C"
+value = "4.7u"
+footprint = "C_0201_0603Metric"
+at = [619.76, 50.8]
+
+[[parts]]
+ref = "C25"
+symbol = "C"
+value = "4.7u"
+footprint = "C_0201_0603Metric"
+at = [627.38, 50.8]
+
+[[parts]]
+ref = "C26"
+symbol = "C"
+value = "4.7u"
+footprint = "C_0201_0603Metric"
+at = [635.0, 50.8]
+
+[[parts]]
+ref = "C27"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [642.62, 50.8]
+
+[[parts]]
+ref = "C28"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [650.24, 50.8]
+
+[[parts]]
+ref = "C29"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [657.86, 50.8]
+
+[[parts]]
+ref = "C30"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [665.48, 50.8]
+
+[[parts]]
+ref = "C31"
+symbol = "C"
+value = "4.7u"
+at = [596.9, 76.2]
+
+[[parts]]
+ref = "C32"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [604.52, 76.2]
+
+[[parts]]
+ref = "C33"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [612.14, 76.2]
+
+[[parts]]
+ref = "C34"
+symbol = "C"
+value = "100n"
+footprint = "C_0201_0603Metric"
+at = [619.76, 76.2]
+
+[[parts]]
+ref = "FB5"
+symbol = "FerriteBead_Small"
+value = "220R@100MHz"
+at = [632.46, 76.2]
+fields = { mpn = "Murata BLM15PX221SN1D" }
+
+[[parts]]
+ref = "C35"
+symbol = "C"
+value = "4.7u"
+at = [596.9, 101.6]
+
+[[parts]]
+ref = "C36"
+symbol = "C"
+value = "470n"
+at = [604.52, 101.6]
+
+[[parts]]
+ref = "C37"
+symbol = "C"
+value = "470n"
+at = [612.14, 101.6]
+
+[[parts]]
+ref = "C38"
+symbol = "C"
+value = "470n"
+at = [619.76, 101.6]
+
+[[parts]]
+ref = "C39"
+symbol = "C"
+value = "4.7u"
+at = [596.9, 127.0]
+
+[[parts]]
+ref = "C40"
+symbol = "C"
+value = "470n"
+footprint = "C_0201_0603Metric"
+at = [604.52, 127.0]
+
+[[parts]]
+ref = "C41"
+symbol = "C"
+value = "470n"
+at = [612.14, 127.0]
+
+[[parts]]
+ref = "C42"
+symbol = "C"
+value = "470n"
+at = [619.76, 127.0]
+
+[[parts]]
+ref = "C43"
+symbol = "C"
+value = "470n"
+at = [627.38, 127.0]
+
+[[parts]]
+ref = "R19"
+symbol = "R"
+value = "4.7k"
+at = [596.9, 152.4]
+
+[[parts]]
+ref = "R20"
+symbol = "R"
+value = "4.7k"
+at = [609.6, 152.4]
+
+[[parts]]
+ref = "R21"
+symbol = "R"
+value = "330"
+at = [622.3, 152.4]
+
+[[parts]]
+ref = "D3"
+symbol = "LED"
+value = "blue"
+at = [640.08, 152.4]
+fields = { mpn = "DONE" }
+
+[[parts]]
+ref = "R22"
+symbol = "R"
+value = "470"
+at = [655.32, 152.4]
+
+[[parts]]
+ref = "R23"
+symbol = "R"
+value = "1k"
+at = [668.02, 152.4]
+
+[[parts]]
+ref = "U4"
+symbol = "W25Q128JVS"
+value = "W25Q128JVSIQ"
+at = [622.3, 203.2]
+fields = { mpn = "Winbond W25Q128JVSIQ" }
+
+[[parts]]
+ref = "C44"
+symbol = "C"
+value = "100n"
+at = [647.7, 203.2]
+
+[[parts]]
+ref = "R24"
+symbol = "R"
+value = "10k"
+at = [660.4, 203.2]
+
+[[parts]]
+ref = "X1"
+symbol = "ASE-xxxMHz"
+value = "50MHz"
+at = [698.5, 203.2]
+fields = { mpn = "Abracon ASE-50.000MHZ-LC-T" }
+
+[[parts]]
+ref = "C45"
+symbol = "C"
+value = "100n"
+at = [723.9, 203.2]
+
+[[parts]]
+ref = "J4"
+symbol = "Conn_02x05_Odd_Even"
+value = "JTAG"
+at = [698.5, 152.4]
+fields = { mpn = "Tag-Connect TC2050-IDC-NL, ARM 10 pin order", assembly = "no" }
+
+[[parts]]
+ref = "R25"
+symbol = "R"
+value = "330"
+at = [596.9, 241.3]
+
+[[parts]]
+ref = "D4"
+symbol = "LED"
+value = "red"
+at = [612.14, 254.0]
+
+[[parts]]
+ref = "R26"
+symbol = "R"
+value = "330"
+at = [627.38, 241.3]
+
+[[parts]]
+ref = "D5"
+symbol = "LED"
+value = "red"
+at = [642.62, 254.0]
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = [
+  "U1.A1", "U1.A11", "U1.B8", "U1.C5", "U1.C15", "U1.D2", "U1.D12", "U1.E9", "U1.F6", "U1.F10", "U1.F16", "U1.G3",
+  "U1.G9", "U1.G13", "U1.H6", "U1.J9", "U1.J11", "U1.K4", "U1.K6", "U1.K14", "U1.L1", "U1.L11", "U1.M8", "U1.N5",
+  "U1.N15", "U1.P2", "U1.P12", "U1.R9", "U1.T6", "U1.T16",
+  "U1.G7", "U1.F8", "U1.H8", "U1.J7", "U1.J8", "U1.H7", "U1.M10", "U1.M11",
+  "C21.2", "C22.2", "C23.2", "C24.2", "C25.2", "C26.2", "C27.2", "C28.2", "C29.2", "C30.2",
+  "C31.2", "C32.2", "C33.2", "C34.2", "C35.2", "C36.2", "C37.2", "C38.2",
+  "C39.2", "C40.2", "C41.2", "C42.2", "C43.2", "R22.2", "R23.2", "U4.4", "C44.2", "X1.2", "C45.2",
+  "J4.3", "J4.5", "J4.9", "D4.1", "D5.1",
+]
+
+[[nets]]
+name = "1V0"
+class = "PowerHi"
+style = "power"
+pins = [
+  "U1.F7", "U1.F9", "U1.G6", "U1.H9", "U1.J6", "U1.K9", "U1.L8", "U1.E10", "U1.F11",
+  "C21.1", "C22.1", "C23.1", "C24.1", "C25.1", "C26.1", "C27.1", "C28.1", "C29.1", "C30.1",
+]
+
+[[nets]]
+name = "1V8"
+class = "Power"
+style = "power"
+pins = ["U1.G10", "U1.J10", "U1.K11", "U1.L10", "C31.1", "C32.1", "C33.1", "FB5.1"]
+
+[[nets]]
+name = "VCCADC"
+style = "power"
+pins = ["U1.G8", "C34.1", "FB5.2"]
+
+[[nets]]
+name = "2V5"
+class = "Power"
+style = "power"
+pins = [
+  "U1.A6", "U1.B3", "U1.D7", "U1.E4", "U1.F1", "U1.J2", "U1.M3", "U1.R4", "U1.T1",
+  "C35.1", "C36.1", "C37.1", "C38.1",
+]
+
+[[nets]]
+name = "3V3"
+class = "Power"
+style = "power"
+pins = [
+  "U1.L16", "U1.M13", "U1.N10", "U1.P7", "U1.R14", "U1.T11", "U1.A16", "U1.B13", "U1.C10", "U1.E14", "U1.H15",
+  "U1.J12", "U1.L6", "U1.E7", "U1.M9", "C39.1", "C40.1", "C41.1", "C42.1", "C43.1",
+  "R19.1", "R20.1", "R21.1", "U4.8", "C44.1", "R24.1", "X1.1", "X1.4", "C45.1", "J4.1",
+]
+
+[[nets]]
+name = "FPGA_PROG_B"
+style = "label"
+pins = ["U1.L9", "R19.2", "J4.10"]
+
+[[nets]]
+name = "FPGA_INIT_B"
+style = "label"
+pins = ["U1.K10", "R20.2"]
+
+[[nets]]
+name = "FPGA_DONE"
+style = "label"
+pins = ["U1.H10", "R21.2", "D3.2"]
+
+[[nets]]
+name = "DONE_LED"
+style = "label"
+pins = ["D3.1", "R22.1"]
+
+[[nets]]
+name = "PUDC_B"
+style = "label"
+pins = ["U1.L15", "R23.1"]
+
+[[nets]]
+name = "FLASH_CS"
+style = "label"
+pins = ["U1.L12", "U4.1", "R24.2"]
+
+[[nets]]
+name = "FLASH_CLK"
+style = "label"
+pins = ["U1.E8", "U4.6"]
+
+[[nets]]
+name = "FLASH_D0"
+style = "label"
+pins = ["U1.J13", "U4.5"]
+
+[[nets]]
+name = "FLASH_D1"
+style = "label"
+pins = ["U1.J14", "U4.2"]
+
+[[nets]]
+name = "FLASH_D2"
+style = "label"
+pins = ["U1.K15", "U4.3"]
+
+[[nets]]
+name = "FLASH_D3"
+style = "label"
+pins = ["U1.K16", "U4.7"]
+
+[[nets]]
+name = "JTAG_TMS"
+style = "label"
+pins = ["U1.M7", "J4.2"]
+
+[[nets]]
+name = "JTAG_TCK"
+style = "label"
+pins = ["U1.L7", "J4.4"]
+
+[[nets]]
+name = "JTAG_TDO"
+style = "label"
+pins = ["U1.N8", "J4.6"]
+
+[[nets]]
+name = "JTAG_TDI"
+style = "label"
+pins = ["U1.N7", "J4.8"]
+
+[[nets]]
+name = "SYSCLK"
+style = "label"
+pins = ["U1.N11", "X1.3"]
+
+[[nets]]
+name = "LED0"
+style = "label"
+pins = ["U1.A13", "R25.1"]
+
+[[nets]]
+name = "LED0_A"
+pins = ["R25.2", "D4.2"]
+
+[[nets]]
+name = "LED1"
+style = "label"
+pins = ["U1.A14", "R26.1"]
+
+[[nets]]
+name = "LED1_A"
+pins = ["R26.2", "D5.2"]
+
+[[nets]]
+name = "AD_P0_D0"
+style = "label"
+pins = ["U1.G1"]
+
+[[nets]]
+name = "AD_P0_D1"
+style = "label"
+pins = ["U1.C3"]
+
+[[nets]]
+name = "AD_P0_D2"
+style = "label"
+pins = ["U1.E2"]
+
+[[nets]]
+name = "AD_P0_D3"
+style = "label"
+pins = ["U1.C2"]
+
+[[nets]]
+name = "AD_P0_D4"
+style = "label"
+pins = ["U1.D3"]
+
+[[nets]]
+name = "AD_P0_D5"
+style = "label"
+pins = ["U1.B2"]
+
+[[nets]]
+name = "AD_P0_D6"
+style = "label"
+pins = ["U1.D1"]
+
+[[nets]]
+name = "AD_P0_D7"
+style = "label"
+pins = ["U1.B1"]
+
+[[nets]]
+name = "AD_P0_D8"
+style = "label"
+pins = ["U1.C1"]
+
+[[nets]]
+name = "AD_P0_D9"
+style = "label"
+pins = ["U1.A2"]
+
+[[nets]]
+name = "AD_P0_D10"
+style = "label"
+pins = ["U1.E1"]
+
+[[nets]]
+name = "AD_P0_D11"
+style = "label"
+pins = ["U1.A3"]
+
+[[nets]]
+name = "AD_P1_D0"
+style = "label"
+pins = ["U1.L3"]
+
+[[nets]]
+name = "AD_P1_D1"
+style = "label"
+pins = ["U1.L2"]
+
+[[nets]]
+name = "AD_P1_D2"
+style = "label"
+pins = ["U1.K3"]
+
+[[nets]]
+name = "AD_P1_D3"
+style = "label"
+pins = ["U1.K2"]
+
+[[nets]]
+name = "AD_P1_D4"
+style = "label"
+pins = ["U1.J3"]
+
+[[nets]]
+name = "AD_P1_D5"
+style = "label"
+pins = ["U1.K1"]
+
+[[nets]]
+name = "AD_P1_D6"
+style = "label"
+pins = ["U1.H3"]
+
+[[nets]]
+name = "AD_P1_D7"
+style = "label"
+pins = ["U1.J1"]
+
+[[nets]]
+name = "AD_P1_D8"
+style = "label"
+pins = ["U1.G4"]
+
+[[nets]]
+name = "AD_P1_D9"
+style = "label"
+pins = ["U1.H2"]
+
+[[nets]]
+name = "AD_P1_D10"
+style = "label"
+pins = ["U1.H1"]
+
+[[nets]]
+name = "AD_P1_D11"
+style = "label"
+pins = ["U1.G2"]
+
+[[nets]]
+name = "AD_DATA_CLK"
+style = "label"
+pins = ["U1.F4"]
+
+[[nets]]
+name = "AD_FB_CLK"
+style = "label"
+pins = ["U1.F2"]
+
+[[nets]]
+name = "AD_RX_FRAME"
+style = "label"
+pins = ["U1.E3"]
+
+[[nets]]
+name = "AD_TX_FRAME"
+style = "label"
+pins = ["U1.F3"]
+
+[[nets]]
+name = "FX_LVDS_CTL_P"
+class = "LVDS"
+style = "label"
+pins = ["U1.N4"]
+
+[[nets]]
+name = "FX_LVDS_CTL_N"
+class = "LVDS"
+style = "label"
+pins = ["U1.M5"]
+
+[[nets]]
+name = "FX_LVDS_CLK_P"
+class = "LVDS"
+style = "label"
+pins = ["U1.T4"]
+
+[[nets]]
+name = "FX_LVDS_CLK_N"
+class = "LVDS"
+style = "label"
+pins = ["U1.T3"]
+
+[[nets]]
+name = "FX_LVDS_D3_P"
+class = "LVDS"
+style = "label"
+pins = ["U1.N3"]
+
+[[nets]]
+name = "FX_LVDS_D3_N"
+class = "LVDS"
+style = "label"
+pins = ["U1.N2"]
+
+[[nets]]
+name = "FX_LVDS_D2_P"
+class = "LVDS"
+style = "label"
+pins = ["U1.R2"]
+
+[[nets]]
+name = "FX_LVDS_D2_N"
+class = "LVDS"
+style = "label"
+pins = ["U1.R1"]
+
+[[nets]]
+name = "FX_LVDS_D1_P"
+class = "LVDS"
+style = "label"
+pins = ["U1.P1"]
+
+[[nets]]
+name = "FX_LVDS_D1_N"
+class = "LVDS"
+style = "label"
+pins = ["U1.N1"]
+
+[[nets]]
+name = "FX_LVDS_D0_P"
+class = "LVDS"
+style = "label"
+pins = ["U1.M4"]
+
+[[nets]]
+name = "FX_LVDS_D0_N"
+class = "LVDS"
+style = "label"
+pins = ["U1.L4"]
+
+[[nets]]
+name = "AD_SPI_DI"
+style = "label"
+pins = ["U1.H4"]
+
+[[nets]]
+name = "AD_SPI_CLK"
+style = "label"
+pins = ["U1.H5"]
+
+[[nets]]
+name = "AD_SPI_ENB"
+style = "label"
+pins = ["U1.J4"]
+
+[[nets]]
+name = "AD_SPI_DO"
+style = "label"
+pins = ["U1.J5"]
+
+[[nets]]
+name = "AD_RESETB"
+style = "label"
+pins = ["U1.K5"]
+
+[[nets]]
+name = "AD_ENABLE"
+style = "label"
+pins = ["U1.F5"]
+
+[[nets]]
+name = "AD_TXNRX"
+style = "label"
+pins = ["U1.E5"]
+
+[[nets]]
+name = "AD_EN_AGC"
+style = "label"
+pins = ["U1.E6"]
+
+[[nets]]
+name = "FX_D0"
+style = "label"
+pins = ["U1.T7"]
+
+[[nets]]
+name = "FX_D1"
+style = "label"
+pins = ["U1.T8"]
+
+[[nets]]
+name = "FX_D2"
+style = "label"
+pins = ["U1.T9"]
+
+[[nets]]
+name = "FX_D3"
+style = "label"
+pins = ["U1.R10"]
+
+[[nets]]
+name = "FX_D4"
+style = "label"
+pins = ["U1.T12"]
+
+[[nets]]
+name = "FX_D5"
+style = "label"
+pins = ["U1.T13"]
+
+[[nets]]
+name = "FX_D6"
+style = "label"
+pins = ["U1.T14"]
+
+[[nets]]
+name = "FX_D7"
+style = "label"
+pins = ["U1.R15"]
+
+[[nets]]
+name = "FX_D8"
+style = "label"
+pins = ["U1.R7"]
+
+[[nets]]
+name = "FX_D9"
+style = "label"
+pins = ["U1.R8"]
+
+[[nets]]
+name = "FX_D10"
+style = "label"
+pins = ["U1.T10"]
+
+[[nets]]
+name = "FX_D11"
+style = "label"
+pins = ["U1.R11"]
+
+[[nets]]
+name = "FX_D12"
+style = "label"
+pins = ["U1.R12"]
+
+[[nets]]
+name = "FX_D13"
+style = "label"
+pins = ["U1.R13"]
+
+[[nets]]
+name = "FX_D14"
+style = "label"
+pins = ["U1.T15"]
+
+[[nets]]
+name = "FX_D15"
+style = "label"
+pins = ["U1.R16"]
+
+[[nets]]
+name = "FX_PCLK"
+style = "label"
+pins = ["U1.N14"]
+
+[[nets]]
+name = "FX_CTL0"
+style = "label"
+pins = ["U1.P8"]
+
+[[nets]]
+name = "FX_CTL1"
+style = "label"
+pins = ["U1.P9"]
+
+[[nets]]
+name = "FX_CTL2"
+style = "label"
+pins = ["U1.P10"]
+
+[[nets]]
+name = "FX_CTL3"
+style = "label"
+pins = ["U1.P11"]
+
+[[nets]]
+name = "FX_CTL4"
+style = "label"
+pins = ["U1.P13"]
+
+[[nets]]
+name = "FX_P0CTL0"
+style = "label"
+pins = ["U1.P15"]
+
+[[nets]]
+name = "FX_P0CTL1"
+style = "label"
+pins = ["U1.P16"]
+
+[[nets]]
+name = "FX_SPI_SCK"
+style = "label"
+pins = ["U1.N16"]
+
+[[nets]]
+name = "FX_SPI_MOSI"
+style = "label"
+pins = ["U1.M16"]
+
+[[nets]]
+name = "FX_SPI_MISO"
+style = "label"
+pins = ["U1.N12"]
+
+[[nets]]
+name = "FX_SPI_CS"
+style = "label"
+pins = ["U1.M14"]

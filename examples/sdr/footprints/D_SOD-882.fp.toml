@@ -1,0 +1,180 @@
+# imported from KiCad Diode_SMD:D_SOD-882
+name = "D_SOD-882"
+description = "SOD-882, DFN1006-2, body 1.0 x 0.6 x 0.48mm, pitch 0.65mm, https://assets.nexperia.com/documents/package-information/SOD882.pdf"
+tags = ["Diode", "SOD882", "DFN1006-2"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Diode_SMD.3dshapes/D_SOD-882.step"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.35, 0.0]
+size = [0.3, 0.6]
+roundrect_ratio = 0.1666666667
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.35, 0.0]
+size = [0.3, 0.6]
+roundrect_ratio = 0.1666666667
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.35, 0.0]
+size = [0.4, 0.7]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.35, 0.0]
+size = [0.4, 0.7]
+roundrect_ratio = 0.125
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -1.35]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.35]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.81, -0.61]
+end = [-0.81, 0.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.81, -0.61]
+end = [0.5, -0.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.81, 0.61]
+end = [0.5, 0.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.8, -0.6]
+end = [-0.8, 0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.8, -0.6]
+end = [0.8, -0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.8, -0.6]
+end = [0.8, 0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.8, 0.6]
+end = [-0.8, 0.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, -0.3]
+end = [0.5, -0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, 0.3]
+end = [-0.5, -0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.15, 0.0]
+end = [-0.3, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.15, 0.0]
+end = [0.15, 0.2]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.15, 0.2]
+end = [-0.15, -0.2]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.15, -0.2]
+end = [-0.15, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.15, 0.0]
+end = [0.3, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.15, 0.2]
+end = [0.15, -0.2]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, -0.3]
+end = [0.5, 0.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, 0.3]
+end = [-0.5, 0.3]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [-0.127, -1.35]
+text = "${REFERENCE}"
+size = 1.0

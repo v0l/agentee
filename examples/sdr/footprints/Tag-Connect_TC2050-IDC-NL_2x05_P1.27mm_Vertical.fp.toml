@@ -1,0 +1,468 @@
+# imported from KiCad Connector:Tag-Connect_TC2050-IDC-NL_2x05_P1.27mm_Vertical
+name = "Tag-Connect_TC2050-IDC-NL_2x05_P1.27mm_Vertical"
+description = "Tag-Connect programming header; http://www.tag-connect.com/Materials/TC2050-IDC-NL%20Datasheet.pdf"
+tags = ["tag", "connect", "programming", "header", "pogo", "pins"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [-3.81, 0.0]
+size = [0.9906, 0.9906]
+drill = 0.9906
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [3.81, -1.016]
+size = [0.9906, 0.9906]
+drill = 0.9906
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [3.81, 1.016]
+size = [0.9906, 0.9906]
+drill = 0.9906
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "1"
+kind = "connect"
+shape = "circle"
+at = [-2.54, 0.635]
+size = [0.7874, 0.7874]
+layers = ["F.Cu", "F.Mask"]
+count = 5
+pitch = [1.27, 0.0]
+
+[[pads]]
+number = "6"
+kind = "connect"
+shape = "circle"
+at = [2.54, -0.635]
+size = [0.7874, 0.7874]
+layers = ["F.Cu", "F.Mask"]
+count = 5
+pitch = [-1.27, 0.0]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, 2.9]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 4.05]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-5.08, -0.65]
+end = [-3.1, -2.05]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-5.08, 0.65]
+end = [-5.08, -0.65]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.175, 1.27]
+end = [-3.175, 0.635]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.1, -2.05]
+end = [4.48, -2.05]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.1, 2.05]
+end = [-5.08, 0.65]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.54, 1.27]
+end = [-3.175, 1.27]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.48, -2.05]
+end = [5.08, -1.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.48, 2.05]
+end = [-3.1, 2.05]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.48, 2.05]
+end = [5.08, 1.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [5.08, -1.45]
+end = [5.08, 1.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-6.223, -1.4]
+end = [-5.1, -0.277]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-6.223, -1.4]
+end = [-3.45, -3.37]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-6.223, 1.4]
+end = [-6.223, -1.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-6.223, 1.4]
+end = [-3.45, 3.37]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-6.2, -0.25]
+end = [-2.6, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-6.2, 0.6]
+end = [-3.45, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-5.4, -1.9]
+end = [-4.55, -1.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-5.08, -0.65]
+end = [-3.1, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-5.08, 0.65]
+end = [-5.08, -0.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-4.6, -2.5]
+end = [-3.75, -1.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-3.75, -3.15]
+end = [-2.65, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-3.45, -3.37]
+end = [5.453, -3.37]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-3.1, -2.05]
+end = [4.48, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-3.1, 2.05]
+end = [-5.08, 0.65]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-2.15, -3.35]
+end = [-0.85, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-2.1, 2.05]
+end = [-0.8, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-0.5, -3.35]
+end = [0.8, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [-0.35, 2.1]
+end = [0.9, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [1.15, 2.05]
+end = [2.45, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [1.4, -3.35]
+end = [2.7, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [2.7, 2.05]
+end = [4.0, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [3.15, -3.35]
+end = [4.4, -2.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [4.2, 2.1]
+end = [5.45, 3.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [4.4, -2.1]
+end = [4.45, -2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [4.48, -2.05]
+end = [5.08, -1.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [4.48, 2.05]
+end = [-3.1, 2.05]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [4.48, 2.05]
+end = [5.08, 1.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [4.55, -3.35]
+end = [6.2, -1.7]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.08, -1.45]
+end = [5.08, 1.45]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.08, -1.45]
+end = [6.2, -0.33]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.1, 0.05]
+end = [6.2, 1.15]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.1, 1.45]
+end = [6.2, 2.55]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.453, -3.37]
+end = [6.223, -2.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.453, 3.37]
+end = [-3.45, 3.37]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [5.453, 3.37]
+end = [6.223, 2.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "Dwgs.User"
+start = [6.223, -2.6]
+end = [6.223, 2.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.33, -0.77]
+end = [-3.19, -2.3]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.33, 0.77]
+end = [-5.33, -0.77]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.19, -2.3]
+end = [4.63, -2.3]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.19, 2.3]
+end = [-5.33, 0.77]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.63, -2.3]
+end = [5.33, -1.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.63, 2.3]
+end = [-3.19, 2.3]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [4.63, 2.3]
+end = [5.33, 1.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.33, -1.6]
+end = [5.33, 1.6]
+width = 0.05
+
+[[graphics]]
+kind = "text"
+layer = "Cmts.User"
+at = [1.0, 2.75]
+text = "6.35mm Z-KEEPOUT"
+size = 0.5
+
+[[graphics]]
+kind = "text"
+layer = "Cmts.User"
+at = [1.0, -2.75]
+text = "6.35mm Z-KEEPOUT"
+size = 0.5
+
+[[graphics]]
+kind = "text"
+layer = "Cmts.User"
+at = [0.0, 0.0]
+text = "KEEPOUT"
+size = 0.4
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0

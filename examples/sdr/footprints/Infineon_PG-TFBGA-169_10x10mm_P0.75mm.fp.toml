@@ -1,0 +1,175 @@
+name = "Infineon_PG-TFBGA-169_10x10mm_P0.75mm"
+description = "Infineon PG-TFBGA-169 (FCA169), 10x10 mm, 13x13 balls, 0.75 mm pitch, 0.3 mm ball"
+tags = ["BGA"]
+mount = "smd"
+height = "1.2mm"
+
+[[pads]]
+number = "A1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, -4.5]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "B1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, -3.75]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "C1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, -3.0]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "D1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, -2.25]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "E1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, -1.5]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "F1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, -0.75]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "G1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 0.0]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "H1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 0.75]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "J1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 1.5]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "K1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 2.25]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "L1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 3.0]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "M1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 3.75]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[pads]]
+number = "N1"
+kind = "smd"
+shape = "circle"
+at = [-4.5, 4.5]
+size = [0.3, 0.3]
+count = 13
+pitch = [0.75, 0.0]
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-5.0, -5.0]
+end = [5.0, 5.0]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-5.25, -5.25]
+end = [5.25, 5.25]
+width = 0.05
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[-5.11, -4.11], [-5.11, -5.11], [-4.11, -5.11]]
+width = 0.15
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[4.11, -5.11], [5.11, -5.11], [5.11, -4.11]]
+width = 0.15
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[-5.11, 4.11], [-5.11, 5.11], [-4.11, 5.11]]
+width = 0.15
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[4.11, 5.11], [5.11, 5.11], [5.11, 4.11]]
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [-5.56, -5.56]
+radius = 0.15
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+text = "${REFERENCE}"
+at = [0.0, 0.0]
+size = 1.0

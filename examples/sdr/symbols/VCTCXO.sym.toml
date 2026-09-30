@@ -1,0 +1,22 @@
+name = "VCTCXO"
+reference = "Y"
+value = "40MHz"
+description = "Voltage controlled TCXO, clipped sine output, 3.2x2.5 mm (Taitien TXEADLSANF-40.000000)"
+keywords = ["TCXO", "VCTCXO", "oscillator"]
+footprint = "Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm"
+
+[[bodies]]
+unit = 1
+width = 10.16
+left = [
+  { number = "1", name = "VC", type = "input" },
+]
+right = [
+  { number = "3", name = "OUT", type = "output" },
+]
+top = [
+  { number = "4", name = "VCC", type = "power_in" },
+]
+bottom = [
+  { number = "2", name = "GND", type = "power_in" },
+]

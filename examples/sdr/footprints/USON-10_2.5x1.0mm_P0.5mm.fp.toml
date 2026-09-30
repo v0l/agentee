@@ -1,0 +1,136 @@
+# imported from KiCad Package_SON:USON-10_2.5x1.0mm_P0.5mm
+name = "USON-10_2.5x1.0mm_P0.5mm"
+description = "USON-10 2.5x1.0mm_ Pitch 0.5mm http://www.ti.com/lit/ds/symlink/tpd4e02b04.pdf"
+tags = ["USON-10", "2.5x1.0mm", "Pitch", "0.5mm"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_SON.3dshapes/USON-10_2.5x1.0mm_P0.5mm.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.385, -1.0]
+size = [0.3, 0.55]
+rotation = 270.0
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.0, 0.5]
+
+[[pads]]
+number = "6"
+kind = "smd"
+shape = "roundrect"
+at = [0.385, 1.0]
+size = [0.3, 0.55]
+rotation = 270.0
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 5
+pitch = [0.0, -0.5]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.01829, -2.5]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.01829, 2.5]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.5, -1.41]
+end = [-0.29, -1.41]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.5, 1.41]
+end = [-0.5, 1.41]
+width = 0.15
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-0.62, -1.41], [-0.9, -1.41], [-0.62, -1.69], [-0.62, -1.41]]
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.91, -1.5]
+end = [0.91, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-0.91, 1.5]
+end = [-0.91, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.91, -1.5]
+end = [0.91, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [0.91, 1.5]
+end = [-0.91, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, -1.0]
+end = [-0.5, 1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.5, 1.25]
+end = [0.5, 1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.25, -1.25]
+end = [-0.5, -1.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, -1.25]
+end = [-0.25, -1.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.5, -1.25]
+end = [0.5, 1.25]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.55
+rotation = 90.0

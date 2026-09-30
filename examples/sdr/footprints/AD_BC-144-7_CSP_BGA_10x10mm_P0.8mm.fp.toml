@@ -1,0 +1,166 @@
+name = "AD_BC-144-7_CSP_BGA_10x10mm_P0.8mm"
+description = "Analog Devices BC-144-7, 144-ball CSP_BGA, 10x10 mm, 0.8 mm pitch"
+tags = ["BGA"]
+mount = "smd"
+height = "1.7mm"
+
+[[pads]]
+number = "A1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -4.4]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "B1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -3.6]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "C1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -2.8]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "D1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -2.0]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "E1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -1.2]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "F1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, -0.4]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "G1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 0.4]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "H1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 1.2]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "J1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 2.0]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "K1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 2.8]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "L1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 3.6]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[pads]]
+number = "M1"
+kind = "smd"
+shape = "circle"
+at = [-4.4, 4.4]
+size = [0.4, 0.4]
+count = 12
+pitch = [0.8, 0.0]
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-5.0, -5.0]
+end = [5.0, 5.0]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-5.25, -5.25]
+end = [5.25, 5.25]
+width = 0.05
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[-5.11, -4.11], [-5.11, -5.11], [-4.11, -5.11]]
+width = 0.15
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[4.11, -5.11], [5.11, -5.11], [5.11, -4.11]]
+width = 0.15
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[-5.11, 4.11], [-5.11, 5.11], [-4.11, 5.11]]
+width = 0.15
+
+[[graphics]]
+kind = "polyline"
+layer = "F.SilkS"
+points = [[4.11, 5.11], [5.11, 5.11], [5.11, 4.11]]
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [-5.56, -5.56]
+radius = 0.15
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+text = "${REFERENCE}"
+at = [0.0, 0.0]
+size = 1.0

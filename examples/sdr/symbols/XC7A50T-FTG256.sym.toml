@@ -1,0 +1,2343 @@
+# imported from KiCad FPGA_Xilinx_Artix7:XC7A50T-FTG256
+name = "XC7A50T-FTG256"
+reference = "U"
+description = "Artix 7 T 50 XC7A50T-FTG256"
+keywords = ["FPGA"]
+footprint = "Xilinx_FTG256"
+pin_name_offset = 1.016
+
+[[graphics]]
+kind = "rect"
+unit = 1
+start = [-44.45, -67.31]
+end = [44.45, 73.66]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "rect"
+unit = 2
+start = [-44.45, -67.31]
+end = [44.45, 73.66]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "rect"
+unit = 3
+start = [-31.75, -34.29]
+end = [31.75, 40.64]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "rect"
+unit = 4
+start = [-19.05, -35.56]
+end = [19.05, 35.56]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "K12"
+name = "IO_0_14"
+type = "bidirectional"
+at = [-50.8, -53.34]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "J13"
+name = "IO_L1P_T0_D00_MOSI_14"
+type = "bidirectional"
+at = [-50.8, -50.8]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "J14"
+name = "IO_L1N_T0_D01_DIN_14"
+type = "bidirectional"
+at = [-50.8, -48.26]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "K15"
+name = "IO_L2P_T0_D02_14"
+type = "bidirectional"
+at = [-50.8, -45.72]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "K16"
+name = "IO_L2N_T0_D03_14"
+type = "bidirectional"
+at = [-50.8, -43.18]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "L15"
+name = "IO_L3P_T0_DQS_PUDC_B_14"
+type = "bidirectional"
+at = [-50.8, -40.64]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "M15"
+name = "IO_L3N_T0_DQS_EMCCLK_14"
+type = "bidirectional"
+at = [-50.8, -38.1]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "L14"
+name = "IO_L4P_T0_D04_14"
+type = "bidirectional"
+at = [-50.8, -35.56]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "M14"
+name = "IO_L4N_T0_D05_14"
+type = "bidirectional"
+at = [-50.8, -33.02]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "K13"
+name = "IO_L5P_T0_D06_14"
+type = "bidirectional"
+at = [-50.8, -30.48]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "L13"
+name = "IO_L5N_T0_D07_14"
+type = "bidirectional"
+at = [-50.8, -27.94]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "L12"
+name = "IO_L6P_T0_FCS_B_14"
+type = "bidirectional"
+at = [-50.8, -25.4]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "M12"
+name = "IO_L6N_T0_D08_VREF_14"
+type = "bidirectional"
+at = [-50.8, -22.86]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "M16"
+name = "IO_L7P_T1_D09_14"
+type = "bidirectional"
+at = [-50.8, -20.32]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N16"
+name = "IO_L7N_T1_D10_14"
+type = "bidirectional"
+at = [-50.8, -17.78]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P15"
+name = "IO_L8P_T1_D11_14"
+type = "bidirectional"
+at = [-50.8, -15.24]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P16"
+name = "IO_L8N_T1_D12_14"
+type = "bidirectional"
+at = [-50.8, -12.7]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R15"
+name = "IO_L9P_T1_DQS_14"
+type = "bidirectional"
+at = [-50.8, -10.16]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R16"
+name = "IO_L9N_T1_DQS_D13_14"
+type = "bidirectional"
+at = [-50.8, -7.62]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T14"
+name = "IO_L10P_T1_D14_14"
+type = "bidirectional"
+at = [-50.8, -5.08]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T15"
+name = "IO_L10N_T1_D15_14"
+type = "bidirectional"
+at = [-50.8, -2.54]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N13"
+name = "IO_L11P_T1_SRCC_14"
+type = "bidirectional"
+at = [-50.8, 0.0]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P13"
+name = "IO_L11N_T1_SRCC_14"
+type = "bidirectional"
+at = [-50.8, 2.54]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N14"
+name = "IO_L12P_T1_MRCC_14"
+type = "bidirectional"
+at = [-50.8, 5.08]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P14"
+name = "IO_L12N_T1_MRCC_14"
+type = "bidirectional"
+at = [-50.8, 7.62]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N11"
+name = "IO_L13P_T2_MRCC_14"
+type = "bidirectional"
+at = [-50.8, 10.16]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N12"
+name = "IO_L13N_T2_MRCC_14"
+type = "bidirectional"
+at = [-50.8, 12.7]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P10"
+name = "IO_L14P_T2_SRCC_14"
+type = "bidirectional"
+at = [-50.8, 15.24]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P11"
+name = "IO_L14N_T2_SRCC_14"
+type = "bidirectional"
+at = [-50.8, 17.78]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R12"
+name = "IO_L15P_T2_DQS_RDWR_B_14"
+type = "bidirectional"
+at = [-50.8, 20.32]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T12"
+name = "IO_L15N_T2_DQS_DOUT_CSO_B_14"
+type = "bidirectional"
+at = [-50.8, 22.86]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R13"
+name = "IO_L16P_T2_CSI_B_14"
+type = "bidirectional"
+at = [-50.8, 25.4]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T13"
+name = "IO_L16N_T2_A15_D31_14"
+type = "bidirectional"
+at = [-50.8, 27.94]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R10"
+name = "IO_L17P_T2_A14_D30_14"
+type = "bidirectional"
+at = [-50.8, 30.48]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R11"
+name = "IO_L17N_T2_A13_D29_14"
+type = "bidirectional"
+at = [-50.8, 33.02]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N9"
+name = "IO_L18P_T2_A12_D28_14"
+type = "bidirectional"
+at = [-50.8, 35.56]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P9"
+name = "IO_L18N_T2_A11_D27_14"
+type = "bidirectional"
+at = [-50.8, 38.1]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "M6"
+name = "IO_L19P_T3_A10_D26_14"
+type = "bidirectional"
+at = [-50.8, 40.64]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N6"
+name = "IO_L19N_T3_A09_D25_VREF_14"
+type = "bidirectional"
+at = [-50.8, 43.18]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P8"
+name = "IO_L20P_T3_A08_D24_14"
+type = "bidirectional"
+at = [-50.8, 45.72]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R8"
+name = "IO_L20N_T3_A07_D23_14"
+type = "bidirectional"
+at = [-50.8, 48.26]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T7"
+name = "IO_L21P_T3_DQS_14"
+type = "bidirectional"
+at = [-50.8, 50.8]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T8"
+name = "IO_L21N_T3_DQS_A06_D22_14"
+type = "bidirectional"
+at = [-50.8, 53.34]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T9"
+name = "IO_L22P_T3_A05_D21_14"
+type = "bidirectional"
+at = [-50.8, 55.88]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T10"
+name = "IO_L22N_T3_A04_D20_14"
+type = "bidirectional"
+at = [-50.8, 58.42]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R5"
+name = "IO_L23P_T3_A03_D19_14"
+type = "bidirectional"
+at = [-50.8, 60.96]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T5"
+name = "IO_L23N_T3_A02_D18_14"
+type = "bidirectional"
+at = [-50.8, 63.5]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R6"
+name = "IO_L24P_T3_A01_D17_14"
+type = "bidirectional"
+at = [-50.8, 66.04]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R7"
+name = "IO_L24N_T3_A00_D16_14"
+type = "bidirectional"
+at = [-50.8, 68.58]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P6"
+name = "IO_25_14"
+type = "bidirectional"
+at = [-50.8, 71.12]
+side = "left"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "L16"
+name = "VCCO_14"
+type = "power_in"
+at = [-40.64, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "M13"
+name = "VCCO_14"
+type = "power_in"
+at = [-38.1, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "N10"
+name = "VCCO_14"
+type = "power_in"
+at = [-35.56, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "P7"
+name = "VCCO_14"
+type = "power_in"
+at = [-33.02, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "R14"
+name = "VCCO_14"
+type = "power_in"
+at = [-30.48, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "T11"
+name = "VCCO_14"
+type = "power_in"
+at = [-27.94, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A16"
+name = "VCCO_15"
+type = "power_in"
+at = [27.94, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B13"
+name = "VCCO_15"
+type = "power_in"
+at = [30.48, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C10"
+name = "VCCO_15"
+type = "power_in"
+at = [33.02, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "E14"
+name = "VCCO_15"
+type = "power_in"
+at = [35.56, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "H15"
+name = "VCCO_15"
+type = "power_in"
+at = [38.1, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "J12"
+name = "VCCO_15"
+type = "power_in"
+at = [40.64, -73.66]
+side = "top"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D10"
+name = "IO_0_15"
+type = "bidirectional"
+at = [50.8, -53.34]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C8"
+name = "IO_L1P_T0_AD0P_15"
+type = "bidirectional"
+at = [50.8, -50.8]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C9"
+name = "IO_L1N_T0_AD0N_15"
+type = "bidirectional"
+at = [50.8, -48.26]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A8"
+name = "IO_L2P_T0_AD8P_15"
+type = "bidirectional"
+at = [50.8, -45.72]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A9"
+name = "IO_L2N_T0_AD8N_15"
+type = "bidirectional"
+at = [50.8, -43.18]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B9"
+name = "IO_L3P_T0_DQS_AD1P_15"
+type = "bidirectional"
+at = [50.8, -40.64]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A10"
+name = "IO_L3N_T0_DQS_AD1N_15"
+type = "bidirectional"
+at = [50.8, -38.1]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B10"
+name = "IO_L4P_T0_15"
+type = "bidirectional"
+at = [50.8, -35.56]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B11"
+name = "IO_L4N_T0_15"
+type = "bidirectional"
+at = [50.8, -33.02]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B12"
+name = "IO_L5P_T0_AD9P_15"
+type = "bidirectional"
+at = [50.8, -30.48]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A12"
+name = "IO_L5N_T0_AD9N_15"
+type = "bidirectional"
+at = [50.8, -27.94]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D8"
+name = "IO_L6P_T0_15"
+type = "bidirectional"
+at = [50.8, -25.4]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D9"
+name = "IO_L6N_T0_VREF_15"
+type = "bidirectional"
+at = [50.8, -22.86]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A13"
+name = "IO_L7P_T1_AD2P_15"
+type = "bidirectional"
+at = [50.8, -20.32]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A14"
+name = "IO_L7N_T1_AD2N_15"
+type = "bidirectional"
+at = [50.8, -17.78]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C14"
+name = "IO_L8P_T1_AD10P_15"
+type = "bidirectional"
+at = [50.8, -15.24]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B14"
+name = "IO_L8N_T1_AD10N_15"
+type = "bidirectional"
+at = [50.8, -12.7]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B15"
+name = "IO_L9P_T1_DQS_AD3P_15"
+type = "bidirectional"
+at = [50.8, -10.16]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "A15"
+name = "IO_L9N_T1_DQS_AD3N_15"
+type = "bidirectional"
+at = [50.8, -7.62]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C16"
+name = "IO_L10P_T1_AD11P_15"
+type = "bidirectional"
+at = [50.8, -5.08]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "B16"
+name = "IO_L10N_T1_AD11N_15"
+type = "bidirectional"
+at = [50.8, -2.54]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C11"
+name = "IO_L11P_T1_SRCC_15"
+type = "bidirectional"
+at = [50.8, 0.0]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C12"
+name = "IO_L11N_T1_SRCC_15"
+type = "bidirectional"
+at = [50.8, 2.54]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D13"
+name = "IO_L12P_T1_MRCC_15"
+type = "bidirectional"
+at = [50.8, 5.08]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "C13"
+name = "IO_L12N_T1_MRCC_15"
+type = "bidirectional"
+at = [50.8, 7.62]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "E12"
+name = "IO_L13P_T2_MRCC_15"
+type = "bidirectional"
+at = [50.8, 10.16]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "E13"
+name = "IO_L13N_T2_MRCC_15"
+type = "bidirectional"
+at = [50.8, 12.7]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "E11"
+name = "IO_L14P_T2_SRCC_15"
+type = "bidirectional"
+at = [50.8, 15.24]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D11"
+name = "IO_L14N_T2_SRCC_15"
+type = "bidirectional"
+at = [50.8, 17.78]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D14"
+name = "IO_L15P_T2_DQS_15"
+type = "bidirectional"
+at = [50.8, 20.32]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D15"
+name = "IO_L15N_T2_DQS_ADV_B_15"
+type = "bidirectional"
+at = [50.8, 22.86]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "F12"
+name = "IO_L16P_T2_A28_15"
+type = "bidirectional"
+at = [50.8, 25.4]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "F13"
+name = "IO_L16N_T2_A27_15"
+type = "bidirectional"
+at = [50.8, 27.94]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "E16"
+name = "IO_L17P_T2_A26_15"
+type = "bidirectional"
+at = [50.8, 30.48]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "D16"
+name = "IO_L17N_T2_A25_15"
+type = "bidirectional"
+at = [50.8, 33.02]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "F15"
+name = "IO_L18P_T2_A24_15"
+type = "bidirectional"
+at = [50.8, 35.56]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "E15"
+name = "IO_L18N_T2_A23_15"
+type = "bidirectional"
+at = [50.8, 38.1]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "H11"
+name = "IO_L19P_T3_A22_15"
+type = "bidirectional"
+at = [50.8, 40.64]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "G12"
+name = "IO_L19N_T3_A21_VREF_15"
+type = "bidirectional"
+at = [50.8, 43.18]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "H12"
+name = "IO_L20P_T3_A20_15"
+type = "bidirectional"
+at = [50.8, 45.72]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "H13"
+name = "IO_L20N_T3_A19_15"
+type = "bidirectional"
+at = [50.8, 48.26]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "G14"
+name = "IO_L21P_T3_DQS_15"
+type = "bidirectional"
+at = [50.8, 50.8]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "F14"
+name = "IO_L21N_T3_DQS_A18_15"
+type = "bidirectional"
+at = [50.8, 53.34]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "H16"
+name = "IO_L22P_T3_A17_15"
+type = "bidirectional"
+at = [50.8, 55.88]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "G16"
+name = "IO_L22N_T3_A16_15"
+type = "bidirectional"
+at = [50.8, 58.42]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "J15"
+name = "IO_L23P_T3_FOE_B_15"
+type = "bidirectional"
+at = [50.8, 60.96]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "J16"
+name = "IO_L23N_T3_FWE_B_15"
+type = "bidirectional"
+at = [50.8, 63.5]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "H14"
+name = "IO_L24P_T3_RS1_15"
+type = "bidirectional"
+at = [50.8, 66.04]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "G15"
+name = "IO_L24N_T3_RS0_15"
+type = "bidirectional"
+at = [50.8, 68.58]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "G11"
+name = "IO_25_15"
+type = "bidirectional"
+at = [50.8, 71.12]
+side = "right"
+length = 6.35
+unit = 1
+
+[[pins]]
+number = "L5"
+name = "IO_0_34"
+type = "bidirectional"
+at = [-50.8, -53.34]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "L4"
+name = "IO_L1P_T0_34"
+type = "bidirectional"
+at = [-50.8, -50.8]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "M4"
+name = "IO_L1N_T0_34"
+type = "bidirectional"
+at = [-50.8, -48.26]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "M2"
+name = "IO_L2P_T0_34"
+type = "bidirectional"
+at = [-50.8, -45.72]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "M1"
+name = "IO_L2N_T0_34"
+type = "bidirectional"
+at = [-50.8, -43.18]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "N3"
+name = "IO_L3P_T0_DQS_34"
+type = "bidirectional"
+at = [-50.8, -40.64]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "N2"
+name = "IO_L3N_T0_DQS_34"
+type = "bidirectional"
+at = [-50.8, -38.1]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "N1"
+name = "IO_L4P_T0_34"
+type = "bidirectional"
+at = [-50.8, -35.56]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "P1"
+name = "IO_L4N_T0_34"
+type = "bidirectional"
+at = [-50.8, -33.02]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "P4"
+name = "IO_L5P_T0_34"
+type = "bidirectional"
+at = [-50.8, -30.48]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "P3"
+name = "IO_L5N_T0_34"
+type = "bidirectional"
+at = [-50.8, -27.94]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "M5"
+name = "IO_L6P_T0_34"
+type = "bidirectional"
+at = [-50.8, -25.4]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "N4"
+name = "IO_L6N_T0_VREF_34"
+type = "bidirectional"
+at = [-50.8, -22.86]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "R2"
+name = "IO_L7P_T1_34"
+type = "bidirectional"
+at = [-50.8, -20.32]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "R1"
+name = "IO_L7N_T1_34"
+type = "bidirectional"
+at = [-50.8, -17.78]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "R3"
+name = "IO_L8P_T1_34"
+type = "bidirectional"
+at = [-50.8, -15.24]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "T2"
+name = "IO_L8N_T1_34"
+type = "bidirectional"
+at = [-50.8, -12.7]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "T4"
+name = "IO_L9P_T1_DQS_34"
+type = "bidirectional"
+at = [-50.8, -10.16]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "T3"
+name = "IO_L9N_T1_DQS_34"
+type = "bidirectional"
+at = [-50.8, -7.62]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "P5"
+name = "IO_L10P_T1_34"
+type = "bidirectional"
+at = [-50.8, -5.08]
+side = "left"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "M3"
+name = "VCCO_34"
+type = "power_in"
+at = [-40.64, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "R4"
+name = "VCCO_34"
+type = "power_in"
+at = [-38.1, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "T1"
+name = "VCCO_34"
+type = "power_in"
+at = [-35.56, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "A6"
+name = "VCCO_35"
+type = "power_in"
+at = [27.94, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B3"
+name = "VCCO_35"
+type = "power_in"
+at = [30.48, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "D7"
+name = "VCCO_35"
+type = "power_in"
+at = [33.02, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "E4"
+name = "VCCO_35"
+type = "power_in"
+at = [35.56, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "F1"
+name = "VCCO_35"
+type = "power_in"
+at = [38.1, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "J2"
+name = "VCCO_35"
+type = "power_in"
+at = [40.64, -73.66]
+side = "top"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "E6"
+name = "IO_0_35"
+type = "bidirectional"
+at = [50.8, -53.34]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B7"
+name = "IO_L1P_T0_AD4P_35"
+type = "bidirectional"
+at = [50.8, -50.8]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "A7"
+name = "IO_L1N_T0_AD4N_35"
+type = "bidirectional"
+at = [50.8, -48.26]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B6"
+name = "IO_L2P_T0_AD12P_35"
+type = "bidirectional"
+at = [50.8, -45.72]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B5"
+name = "IO_L2N_T0_AD12N_35"
+type = "bidirectional"
+at = [50.8, -43.18]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "A5"
+name = "IO_L3P_T0_DQS_AD5P_35"
+type = "bidirectional"
+at = [50.8, -40.64]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "A4"
+name = "IO_L3N_T0_DQS_AD5N_35"
+type = "bidirectional"
+at = [50.8, -38.1]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B4"
+name = "IO_L4P_T0_35"
+type = "bidirectional"
+at = [50.8, -35.56]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "A3"
+name = "IO_L4N_T0_35"
+type = "bidirectional"
+at = [50.8, -33.02]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "C7"
+name = "IO_L5P_T0_AD13P_35"
+type = "bidirectional"
+at = [50.8, -30.48]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "C6"
+name = "IO_L5N_T0_AD13N_35"
+type = "bidirectional"
+at = [50.8, -27.94]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "D6"
+name = "IO_L6P_T0_35"
+type = "bidirectional"
+at = [50.8, -25.4]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "D5"
+name = "IO_L6N_T0_VREF_35"
+type = "bidirectional"
+at = [50.8, -22.86]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "C3"
+name = "IO_L7P_T1_AD6P_35"
+type = "bidirectional"
+at = [50.8, -20.32]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "C2"
+name = "IO_L7N_T1_AD6N_35"
+type = "bidirectional"
+at = [50.8, -17.78]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B2"
+name = "IO_L8P_T1_AD14P_35"
+type = "bidirectional"
+at = [50.8, -15.24]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "A2"
+name = "IO_L8N_T1_AD14N_35"
+type = "bidirectional"
+at = [50.8, -12.7]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "C1"
+name = "IO_L9P_T1_DQS_AD7P_35"
+type = "bidirectional"
+at = [50.8, -10.16]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "B1"
+name = "IO_L9N_T1_DQS_AD7N_35"
+type = "bidirectional"
+at = [50.8, -7.62]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "E2"
+name = "IO_L10P_T1_AD15P_35"
+type = "bidirectional"
+at = [50.8, -5.08]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "D1"
+name = "IO_L10N_T1_AD15N_35"
+type = "bidirectional"
+at = [50.8, -2.54]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "E3"
+name = "IO_L11P_T1_SRCC_35"
+type = "bidirectional"
+at = [50.8, 0.0]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "D3"
+name = "IO_L11N_T1_SRCC_35"
+type = "bidirectional"
+at = [50.8, 2.54]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "D4"
+name = "IO_L12P_T1_MRCC_35"
+type = "bidirectional"
+at = [50.8, 5.08]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "C4"
+name = "IO_L12N_T1_MRCC_35"
+type = "bidirectional"
+at = [50.8, 7.62]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "F5"
+name = "IO_L13P_T2_MRCC_35"
+type = "bidirectional"
+at = [50.8, 10.16]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "E5"
+name = "IO_L13N_T2_MRCC_35"
+type = "bidirectional"
+at = [50.8, 12.7]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "F4"
+name = "IO_L14P_T2_SRCC_35"
+type = "bidirectional"
+at = [50.8, 15.24]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "F3"
+name = "IO_L14N_T2_SRCC_35"
+type = "bidirectional"
+at = [50.8, 17.78]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "F2"
+name = "IO_L15P_T2_DQS_35"
+type = "bidirectional"
+at = [50.8, 20.32]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "E1"
+name = "IO_L15N_T2_DQS_35"
+type = "bidirectional"
+at = [50.8, 22.86]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "G5"
+name = "IO_L16P_T2_35"
+type = "bidirectional"
+at = [50.8, 25.4]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "G4"
+name = "IO_L16N_T2_35"
+type = "bidirectional"
+at = [50.8, 27.94]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "G2"
+name = "IO_L17P_T2_35"
+type = "bidirectional"
+at = [50.8, 30.48]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "G1"
+name = "IO_L17N_T2_35"
+type = "bidirectional"
+at = [50.8, 33.02]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "H5"
+name = "IO_L18P_T2_35"
+type = "bidirectional"
+at = [50.8, 35.56]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "H4"
+name = "IO_L18N_T2_35"
+type = "bidirectional"
+at = [50.8, 38.1]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "J5"
+name = "IO_L19P_T3_35"
+type = "bidirectional"
+at = [50.8, 40.64]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "J4"
+name = "IO_L19N_T3_VREF_35"
+type = "bidirectional"
+at = [50.8, 43.18]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "H2"
+name = "IO_L20P_T3_35"
+type = "bidirectional"
+at = [50.8, 45.72]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "H1"
+name = "IO_L20N_T3_35"
+type = "bidirectional"
+at = [50.8, 48.26]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "J3"
+name = "IO_L21P_T3_DQS_35"
+type = "bidirectional"
+at = [50.8, 50.8]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "H3"
+name = "IO_L21N_T3_DQS_35"
+type = "bidirectional"
+at = [50.8, 53.34]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "K1"
+name = "IO_L22P_T3_35"
+type = "bidirectional"
+at = [50.8, 55.88]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "J1"
+name = "IO_L22N_T3_35"
+type = "bidirectional"
+at = [50.8, 58.42]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "L3"
+name = "IO_L23P_T3_35"
+type = "bidirectional"
+at = [50.8, 60.96]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "L2"
+name = "IO_L23N_T3_35"
+type = "bidirectional"
+at = [50.8, 63.5]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "K3"
+name = "IO_L24P_T3_35"
+type = "bidirectional"
+at = [50.8, 66.04]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "K2"
+name = "IO_L24N_T3_35"
+type = "bidirectional"
+at = [50.8, 68.58]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "K5"
+name = "IO_25_35"
+type = "bidirectional"
+at = [50.8, 71.12]
+side = "right"
+length = 6.35
+unit = 2
+
+[[pins]]
+number = "L6"
+name = "VCCO_0"
+type = "power_in"
+at = [27.94, -40.64]
+side = "top"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "N7"
+name = "TDI_0"
+type = "bidirectional"
+at = [38.1, -20.32]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "N8"
+name = "TDO_0"
+type = "bidirectional"
+at = [38.1, -17.78]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "M7"
+name = "TMS_0"
+type = "bidirectional"
+at = [38.1, -15.24]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "L7"
+name = "TCK_0"
+type = "bidirectional"
+at = [38.1, -12.7]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "E8"
+name = "CCLK_0"
+type = "bidirectional"
+at = [38.1, -7.62]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "M9"
+name = "M0_0"
+type = "bidirectional"
+at = [38.1, -5.08]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "M10"
+name = "M1_0"
+type = "bidirectional"
+at = [38.1, -2.54]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "M11"
+name = "M2_0"
+type = "bidirectional"
+at = [38.1, 0.0]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "H10"
+name = "DONE_0"
+type = "bidirectional"
+at = [38.1, 5.08]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "K10"
+name = "INIT_B_0"
+type = "bidirectional"
+at = [38.1, 7.62]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "L9"
+name = "PROGRAM_B_0"
+type = "bidirectional"
+at = [38.1, 10.16]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "E7"
+name = "CFGBVS_0"
+type = "bidirectional"
+at = [38.1, 15.24]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "H8"
+name = "VP_0"
+type = "bidirectional"
+at = [38.1, 20.32]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "J7"
+name = "VN_0"
+type = "bidirectional"
+at = [38.1, 22.86]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "J8"
+name = "VREFP_0"
+type = "bidirectional"
+at = [38.1, 27.94]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "H7"
+name = "VREFN_0"
+type = "bidirectional"
+at = [38.1, 30.48]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "K8"
+name = "DXP_0"
+type = "bidirectional"
+at = [38.1, 35.56]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "K7"
+name = "DXN_0"
+type = "bidirectional"
+at = [38.1, 38.1]
+side = "right"
+length = 6.35
+unit = 3
+
+[[pins]]
+number = "G10"
+name = "VCCAUX"
+type = "power_in"
+at = [-25.4, -33.02]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "J10"
+name = "VCCAUX"
+type = "power_in"
+at = [-25.4, -30.48]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "K11"
+name = "VCCAUX"
+type = "power_in"
+at = [-25.4, -27.94]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "L10"
+name = "VCCAUX"
+type = "power_in"
+at = [-25.4, -25.4]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "G7"
+name = "GNDADC_0"
+type = "power_in"
+at = [-25.4, -20.32]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "G8"
+name = "VCCADC_0"
+type = "power_in"
+at = [-25.4, -17.78]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F8"
+name = "VCCBATT_0"
+type = "power_in"
+at = [-25.4, -15.24]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "E10"
+name = "VCCBRAM"
+type = "power_in"
+at = [-25.4, -12.7]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F11"
+name = "VCCBRAM"
+type = "power_in"
+at = [-25.4, -10.16]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "A1"
+name = "GND"
+type = "power_in"
+at = [-25.4, -2.54]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "A11"
+name = "GND"
+type = "power_in"
+at = [-25.4, 0.0]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "B8"
+name = "GND"
+type = "power_in"
+at = [-25.4, 2.54]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "C5"
+name = "GND"
+type = "power_in"
+at = [-25.4, 5.08]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "C15"
+name = "GND"
+type = "power_in"
+at = [-25.4, 7.62]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "D2"
+name = "GND"
+type = "power_in"
+at = [-25.4, 10.16]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "D12"
+name = "GND"
+type = "power_in"
+at = [-25.4, 12.7]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "E9"
+name = "GND"
+type = "power_in"
+at = [-25.4, 15.24]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F6"
+name = "GND"
+type = "power_in"
+at = [-25.4, 17.78]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F10"
+name = "GND"
+type = "power_in"
+at = [-25.4, 20.32]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F16"
+name = "GND"
+type = "power_in"
+at = [-25.4, 22.86]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "G3"
+name = "GND"
+type = "power_in"
+at = [-25.4, 25.4]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "G9"
+name = "GND"
+type = "power_in"
+at = [-25.4, 27.94]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "G13"
+name = "GND"
+type = "power_in"
+at = [-25.4, 30.48]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "H6"
+name = "GND"
+type = "power_in"
+at = [-25.4, 33.02]
+side = "left"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F7"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -33.02]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "F9"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -30.48]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "G6"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -27.94]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "H9"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -25.4]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "J6"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -22.86]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "K9"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -20.32]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "L8"
+name = "VCCINT"
+type = "power_in"
+at = [25.4, -17.78]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "J9"
+name = "GND"
+type = "power_in"
+at = [25.4, -2.54]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "J11"
+name = "GND"
+type = "power_in"
+at = [25.4, 0.0]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "K4"
+name = "GND"
+type = "power_in"
+at = [25.4, 2.54]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "K6"
+name = "GND"
+type = "power_in"
+at = [25.4, 5.08]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "K14"
+name = "GND"
+type = "power_in"
+at = [25.4, 7.62]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "L1"
+name = "GND"
+type = "power_in"
+at = [25.4, 10.16]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "L11"
+name = "GND"
+type = "power_in"
+at = [25.4, 12.7]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "M8"
+name = "GND"
+type = "power_in"
+at = [25.4, 15.24]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "N5"
+name = "GND"
+type = "power_in"
+at = [25.4, 17.78]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "N15"
+name = "GND"
+type = "power_in"
+at = [25.4, 20.32]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "P2"
+name = "GND"
+type = "power_in"
+at = [25.4, 22.86]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "P12"
+name = "GND"
+type = "power_in"
+at = [25.4, 25.4]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "R9"
+name = "GND"
+type = "power_in"
+at = [25.4, 27.94]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "T6"
+name = "GND"
+type = "power_in"
+at = [25.4, 30.48]
+side = "right"
+length = 6.35
+unit = 4
+
+[[pins]]
+number = "T16"
+name = "GND"
+type = "power_in"
+at = [25.4, 33.02]
+side = "right"
+length = 6.35
+unit = 4

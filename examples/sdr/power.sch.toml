@@ -1,0 +1,441 @@
+name = "power"
+description = "USB VBUS load switch, three TPS62130 bucks sequenced by power good (1V0, 1V8, 3V3), 1V3 LDO for the AD9364, 2V5 LDO for the LVDS banks"
+board = "sdr"
+no_connect = ["U5.5", "U9.5"]
+
+[[parts]]
+ref = "C95"
+symbol = "C"
+value = "4.7u"
+at = [25.4, 50.8]
+
+[[parts]]
+ref = "R1"
+symbol = "R"
+value = "10k"
+at = [38.1, 38.1]
+
+[[parts]]
+ref = "U5"
+symbol = "TPS22917DBV"
+value = "TPS22917"
+at = [63.5, 50.8]
+fields = { mpn = "TI TPS22917DBVR" }
+
+[[parts]]
+ref = "C2"
+symbol = "C"
+value = "2.2n"
+at = [88.9, 63.5]
+
+[[parts]]
+ref = "C3"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [101.6, 50.8]
+
+[[parts]]
+ref = "U6"
+symbol = "TPS62130"
+value = "TPS62130"
+at = [63.5, 127.0]
+fields = { mpn = "TI TPS62130RGTR" }
+
+[[parts]]
+ref = "C5"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [38.1, 101.6]
+
+[[parts]]
+ref = "C4"
+symbol = "C"
+value = "3.3n"
+at = [38.1, 139.7]
+
+[[parts]]
+ref = "L1"
+symbol = "L"
+value = "1u"
+footprint = "L_1210_3225Metric"
+at = [88.9, 121.92]
+rotation = 90
+fields = { mpn = "Murata DFE322520F-1R0M" }
+
+[[parts]]
+ref = "R2"
+symbol = "R"
+value = "49.9k"
+at = [101.6, 139.7]
+
+[[parts]]
+ref = "R3"
+symbol = "R"
+value = "200k"
+at = [101.6, 152.4]
+
+[[parts]]
+ref = "C6"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [114.3, 127.0]
+
+[[parts]]
+ref = "C7"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [121.92, 127.0]
+
+[[parts]]
+ref = "R4"
+symbol = "R"
+value = "100k"
+at = [50.8, 152.4]
+
+[[parts]]
+ref = "U7"
+symbol = "TPS62130"
+value = "TPS62130"
+at = [165.1, 127.0]
+fields = { mpn = "TI TPS62130RGTR" }
+
+[[parts]]
+ref = "C9"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [139.7, 101.6]
+
+[[parts]]
+ref = "C8"
+symbol = "C"
+value = "3.3n"
+at = [139.7, 139.7]
+
+[[parts]]
+ref = "L2"
+symbol = "L"
+value = "1u"
+footprint = "L_1210_3225Metric"
+at = [190.5, 121.92]
+rotation = 90
+fields = { mpn = "Murata DFE322520F-1R0M" }
+
+[[parts]]
+ref = "R5"
+symbol = "R"
+value = "249k"
+at = [203.2, 139.7]
+
+[[parts]]
+ref = "R6"
+symbol = "R"
+value = "200k"
+at = [203.2, 152.4]
+
+[[parts]]
+ref = "C10"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [215.9, 127.0]
+
+[[parts]]
+ref = "C11"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [223.52, 127.0]
+
+[[parts]]
+ref = "R7"
+symbol = "R"
+value = "100k"
+at = [152.4, 152.4]
+
+[[parts]]
+ref = "U8"
+symbol = "TPS62130"
+value = "TPS62130"
+at = [266.7, 127.0]
+fields = { mpn = "TI TPS62130RGTR" }
+
+[[parts]]
+ref = "C13"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [241.3, 101.6]
+
+[[parts]]
+ref = "C12"
+symbol = "C"
+value = "3.3n"
+at = [241.3, 139.7]
+
+[[parts]]
+ref = "L3"
+symbol = "L"
+value = "1u"
+footprint = "L_1210_3225Metric"
+at = [292.1, 121.92]
+rotation = 90
+fields = { mpn = "Murata DFE322520F-1R0M" }
+
+[[parts]]
+ref = "R8"
+symbol = "R"
+value = "620k"
+at = [304.8, 139.7]
+
+[[parts]]
+ref = "R9"
+symbol = "R"
+value = "200k"
+at = [304.8, 152.4]
+
+[[parts]]
+ref = "C14"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [317.5, 127.0]
+
+[[parts]]
+ref = "C15"
+symbol = "C"
+value = "22u"
+footprint = "C_0805_2012Metric"
+at = [325.12, 127.0]
+
+[[parts]]
+ref = "R10"
+symbol = "R"
+value = "100k"
+at = [254.0, 152.4]
+
+[[parts]]
+ref = "U9"
+symbol = "TPS7A91"
+value = "TPS7A91"
+at = [63.5, 215.9]
+fields = { mpn = "TI TPS7A9101DSKR" }
+
+[[parts]]
+ref = "C17"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [38.1, 203.2]
+
+[[parts]]
+ref = "C16"
+symbol = "C"
+value = "10n"
+at = [38.1, 228.6]
+
+[[parts]]
+ref = "R11"
+symbol = "R"
+value = "6.19k 1%"
+at = [88.9, 215.9]
+
+[[parts]]
+ref = "R12"
+symbol = "R"
+value = "10k 1%"
+at = [88.9, 228.6]
+
+[[parts]]
+ref = "C18"
+symbol = "C"
+value = "10u"
+footprint = "C_0603_1608Metric"
+at = [101.6, 203.2]
+
+[[parts]]
+ref = "U10"
+symbol = "AP2112K-2.5"
+value = "AP2112K-2.5"
+at = [165.1, 215.9]
+fields = { mpn = "Diodes AP2112K-2.5TRG1" }
+
+[[parts]]
+ref = "C19"
+symbol = "C"
+value = "1u"
+at = [139.7, 215.9]
+
+[[parts]]
+ref = "C20"
+symbol = "C"
+value = "1u"
+at = [190.5, 215.9]
+
+[[parts]]
+ref = "D2"
+symbol = "LED"
+value = "green"
+at = [241.3, 215.9]
+
+[[parts]]
+ref = "R13"
+symbol = "R"
+value = "1k"
+at = [254.0, 228.6]
+
+[[parts]]
+ref = "H1"
+symbol = "MountingHole_Pad"
+value = "M2.5"
+at = [292.1, 203.2]
+
+[[parts]]
+ref = "H2"
+symbol = "MountingHole_Pad"
+value = "M2.5"
+at = [304.8, 203.2]
+
+[[parts]]
+ref = "H3"
+symbol = "MountingHole_Pad"
+value = "M2.5"
+at = [317.5, 203.2]
+
+[[parts]]
+ref = "H4"
+symbol = "MountingHole_Pad"
+value = "M2.5"
+at = [330.2, 203.2]
+
+[[nets]]
+name = "GND"
+style = "power"
+pins = [
+  "C95.2", "U5.2", "C2.2", "C3.2",
+  "U6.6", "U6.15", "U6.16", "U6.17", "U6.8", "U6.7", "C4.2", "C5.2", "C6.2", "C7.2", "R3.2",
+  "U7.6", "U7.15", "U7.16", "U7.17", "U7.8", "U7.7", "C8.2", "C9.2", "C10.2", "C11.2", "R6.2",
+  "U8.6", "U8.15", "U8.16", "U8.17", "U8.8", "U8.7", "C12.2", "C13.2", "C14.2", "C15.2", "R9.2",
+  "U9.4", "U9.11", "U9.6", "C16.2", "C17.2", "C18.2", "R12.2", "U10.2", "C19.2", "C20.2", "D2.1",
+  "H1.1", "H2.1", "H3.1", "H4.1",
+]
+
+[[nets]]
+name = "VBUS"
+class = "Power"
+style = "power"
+pins = ["C95.1", "R1.1", "U5.1"]
+
+[[nets]]
+name = "VSYS"
+class = "PowerHi"
+style = "power"
+pins = [
+  "U5.6", "C3.1", "U6.10", "U6.11", "U6.12", "U6.13", "C5.1", "R4.1",
+  "U7.10", "U7.11", "U7.12", "C9.1", "R7.1", "U8.10", "U8.11", "U8.12", "C13.1", "R10.1",
+]
+
+[[nets]]
+name = "1V0"
+class = "PowerHi"
+style = "power"
+pins = ["U6.14", "L1.2", "R2.1", "C6.1", "C7.1"]
+
+[[nets]]
+name = "1V8"
+class = "Power"
+style = "power"
+pins = ["U7.14", "L2.2", "R5.1", "C10.1", "C11.1", "U9.9", "U9.10", "C17.1"]
+
+[[nets]]
+name = "3V3"
+class = "Power"
+style = "power"
+pins = ["U8.14", "L3.2", "R8.1", "C14.1", "C15.1", "U10.1", "U10.3", "C19.1", "R13.1"]
+
+[[nets]]
+name = "2V5"
+class = "Power"
+style = "power"
+pins = ["U10.5", "C20.1"]
+
+[[nets]]
+name = "1V3A"
+class = "Power"
+style = "power"
+pins = ["U9.1", "U9.2", "R11.1", "C18.1"]
+
+[[nets]]
+name = "USB_ON"
+pins = ["R1.2", "U5.3"]
+
+[[nets]]
+name = "LS_CT"
+pins = ["U5.4", "C2.1"]
+
+[[nets]]
+name = "SW_1V0"
+class = "PowerHi"
+pins = ["U6.1", "U6.2", "U6.3", "L1.1"]
+
+[[nets]]
+name = "FB_1V0"
+pins = ["U6.5", "R2.2", "R3.1"]
+
+[[nets]]
+name = "SS_1V0"
+pins = ["U6.9", "C4.1"]
+
+[[nets]]
+name = "PG_1V0"
+pins = ["U6.4", "R4.2", "U7.13"]
+
+[[nets]]
+name = "SW_1V8"
+class = "PowerHi"
+pins = ["U7.1", "U7.2", "U7.3", "L2.1"]
+
+[[nets]]
+name = "FB_1V8"
+pins = ["U7.5", "R5.2", "R6.1"]
+
+[[nets]]
+name = "SS_1V8"
+pins = ["U7.9", "C8.1"]
+
+[[nets]]
+name = "PG_1V8"
+pins = ["U7.4", "R7.2", "U8.13", "U9.7"]
+
+[[nets]]
+name = "SW_3V3"
+class = "PowerHi"
+pins = ["U8.1", "U8.2", "U8.3", "L3.1"]
+
+[[nets]]
+name = "FB_3V3"
+pins = ["U8.5", "R8.2", "R9.1"]
+
+[[nets]]
+name = "SS_3V3"
+pins = ["U8.9", "C12.1"]
+
+[[nets]]
+name = "PG_3V3"
+pins = ["U8.4", "R10.2"]
+
+[[nets]]
+name = "NR_1V3"
+pins = ["U9.8", "C16.1"]
+
+[[nets]]
+name = "FB_1V3"
+pins = ["U9.3", "R11.2", "R12.1"]
+
+[[nets]]
+name = "LED_PWR"
+pins = ["R13.2", "D2.2"]

@@ -1,0 +1,201 @@
+# imported from KiCad Power_Protection:TPD4E02B04DQA
+name = "TPD4E02B04DQA"
+reference = "U"
+description = "4-Channel ESD Protection Diode for USB Type-C and HDMI 2.0, USON-10"
+datasheet = "http://www.ti.com/lit/ds/symlink/tpd4e02b04.pdf"
+keywords = ["ESD", "protection", "USB", "HDMI"]
+footprint = "USON-10_2.5x1.0mm_P0.5mm"
+footprint_filters = ["USON*2.5x1.0mm*P0.5mm*"]
+pin_names = "hidden"
+
+[[graphics]]
+kind = "rect"
+start = [-5.08, -12.7]
+end = [5.08, 12.7]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, -10.16], [2.54, -10.16]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, -5.08], [2.54, -5.08]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, 2.54], [2.54, 2.54]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, 7.62], [2.54, 7.62]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-1.27, -10.16], [0.0, -9.525], [0.0, -10.795]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-1.27, -5.08], [0.0, -4.445], [0.0, -5.715]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-1.27, 2.54], [0.0, 3.175], [0.0, 1.905]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-1.27, 7.62], [0.0, 8.255], [0.0, 6.985]]
+
+[[graphics]]
+kind = "polyline"
+points = [[2.54, -10.16], [2.54, 12.7]]
+width = 0.1524
+
+[[graphics]]
+kind = "circle"
+center = [2.54, -5.08]
+radius = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [2.54, 2.54]
+radius = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [2.54, 7.62]
+radius = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[-1.524, -9.525], [-1.27, -9.779], [-1.27, -10.541], [-1.016, -10.795]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[-1.524, -4.445], [-1.27, -4.699], [-1.27, -5.461], [-1.016, -5.715]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[-1.524, 3.175], [-1.27, 2.921], [-1.27, 2.159], [-1.016, 1.905]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[-1.524, 8.255], [-1.27, 8.001], [-1.27, 7.239], [-1.016, 6.985]]
+
+[[graphics]]
+kind = "polygon"
+unit = 1
+points = [[-1.27, -10.16], [-2.54, -9.525], [-2.54, -10.795]]
+
+[[graphics]]
+kind = "polygon"
+unit = 1
+points = [[-1.27, -5.08], [-2.54, -4.445], [-2.54, -5.715]]
+
+[[graphics]]
+kind = "polygon"
+unit = 1
+points = [[-1.27, 2.54], [-2.54, 3.175], [-2.54, 1.905]]
+
+[[graphics]]
+kind = "polygon"
+unit = 1
+points = [[-1.27, 7.62], [-2.54, 8.255], [-2.54, 6.985]]
+
+[[pins]]
+number = "3"
+name = "G"
+type = "passive"
+at = [2.54, 15.24]
+side = "bottom"
+length = 2.54
+
+[[pins]]
+number = "1"
+name = "IO1"
+type = "passive"
+at = [-7.62, -10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "10"
+name = "NC"
+type = "free"
+at = [-7.62, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "IO2"
+type = "passive"
+at = [-7.62, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "9"
+name = "NC"
+type = "free"
+at = [-7.62, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "IO3"
+type = "passive"
+at = [-7.62, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "NC"
+type = "free"
+at = [-7.62, 5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "IO4"
+type = "passive"
+at = [-7.62, 7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "NC"
+type = "free"
+at = [-7.62, 10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "G"
+type = "passive"
+at = [2.54, 15.24]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true

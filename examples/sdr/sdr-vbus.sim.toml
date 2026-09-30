@@ -1,0 +1,58 @@
+name = "sdr-vbus"
+kind = "dc"
+description = "Input path at full load: VBUS from the USB-C pads through the TPS22917 load switch (80 mohm) to the three buck inputs, drawing what the rails need at 88% efficiency (1V0 at 0.9 A, 1V8 at 1 A, 3V3 at 0.4 A, 0.93 A from 5 V), returning through the ground pours to the connector's ground pins."
+layout = "sdr"
+cell = 0.05
+
+[[supplies]]
+pad = "J1.A4"
+voltage = "5V"
+
+[[supplies]]
+pad = "J1.A9"
+voltage = "5V"
+
+[[supplies]]
+pad = "J1.B4"
+voltage = "5V"
+
+[[supplies]]
+pad = "J1.B9"
+voltage = "5V"
+
+[[supplies]]
+pad = "J1.A1"
+voltage = "0V"
+
+[[supplies]]
+pad = "J1.A12"
+voltage = "0V"
+
+[[supplies]]
+pad = "J1.B1"
+voltage = "0V"
+
+[[supplies]]
+pad = "J1.B12"
+voltage = "0V"
+
+[[loads]]
+pad = "U6.10"
+current = "220mA"
+return = "U6.17"
+
+[[loads]]
+pad = "U7.10"
+current = "410mA"
+return = "U7.17"
+
+[[loads]]
+pad = "U8.10"
+current = "300mA"
+return = "U8.17"
+
+[[links]]
+ref = "U5"
+resistance = "80mohm"
+a = "1"
+b = "6"

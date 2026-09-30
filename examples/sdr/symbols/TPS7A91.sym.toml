@@ -1,0 +1,117 @@
+# imported from KiCad Regulator_Linear:TPS7A91
+name = "TPS7A91"
+reference = "U"
+description = "1A, High-Accuracy, Low-Noise LDO Voltage Regulator, Texas S-PDSO-N10"
+datasheet = "http://www.ti.com/lit/ds/symlink/tps7a91.pdf"
+keywords = ["LDO", "voltage", "regulator"]
+footprint = "Texas_S-PDSO-N10_EP1.2x2mm"
+footprint_filters = ["Texas*S*PDSO*"]
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -10.16]
+end = [7.62, 7.62]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "10"
+name = "IN"
+type = "passive"
+at = [-10.16, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "9"
+name = "IN"
+type = "power_in"
+at = [-10.16, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "EN"
+type = "input"
+at = [-10.16, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "SS_CTRL"
+type = "input"
+at = [-10.16, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "NR/SS"
+type = "passive"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "GND"
+type = "passive"
+at = [0.0, 10.16]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "4"
+name = "GND"
+type = "power_in"
+at = [0.0, 10.16]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "OUT"
+type = "power_out"
+at = [10.16, -7.62]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "OUT"
+type = "passive"
+at = [10.16, -7.62]
+side = "right"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "3"
+name = "FB"
+type = "input"
+at = [10.16, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "PG"
+type = "open_collector"
+at = [10.16, 2.54]
+side = "right"
+length = 2.54
+unit = 1

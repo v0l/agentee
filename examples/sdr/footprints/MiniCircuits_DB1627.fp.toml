@@ -1,0 +1,67 @@
+name = "MiniCircuits_DB1627"
+description = "Mini-Circuits case DB1627 (TCM1-63AX+), land pattern PL-364"
+tags = ["transformer", "balun"]
+mount = "smd"
+height = "3.1mm"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-1.27, -1.59]
+size = [0.76, 1.65]
+count = 3
+pitch = [1.27, 0.0]
+number_step = 1
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "rect"
+at = [1.27, 1.59]
+size = [0.76, 1.65]
+count = 3
+pitch = [-1.27, 0.0]
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-1.905, -2.03]
+end = [1.905, 2.03]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-2.25, -2.7]
+end = [2.25, 2.7]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.05, -0.55]
+end = [-2.05, 0.55]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.05, -0.55]
+end = [2.05, 0.55]
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [-2.1, -2.35]
+radius = 0.12
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+text = "${REFERENCE}"
+at = [0.0, 0.0]
+size = 0.8

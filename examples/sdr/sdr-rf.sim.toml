@@ -1,0 +1,30 @@
+name = "sdr-rf"
+description = "The 50 ohm feeds from the two edge SMAs to the baluns, 70 MHz to 6 GHz, the AD9364's tuning range: grounded coplanar on F.Cu over In1 with the via fence either side, the planes cut back under the SMA centre pads to In4 and under the balun pads to In2. The baluns are open; their inputs are the ports."
+layout = "sdr"
+cell = 0.05
+region = [0.0, 32.0, 17.0, 52.5]
+
+[frequency]
+start = "70MHz"
+stop = "6GHz"
+points = 300
+
+[[ports]]
+name = "RX_SMA"
+pad = "J3.1"
+reference = "In4.Cu"
+
+[[ports]]
+name = "RX_BALUN"
+pad = "T1.3"
+reference = "In2.Cu"
+
+[[ports]]
+name = "TX_SMA"
+pad = "J2.1"
+reference = "In4.Cu"
+
+[[ports]]
+name = "TX_BALUN"
+pad = "T2.3"
+reference = "In2.Cu"

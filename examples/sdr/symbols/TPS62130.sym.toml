@@ -1,0 +1,176 @@
+# imported from KiCad Regulator_Switching:TPS62130
+name = "TPS62130"
+reference = "U"
+description = "3A Step-Down Converter with DCS-Control, Adjustable Output Voltage, 3-17V Input Voltage, QFN-16"
+datasheet = "http://www.ti.com/lit/ds/symlink/tps62130.pdf"
+keywords = ["step-down", "dcdc"]
+footprint = "VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm"
+footprint_filters = ["VQFN*1EP*3x3mm*P0.5mm*"]
+pin_name_offset = 0.254
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -10.16]
+end = [7.62, 10.16]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "13"
+name = "EN"
+type = "input"
+at = [-10.16, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "9"
+name = "SS/TR"
+type = "input"
+at = [-10.16, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "DEF"
+type = "input"
+at = [-10.16, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "FSW"
+type = "input"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "10"
+name = "VIN"
+type = "power_in"
+at = [0.0, -12.7]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "VIN"
+type = "passive"
+at = [0.0, -12.7]
+side = "top"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "12"
+name = "VIN"
+type = "passive"
+at = [0.0, -12.7]
+side = "top"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "15"
+name = "GND"
+type = "passive"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "16"
+name = "GND"
+type = "passive"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "17"
+name = "GND"
+type = "passive"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "6"
+name = "GND"
+type = "power_in"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "SW"
+type = "output"
+at = [10.16, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "SW"
+type = "passive"
+at = [10.16, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "3"
+name = "SW"
+type = "passive"
+at = [10.16, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "14"
+name = "VOS"
+type = "input"
+at = [10.16, 0.0]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "PG"
+type = "open_collector"
+at = [10.16, 2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "FB"
+type = "input"
+at = [10.16, 5.08]
+side = "right"
+length = 2.54
+unit = 1

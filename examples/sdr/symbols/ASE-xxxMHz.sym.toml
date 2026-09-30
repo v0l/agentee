@@ -1,0 +1,56 @@
+# imported from KiCad Oscillator:ASE-xxxMHz
+name = "ASE-xxxMHz"
+reference = "Y"
+description = "3.3V CMOS SMD Crystal Clock Oscillator, Abracon"
+datasheet = "http://www.abracon.com/Oscillators/ASV.pdf"
+keywords = ["3.3V", "CMOS", "SMD", "Crystal", "Clock", "Oscillator"]
+footprint = "Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm"
+footprint_filters = ["Oscillator*SMD*Abracon*ASE*3.2x2.5mm*"]
+pin_name_offset = 0.254
+
+[[graphics]]
+kind = "rect"
+start = [-5.08, -5.08]
+end = [5.08, 5.08]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 0.762], [-1.016, 0.762], [-1.016, -0.762], [-0.508, -0.762], [-0.508, 0.762], [0.0, 0.762], [0.0, -0.762], [0.508, -0.762], [0.508, 0.762], [0.762, 0.762]]
+
+[[pins]]
+number = "1"
+name = "EN"
+type = "input"
+at = [-7.62, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "Vdd"
+type = "power_in"
+at = [0.0, -7.62]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "GND"
+type = "power_in"
+at = [0.0, 7.62]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "OUT"
+type = "output"
+at = [7.62, 0.0]
+side = "right"
+length = 2.54
+unit = 1

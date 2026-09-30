@@ -1,0 +1,89 @@
+# imported from KiCad Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm
+name = "Crystal_SMD_3225-4Pin_3.2x2.5mm"
+description = "SMD3225/4, Crystal, 3.2x2.5mm package, SMD, generated with kicad-footprint-generator make_crystal.py, http://www.txccrystal.com/images/pdf/7m-accuracy.pdf"
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Crystal.3dshapes/Crystal_SMD_3225-4Pin_3.2x2.5mm.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.1, 0.85]
+size = [1.4, 1.2]
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [1.1, 0.85]
+size = [1.4, 1.2]
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "roundrect"
+at = [1.1, -0.85]
+size = [1.4, 1.2]
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "roundrect"
+at = [-1.1, -0.85]
+size = [1.4, 1.2]
+roundrect_ratio = 0.208333
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.45]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 2.45]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.06, -1.71]
+end = [-2.06, 1.71]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.06, 1.71]
+end = [2.06, 1.71]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-2.1, -1.75]
+end = [2.1, 1.75]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[-1.6, -1.25], [-1.6, 0.625], [-0.975, 1.25], [1.6, 1.25], [1.6, -1.25]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.8

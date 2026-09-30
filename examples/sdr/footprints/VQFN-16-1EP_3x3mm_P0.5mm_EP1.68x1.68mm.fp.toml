@@ -1,0 +1,320 @@
+# imported from KiCad Package_DFN_QFN:VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm
+name = "VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm"
+description = "VQFN, 16 Pin (http://www.ti.com/lit/ds/symlink/tlv62095.pdf), generated with kicad-footprint-generator ipc_noLead_generator.py"
+tags = ["VQFN", "NoLead"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Package_DFN_QFN.3dshapes/VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm.step"
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.42, -0.42]
+size = [0.68, 0.68]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [-0.42, 0.42]
+size = [0.68, 0.68]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.42, -0.42]
+size = [0.68, 0.68]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+kind = "smd"
+shape = "roundrect"
+at = [0.42, 0.42]
+size = [0.68, 0.68]
+roundrect_ratio = 0.25
+layers = ["F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-1.4625, -0.75]
+size = [0.825, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.0, 0.5]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "roundrect"
+at = [-0.75, 1.4625]
+size = [0.25, 0.825]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.5, 0.0]
+
+[[pads]]
+number = "9"
+kind = "smd"
+shape = "roundrect"
+at = [1.4625, 0.75]
+size = [0.825, 0.25]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [0.0, -0.5]
+
+[[pads]]
+number = "13"
+kind = "smd"
+shape = "roundrect"
+at = [0.75, -1.4625]
+size = [0.25, 0.825]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+count = 4
+pitch = [-0.5, 0.0]
+
+[[pads]]
+number = "17"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.68, 1.68]
+layers = ["F.Cu", "F.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.83]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 2.83]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.61, -1.135]
+end = [-1.61, -1.37]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.61, 1.61]
+end = [-1.61, 1.135]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.135, -1.61]
+end = [-1.31, -1.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.135, 1.61]
+end = [-1.61, 1.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.135, -1.61]
+end = [1.61, -1.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.135, 1.61]
+end = [1.61, 1.61]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.61, -1.61]
+end = [1.61, -1.135]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.61, 1.61]
+end = [1.61, 1.135]
+width = 0.15
+
+[[graphics]]
+kind = "polygon"
+layer = "F.SilkS"
+points = [[-1.61, -1.61], [-1.85, -1.94], [-1.37, -1.94]]
+width = 0.15
+fill = "solid"
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.13, -1.13]
+end = [-1.75, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.13, 1.13]
+end = [-2.13, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.75, -1.75]
+end = [-1.13, -1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.75, -1.13]
+end = [-1.75, -1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.75, 1.13]
+end = [-2.13, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.75, 1.75]
+end = [-1.75, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.13, -2.13]
+end = [1.13, -2.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.13, -1.75]
+end = [-1.13, -2.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.13, 1.75]
+end = [-1.75, 1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.13, 2.13]
+end = [-1.13, 1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.13, -2.13]
+end = [1.13, -1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.13, -1.75]
+end = [1.75, -1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.13, 1.75]
+end = [1.13, 2.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.13, 2.13]
+end = [-1.13, 2.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.75, -1.75]
+end = [1.75, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.75, -1.13]
+end = [2.13, -1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.75, 1.13]
+end = [1.75, 1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.75, 1.75]
+end = [1.13, 1.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.13, -1.13]
+end = [2.13, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.13, 1.13]
+end = [1.75, 1.13]
+width = 0.05
+
+[[graphics]]
+kind = "polygon"
+layer = "F.Fab"
+points = [[-1.5, -0.75], [-1.5, 1.5], [1.5, 1.5], [1.5, -1.5], [-0.75, -1.5]]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.75

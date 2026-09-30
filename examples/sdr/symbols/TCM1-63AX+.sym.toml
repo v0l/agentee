@@ -1,0 +1,25 @@
+name = "TCM1-63AX+"
+reference = "T"
+value = "TCM1-63AX+"
+description = "Mini-Circuits 1:1 RF transformer, 10 MHz to 6 GHz, used as a balun"
+datasheet = "https://www.minicircuits.com/pdfs/TCM1-63AX+.pdf"
+keywords = ["balun", "transformer", "RF"]
+footprint = "MiniCircuits_DB1627"
+
+[[bodies]]
+unit = 1
+width = 10.16
+left = [
+  { number = "3", name = "PRI", type = "passive" },
+  { gap = 1 },
+  { number = "2", name = "PRI_GND", type = "passive" },
+]
+right = [
+  { number = "6", name = "SEC_DOT", type = "passive" },
+  { gap = 1 },
+  { number = "4", name = "SEC", type = "passive" },
+]
+bottom = [
+  { number = "1", name = "NC", type = "passive" },
+  { number = "5", name = "NC", type = "passive" },
+]

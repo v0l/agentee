@@ -1,0 +1,87 @@
+# imported from KiCad Memory_Flash:W25Q128JVS
+name = "W25Q128JVS"
+reference = "U"
+description = "128Mbit / 16MiB Serial Flash Memory, Standard/Dual/Quad SPI, 2.7-3.6V, SOIC-8"
+datasheet = "https://www.winbond.com/resource-files/w25q128jv_dtr%20revc%2003272018%20plus.pdf"
+keywords = ["flash", "memory", "SPI", "QPI", "DTR"]
+footprint = "SOIC-8_5.3x5.3mm_P1.27mm"
+footprint_filters = ["*SOIC*5.3x5.3mm*P1.27mm*"]
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -10.16]
+end = [10.16, 10.16]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "1"
+name = "~{CS}"
+type = "input"
+at = [-10.16, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "CLK"
+type = "input"
+at = [-10.16, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "DI/IO_{0}"
+type = "bidirectional"
+at = [-10.16, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "DO/IO_{1}"
+type = "bidirectional"
+at = [-10.16, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "~{WP}/IO_{2}"
+type = "bidirectional"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "~{HOLD}/~{RESET}/IO_{3}"
+type = "bidirectional"
+at = [-10.16, 5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "VCC"
+type = "power_in"
+at = [0.0, -12.7]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "GND"
+type = "power_in"
+at = [0.0, 12.7]
+side = "bottom"
+length = 2.54
+unit = 1

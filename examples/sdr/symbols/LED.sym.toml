@@ -1,0 +1,50 @@
+# imported from KiCad Device:LED
+name = "LED"
+reference = "D"
+description = "Light emitting diode"
+keywords = ["LED", "diode"]
+footprint = "LED_0603_1608Metric"
+footprint_filters = ["LED*", "LED_SMD:*", "LED_THT:*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-3.048, 0.762], [-4.572, 2.286], [-3.81, 2.286], [-4.572, 2.286], [-4.572, 1.524]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.778, 0.762], [-3.302, 2.286], [-2.54, 2.286], [-3.302, 2.286], [-3.302, 1.524]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 0.0], [1.27, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, 1.27], [-1.27, -1.27]]
+width = 0.254
+
+[[graphics]]
+kind = "polygon"
+points = [[1.27, 1.27], [1.27, -1.27], [-1.27, 0.0]]
+width = 0.254
+
+[[pins]]
+number = "1"
+name = "K"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1

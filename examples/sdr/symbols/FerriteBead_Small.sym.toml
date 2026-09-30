@@ -1,0 +1,37 @@
+# imported from KiCad Device:FerriteBead_Small
+name = "FerriteBead_Small"
+reference = "FB"
+description = "Ferrite bead, small symbol"
+keywords = ["L", "ferrite", "bead", "inductor", "filter"]
+footprint = "L_0603_1608Metric"
+footprint_filters = ["Inductor_*", "L_*", "*Ferrite*"]
+pin_names = "outside"
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polygon"
+points = [[-1.8288, -0.2794], [-1.1176, -1.4986], [1.8288, 0.2032], [1.1176, 1.4224]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, -0.889], [0.0, -1.2954]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, 1.27], [0.0, 0.7874]]
+
+[[pins]]
+number = "1"
+type = "passive"
+at = [0.0, -2.54]
+side = "top"
+length = 1.27
+unit = 1
+
+[[pins]]
+number = "2"
+type = "passive"
+at = [0.0, 2.54]
+side = "bottom"
+length = 1.27
+unit = 1

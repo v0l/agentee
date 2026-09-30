@@ -1,0 +1,181 @@
+name = "AD9364"
+reference = "U"
+value = "AD9364BBCZ"
+description = "RF Agile Transceiver, 1x1, 70 MHz to 6 GHz, 12-bit, 61.44 MS/s, LVDS or CMOS data port"
+datasheet = "https://www.analog.com/media/en/technical-documentation/data-sheets/ad9364.pdf"
+keywords = ["transceiver", "RF", "SDR"]
+footprint = "AD_BC-144-7_CSP_BGA_10x10mm_P0.8mm"
+
+[[bodies]]
+unit = 1
+width = 30.48
+left = [
+  { number = "M1", name = "RXA_P", type = "passive" },
+  { number = "M2", name = "RXA_N", type = "passive" },
+  { number = "H1", name = "RXB_P", type = "passive" },
+  { number = "J1", name = "RXB_N", type = "passive" },
+  { number = "K1", name = "RXC_P", type = "passive" },
+  { number = "L1", name = "RXC_N", type = "passive" },
+  { number = "G1", name = "RX_EXT_LO_IN", type = "passive" },
+  { number = "A12", name = "TX_EXT_LO_IN", type = "passive" },
+  { number = "M5", name = "TX_MON", type = "passive" },
+  { number = "L5", name = "AUXADC", type = "passive" },
+  { number = "L4", name = "RBIAS", type = "passive" },
+  { number = "M11", name = "XTALP", type = "passive" },
+  { number = "M12", name = "XTALN", type = "passive" },
+]
+right = [
+  { number = "M7", name = "TXA_P", type = "output" },
+  { number = "M8", name = "TXA_N", type = "output" },
+  { number = "M9", name = "TXB_P", type = "passive" },
+  { number = "M10", name = "TXB_N", type = "passive" },
+  { number = "B3", name = "AUXDAC1", type = "output" },
+  { number = "C3", name = "AUXDAC2", type = "output" },
+  { number = "B7", name = "GPO_0", type = "output" },
+  { number = "B6", name = "GPO_1", type = "output" },
+  { number = "B5", name = "GPO_2", type = "output" },
+  { number = "B4", name = "GPO_3", type = "output" },
+  { number = "B11", name = "TX_VCO_LDO_OUT", type = "power_out" },
+  { number = "A11", name = "VDDA1P1_TX_VCO", type = "power_in" },
+  { number = "G2", name = "RX_VCO_LDO_OUT", type = "power_out" },
+  { number = "G3", name = "VDDA1P1_RX_VCO", type = "power_in" },
+]
+
+[[bodies]]
+unit = 2
+width = 25.4
+left = [
+  { number = "D11", name = "TX_D0_P", type = "input" },
+  { number = "E12", name = "TX_D0_N", type = "input" },
+  { number = "D10", name = "TX_D1_P", type = "input" },
+  { number = "E11", name = "TX_D1_N", type = "input" },
+  { number = "D9", name = "TX_D2_P", type = "input" },
+  { number = "E10", name = "TX_D2_N", type = "input" },
+  { number = "D8", name = "TX_D3_P", type = "input" },
+  { number = "E9", name = "TX_D3_N", type = "input" },
+  { number = "D7", name = "TX_D4_P", type = "input" },
+  { number = "E8", name = "TX_D4_N", type = "input" },
+  { number = "E7", name = "TX_D5_P", type = "input" },
+  { number = "F8", name = "TX_D5_N", type = "input" },
+  { number = "G9", name = "TX_FRAME_P", type = "input" },
+  { number = "H9", name = "TX_FRAME_N", type = "input" },
+  { number = "F10", name = "FB_CLK_P", type = "input" },
+  { number = "G10", name = "FB_CLK_N", type = "input" },
+  { number = "J12", name = "RX_D0_P", type = "output" },
+  { number = "K11", name = "RX_D0_N", type = "output" },
+  { number = "J11", name = "RX_D1_P", type = "output" },
+  { number = "K10", name = "RX_D1_N", type = "output" },
+  { number = "J10", name = "RX_D2_P", type = "output" },
+  { number = "K9", name = "RX_D2_N", type = "output" },
+  { number = "J9", name = "RX_D3_P", type = "output" },
+  { number = "K8", name = "RX_D3_N", type = "output" },
+  { number = "J8", name = "RX_D4_P", type = "output" },
+  { number = "K7", name = "RX_D4_N", type = "output" },
+  { number = "H8", name = "RX_D5_P", type = "output" },
+  { number = "J7", name = "RX_D5_N", type = "output" },
+  { number = "G8", name = "RX_FRAME_P", type = "output" },
+  { number = "G7", name = "RX_FRAME_N", type = "output" },
+  { number = "G11", name = "DATA_CLK_P", type = "output" },
+  { number = "H11", name = "DATA_CLK_N", type = "output" },
+]
+right = [
+  { number = "J5", name = "SPI_CLK", type = "input" },
+  { number = "J4", name = "SPI_DI", type = "input" },
+  { number = "L6", name = "SPI_DO", type = "output" },
+  { number = "K6", name = "SPI_ENB", type = "input" },
+  { number = "K5", name = "RESETB", type = "input" },
+  { number = "G6", name = "ENABLE", type = "input" },
+  { number = "H4", name = "TXNRX", type = "input" },
+  { number = "G5", name = "EN_AGC", type = "input" },
+  { number = "H5", name = "SYNC_IN", type = "input" },
+  { number = "J6", name = "CLK_OUT", type = "output" },
+  { number = "C5", name = "CTRL_IN0", type = "input" },
+  { number = "C6", name = "CTRL_IN1", type = "input" },
+  { number = "D6", name = "CTRL_IN2", type = "input" },
+  { number = "D5", name = "CTRL_IN3", type = "input" },
+  { number = "D4", name = "CTRL_OUT0", type = "output" },
+  { number = "E4", name = "CTRL_OUT1", type = "output" },
+  { number = "E5", name = "CTRL_OUT2", type = "output" },
+  { number = "E6", name = "CTRL_OUT3", type = "output" },
+  { number = "F6", name = "CTRL_OUT4", type = "output" },
+  { number = "F5", name = "CTRL_OUT5", type = "output" },
+  { number = "F4", name = "CTRL_OUT6", type = "output" },
+  { number = "G4", name = "CTRL_OUT7", type = "output" },
+  { number = "C4", name = "TEST/ENABLE", type = "input" },
+]
+
+[[bodies]]
+unit = 3
+width = 30.48
+left = [
+  { number = "A7", name = "VDDA1P3_RX_TX", type = "power_in" },
+  { number = "A8", name = "VDDA1P3_RX_TX", type = "power_in" },
+  { number = "A9", name = "VDDA1P3_RX_TX", type = "power_in" },
+  { number = "A10", name = "VDDA1P3_RX_TX", type = "power_in" },
+  { number = "D3", name = "VDDA1P3_RX_TX", type = "power_in" },
+  { number = "D2", name = "VDDA1P3_RX_RF", type = "power_in" },
+  { number = "E2", name = "VDDA1P3_RX_LO", type = "power_in" },
+  { number = "F2", name = "VDDA1P3_RX_VCO_LDO", type = "power_in" },
+  { number = "J3", name = "VDDA1P3_RX_SYNTH", type = "power_in" },
+  { number = "B9", name = "VDDA1P3_TX_LO", type = "power_in" },
+  { number = "B10", name = "VDDA1P3_TX_VCO_LDO", type = "power_in" },
+  { number = "E3", name = "VDDA1P3_TX_LO_BUFFER", type = "power_in" },
+  { number = "K3", name = "VDDA1P3_TX_SYNTH", type = "power_in" },
+  { number = "K4", name = "VDDA1P3_BB", type = "power_in" },
+  { number = "F12", name = "VDDD1P3_DIG", type = "power_in" },
+  { number = "H12", name = "VDD_INTERFACE", type = "power_in" },
+  { number = "B8", name = "VDD_GPO", type = "power_in" },
+]
+right = [
+  { number = "A1", name = "VSSA", type = "power_in" },
+  { number = "A2", name = "VSSA", type = "power_in" },
+  { number = "A4", name = "VSSA", type = "power_in" },
+  { number = "A5", name = "VSSA", type = "power_in" },
+  { number = "A6", name = "VSSA", type = "power_in" },
+  { number = "B1", name = "VSSA", type = "power_in" },
+  { number = "B2", name = "VSSA", type = "power_in" },
+  { number = "B12", name = "VSSA", type = "power_in" },
+  { number = "C1", name = "VSSA", type = "power_in" },
+  { number = "C2", name = "VSSA", type = "power_in" },
+  { number = "C7", name = "VSSA", type = "power_in" },
+  { number = "C8", name = "VSSA", type = "power_in" },
+  { number = "C9", name = "VSSA", type = "power_in" },
+  { number = "C10", name = "VSSA", type = "power_in" },
+  { number = "C11", name = "VSSA", type = "power_in" },
+  { number = "C12", name = "VSSA", type = "power_in" },
+  { number = "D1", name = "VSSA", type = "power_in" },
+  { number = "E1", name = "VSSA", type = "power_in" },
+  { number = "F1", name = "VSSA", type = "power_in" },
+  { number = "F3", name = "VSSA", type = "power_in" },
+  { number = "H2", name = "VSSA", type = "power_in" },
+  { number = "H3", name = "VSSA", type = "power_in" },
+  { number = "H6", name = "VSSA", type = "power_in" },
+]
+
+[[bodies]]
+unit = 4
+width = 15.24
+left = [
+  { number = "J2", name = "VSSA", type = "power_in" },
+  { number = "K2", name = "VSSA", type = "power_in" },
+  { number = "L2", name = "VSSA", type = "power_in" },
+  { number = "L3", name = "VSSA", type = "power_in" },
+  { number = "L7", name = "VSSA", type = "power_in" },
+  { number = "L8", name = "VSSA", type = "power_in" },
+  { number = "L9", name = "VSSA", type = "power_in" },
+  { number = "L10", name = "VSSA", type = "power_in" },
+  { number = "L11", name = "VSSA", type = "power_in" },
+  { number = "L12", name = "VSSA", type = "power_in" },
+  { number = "M4", name = "VSSA", type = "power_in" },
+  { number = "M6", name = "VSSA", type = "power_in" },
+  { number = "D12", name = "VSSD", type = "power_in" },
+  { number = "F7", name = "VSSD", type = "power_in" },
+  { number = "F9", name = "VSSD", type = "power_in" },
+  { number = "F11", name = "VSSD", type = "power_in" },
+  { number = "G12", name = "VSSD", type = "power_in" },
+  { number = "H7", name = "VSSD", type = "power_in" },
+  { number = "H10", name = "VSSD", type = "power_in" },
+  { number = "K12", name = "VSSD", type = "power_in" },
+  { number = "A3", name = "NC", type = "no_connect" },
+  { number = "M3", name = "NC", type = "no_connect" },
+]

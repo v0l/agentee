@@ -1,0 +1,85 @@
+# imported from KiCad Device:Crystal_GND24
+name = "Crystal_GND24"
+reference = "Y"
+description = "Four pin crystal, GND on pins 2 and 4"
+keywords = ["quartz", "ceramic", "resonator", "oscillator"]
+footprint = "Crystal_SMD_3225-4Pin_3.2x2.5mm"
+footprint_filters = ["Crystal*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, -2.286], [-2.54, -3.556], [2.54, -3.556], [2.54, -2.286]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 0.0], [-2.032, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 2.286], [-2.54, 3.556], [2.54, 3.556], [2.54, 2.286]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.032, 1.27], [-2.032, -1.27]]
+width = 0.508
+
+[[graphics]]
+kind = "rect"
+start = [-1.143, -2.54]
+end = [1.143, 2.54]
+width = 0.3048
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, -3.556], [0.0, -3.81]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, 3.81], [0.0, 3.556]]
+
+[[graphics]]
+kind = "polyline"
+points = [[2.032, 0.0], [2.54, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[2.032, 1.27], [2.032, -1.27]]
+width = 0.508
+
+[[pins]]
+number = "1"
+name = "1"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 1.27
+unit = 1
+
+[[pins]]
+number = "2"
+name = "2"
+type = "passive"
+at = [0.0, -5.08]
+side = "top"
+length = 1.27
+unit = 1
+
+[[pins]]
+number = "4"
+name = "4"
+type = "passive"
+at = [0.0, 5.08]
+side = "bottom"
+length = 1.27
+unit = 1
+
+[[pins]]
+number = "3"
+name = "3"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 1.27
+unit = 1

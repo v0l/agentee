@@ -1,0 +1,69 @@
+# imported from KiCad Power_Management:TPS22917DBV
+name = "TPS22917DBV"
+reference = "U"
+description = "1V to 5.5V, 2A, 80mΩ Ultra-Low Leakage Load Switch, SOT23-6"
+datasheet = "http://www.ti.com/lit/ds/symlink/tps22917.pdf"
+keywords = ["high-side", "power", "distribution", "switch"]
+footprint = "SOT-23-6"
+footprint_filters = ["SOT?23*"]
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -5.08]
+end = [7.62, 5.08]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "1"
+name = "VIN"
+type = "power_in"
+at = [-10.16, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "CT"
+type = "output"
+at = [-10.16, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "ON"
+type = "input"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "GND"
+type = "power_in"
+at = [0.0, 7.62]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "VOUT"
+type = "power_out"
+at = [10.16, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "QOD"
+type = "open_collector"
+at = [10.16, 0.0]
+side = "right"
+length = 2.54
+unit = 1

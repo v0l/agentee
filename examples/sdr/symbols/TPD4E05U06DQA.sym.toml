@@ -1,0 +1,284 @@
+# imported from KiCad Power_Protection:TPD4E05U06DQA
+name = "TPD4E05U06DQA"
+reference = "U"
+description = "4-Channel ESD Protection for Super-Speed USB 3.0 Interface, USON-10"
+datasheet = "https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf"
+keywords = ["ESD", "protection", "USB", "3.0"]
+footprint = "USON-10_2.5x1.0mm_P0.5mm"
+footprint_filters = ["USON*2.5x1.0mm*P0.5mm*"]
+pin_names = "outside"
+
+[[graphics]]
+kind = "rect"
+start = [-5.715, -6.477]
+end = [5.715, 6.604]
+
+[[graphics]]
+kind = "polyline"
+points = [[-3.175, 6.604], [-3.175, -6.477]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, -6.477], [0.0, 6.604]]
+
+[[graphics]]
+kind = "polyline"
+points = [[3.175, -6.477], [3.175, 6.604]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-7.747, -2.54], [-3.175, -2.54]]
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -7.62]
+end = [7.62, 7.62]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[-7.62, 2.54], [-5.715, 2.54]]
+
+[[graphics]]
+kind = "circle"
+center = [-5.715, 2.54]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, -5.08], [-6.35, -5.08]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-5.08, -3.81], [-6.35, -3.81], [-5.715, -5.08]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-5.08, 3.81], [-6.35, 3.81]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-5.08, 5.08], [-6.35, 5.08], [-5.715, 3.81]]
+
+[[graphics]]
+kind = "circle"
+center = [-3.175, -6.477]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [-3.175, -2.54]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [-3.175, 6.604]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, -5.08], [-3.81, -5.08]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-2.54, -3.81], [-3.81, -3.81], [-3.175, -5.08]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 3.81], [-3.81, 3.81]]
+
+[[graphics]]
+kind = "polygon"
+points = [[-2.54, 5.08], [-3.81, 5.08], [-3.175, 3.81]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-0.635, -0.889], [-1.016, -0.635]]
+
+[[graphics]]
+kind = "circle"
+center = [0.0, -6.477]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, 6.604], [0.0, 7.62]]
+
+[[graphics]]
+kind = "circle"
+center = [0.0, 6.604]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[0.635, -0.889], [-0.635, -0.889]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.635, -0.889], [1.016, -1.143]]
+
+[[graphics]]
+kind = "polygon"
+points = [[0.635, 0.381], [-0.635, 0.381], [0.0, -0.889]]
+
+[[graphics]]
+kind = "circle"
+center = [3.175, -6.477]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [3.175, 2.54]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [3.175, 6.604]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[3.81, -5.08], [2.54, -5.08]]
+
+[[graphics]]
+kind = "polygon"
+points = [[3.81, -3.81], [2.54, -3.81], [3.175, -5.08]]
+
+[[graphics]]
+kind = "polyline"
+points = [[3.81, 3.81], [2.54, 3.81]]
+
+[[graphics]]
+kind = "polygon"
+points = [[3.81, 5.08], [2.54, 5.08], [3.175, 3.81]]
+
+[[graphics]]
+kind = "circle"
+center = [5.715, -2.54]
+radius = 0.2794
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[6.35, -5.08], [5.08, -5.08]]
+
+[[graphics]]
+kind = "polygon"
+points = [[6.35, -3.81], [5.08, -3.81], [5.715, -5.08]]
+
+[[graphics]]
+kind = "polyline"
+points = [[6.35, 3.81], [5.08, 3.81]]
+
+[[graphics]]
+kind = "polygon"
+points = [[6.35, 5.08], [5.08, 5.08], [5.715, 3.81]]
+
+[[graphics]]
+kind = "polyline"
+points = [[7.62, -2.54], [5.715, -2.54]]
+
+[[graphics]]
+kind = "polyline"
+points = [[7.62, 2.54], [3.175, 2.54]]
+
+[[pins]]
+number = "10"
+name = "NC"
+type = "free"
+at = [-12.7, -7.62]
+side = "left"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "1"
+name = "D1+"
+type = "passive"
+at = [-12.7, -2.54]
+side = "left"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "2"
+name = "D1-"
+type = "passive"
+at = [-12.7, 2.54]
+side = "left"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "9"
+name = "NC"
+type = "free"
+at = [-12.7, 7.62]
+side = "left"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "3"
+name = "GND"
+type = "power_in"
+at = [0.0, 12.7]
+side = "bottom"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "8"
+name = "GND"
+type = "passive"
+at = [0.0, 12.7]
+side = "bottom"
+length = 5.08
+unit = 1
+hidden = true
+
+[[pins]]
+number = "7"
+name = "NC"
+type = "free"
+at = [12.7, -7.62]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "4"
+name = "D2+"
+type = "passive"
+at = [12.7, -2.54]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "5"
+name = "D2-"
+type = "passive"
+at = [12.7, 2.54]
+side = "right"
+length = 5.08
+unit = 1
+
+[[pins]]
+number = "6"
+name = "NC"
+type = "free"
+at = [12.7, 7.62]
+side = "right"
+length = 5.08
+unit = 1

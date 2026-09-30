@@ -1,0 +1,58 @@
+name = "sdr-usb"
+description = "SuperSpeed lanes TX1 (F.Cu through the 0201 AC caps) and RX2, the two lanes on F.Cu, from the FX20 balls to the USB-C pads, 8 ports so the eye and the crosstalk between the lanes where they meet at the connector come from one run. The 220 nF caps are their ESL, which is all they are at these frequencies."
+layout = "sdr"
+cell = 0.05
+region = [57.5, 43.5, 69.5, 56.5]
+
+[frequency]
+start = "100MHz"
+stop = "15GHz"
+points = 300
+
+[[ports]]
+name = "TX1_FX+"
+pad = "U3.M5"
+reference = "In1.Cu"
+
+[[ports]]
+name = "TX1_FX-"
+pad = "U3.N5"
+reference = "In1.Cu"
+
+[[ports]]
+name = "TX1_J+"
+pad = "J1.A2"
+reference = "In1.Cu"
+
+[[ports]]
+name = "TX1_J-"
+pad = "J1.A3"
+reference = "In1.Cu"
+
+[[ports]]
+name = "RX2_FX+"
+pad = "U3.M9"
+reference = "In1.Cu"
+
+[[ports]]
+name = "RX2_FX-"
+pad = "U3.N9"
+reference = "In1.Cu"
+
+[[ports]]
+name = "RX2_J+"
+pad = "J1.A11"
+reference = "In1.Cu"
+
+[[ports]]
+name = "RX2_J-"
+pad = "J1.A10"
+reference = "In1.Cu"
+
+[[models]]
+ref = "C88"
+inductor = "0.25nH"
+
+[[models]]
+ref = "C89"
+inductor = "0.25nH"
