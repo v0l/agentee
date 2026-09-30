@@ -41,6 +41,7 @@ pub struct PageState {
     pub soft_3d: crate::board3d::SoftCache,
     pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
     pub runs: crate::simrun::Runs,
+    pub wave: crate::wave::WaveView,
 }
 
 impl Default for PageState {
@@ -73,6 +74,7 @@ impl Default for PageState {
             soft_3d: None,
             tdr_cache: None,
             runs: Default::default(),
+            wave: Default::default(),
         }
     }
 }
@@ -1059,7 +1061,7 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             return;
         }
         if let Some(r) = &s.logic_result {
-            crate::wave::canvas(ui, r);
+            crate::wave::canvas(ui, r, &mut st.wave, st.interactive);
             return;
         }
         if let Some(r) = &s.result
