@@ -585,7 +585,8 @@ clearance, with round corners, so pours render and plot without stair steps. Nec
 narrower than the zone's `min_width` (default 0.25 mm) are removed, the way a fab would etch them.
 Where two clearance areas (antipads, track and pad clearances) come closer than `min_width`, the
 pour is cut back to the straight lines joining them, within about 1.5 `min_width` of the gap, so no
-stub or hairline waist is left pointing into it.
+stub or hairline waist is left pointing into it. The same holds between a clearance area and the
+board edge's clearance, a cutout, or the clearance around another zone's fill.
 
 A track that only grazes a pad (its centre line misses the pad) is flagged; run it into the pad. Two
 segments of one net that lie on top of each other on a layer (parallel, overlapping by more

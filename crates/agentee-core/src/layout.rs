@@ -2422,6 +2422,21 @@ fn vector_fill(
     }
     if min_width > 0.0 {
         clip.extend(gap_bridges(&keepouts, min_width));
+        let mut walls: Vec<Wall> = Vec::new();
+        if board.len() >= 3 && edge_clear > 0.0 {
+            walls.extend(edges(board).map(|(a, b)| Wall { a, b, gap: edge_clear, group: 0 }));
+        }
+        for (k, c) in cutouts.iter().enumerate() {
+            walls.extend(edges(c).map(|(a, b)| Wall { a, b, gap: 0.0, group: 1 + k }));
+        }
+        for z in blockers {
+            let gap = clearance.max(clearance_of(Some(z.net)));
+            for r in &z.rings {
+                let group = 1 + cutouts.len() + walls.len();
+                walls.extend(edges(r).map(|(a, b)| Wall { a, b, gap, group }));
+            }
+        }
+        clip.extend(wall_bridges(&keepouts, &walls, min_width));
     }
     for z in blockers {
         let gap = clearance.max(clearance_of(Some(z.net)));
@@ -2594,6 +2609,87 @@ fn gap_bridges(keepouts: &[(&Shape, f64)], min_width: f64) -> Vec<Vec<P>> {
             let mut pts = Vec::new();
             cap_points(&inflated(sa, ga), m, rho, &mut pts);
             cap_points(&inflated(sb, gb), m, rho, &mut pts);
+            let hull = convex_hull(pts);
+            if hull.len() >= 3 {
+                out.push(hull);
+            }
+        }
+    }
+    out
+}
+
+struct Wall {
+    a: P,
+    b: P,
+    gap: f64,
+    group: usize,
+}
+
+fn wall_bridges(keepouts: &[(&Shape, f64)], walls: &[Wall], min_width: f64) -> Vec<Vec<P>> {
+    let cell = 1.0;
+    let key = |p: P| ((p[0] / cell).floor() as i64, (p[1] / cell).floor() as i64);
+    let mut bins: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for (k, w) in walls.iter().enumerate() {
+        let (lo, hi) = (
+            key([w.a[0].min(w.b[0]) - w.gap, w.a[1].min(w.b[1]) - w.gap]),
+            key([w.a[0].max(w.b[0]) + w.gap, w.a[1].max(w.b[1]) + w.gap]),
+        );
+        for x in lo.0..=hi.0 {
+            for y in lo.1..=hi.1 {
+                bins.entry((x, y)).or_default().push(k);
+            }
+        }
+    }
+    let side = |w: &Wall| {
+        if w.gap > 0.0 { vec![capsule(w.a, w.b, w.gap)] } else { vec![vec![w.a, w.b]] }
+    };
+    let mut out = Vec::new();
+    let mut near: Vec<usize> = Vec::new();
+    for (shape, gap) in keepouts {
+        let b = shape.bounds();
+        let reach = gap + min_width;
+        let (lo, hi) =
+            (key([b.min[0] - reach, b.min[1] - reach]), key([b.max[0] + reach, b.max[1] + reach]));
+        near.clear();
+        for x in lo.0..=hi.0 {
+            for y in lo.1..=hi.1 {
+                near.extend(bins.get(&(x, y)).into_iter().flatten());
+            }
+        }
+        near.sort_unstable_by_key(|&k| (walls[k].group, k));
+        near.dedup();
+        for group in near.chunk_by(|&x, &y| walls[x].group == walls[y].group) {
+            let mut best: Option<(f64, usize)> = None;
+            for &k in group {
+                let w = &walls[k];
+                let apart = shape.distance(&Shape::Seg(w.a, w.b, 0.0)) - gap - w.gap;
+                if best.is_none_or(|x| apart < x.0) {
+                    best = Some((apart, k));
+                }
+            }
+            let Some((apart, k)) = best else { continue };
+            if apart <= 1e-6 || apart >= min_width {
+                continue;
+            }
+            let w = &walls[k];
+            let (ca, ra) = core_of(shape);
+            let Some((qa, qb)) = nearest_points(&ca, &[(w.a, w.b)]) else { continue };
+            let core = geom::dist(qa, qb);
+            if core < 1e-9 {
+                continue;
+            }
+            let dir = [(qb[0] - qa[0]) / core, (qb[1] - qa[1]) / core];
+            let (ea, eb) = (ra + gap, w.gap);
+            let m = [
+                (qa[0] + dir[0] * ea + qb[0] - dir[0] * eb) / 2.0,
+                (qa[1] + dir[1] * ea + qb[1] - dir[1] * eb) / 2.0,
+            ];
+            let rho = apart / 2.0 + 1.5 * min_width;
+            let mut pts = Vec::new();
+            cap_points(&inflated(shape, *gap), m, rho, &mut pts);
+            for &j in group {
+                cap_points(&side(&walls[j]), m, rho, &mut pts);
+            }
             let hull = convex_hull(pts);
             if hull.len() >= 3 {
                 out.push(hull);
@@ -2936,6 +3032,93 @@ mod pair_tests {
         }
         assert!(copper([across[0] * 0.6, across[1] * 0.6]));
         assert!(copper([0.0, 1.0]) && copper([-1.0, 0.0]));
+    }
+
+    fn gap_is_cut(fill: &ZoneFill, y: f64) {
+        let copper =
+            |p: P| fill.rings.iter().filter(|r| geom::point_in_polygon(p, r)).count() % 2 == 1;
+        for k in -30..=30 {
+            let p = [k as f64 * 0.01, y];
+            assert!(!copper(p), "copper at {p:?}");
+        }
+        assert!(copper([-1.0, 1.0]) && copper([1.0, 0.0]));
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_an_antipad_and_the_board_edge() {
+        let items = [via(1, [0.0, 1.3]), via(0, [-1.5, -1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            &square,
+            0.2,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[],
+            &[],
+            0.25,
+            0.0,
+        );
+        gap_is_cut(&fill, (1.575 + 1.8) / 2.0);
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_an_antipad_and_a_cutout() {
+        let items = [via(1, [0.0, 1.3]), via(0, [-1.5, -1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let cut = vec![[-3.0, 1.8], [3.0, 1.8], [3.0, 3.0], [-3.0, 3.0]];
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            &[],
+            0.0,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[&cut],
+            &[],
+            0.25,
+            0.0,
+        );
+        gap_is_cut(&fill, (1.575 + 1.8) / 2.0);
+    }
+
+    #[test]
+    fn a_pour_leaves_no_stubs_between_an_antipad_and_another_fill() {
+        let items = [via(1, [0.0, 1.3]), via(0, [-1.5, -1.5])];
+        let square = [[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
+        let other = ZoneFill {
+            net: 2,
+            layer: "In6.Cu".into(),
+            origin: [0.0, 0.0],
+            cell: 1.0,
+            width: 0,
+            height: 0,
+            mask: Vec::new(),
+            islands_removed: 0,
+            min_width: 0.25,
+            rings: vec![vec![[-2.0, 1.8], [2.0, 1.8], [2.0, 2.0], [-2.0, 2.0]]],
+            triangles: Vec::new(),
+        };
+        let (fill, _) = fill_zone(
+            0,
+            "In6.Cu",
+            &square,
+            &[],
+            0.0,
+            0.1,
+            &items,
+            &|_| 0.1,
+            &[],
+            &[&other],
+            0.25,
+            0.0,
+        );
+        gap_is_cut(&fill, (1.575 + 1.7) / 2.0);
     }
 
     #[test]
