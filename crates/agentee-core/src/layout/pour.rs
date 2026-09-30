@@ -7,8 +7,9 @@ use crate::graphic::Bounds;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
-const FILL_VERSION: u64 = 1;
+const FILL_VERSION: u64 = 2;
 const STORE_GRID: f64 = 1e4;
+pub(super) const SNAP_MARGIN: f64 = 1.0 / STORE_GRID;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

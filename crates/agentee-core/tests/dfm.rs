@@ -264,6 +264,29 @@ fn a_via_hole_near_another_net_is_flagged() {
     );
 }
 
+#[test]
+fn a_pour_keeps_the_via_hole_rule_after_snapping() {
+    let board = "[rules]\nmin_via_hole_to_copper = \"0.25mm\"\n[[vias]]\nname = \"tiny\"\ndrill = \"0.3mm\"\ndiameter = \"0.4mm\"\n";
+    let mut pcb = String::from(
+        "\n[[zones]]\nnet = \"B\"\nlayers = [\"F.Cu\"]\noutline = [[1.0, 1.0], [29.0, 1.0], [29.0, 19.0], [1.0, 19.0]]\nmin_island_area = 0.0\n",
+    );
+    for k in 0..108 {
+        let (x, y) = (2.0 + (k % 12) as f64 * 2.21237, 2.5 + (k / 12) as f64 * 1.61119);
+        let t = k as f64 * 0.7371;
+        for (dx, dy) in [(0.0, 0.0), (0.93 * t.cos(), 0.93 * t.sin())] {
+            pcb += &format!(
+                "\n[[vias]]\nnet = \"A\"\nat = [{:.6}, {:.6}]\nvia = \"tiny\"\n",
+                x + dx + 0.0000371 * k as f64,
+                y + dy + 0.0000533 * k as f64
+            );
+        }
+    }
+    let parts = &[("R1", "TWO", [5.0, 18.0])];
+    let e =
+        hits(&load(&Fixture { pcb: &pcb, board, parts, ..Default::default() }), "hole-to-copper");
+    assert!(e.is_empty(), "{e:?}");
+}
+
 const THT: &str = r#"
 [[pads]]
 number = "1"

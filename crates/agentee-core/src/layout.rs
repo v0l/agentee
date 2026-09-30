@@ -3333,7 +3333,7 @@ fn fill_clip(
     let mut clip: Vec<Vec<P>> = Vec::new();
     if board.is_closed() && edge_clear > 0.0 {
         for (a, b) in board.segments().filter(|(a, b)| edge_near(*a, *b, edge_clear)) {
-            clip.push(capsule(a, b, edge_clear));
+            clip.push(capsule(a, b, edge_clear + pour::SNAP_MARGIN));
         }
     }
     if board.is_closed() {
@@ -3355,7 +3355,7 @@ fn fill_clip(
         .map(|(it, gap)| (&it.shape, gap))
         .collect();
     for (shape, gap) in &keepouts {
-        clip.extend(inflated(shape, *gap));
+        clip.extend(inflated(shape, *gap + pour::SNAP_MARGIN));
     }
     if min_width > 0.0 {
         clip.extend(gap_bridges(&keepouts, min_width));
@@ -3399,7 +3399,7 @@ fn fill_clip(
         let gap = clearance.max(clearance_of(Some(z.net)));
         let shapes: Vec<Vec<Vec<P>>> =
             ring_shapes(&z.rings).into_iter().filter(|s| near(ring_bounds(s), gap)).collect();
-        clip.extend(grown(&shapes, gap).into_iter().flatten());
+        clip.extend(grown(&shapes, gap + pour::SNAP_MARGIN).into_iter().flatten());
     }
     (subject, clip)
 }
