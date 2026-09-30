@@ -263,6 +263,12 @@ fn holes(l: &Layout) -> Vec<Hole> {
             out.push(Hole { ring, plated });
         }
     }
+    out.extend(
+        l.board_cutouts
+            .iter()
+            .filter(|c| c.len() >= 3)
+            .map(|c| Hole { ring: c.clone(), plated: false }),
+    );
     out
 }
 
@@ -854,6 +860,38 @@ pub fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_board_cutout_is_a_hole_through_the_3d_board() {
+        let dir = std::env::temp_dir().join(format!("agentee-3d-cutout-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\n[outline]\nsize = [20, 10]\n[[outline.cutouts]]\norigin = [8, 3]\nsize = [4, 4]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("t.sch.toml"), "name = \"t\"\nboard = \"t\"\n").unwrap();
+        std::fs::write(dir.join("t.pcb.toml"), "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n")
+            .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let scene = build(&p.layouts[0].item, &p.boards[0].item, &dir, Fetch::Blocking);
+        let top = &scene.surfaces[0];
+        let mut area = 0.0;
+        for t in top.positions.chunks_exact(3) {
+            let c = [(t[0][0] + t[1][0] + t[2][0]) / 3.0, -(t[0][1] + t[1][1] + t[2][1]) / 3.0];
+            assert!(
+                !(c[0] > 8.0 && c[0] < 12.0 && c[1] > 3.0 && c[1] < 7.0),
+                "face over the cutout"
+            );
+            let (u, v) =
+                ([t[1][0] - t[0][0], t[1][1] - t[0][1]], [t[2][0] - t[0][0], t[2][1] - t[0][1]]);
+            area += ((u[0] * v[1] - u[1] * v[0]) / 2.0).abs() as f64;
+        }
+        assert!((area - (200.0 - 16.0)).abs() < 1e-3, "top face area {area}");
+        let walls = &scene.surfaces[2];
+        assert_eq!(walls.positions.len(), 6 * 8);
+    }
 
     #[test]
     fn model_rotation_follows_kicad_negated_zyx() {

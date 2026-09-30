@@ -116,8 +116,17 @@ pub fn layout(
     }
 
     let outline: Vec<Pos2> = l.outline.iter().map(|q| xf.world(*q)).collect();
+    let board_cutouts: Vec<Vec<Pos2>> = l
+        .board_cutouts
+        .iter()
+        .filter(|c| c.len() >= 3)
+        .map(|c| c.iter().map(|q| xf.world(*q)).collect())
+        .collect();
     if outline.len() >= 3 {
         fill_polygon(p, outline.clone(), SUBSTRATE, Stroke::NONE);
+        for c in &board_cutouts {
+            fill_polygon(p, c.clone(), WELL, Stroke::NONE);
+        }
     }
 
     for layer in l.copper.iter().rev() {
@@ -305,6 +314,9 @@ pub fn layout(
 
     if outline.len() >= 3 && layers.shows("Edge.Cuts") {
         p.add(PathShape::closed_line(outline, Stroke::new(1.5, paint::EDGE)));
+        for c in board_cutouts {
+            p.add(PathShape::closed_line(c, Stroke::new(1.5, paint::EDGE)));
+        }
     }
     if layers.shows("Cutouts") {
         for (ls, pts) in &l.cutouts {

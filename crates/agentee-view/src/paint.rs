@@ -640,18 +640,7 @@ fn drill(p: &Painter, xf: &Xf, pad: &Pad, d: Drill) {
 }
 
 pub fn outline_points(o: &agentee_core::board::Outline) -> Vec<[f64; 2]> {
-    use agentee_core::board::Outline;
-    match o {
-        Outline::Rect { origin, size, corner_radius } => {
-            let [w, h] = size.to_mm();
-            let [x0, y0] = origin.to_mm();
-            geom::rounded_rect(w, h, corner_radius.to_mm(), 8)
-                .into_iter()
-                .map(|q| [q[0] + x0 + w / 2.0, q[1] + y0 + h / 2.0])
-                .collect()
-        }
-        Outline::Polygon { points } => points.iter().map(|q| q.to_mm()).collect(),
-    }
+    o.points()
 }
 
 pub fn outline_bounds(o: &agentee_core::board::Outline) -> Bounds {
