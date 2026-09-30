@@ -415,6 +415,75 @@ pub fn trace_width(
     }))
 }
 
+struct Tracker {
+    state: std::sync::Arc<std::sync::Mutex<agentee_core::sim::SimProgress>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    path: PathBuf,
+}
+
+impl Tracker {
+    fn start(spec: &Path, runs: usize, max_steps: usize) -> Tracker {
+        use std::sync::atomic::Ordering;
+        let now = agentee_core::sim::now();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(agentee_core::sim::SimProgress {
+            run: 0,
+            runs,
+            port: String::new(),
+            steps: 0,
+            max_steps,
+            decay_db: 0.0,
+            started: now,
+            updated: now,
+            pid: std::process::id(),
+            phase: "preparing".into(),
+        }));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let path = agentee_core::sim::progress_path(spec);
+        let write = {
+            let (state, path) = (state.clone(), path.clone());
+            move || {
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                s.updated = agentee_core::sim::now();
+                if let Ok(text) = serde_json::to_string(&*s) {
+                    let _ = std::fs::write(&path, text);
+                }
+            }
+        };
+        write();
+        let thread = {
+            let stop = stop.clone();
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    if !stop.load(Ordering::Relaxed) {
+                        write();
+                    }
+                }
+            })
+        };
+        Tracker { state, stop, thread: Some(thread), path }
+    }
+
+    fn update(&self, f: impl FnOnce(&mut agentee_core::sim::SimProgress)) {
+        f(&mut self.state.lock().unwrap_or_else(|e| e.into_inner()));
+    }
+
+    fn phase(&self, phase: &str) {
+        self.update(|s| s.phase = phase.to_string());
+    }
+}
+
+impl Drop for Tracker {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 pub fn run_sim(
     p: &Project,
     name: &str,
@@ -433,6 +502,15 @@ pub fn run_sim(
     let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
     let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
     let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
+    let tracker = (!dry).then(|| Tracker::start(&entry.path, spec.excite.len(), spec.max_steps));
+    let phase = |name: &str| {
+        if let Some(t) = &tracker {
+            t.phase(name);
+        }
+    };
+    if spec.kind != agentee_core::sim::SimKind::Fdtd {
+        phase("solving");
+    }
     if spec.kind == agentee_core::sim::SimKind::Cascade {
         return run_cascade(p, entry, &src);
     }
@@ -466,6 +544,7 @@ pub fn run_sim(
             "readings": result.readings,
         }));
     }
+    phase("meshing");
     let model = agentee_sim::fdtd::model::PcbModel::from_layout(&layout.item, &board.item, spec)?;
     let mut plan = agentee_sim::fdtd::plan(
         &model,
@@ -493,33 +572,22 @@ pub fn run_sim(
             "inductor_edges": plan.sim.inductors.len(),
         }));
     }
-    let progress_file = agentee_core::sim::progress_path(&entry.path);
-    let started = agentee_core::sim::now();
+    phase("running");
     let ports: Vec<String> = spec.excite.iter().map(|j| spec.ports[*j].name.clone()).collect();
-    let mut last_write = std::time::Instant::now() - std::time::Duration::from_secs(5);
     let mut report = |port: &str, steps: usize, db: f64| {
         progress(port, steps, db);
-        if last_write.elapsed().as_millis() >= 500 {
-            last_write = std::time::Instant::now();
-            let state = agentee_core::sim::SimProgress {
-                run: ports.iter().position(|p| p == port).unwrap_or(0),
-                runs: ports.len(),
-                port: port.to_string(),
-                steps,
-                max_steps: spec.max_steps,
-                decay_db: db,
-                started,
-                updated: agentee_core::sim::now(),
-                pid: std::process::id(),
-            };
-            if let Ok(text) = serde_json::to_string(&state) {
-                let _ = std::fs::write(&progress_file, text);
-            }
+        if let Some(t) = &tracker {
+            t.update(|s| {
+                s.run = ports.iter().position(|p| p == port).unwrap_or(0);
+                s.port = port.to_string();
+                s.steps = steps;
+                s.decay_db = db;
+            });
         }
     };
     let outcome =
         agentee_sim::fdtd::execute(&plan, &spec.name, agentee_core::sim::hash(&src), &mut report);
-    let _ = std::fs::remove_file(&progress_file);
+    phase("writing");
     let mut result = outcome?;
     result.layout_hash =
         Some(agentee_core::sim::copper_hash(&layout.item, &board.item, spec.region));

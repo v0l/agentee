@@ -706,6 +706,8 @@ pub struct SimProgress {
     pub started: u64,
     pub updated: u64,
     pub pid: u32,
+    #[serde(default)]
+    pub phase: String,
 }
 
 impl SimProgress {

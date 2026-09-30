@@ -173,6 +173,40 @@ impl FillSpec<'_> {
     }
 }
 
+fn cache_dir() -> Option<std::path::PathBuf> {
+    if std::env::var_os("AGENTEE_NO_FILL_CACHE").is_some() {
+        return None;
+    }
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))?;
+    Some(base.join("agentee").join("fills"))
+}
+
+pub(super) fn cached(hash: u64) -> Option<FillFile> {
+    let path = cache_dir()?.join(format!("{hash:016x}.json"));
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
+pub(super) fn cache(hash: u64, fill: &ZoneFill) {
+    let Some(dir) = cache_dir() else { return };
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let file = FillFile {
+        zone: 0,
+        layer: fill.layer.clone(),
+        hash: format!("{hash:016x}"),
+        islands_removed: fill.islands_removed,
+        rings: fill.rings.clone(),
+    };
+    let Ok(text) = serde_json::to_vec(&file) else { return };
+    let tmp = dir.join(format!("{hash:016x}.{}.tmp", std::process::id()));
+    if std::fs::write(&tmp, text).is_ok() {
+        let _ = std::fs::rename(&tmp, dir.join(format!("{hash:016x}.json")));
+    }
+}
+
 pub(super) fn raster_grid(poly: &[P]) -> (P, f64, usize, usize) {
     let mut b = Bounds::EMPTY;
     poly.iter().for_each(|p| b.add(*p));

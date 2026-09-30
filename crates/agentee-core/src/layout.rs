@@ -1326,7 +1326,8 @@ impl LayoutFile {
                         min_island_area: spec.min_island_area,
                     });
                 }
-                let (fill, touched) = match fresh {
+                let hit = if fresh.is_none() { pour::cached(hash) } else { None };
+                let (fill, touched) = match fresh.or(hit.as_ref()) {
                     Some(f) => spec.stored(&items, f),
                     None if pour::capturing() => spec.stored(&items, &FillFile::default()),
                     None => fill_zone(
@@ -1344,6 +1345,9 @@ impl LayoutFile {
                         spec.min_island_area,
                     ),
                 };
+                if fresh.is_none() && hit.is_none() && !pour::capturing() {
+                    pour::cache(hash, &fill);
+                }
                 if stored.is_some() && fresh.is_none() {
                     d.info(
                         &at,
@@ -1986,8 +1990,22 @@ fn silk_issues(
     outline: &[P],
 ) -> Vec<(bool, String)> {
     let mut out = Vec::new();
+    let reach = ring_bounds(std::slice::from_ref(&bx.to_vec()));
+    let near = |pts: &mut dyn Iterator<Item = P>, gap: f64| {
+        let mut b = Bounds::EMPTY;
+        pts.for_each(|q| b.add(q));
+        !b.is_empty()
+            && b.max[0] + gap >= reach.min[0]
+            && b.min[0] - gap <= reach.max[0]
+            && b.max[1] + gap >= reach.min[1]
+            && b.min[1] - gap <= reach.max[1]
+    };
     for (j, u) in texts.iter().enumerate() {
-        if j != me && u.layer == t.layer && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP {
+        if j != me
+            && u.layer == t.layer
+            && near(&mut boxes[j].iter().copied(), SILK_GAP)
+            && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP
+        {
             out.push((true, format!("crowds `{}` of {}", u.text, u.owner)));
         }
     }
@@ -1998,7 +2016,9 @@ fn silk_issues(
         .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
         .filter(|(_, q)| {
             (q.copper.contains(&cu) || q.drill.is_some())
-                && q.outlines.iter().any(|o| geom::polygon_distance(o, bx) <= 0.0)
+                && q.outlines.iter().any(|o| {
+                    near(&mut o.iter().copied(), 0.0) && geom::polygon_distance(o, bx) <= 0.0
+                })
         })
         .map(|(p, q)| format!("{}.{}", p.reference, q.number))
         .collect();
@@ -2008,8 +2028,9 @@ fn silk_issues(
     let on_vias = vias
         .iter()
         .filter(|v| {
-            geom::point_in_polygon(v.at, bx)
-                || geom::polyline_polygon_distance(&[v.at, v.at], bx) < v.diameter / 2.0
+            near(&mut std::iter::once(v.at), v.diameter / 2.0)
+                && (geom::point_in_polygon(v.at, bx)
+                    || geom::polyline_polygon_distance(&[v.at, v.at], bx) < v.diameter / 2.0)
         })
         .count();
     if on_vias > 0 {
@@ -2030,7 +2051,9 @@ fn silk_issues(
                             .into_iter()
                             .map(|q| tf.apply(q))
                             .collect();
+                        let gap = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
                         path.len() >= 2
+                            && near(&mut path.iter().copied(), gap)
                             && geom::polyline_polygon_distance(&path, bx)
                                 < g.width.to_mm() / 2.0 + SILK_GAP / 2.0
                     }
@@ -2049,7 +2072,10 @@ fn silk_issues(
         .iter()
         .enumerate()
         .filter(|(k, p)| {
-            *k != t.part && body_box(p, side).is_some_and(|b| geom::polygon_distance(&b, bx) <= 0.0)
+            *k != t.part
+                && body_box(p, side).is_some_and(|b| {
+                    near(&mut b.iter().copied(), 0.0) && geom::polygon_distance(&b, bx) <= 0.0
+                })
         })
         .map(|(_, p)| p.reference.as_str())
         .collect();

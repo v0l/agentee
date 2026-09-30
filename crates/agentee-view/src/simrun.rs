@@ -5,6 +5,7 @@ use std::process::{Child, Command, Stdio};
 struct Run {
     child: Child,
     log: PathBuf,
+    started: std::time::Instant,
 }
 
 #[derive(Default)]
@@ -45,7 +46,10 @@ impl Runs {
             .spawn();
         match spawned {
             Ok(child) => {
-                self.running.insert(name.to_string(), Run { child, log });
+                self.running.insert(
+                    name.to_string(),
+                    Run { child, log, started: std::time::Instant::now() },
+                );
             }
             Err(e) => {
                 self.failed.insert(name.to_string(), e.to_string());
@@ -86,6 +90,10 @@ impl Runs {
 
     pub fn starting(&self, name: &str) -> bool {
         self.running.contains_key(name)
+    }
+
+    pub fn elapsed(&self, name: &str) -> Option<std::time::Duration> {
+        self.running.get(name).map(|r| r.started.elapsed())
     }
 
     pub fn any(&self) -> bool {

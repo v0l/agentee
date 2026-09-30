@@ -992,19 +992,29 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
         sim_controls(ui, project, index, st);
         if let Some(pr) = &st.sim_progress {
             let secs = agentee_core::sim::now().saturating_sub(pr.started);
-            section(ui, "running", &format!("pid {}", pr.pid), |ui| {
-                progress(ui, "", pr.fraction(), Some(1.0), "");
-                ui.add_space(4.0);
-                Line::new()
-                    .legend("port")
-                    .set(format!("{} ({}/{})", pr.port, pr.run + 1, pr.runs))
-                    .legend("steps")
-                    .measured(format!("{} / {}", pr.steps, pr.max_steps))
-                    .legend("fields down")
-                    .measured(format!("{:.1} dB", pr.decay_db))
-                    .legend("elapsed")
-                    .value(format!("{}:{:02}", secs / 60, secs % 60))
-                    .show(ui);
+            let elapsed = format!("{}:{:02}", secs / 60, secs % 60);
+            let phase = if pr.phase.is_empty() { "running" } else { pr.phase.as_str() };
+            section(ui, phase, &format!("pid {}", pr.pid), |ui| {
+                if phase == "running" {
+                    progress(ui, "", pr.fraction(), Some(1.0), "");
+                    ui.add_space(4.0);
+                    Line::new()
+                        .legend("port")
+                        .set(format!("{} ({}/{})", pr.port, pr.run + 1, pr.runs))
+                        .legend("steps")
+                        .measured(format!("{} / {}", pr.steps, pr.max_steps))
+                        .legend("fields down")
+                        .measured(format!("{:.1} dB", pr.decay_db))
+                        .legend("elapsed")
+                        .value(elapsed)
+                        .show(ui);
+                } else {
+                    let t = ui.input(|i| i.time) as f32;
+                    progress(ui, "", (t * 0.5).fract(), None, "");
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+                    ui.add_space(4.0);
+                    Line::new().legend("elapsed").value(elapsed).show(ui);
+                }
             });
             ui.add_space(8.0);
         }
@@ -1124,7 +1134,9 @@ fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState
                 st.runs.stop(&s.name, pid);
             }
             if starting {
-                note(ui, "starting", LEGEND);
+                let secs = st.runs.elapsed(&s.name).map(|d| d.as_secs()).unwrap_or(0);
+                note(ui, format!("loading the project, {secs} s"), LEGEND);
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
             }
         } else {
             let label = if has_result { "re-run" } else { "run" };
