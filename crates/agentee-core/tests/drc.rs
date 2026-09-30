@@ -167,3 +167,193 @@ fn a_via_in_pad_wider_than_the_fab_fills_is_an_error() {
     let e = hits(&load(&Fixture { pcb, board, ..Default::default() }), "via-in-pad-fill");
     assert!(e.len() == 1 && e[0].1.contains("fills and caps holes up to 0.55mm"), "{e:?}");
 }
+
+const DRILLS: &str = r#"
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "circle"
+at = [0, 0]
+size = [0.6, 0.6]
+drill = 0.1
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [2, 0]
+size = [0.4, 0.4]
+drill = 0.4
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "oval"
+at = [4, 0]
+size = [0.8, 1.6]
+drill = [0.3, 1.0]
+
+[[pads]]
+number = "3"
+kind = "tht"
+shape = "oval"
+at = [6, 0]
+size = [1.2, 1.6]
+drill = [0.6, 1.0]
+"#;
+
+#[test]
+fn drill_and_slot_sizes_follow_the_fab() {
+    let p = load(&Fixture {
+        preset: "jlcpcb-4l-1.6mm-7628",
+        footprints: &[("DRILLS", DRILLS)],
+        parts: &[("R1", "DRILLS", [5.0, 5.0])],
+        ..Default::default()
+    });
+    let e = hits(&p, "drill-size");
+    assert!(
+        e.iter().any(|x| x.1.contains("plated hole 0.1mm is under the fab minimum 0.15mm")),
+        "{e:?}"
+    );
+    assert!(
+        e.iter().any(|x| x.1.contains("non-plated hole 0.4mm is under the fab minimum 0.5mm")),
+        "{e:?}"
+    );
+    let e = hits(&p, "slot-size");
+    assert!(
+        e.iter().any(|x| x.1.contains("plated slot 0.3mm wide is under the fab minimum 0.35mm")),
+        "{e:?}"
+    );
+    assert!(e.iter().any(|x| x.1.contains("0.6mm x 1mm is shorter than twice its width")), "{e:?}");
+}
+
+#[test]
+fn a_thin_board_drill_trips_the_aspect_ratio() {
+    let p = load(&Fixture { pcb: &via("A", [15.0, 10.0]), ..Default::default() });
+    assert!(hits(&p, "aspect-ratio").is_empty());
+    let p = load(&Fixture {
+        pcb: &via("A", [15.0, 10.0]),
+        board: "[rules]\nmax_aspect_ratio = 5\n",
+        ..Default::default()
+    });
+    let e = hits(&p, "aspect-ratio");
+    assert!(e.len() == 1 && e[0].1.contains(":1, over the fab's 5:1"), "{e:?}");
+}
+
+fn track(net: &str, layer: &str, pts: &str) -> String {
+    format!("\n[[tracks]]\nnet = \"{net}\"\nlayer = \"{layer}\"\npoints = {pts}\n")
+}
+
+#[test]
+fn a_via_hole_near_another_net_is_flagged() {
+    let board = "[[vias]]\nname = \"tiny\"\ndrill = \"0.3mm\"\ndiameter = \"0.35mm\"\n";
+    let pcb = format!(
+        "\n[[vias]]\nnet = \"A\"\nat = [15.0, 10.0]\nvia = \"tiny\"\n{}",
+        track("B", "B.Cu", "[[13.0, 10.42], [17.0, 10.42]]")
+    );
+    let e = hits(&load(&Fixture { pcb: &pcb, board, ..Default::default() }), "hole-to-copper");
+    assert!(
+        e.len() == 1
+            && e[0].1.starts_with("1 holes closer than 0.2mm")
+            && e[0].1.contains("0.17mm from track 0 (B)"),
+        "{e:?}"
+    );
+    let pcb = pcb.replace("10.42", "10.46");
+    assert!(
+        hits(&load(&Fixture { pcb: &pcb, board, ..Default::default() }), "hole-to-copper")
+            .is_empty()
+    );
+}
+
+const THT: &str = r#"
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "circle"
+at = [0, 0]
+size = [1.1, 1.1]
+drill = 1.0
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [3, 0]
+size = [1, 1]
+"#;
+
+#[test]
+fn inner_layer_hole_clearance_runs_only_with_inner_layers() {
+    let pcb = track("B", "In1.Cu", "[[3.0, 5.89], [7.0, 5.89]]");
+    let four = load(&Fixture {
+        preset: "jlcpcb-4l-1.6mm-7628",
+        footprints: &[("THT", THT)],
+        parts: &[("R1", "THT", [5.0, 5.0])],
+        pcb: &pcb,
+        ..Default::default()
+    });
+    let e = hits(&four, "inner-hole-to-copper");
+    assert!(e.len() == 1 && e[0].1.contains("R1.1 is 0.29mm from track 0 (B)"), "{e:?}");
+    assert!(hits(&four, "hole-to-copper").is_empty());
+    let applies = |p: &Project| {
+        let l = &p.layouts[0].item;
+        let b = &p.boards[0].item;
+        let s = agentee_core::drc::Setup::of(&agentee_core::drc::Ctx::of_layout(b, l));
+        agentee_core::drc::status(b, &s)
+            .into_iter()
+            .find(|r| r.id == "inner-hole-to-copper")
+            .unwrap()
+            .applies
+    };
+    assert!(applies(&four));
+    let pcb = track("B", "B.Cu", "[[3.0, 5.89], [7.0, 5.89]]");
+    let two = load(&Fixture {
+        footprints: &[("THT", THT)],
+        parts: &[("R1", "THT", [5.0, 5.0])],
+        pcb: &pcb,
+        ..Default::default()
+    });
+    assert!(!applies(&two));
+    assert!(hits(&two, "inner-hole-to-copper").is_empty());
+}
+
+const NPTH: &str = r#"
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [0, 0]
+size = [1, 1]
+drill = 1.0
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [3, 0]
+size = [1, 1]
+count = 2
+pitch = [2, 0]
+"#;
+
+#[test]
+fn npth_keeps_off_copper_and_the_edge() {
+    let pcb = track("A", "F.Cu", "[[8.0, 5.75], [12.0, 5.75]]");
+    let p = load(&Fixture {
+        footprints: &[("NPTH", NPTH)],
+        parts: &[("R1", "NPTH", [10.0, 5.0])],
+        pcb: &pcb,
+        ..Default::default()
+    });
+    let e = hits(&p, "npth-to-copper");
+    assert!(
+        e.len() == 1 && e[0].1.contains("R1 hole at [10.000, 5.000] is 0.15mm from track 0 (A)"),
+        "{e:?}"
+    );
+    assert!(hits(&p, "hole-to-edge").is_empty());
+    let p = load(&Fixture {
+        footprints: &[("NPTH", NPTH)],
+        parts: &[("R1", "NPTH", [0.7, 5.0])],
+        ..Default::default()
+    });
+    let e = hits(&p, "hole-to-edge");
+    assert!(e.len() == 1 && e[0].1.contains("is 0.2mm from the board edge, needs 0.3mm"), "{e:?}");
+}

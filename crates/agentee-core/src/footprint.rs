@@ -434,12 +434,12 @@ impl Footprint {
                         small_drills.push((&p.number, dr.min()));
                     }
                     let ring = ((p.size.0 - dr.size().0) / 2.0).min((p.size.1 - dr.size().1) / 2.0);
-                    if ring < rules.min_annular_ring {
+                    if ring < rules.min_pth_annular_ring {
                         d.error(
                             &at,
                             format!(
                                 "annular ring {ring} is under the fab minimum {}",
-                                rules.min_annular_ring
+                                rules.min_pth_annular_ring
                             ),
                         );
                     }
@@ -699,6 +699,21 @@ pitch = [0.8, 0]
         let mut d = Diags::new("bad");
         f.resolve(&mut d).check(&fab_rules("generic").unwrap(), &mut d);
         assert!(d.list.iter().any(|x| x.message.contains("overlap")), "{:?}", d.list);
+    }
+
+    #[test]
+    fn plated_pad_rings_use_the_pth_minimum() {
+        let f: FootprintFile = toml::from_str(
+            "name = \"t\"\n[[pads]]\nnumber = \"1\"\nkind = \"tht\"\nshape = \"circle\"\nat = [0, 0]\nsize = [1.32, 1.32]\ndrill = 1.0\n",
+        )
+        .unwrap();
+        let mut d = Diags::new("t");
+        f.resolve(&mut d).check(&fab_rules("jlcpcb").unwrap(), &mut d);
+        assert!(
+            d.list.iter().any(|x| x.message.contains("under the fab minimum 0.18mm")),
+            "{:?}",
+            d.list
+        );
     }
 
     #[test]

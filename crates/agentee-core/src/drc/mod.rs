@@ -95,7 +95,66 @@ pub struct Ctx<'a> {
     pub zones: &'a [ZoneFill],
     pub nets: &'a [LayoutNet],
     items: OnceCell<Vec<Cu>>,
+    grid: OnceCell<HashMap<(i64, i64), Vec<usize>>>,
     fills: OnceCell<Vec<FillIndex>>,
+}
+
+const GRID: f64 = 1.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HoleOf {
+    Via(usize),
+    Pad(usize, usize),
+}
+
+pub struct Hole {
+    pub of: HoleOf,
+    pub a: P,
+    pub b: P,
+    pub r: f64,
+    pub size: [f64; 2],
+    pub plated: bool,
+    pub net: Option<usize>,
+    pub layers: Vec<String>,
+}
+
+impl Hole {
+    pub fn slot(&self) -> bool {
+        (self.size[0] - self.size[1]).abs() > 1e-6
+    }
+
+    pub fn gap_to(&self, c: &CuShape) -> f64 {
+        match c {
+            CuShape::Poly(v) => {
+                let d = v
+                    .iter()
+                    .map(|o| geom::polyline_polygon_distance(&[self.a, self.b], o))
+                    .fold(f64::MAX, f64::min);
+                d - self.r
+            }
+            CuShape::Seg(p, q, hw) => {
+                geom::segment_segment_distance(self.a, self.b, *p, *q) - hw - self.r
+            }
+            CuShape::Circle(o, ro) => {
+                geom::point_segment_distance(*o, self.a, self.b) - ro - self.r
+            }
+        }
+    }
+
+    pub fn gap_to_fill(&self, f: &FillIndex, reach: f64) -> f64 {
+        let mid = [(self.a[0] + self.b[0]) / 2.0, (self.a[1] + self.b[1]) / 2.0];
+        [self.a, mid, self.b]
+            .into_iter()
+            .map(|c| f.circle_gap(c, self.r, reach))
+            .fold(f64::MAX, f64::min)
+    }
+
+    pub fn bounds(&self) -> Bounds {
+        let mut b = Bounds::EMPTY;
+        b.add_circle(self.a, self.r);
+        b.add_circle(self.b, self.r);
+        b
+    }
 }
 
 impl<'a> Ctx<'a> {
@@ -120,6 +179,7 @@ impl<'a> Ctx<'a> {
             zones,
             nets,
             items: OnceCell::new(),
+            grid: OnceCell::new(),
             fills: OnceCell::new(),
         }
     }
@@ -180,6 +240,90 @@ impl<'a> Ctx<'a> {
             }
             out
         })
+    }
+
+    pub fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize> {
+        let items = self.copper_items();
+        let grid = self.grid.get_or_init(|| {
+            let mut g: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+            for (i, c) in items.iter().enumerate() {
+                for x in (c.bounds.min[0] / GRID).floor() as i64
+                    ..=(c.bounds.max[0] / GRID).floor() as i64
+                {
+                    for y in (c.bounds.min[1] / GRID).floor() as i64
+                        ..=(c.bounds.max[1] / GRID).floor() as i64
+                    {
+                        g.entry((x, y)).or_default().push(i);
+                    }
+                }
+            }
+            g
+        });
+        let mut out = Vec::new();
+        for x in
+            ((b.min[0] - reach) / GRID).floor() as i64..=((b.max[0] + reach) / GRID).floor() as i64
+        {
+            for y in ((b.min[1] - reach) / GRID).floor() as i64
+                ..=((b.max[1] + reach) / GRID).floor() as i64
+            {
+                out.extend(grid.get(&(x, y)).into_iter().flatten().copied());
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    pub fn holes(&self) -> Vec<Hole> {
+        let mut out: Vec<Hole> = self
+            .vias
+            .iter()
+            .enumerate()
+            .map(|(vi, v)| Hole {
+                of: HoleOf::Via(vi),
+                a: v.at,
+                b: v.at,
+                r: v.drill / 2.0,
+                size: [v.drill, v.drill],
+                plated: true,
+                net: Some(v.net),
+                layers: v.layers.clone(),
+            })
+            .collect();
+        for (pi, p) in self.parts.iter().enumerate() {
+            let t = p.transform();
+            for (k, q) in p.pads.iter().enumerate() {
+                let Some((c, size, _)) = q.drill else { continue };
+                let rot = p.footprint.pads.get(k).map(|f| f.rotation).unwrap_or(0.0);
+                let long = if size[0] >= size[1] { [1.0, 0.0] } else { [0.0, 1.0] };
+                let u = t.direction(geom::rotate(long, rot));
+                let half = (size[0] - size[1]).abs() / 2.0;
+                out.push(Hole {
+                    of: HoleOf::Pad(pi, k),
+                    a: [c[0] - u[0] * half, c[1] - u[1] * half],
+                    b: [c[0] + u[0] * half, c[1] + u[1] * half],
+                    r: size[0].min(size[1]) / 2.0,
+                    size,
+                    plated: q.kind != PadKind::Npth,
+                    net: q.net,
+                    layers: self.copper.to_vec(),
+                });
+            }
+        }
+        out
+    }
+
+    pub fn hole_name(&self, h: &Hole) -> String {
+        match h.of {
+            HoleOf::Via(v) => format!(
+                "via at [{:.3}, {:.3}] ({})",
+                self.vias[v].at[0], self.vias[v].at[1], self.nets[self.vias[v].net].name
+            ),
+            HoleOf::Pad(p, k) if self.parts[p].pads[k].number.is_empty() => {
+                format!("{} hole at [{:.3}, {:.3}]", self.parts[p].reference, h.a[0], h.a[1])
+            }
+            HoleOf::Pad(p, k) => self.pad_name(p, k),
+        }
     }
 
     pub fn fills(&self) -> &[FillIndex] {

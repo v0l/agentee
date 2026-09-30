@@ -187,6 +187,13 @@ severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | 
 | `via-in-pad` | info | vias in pads | counts the vias in SMD pads (drill inside the pad); `fab-notes.txt` asks the fab to fill and cap exactly these (IPC-4761 type VII) |
 | `via-in-pad-fill` | error | vias in pads | a via in a pad drilled wider than `max_filled_via_drill` |
 | `hole-to-smd-pad` | warning | always | a via hole closer than `min_hole_to_smd_pad` to an SMD pad of its own net (or no net) that it does not touch; paste and solder can flow into it |
+| `drill-size` | error | always | pad holes under `min_drill` (plated) or `min_npth_drill` (non-plated), or over `max_drill` (larger holes are routed, draw them as cutouts). Via sizes are checked on the board's `[[vias]]` |
+| `slot-size` | error | slotted holes | slots narrower than `min_plated_slot_width` or `min_npth_slot_width`, or shorter than twice their width |
+| `aspect-ratio` | error | always | plated holes whose depth (the copper and dielectric they pass) over drill exceeds `max_aspect_ratio` |
+| `hole-to-copper` | error | always | a via or plated pad hole wall closer than `min_via_hole_to_copper` or `min_pth_hole_to_copper` to copper of another net on a layer the hole passes: tracks, pads, vias, pours |
+| `inner-hole-to-copper` | error | 4+ copper layers | a plated pad hole wall closer than `min_inner_pth_hole_to_copper` to another net's copper on an inner layer |
+| `npth-to-copper` | error | non-plated holes | a non-plated hole wall closer than `min_npth_to_copper` to any copper, its own net's pour included |
+| `hole-to-edge` | error | non-plated holes | a non-plated hole wall closer than `min_copper_to_edge` to the board outline, or through it |
 
 An id that names no rule is a warning. The older checks described under Layout (clearance,
 shorts, unrouted nets, silk text, zone overlaps) have no ids yet and cannot be disabled.
@@ -361,7 +368,8 @@ Layers: `F.Cu`, `B.Cu`, `F.SilkS`, `B.SilkS`, `F.Mask`, `B.Mask`, `F.Paste`, `B.
 `B.Fab`, `F.CrtYd`, `B.CrtYd`, `Edge.Cuts`, `*.Cu`, `*.Mask`.
 
 Check looks for overlapping pads, pads closer than the fab clearance, drills and annular rings
-under the rules, a courtyard that encloses the pads, and silk that runs over exposed copper.
+under the rules (`min_drill`, `min_pth_annular_ring`), a courtyard that encloses the pads, and
+silk that runs over exposed copper.
 
 ## Schematic (`*.sch.toml`)
 
