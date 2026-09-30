@@ -1591,6 +1591,9 @@ cursor (at the pointer with no cursor, else at the right edge of the view), and 
 time from the cursor. Nets named `X[0]` to `X[n]`, or `X0` to `Xn` (also `X0_N` to `Xn_N`),
 fold into one bus row drawn in hex, MSB first, with a nibble of x for any unknown bit and z for
 a floating one; so does a `record` entry `{ name, nets }`. Click a bus name to open its bits.
+The VCD holds the same buses as vectors in place of their bits: `Q0` to `Q3` as
+`$var wire 4 # Q [3:0] $end`, `Y0_N` to `Y7_N` as `Y_N [7:0]` and a `record` bus of n nets as
+`NAME [n-1:0]`, MSB first.
 Markers along the top show each failed assertion (red, at the time it was checked), timing
 violation (amber) and contention (violet), with a dot on the rows of the nets involved; hover
 one for its message, click it to put the cursor there. `agentee render NAME --show

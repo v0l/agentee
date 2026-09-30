@@ -1,4 +1,4 @@
-use agentee_core::logic::{LogicResult, Mark, MarkKind, Trace, fmt_time, ps};
+use agentee_core::logic::{BusGroup, LogicResult, Mark, MarkKind, Trace, bus_groups, fmt_time, ps};
 use agentee_core::sim::Sim;
 use egui::{Align2, Color32, Key, PointerButton, Pos2, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use egui_bench::prelude::*;
@@ -83,69 +83,17 @@ pub enum Row {
     Bus { name: String, bits: Vec<usize>, open: bool },
 }
 
-fn bus_bit(name: &str) -> Option<(String, u32, String)> {
-    if let Some(stem) = name.strip_suffix(']')
-        && let Some((prefix, idx)) = stem.rsplit_once('[')
-        && !prefix.is_empty()
-        && let Ok(i) = idx.parse()
-    {
-        return Some((prefix.to_string(), i, String::new()));
-    }
-    let end = name.rfind(|c: char| c.is_ascii_digit())? + 1;
-    let start = name[..end].rfind(|c: char| !c.is_ascii_digit())? + 1;
-    let suffix = &name[end..];
-    if !["", "_N", "_n", "#"].contains(&suffix) {
-        return None;
-    }
-    let i = name[start..end].parse().ok()?;
-    Some((name[..start].to_string(), i, suffix.to_string()))
-}
-
-type AutoBus = ((String, String), Vec<(u32, usize)>);
-
 pub fn rows(traces: &[Trace], buses: &[agentee_core::logic::Bus], open: &[String]) -> Vec<Row> {
-    let find = |n: &str| traces.iter().position(|t| t.name == n);
-    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    let groups = bus_groups(traces, buses);
     let mut used = vec![false; traces.len()];
-    for b in buses {
-        let bits: Option<Vec<usize>> = b.nets.iter().map(|n| find(n)).collect();
-        if let Some(bits) = bits
-            && !bits.is_empty()
-        {
-            bits.iter().for_each(|k| used[*k] = true);
-            groups.push((b.name.clone(), bits));
-        }
-    }
-    let mut auto: Vec<AutoBus> = Vec::new();
-    for (k, t) in traces.iter().enumerate() {
-        if used[k] {
-            continue;
-        }
-        let Some((prefix, i, suffix)) = bus_bit(&t.name) else { continue };
-        let key = (prefix, suffix);
-        match auto.iter_mut().find(|g| g.0 == key) {
-            Some(g) => g.1.push((i, k)),
-            None => auto.push((key, vec![(i, k)])),
-        }
-    }
-    for ((prefix, suffix), mut bits) in auto {
-        bits.sort_by_key(|b| std::cmp::Reverse(b.0));
-        let distinct = bits.windows(2).all(|w| w[0].0 != w[1].0);
-        if bits.len() < 2 || !distinct {
-            continue;
-        }
-        let (hi, lo) = (bits[0].0, bits[bits.len() - 1].0);
-        bits.iter().for_each(|b| used[b.1] = true);
-        let name = format!("{prefix}[{hi}:{lo}]{suffix}");
-        groups.push((name, bits.into_iter().map(|b| b.1).collect()));
-    }
+    groups.iter().flat_map(|g| &g.bits).for_each(|k| used[*k] = true);
     let mut out = Vec::new();
     for (k, grouped) in used.iter().enumerate() {
         if !grouped {
             out.push(Row::Bit { trace: k, inner: false });
             continue;
         }
-        for (name, bits) in &groups {
+        for BusGroup { name, bits, .. } in &groups {
             if bits.iter().min() == Some(&k) {
                 let is_open = open.contains(name);
                 out.push(Row::Bus { name: name.clone(), bits: bits.clone(), open: is_open });
@@ -658,16 +606,6 @@ mod tests {
 
     fn trace(name: &str, times: &[u64], values: &str) -> Trace {
         Trace { name: name.into(), times: times.to_vec(), values: values.into() }
-    }
-
-    #[test]
-    fn bus_bits_read_brackets_digits_and_active_low() {
-        assert_eq!(bus_bit("D[12]"), Some(("D".into(), 12, "".into())));
-        assert_eq!(bus_bit("Q3"), Some(("Q".into(), 3, "".into())));
-        assert_eq!(bus_bit("Y7_N"), Some(("Y".into(), 7, "_N".into())));
-        assert_eq!(bus_bit("CLK"), None);
-        assert_eq!(bus_bit("5V"), None);
-        assert_eq!(bus_bit("U1_OUT"), None);
     }
 
     #[test]

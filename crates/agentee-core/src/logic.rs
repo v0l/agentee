@@ -330,6 +330,84 @@ pub struct Trace {
     pub values: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BusGroup {
+    pub name: String,
+    pub stem: String,
+    pub msb: u32,
+    pub lsb: u32,
+    pub bits: Vec<usize>,
+}
+
+pub fn bus_bit(name: &str) -> Option<(String, u32, String)> {
+    if let Some(stem) = name.strip_suffix(']')
+        && let Some((prefix, idx)) = stem.rsplit_once('[')
+        && !prefix.is_empty()
+        && let Ok(i) = idx.parse()
+    {
+        return Some((prefix.to_string(), i, String::new()));
+    }
+    let end = name.rfind(|c: char| c.is_ascii_digit())? + 1;
+    let start = name[..end].rfind(|c: char| !c.is_ascii_digit())? + 1;
+    let suffix = &name[end..];
+    if !["", "_N", "_n", "#"].contains(&suffix) {
+        return None;
+    }
+    let i = name[start..end].parse().ok()?;
+    Some((name[..start].to_string(), i, suffix.to_string()))
+}
+
+type AutoBus = ((String, String), Vec<(u32, usize)>);
+
+pub fn bus_groups(traces: &[Trace], buses: &[Bus]) -> Vec<BusGroup> {
+    let find = |n: &str| traces.iter().position(|t| t.name == n);
+    let mut groups: Vec<BusGroup> = Vec::new();
+    let mut used = vec![false; traces.len()];
+    for b in buses {
+        let bits: Option<Vec<usize>> = b.nets.iter().map(|n| find(n)).collect();
+        if let Some(bits) = bits
+            && !bits.is_empty()
+        {
+            bits.iter().for_each(|k| used[*k] = true);
+            groups.push(BusGroup {
+                name: b.name.clone(),
+                stem: b.name.clone(),
+                msb: bits.len() as u32 - 1,
+                lsb: 0,
+                bits,
+            });
+        }
+    }
+    let mut auto: Vec<AutoBus> = Vec::new();
+    for (k, t) in traces.iter().enumerate() {
+        if used[k] {
+            continue;
+        }
+        let Some((prefix, i, suffix)) = bus_bit(&t.name) else { continue };
+        let key = (prefix, suffix);
+        match auto.iter_mut().find(|g| g.0 == key) {
+            Some(g) => g.1.push((i, k)),
+            None => auto.push((key, vec![(i, k)])),
+        }
+    }
+    for ((prefix, suffix), mut bits) in auto {
+        bits.sort_by_key(|b| std::cmp::Reverse(b.0));
+        let distinct = bits.windows(2).all(|w| w[0].0 != w[1].0);
+        if bits.len() < 2 || !distinct {
+            continue;
+        }
+        let (hi, lo) = (bits[0].0, bits[bits.len() - 1].0);
+        groups.push(BusGroup {
+            name: format!("{prefix}[{hi}:{lo}]{suffix}"),
+            stem: format!("{prefix}{suffix}"),
+            msb: hi,
+            lsb: lo,
+            bits: bits.into_iter().map(|b| b.1).collect(),
+        });
+    }
+    groups
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogicResult {
     pub name: String,
@@ -1698,6 +1776,16 @@ mod tests {
         assert_eq!(part_code("7400"), Some(("".into(), "00".into())));
         assert_eq!(part_code("LM7805"), None);
         assert_eq!(part_code("STM32F074"), None);
+    }
+
+    #[test]
+    fn bus_bits_read_brackets_digits_and_active_low() {
+        assert_eq!(bus_bit("D[12]"), Some(("D".into(), 12, "".into())));
+        assert_eq!(bus_bit("Q3"), Some(("Q".into(), 3, "".into())));
+        assert_eq!(bus_bit("Y7_N"), Some(("Y".into(), 7, "_N".into())));
+        assert_eq!(bus_bit("CLK"), None);
+        assert_eq!(bus_bit("5V"), None);
+        assert_eq!(bus_bit("U1_OUT"), None);
     }
 
     #[test]
