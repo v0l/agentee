@@ -475,6 +475,21 @@ impl Schematic {
                     format!("only one pin ({}), nothing to connect", self.pin_label(n.pins[0])),
                 );
             }
+            if n.class == "Default" && !sheet {
+                let others: Vec<&str> = lib
+                    .netclasses
+                    .iter()
+                    .flatten()
+                    .map(String::as_str)
+                    .filter(|c| *c != "Default")
+                    .collect();
+                let choose = if others.is_empty() {
+                    "add a netclass for it to the board".to_string()
+                } else {
+                    format!("set `class` to one of {} or add one", others.join(", "))
+                };
+                d.warn(&at, format!("in the Default netclass, {choose}"));
+            }
             for r in &n.pins {
                 if let Some(j) = owner.insert(*r, i)
                     && j != i
@@ -1027,14 +1042,15 @@ class = "{class}"
 pins = ["{part}.1"]
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
 pins = ["{part}.2"]
 "#
             ))
             .unwrap()
         };
-        let a = sheet("a", "R1", "Default");
-        let b = sheet("b", "R2", "Default");
+        let a = sheet("a", "R1", "Signal");
+        let b = sheet("b", "R2", "Signal");
         let top: SchematicFile = toml::from_str("name = \"top\"\nsheets = [\"a\", \"b\"]").unwrap();
         let mut d = Diags::new("a");
         let sa = a.resolve(&lib, &mut d);
@@ -1057,7 +1073,34 @@ pins = ["{part}.2"]
         let c = sheet("c", "R3", "Power");
         let mut d = Diags::new("top");
         top.merge(&[(&a, bounds(&a)), (&c, bounds(&c))], &mut d);
-        assert!(d.list.iter().any(|x| x.message.contains("class Default on sheet a but Power")));
+        assert!(d.list.iter().any(|x| x.message.contains("class Signal on sheet a but Power")));
+    }
+
+    #[test]
+    fn a_net_left_in_default_is_a_warning_on_the_whole_design_only() {
+        let r = resistor();
+        let classes = vec!["Default".to_string(), "Signal".to_string()];
+        let lib = Library {
+            symbols: HashMap::from([("R", &r)]),
+            footprints: HashMap::new(),
+            netclasses: Some(classes),
+        };
+        let file: SchematicFile = toml::from_str(
+            "name = \"s\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nat = [10.16, 10.16]\n\
+             [[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n\
+             [[nets]]\nname = \"B\"\nclass = \"Default\"\npins = [\"R1.2\"]\n",
+        )
+        .unwrap();
+        let s = file.resolve(&lib, &mut Diags::new("s"));
+        let default_warnings =
+            |d: &Diags| d.list.iter().filter(|x| x.message.contains("Default netclass")).count();
+        let mut d = Diags::new("s");
+        s.check_as(&lib, &mut d, false);
+        assert_eq!(default_warnings(&d), 2, "{:?}", d.list);
+        assert!(d.list.iter().any(|x| x.message.contains("one of Signal")));
+        let mut d = Diags::new("s");
+        s.check_as(&lib, &mut d, true);
+        assert_eq!(default_warnings(&d), 0);
     }
 
     #[test]

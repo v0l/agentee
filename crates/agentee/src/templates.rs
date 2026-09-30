@@ -25,6 +25,18 @@ clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
+name = "Signal"
+track_width = "0.2mm"
+clearance = "0.2mm"
+via = "std"
+
+[[netclasses]]
+name = "Ground"
+track_width = "0.4mm"
+clearance = "0.2mm"
+via = "std"
+
+[[netclasses]]
 name = "Power"
 track_width = "0.6mm"
 clearance = "0.2mm"

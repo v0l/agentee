@@ -670,7 +670,7 @@ fields = { mpn = "Qorvo SPF5189Z" }
 
 [[nets]]
 name = "RF_OUT"
-class = "RF"                   # a netclass of the board, default "Default"
+class = "RF"                   # a netclass of the board; without one the net is in "Default"
 pins = ["C2.2", "J2.1", "L3.1"]   # REF.PIN, by number or by a unique pin name
 # style = "power"              # wire (default) | label | power (ground and supply symbols)
 # wires = [[[x, y], [x, y]], ...] # draw it yourself; check verifies it reaches every pin
@@ -691,13 +691,18 @@ Each sheet is an ordinary schematic file with its own parts and nets. Nets join 
 name, so `3V3` on every sheet is one net and a signal leaves one sheet and arrives on another
 under the same name. A net's pins must be parts on the same sheet; a net that spans sheets needs
 the same `class` wherever it names one, and is drawn with labels. References are unique across
-the design. A sheet on its own skips the single-pin warning (the rest of the net is elsewhere);
+the design. A sheet on its own skips the single-pin and Default class warnings (the rest of the net, and its
+class, may be on another sheet);
 the top schematic runs every check on the joined design and draws the sheets stacked top to
 bottom. The top file may hold parts and nets of its own too.
 
 Check reports pins in two nets, pins in no net, single-pin nets, several outputs on one net,
 hand wires that miss a pin or touch another net's pin, overlapping parts, and footprints whose
-pads do not cover the symbol's pins. `agentee show sch:lna` prints every pin's position.
+pads do not cover the symbol's pins. Every net in the `Default` netclass is a warning, whether it
+names no class or names `Default`: the class sets the net's width, clearance, vias and routing
+order, so each net should say what it is. Give the board a class per kind of net (`Signal`,
+`Data`, `Clock`, `Analog`, `Ground`, `Power`, `RF`, pairs) and keep `Default` as the fallback the
+layout uses for rules no class covers. `agentee show sch:lna` prints every pin's position.
 
 ## Layout (`*.pcb.toml`)
 

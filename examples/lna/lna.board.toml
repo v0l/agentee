@@ -23,6 +23,20 @@ clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
+name = "Signal"
+description = "LED_A: the power LED's anode"
+track_width = "0.2mm"
+clearance = "0.2mm"
+via = "std"
+
+[[netclasses]]
+name = "Ground"
+description = "GND, the In1.Cu plane and the F.Cu pour"
+track_width = "0.2mm"
+clearance = "0.2mm"
+via = "std"
+
+[[netclasses]]
 name = "RF"
 description = "RF_IN, RF_AMP_IN, RF_AMP_OUT, RF_OUT: grounded coplanar over the In1.Cu plane, stitch the pour every 2 mm"
 impedance = "50ohm"

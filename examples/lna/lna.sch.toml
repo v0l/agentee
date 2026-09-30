@@ -194,9 +194,11 @@ pins = ["D1.1", "D2.1", "L1.2", "C3.1", "C4.1", "C6.1", "R1.1"]
 
 [[nets]]
 name = "LED_A"
+class = "Signal"
 pins = ["R1.2", "D4.2"]
 
 [[nets]]
 name = "GND"
+class = "Ground"
 style = "power"
 pins = ["U1.2", "J1.2", "J2.2", "J3.2", "D3.2", "C3.2", "C4.2", "C5.2", "C6.2", "D4.1", "H1.1", "H2.1", "H3.1", "H4.1"]

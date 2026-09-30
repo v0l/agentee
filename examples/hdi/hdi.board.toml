@@ -39,3 +39,16 @@ name = "Default"
 track_width = "0.1mm"
 clearance = "0.1mm"
 via = ["uv-top", "core", "std"]
+
+[[netclasses]]
+name = "Signal"
+description = "The coupon's test signals"
+track_width = "0.1mm"
+clearance = "0.1mm"
+via = ["uv-top", "core", "std"]
+
+[[netclasses]]
+name = "Ground"
+track_width = "0.1mm"
+clearance = "0.1mm"
+via = ["uv-top", "core", "std"]

@@ -60,7 +60,8 @@ Order of work, each stage passing check before the next:
    class and let check solve the widths; `agentee show board:NAME` prints them per layer.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same
    number in its footprint.
-3. **Schematic.** Place parts, list nets as `REF.PIN`. Leave `wires` out and agentee routes them.
+3. **Schematic.** Place parts, list nets as `REF.PIN`, and give every net a `class`; a net left in
+   `Default` is a warning. Leave `wires` out and agentee routes them.
    Put deliberately open pins in `no_connect`.
 4. **Layout.** Place footprints, add zones, then tracks and vias net by net. Check reports the
    ratsnest for every unrouted connection, so route until `unrouted` is 0 on every net in
