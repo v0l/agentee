@@ -482,13 +482,6 @@ const QUAD02: &[&[&str]] =
     &[&["2", "3", "1"], &["5", "6", "4"], &["8", "9", "10"], &["11", "12", "13"]];
 const AB: &[&str] = &["A", "B", "Y"];
 
-pub fn library_for(family: &str, code: &str) -> Option<Vec<Unit>> {
-    if code == "01" && matches!(family, "" | "LS" | "S" | "ALS") {
-        return Some(units_of("nand_od", AB, QUAD02));
-    }
-    library(code)
-}
-
 const OCT_IN: [&str; 8] = ["2", "3", "4", "5", "6", "7", "8", "9"];
 const OCT_OUT: [&str; 8] = ["19", "18", "17", "16", "15", "14", "13", "12"];
 const OCT_B: [&str; 8] = ["18", "17", "16", "15", "14", "13", "12", "11"];
@@ -561,7 +554,8 @@ pub fn library(code: &str) -> Option<Vec<Unit>> {
     };
     Some(match code {
         "00" | "132" => units_of("nand", AB, QUAD00),
-        "01" | "03" => units_of("nand_od", AB, QUAD00),
+        "01" => units_of("nand_od", AB, QUAD02),
+        "03" => units_of("nand_od", AB, QUAD00),
         "05" | "06" => units_of("not_od", AY, HEX04),
         "07" => units_of("buf_od", AY, HEX04),
         "573" => octal(&["dlatch", "OE_N", "EN", "D", "Q"], &["1", "11"], OCT_OUT),
@@ -1172,8 +1166,8 @@ fn instantiate(
     Ok(())
 }
 
-fn library_templates(family: &str, code: &str) -> Vec<Template> {
-    library_for(family, code)
+fn library_templates(code: &str) -> Vec<Template> {
+    library(code)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|(prim, keys)| {
@@ -1312,7 +1306,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
                             if custom.iter().all(|x| x.is_none()) {
                                 timing = family_timing(&f);
                             }
-                            Ok(library_templates(&f, &code))
+                            Ok(library_templates(&code))
                         }
                         _ => {
                             let keys: Vec<(String, String)> =
@@ -1374,8 +1368,8 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> LogicSpec {
         if PASSIVES.contains(&pre.as_str()) {
             continue;
         }
-        if let Some((f, code)) = &family {
-            for t in library_templates(f, code) {
+        if let Some((_, code)) = &family {
+            for t in library_templates(code) {
                 if let Err(e) = instantiate(info, &t, timing, &delays, true, &mut built) {
                     d.error(&at, e);
                 }
@@ -1707,6 +1701,25 @@ mod tests {
     }
 
     #[test]
+    fn x01_has_the_7401_pinout_in_ttl_and_cmos() {
+        let pin = |s: &Slot| s.pin.clone().unwrap_or_default();
+        for (part, source) in [
+            ("SN7401N", "TI SDLS026 SN7401/SN74LS01"),
+            ("SN74LS01N", "TI SDLS026 SN7401/SN74LS01"),
+            ("HD74HC01P", "Renesas REJ03D0532 HD74HC01"),
+        ] {
+            let (_, code) = part_code(part).unwrap();
+            let gates: Vec<(String, String, String)> = library_templates(&code)
+                .iter()
+                .map(|t| (pin(&t.inputs[0]), pin(&t.inputs[1]), pin(&t.outputs[0])))
+                .collect();
+            let expect = [("2", "3", "1"), ("5", "6", "4"), ("8", "9", "10"), ("11", "12", "13")]
+                .map(|(a, b, y)| (a.to_string(), b.to_string(), y.to_string()));
+            assert_eq!(gates, expect, "{part} per {source}");
+        }
+    }
+
+    #[test]
     fn every_library_part_binds() {
         for code in [
             "00", "02", "04", "08", "10", "11", "14", "20", "21", "27", "32", "74", "86", "125",
@@ -1717,14 +1730,14 @@ mod tests {
             "1G06", "1G07",
         ] {
             let units = library(code).unwrap();
-            assert_eq!(library_templates("HC", code).len(), units.len(), "{code}");
+            assert_eq!(library_templates(code).len(), units.len(), "{code}");
         }
     }
 
     #[test]
     fn octal_open_drain_and_schmitt_parts_bind() {
         let pin = |s: &Slot| s.pin.clone().unwrap_or_default();
-        let latch = library_templates("HC", "573");
+        let latch = library_templates("573");
         assert_eq!(latch.len(), 8);
         assert_eq!(latch[0].prim, Prim::Dlatch);
         let l0: Vec<(String, String, bool)> =
@@ -1737,10 +1750,10 @@ mod tests {
             (pin(&latch[7].inputs[0]), pin(&latch[7].outputs[0])),
             ("9".into(), "12".into())
         );
-        let reg = library_templates("HC", "574");
+        let reg = library_templates("574");
         assert_eq!(reg[3].prim, Prim::Dff);
         assert_eq!((pin(&reg[3].inputs[1]), pin(&reg[3].outputs[0])), ("11".into(), "16".into()));
-        let x = library_templates("HC", "245");
+        let x = library_templates("245");
         assert_eq!(x.len(), 8);
         assert_eq!(x[0].prim, Prim::Xcvr);
         let ins: Vec<String> = x[0].inputs.iter().map(pin).collect();
@@ -1749,18 +1762,16 @@ mod tests {
         let outs: Vec<String> = x[7].outputs.iter().map(pin).collect();
         assert_eq!(outs, ["9", "11"]);
         for code in ["01", "03", "05", "06", "07", "1G06", "1G07"] {
-            assert!(library_templates("HC", code).iter().all(|t| t.open_drain), "{code}");
+            assert!(library_templates(code).iter().all(|t| t.open_drain), "{code}");
         }
-        assert!(!library_templates("HC", "00")[0].open_drain);
+        assert!(!library_templates("00")[0].open_drain);
         let nand = Prim::Gate { op: GateOp::And, invert: true };
-        assert_eq!(library_templates("HC", "03")[0].prim, nand);
-        assert_eq!(pin(&library_templates("HC", "01")[0].outputs[0]), "3");
-        assert_eq!(pin(&library_templates("LS", "01")[0].outputs[0]), "1");
-        assert_eq!(pin(&library_templates("", "01")[3].outputs[0]), "13");
-        let buf = &library_templates("LVC", "1G07")[0];
+        assert_eq!(library_templates("03")[0].prim, nand);
+        assert_eq!(pin(&library_templates("03")[0].outputs[0]), "3");
+        let buf = &library_templates("1G07")[0];
         assert_eq!(buf.prim, Prim::Gate { op: GateOp::And, invert: false });
         assert_eq!((pin(&buf.inputs[0]), pin(&buf.outputs[0])), ("2".into(), "4".into()));
-        let schmitt = library_templates("HC", "14");
+        let schmitt = library_templates("14");
         assert_eq!(schmitt.len(), 6);
         assert!(schmitt.iter().all(|t| t.prim == nand && !t.open_drain));
         assert_eq!(part_code("SN74HC14N"), Some(("HC".into(), "14".into())));

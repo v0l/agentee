@@ -1667,8 +1667,9 @@ The netlist becomes cells as follows:
   (pin 1, active low) floating the outputs. The 245 is eight `xcvr`: with `OE` (pin 19) low it
   drives B from A while `DIR` (pin 1) is high and A from B while it is low. The 01, 03 (quad
   NAND), 05, 06, 1G06 (inverters) and 07, 1G07 (buffers) are open drain: they pull low or let
-  go (z), and a pull-up resistor makes the 1. A 7401 or 74LS01 has the 7402 pinout (outputs on
-  1, 4, 10, 13); a CMOS 74HC01 has the 7400 one.
+  go (z), and a pull-up resistor makes the 1. Every 01 has the 7402 pinout (outputs on 1, 4,
+  10, 13, inputs after each), per TI SDLS026 (SN7401, SN74LS01) and Renesas REJ03D0532
+  (HD74HC01); the 03 has the 7400 one, per TI SCLS077 (SN74HC03).
 - A gate whose output pins are all `open_collector` in its symbol is open drain as well.
 - Parts whose value or symbol is a primitive name (`AND`, `NAND3`, `OR`, `NOR`, `XOR`, `XNOR`,
   `NOT`, `INV`, `BUF`, `TRIBUF`, `DFF`, `JKFF`, `SRLATCH`, `DLATCH`, `MUX2`) map their pins by
