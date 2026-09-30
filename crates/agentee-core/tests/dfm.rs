@@ -1181,3 +1181,45 @@ fn the_router_picks_the_cheapest_class_via_that_spans_the_layer_change() {
     assert_eq!(routed(5.0, &["F.Cu", "In1.Cu"]), ["std"]);
     assert_eq!(routed(1.0, &["F.Cu", "In2.Cu"]), ["std"]);
 }
+
+#[test]
+fn the_router_staggers_vias_unless_the_fab_stacks_them() {
+    let walls = format!(
+        "{}{}",
+        track("B", "F.Cu", "[[12.0, 0.1], [12.0, 19.9]]"),
+        track("B", "In1.Cu", "[[12.0, 0.1], [12.0, 19.9]]")
+    );
+    let routed = |stack: bool| {
+        let board = format!("{HDI_VIAS}stacked_microvias = {stack}\n{HDI_VIA_TYPES}");
+        let p = load(&Fixture {
+            preset: "hdi-6l-1n1",
+            board: &board,
+            parts: &[("R1", "TWO", [5.0, 5.0]), ("R2", "TWO", [20.0, 5.0])],
+            nets: &[("A", &["R1.2", "R2.1"]), ("B", &["R1.1"])],
+            pcb: &walls,
+            ..Default::default()
+        });
+        let mut b = p.boards[0].item.clone();
+        b.netclasses[0].via = vec!["uv".into(), "bu".into()];
+        let opts = agentee_core::route::RouteOptions {
+            nets: vec!["A".into()],
+            layers: vec!["F.Cu".into(), "In1.Cu".into(), "In4.Cu".into()],
+            grid: 0.1,
+            ..Default::default()
+        };
+        let r = agentee_core::route::route(&p.layouts[0].item, &b, &opts).unwrap();
+        assert!(r.routed == 1, "{:?}", r.failed);
+        let stacked =
+            r.vias.iter().enumerate().any(|(i, a)| {
+                r.vias[..i].iter().any(|b| agentee_core::geom::dist(a.at, b.at) < 1e-6)
+            });
+        let kinds: std::collections::BTreeSet<String> =
+            r.vias.iter().map(|v| v.via.clone()).collect();
+        (stacked, kinds)
+    };
+    let (stacked, kinds) = routed(false);
+    assert!(!stacked);
+    assert_eq!(kinds.into_iter().collect::<Vec<_>>(), ["bu", "uv"]);
+    let (stacked, _) = routed(true);
+    assert!(stacked);
+}

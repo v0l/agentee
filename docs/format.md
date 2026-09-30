@@ -228,7 +228,8 @@ A net class may list several vias, `via = ["std", "uvia-top", "uvia-bot"]`. A la
 first that reaches the pad's layer, and the router picks, at each layer change, the cheapest
 listed via whose layers hold both ends (`cost` times `--via-cost`, ties go to the via
 that spans fewer layers), so with `["std", "uvia-top"]` a change from F.Cu to In1.Cu takes the
-microvia and a change to In2.Cu the through via.
+microvia and a change to In2.Cu the through via. It changes layer twice at one spot (a microvia
+on a buried via) only with `stacked_microvias`, otherwise it staggers them.
 
 ### Rules
 

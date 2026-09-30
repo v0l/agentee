@@ -582,6 +582,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             via_r,
             via_layers: &via_layers,
             vias: &options,
+            stack_vias: board.rules.stacked_microvias,
             routing,
             opts,
             necking: Some(&necking),
@@ -926,6 +927,7 @@ struct Ctx<'a> {
     via_r: f64,
     via_layers: &'a [usize],
     vias: &'a [ViaOption],
+    stack_vias: bool,
     routing: &'a [usize],
     opts: &'a RouteOptions,
     necking: Option<&'a Necking<'a>>,
@@ -1946,7 +1948,9 @@ fn search_between(
                         heap.push(Node { f: c + h, i: j * 9 + d });
                     }
                 }
-                if !via_layers.contains(&l) {
+                if !via_layers.contains(&l)
+                    || (!ctx.stack_vias && d0 == NODIR && states.from(k, NODIR) != usize::MAX)
+                {
                     continue;
                 }
                 for &nl in routing.iter().filter(|&&nl| nl != l && via_layers.contains(&nl)) {
@@ -2525,6 +2529,7 @@ mod tests {
             via_r: 0.2,
             via_layers: layers,
             vias: &[],
+            stack_vias: true,
             routing: layers,
             opts: &opts,
             necking: None,
@@ -2598,6 +2603,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0, 1],
             vias: &[],
+            stack_vias: true,
             routing: &[0, 1],
             opts: &opts,
             necking: None,
@@ -2633,6 +2639,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0, 1],
             vias: &[],
+            stack_vias: true,
             routing: &[0, 1],
             opts: &opts,
             necking: None,
@@ -2691,6 +2698,7 @@ mod tests {
                 via_r: 0.2,
                 via_layers: &[0, 1],
                 vias: &[],
+                stack_vias: true,
                 routing: &[0, 1],
                 opts: &opts,
                 necking: None,
@@ -2739,6 +2747,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0, 1],
             vias: &[],
+            stack_vias: true,
             routing: &[0, 1],
             opts: &opts,
             necking: None,
@@ -2772,6 +2781,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0],
             vias: &[],
+            stack_vias: true,
             routing: &[0],
             opts: &opts,
             necking: None,
@@ -2828,6 +2838,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0],
             vias: &[],
+            stack_vias: true,
             routing: &[0],
             opts: &opts,
             necking: None,
@@ -2866,6 +2877,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0],
             vias: &[],
+            stack_vias: true,
             routing: &[0],
             opts: &opts,
             necking,
@@ -2942,6 +2954,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0],
             vias: &[],
+            stack_vias: true,
             routing: &[0],
             opts: &opts,
             necking: Some(&necking),
@@ -2980,6 +2993,7 @@ mod tests {
             via_r: 0.2,
             via_layers: &[0],
             vias: &[],
+            stack_vias: true,
             routing: &[0],
             opts: &opts,
             necking: None,
