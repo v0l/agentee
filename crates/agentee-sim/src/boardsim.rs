@@ -70,11 +70,8 @@ pub fn raster(model: &PcbModel, board: &Board, cell: f64) -> Raster {
     let nx = ((b.max[0] - b.min[0]) / cell).ceil() as usize + 1;
     let ny = ((b.max[1] - b.min[1]) / cell).ceil() as usize + 1;
     let at = |i: usize, j: usize| [origin[0] + i as f64 * cell, origin[1] + j as f64 * cell];
-    let inside: Vec<bool> = (0..nx * ny)
-        .map(|k| {
-            model.outline.len() < 3 || geom::point_in_polygon(at(k / ny, k % ny), &model.outline)
-        })
-        .collect();
+    let inside: Vec<bool> =
+        (0..nx * ny).map(|k| model.has_dielectric(at(k / ny, k % ny))).collect();
     let mut copper = vec![vec![false; nx * ny]; model.sheets.len()];
     for (s, c) in &model.copper {
         let bb = copper_bounds(c);
@@ -613,4 +610,45 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
         spec_hash: hash,
         layout_hash: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_board_cutout_leaves_the_thermal_and_dc_raster() {
+        let dir = std::env::temp_dir().join(format!("agentee-sim-cutout-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\n[outline]\nsize = [20, 10]\n[[outline.cutouts]]\norigin = [8, 3]\nsize = [4, 4]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("t.sch.toml"), "name = \"t\"\nboard = \"t\"\n").unwrap();
+        std::fs::write(dir.join("t.pcb.toml"), "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n")
+            .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let board = &p.boards[0].item;
+        let layout = &p.layouts[0].item;
+        let mut solid = layout.clone();
+        solid.board_cutouts.clear();
+        let hash = |l: &Layout| agentee_core::sim::copper_hash(l, board, None);
+        assert_ne!(hash(layout), hash(&solid));
+        let model = PcbModel::geometry(layout, board);
+        assert!(!model.has_dielectric([10.0, 5.0]) && model.has_dielectric([6.0, 5.0]));
+        let r = raster(&model, board, 0.5);
+        let inside = |q: P| {
+            let (i, j) = r.node(q);
+            r.inside[i * r.ny + j]
+        };
+        assert!(!inside([10.0, 5.0]) && inside([6.0, 5.0]) && inside([10.0, 1.5]));
+        let holes = (0..r.nx * r.ny)
+            .filter(|k| {
+                !r.inside[*k] && geom::point_in_polygon(r.at(k / r.ny, k % r.ny), &model.outline)
+            })
+            .count();
+        assert!((49..=81).contains(&holes), "{holes} cells out");
+    }
 }

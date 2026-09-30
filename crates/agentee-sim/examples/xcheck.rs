@@ -115,6 +115,7 @@ fn main() {
         }
         let m = PcbModel {
             outline: board,
+            board_cutouts: Vec::new(),
             sheets: vec![
                 Sheet { name: "F.Cu".into(), z: 0.0, thickness: copper },
                 Sheet { name: "B.Cu".into(), z: -h, thickness: copper },
