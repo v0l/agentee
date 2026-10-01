@@ -17,6 +17,23 @@ pub struct RouteOptions {
     pub margin: f64,
     pub pairs: bool,
     pub via_in_pad: bool,
+    pub corridors: Vec<Corridor>,
+    pub fences: Vec<Fence>,
+    pub tiers: Vec<Vec<String>>,
+    pub class_order: Vec<String>,
+    pub rip_limit: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Fence {
+    pub nets: Vec<String>,
+    pub outline: Vec<P>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Corridor {
+    pub net: String,
+    pub cells: Vec<(String, [f64; 2], [f64; 2])>,
 }
 
 impl Default for RouteOptions {
@@ -31,6 +48,11 @@ impl Default for RouteOptions {
             margin: 5.0,
             pairs: false,
             via_in_pad: false,
+            corridors: Vec::new(),
+            fences: Vec::new(),
+            tiers: Vec::new(),
+            class_order: Vec::new(),
+            rip_limit: 30,
         }
     }
 }
@@ -186,6 +208,10 @@ struct Grid {
     vias: Vec<ViaMap>,
     rt: Vec<u16>,
     hist: Vec<f32>,
+    corridor: Option<Vec<bool>>,
+    window: Option<[usize; 4]>,
+    fence: Vec<u16>,
+    fence_nets: Vec<Vec<usize>>,
 }
 
 impl Grid {
@@ -313,10 +339,16 @@ impl Grid {
         n
     }
 
+    fn fenced(&self, cell: usize, net: usize) -> bool {
+        let f = self.fence[cell];
+        f != 0 && !self.fence_nets[f as usize - 1].contains(&net)
+    }
+
     fn ok(&self, i: usize, net: usize, soft: bool) -> (bool, bool) {
-        if !Self::free(&self.track, i, net) {
+        if !Self::free(&self.track, i, net) || self.fenced(i % (self.w * self.h), net) {
             return (false, false);
         }
+
         let clash = !Self::free(&self.rt, i, net);
         (soft || !clash, clash)
     }
@@ -332,7 +364,7 @@ impl Grid {
     ) -> (bool, bool) {
         let m = &self.vias[k];
         let cell = y * self.w + x;
-        if m.holes[cell] & via.dielectrics != 0 {
+        if m.holes[cell] & via.dielectrics != 0 || self.fenced(cell, net) {
             return (false, false);
         }
         let mut clash = m.routed_holes[cell] & via.dielectrics != 0;
@@ -411,6 +443,46 @@ impl Grid {
                 }
             }
         }
+    }
+
+    fn set_corridor(
+        &mut self,
+        c: Option<&Corridor>,
+        layer_of: &dyn Fn(&str) -> Option<usize>,
+        grow: f64,
+    ) {
+        let Some(c) = c else {
+            self.corridor = None;
+            self.window = None;
+            return;
+        };
+        let reach = grow + 3.0;
+        let (mut wx0, mut wy0, mut wx1, mut wy1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+        let plane = self.w * self.h;
+        let layers = self.track.len() / plane;
+        let mut mask = vec![false; self.track.len()];
+        for (layer, lo, hi) in &c.cells {
+            let Some(l) = layer_of(layer) else { continue };
+            if l >= layers {
+                continue;
+            }
+            let x0 = (((lo[0] - grow) - self.x0) / self.g).floor().max(0.0) as usize;
+            let y0 = (((lo[1] - grow) - self.y0) / self.g).floor().max(0.0) as usize;
+            let x1 = (((hi[0] + grow) - self.x0) / self.g).ceil().min(self.w as f64 - 1.0) as usize;
+            let y1 = (((hi[1] + grow) - self.y0) / self.g).ceil().min(self.h as f64 - 1.0) as usize;
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    mask[l * plane + y * self.w + x] = true;
+                }
+            }
+            let r = ((reach - grow) / self.g).ceil() as usize;
+            wx0 = wx0.min(x0.saturating_sub(r));
+            wy0 = wy0.min(y0.saturating_sub(r));
+            wx1 = wx1.max((x1 + r).min(self.w - 1));
+            wy1 = wy1.max((y1 + r).min(self.h - 1));
+        }
+        self.corridor = Some(mask);
+        self.window = (wx0 <= wx1 && wy0 <= wy1).then_some([wx0, wy0, wx1, wy1]);
     }
 
     fn free(map: &[u16], i: usize, net: usize) -> bool {
@@ -565,6 +637,10 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         }
     }
 
+    if !opts.class_order.is_empty() {
+        let rank = |c: &str| opts.class_order.iter().position(|k| k == c).unwrap_or(usize::MAX);
+        by_class.sort_by_key(|(c, _)| rank(c));
+    }
     let mut out = RouteResult::default();
     let edge = board.rules.min_copper_to_edge.to_mm();
     for (class, nets) in by_class {
@@ -661,7 +737,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             necking: Some(&necking),
         };
 
-        let mut grid = build_grid(layout, opts.grid, &halves, &options, edge);
+        let mut grid = build_grid(layout, opts.grid, &halves, &options, edge, &opts.fences);
         for o in &obstacles {
             grid.add(o, &halves, clearance, &options, hole_cu);
         }
@@ -677,9 +753,15 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             .iter()
             .map(|c| grid.crowd(c.2, c.0, routing) + grid.crowd(c.2, c.1, routing))
             .collect();
+        let tier = |n: usize| {
+            opts.tiers
+                .iter()
+                .position(|t| t.iter().any(|g| glob(g, &layout.nets[n].name)))
+                .unwrap_or(opts.tiers.len())
+        };
         let mut order: Vec<usize> = (0..conns.len()).collect();
         order.sort_by(|&i, &j| {
-            crowd[j].cmp(&crowd[i]).then(
+            tier(conns[i].2).cmp(&tier(conns[j].2)).then(crowd[j].cmp(&crowd[i])).then(
                 geom::dist(conns[i].0, conns[i].1)
                     .partial_cmp(&geom::dist(conns[j].0, conns[j].1))
                     .unwrap_or(Ordering::Equal),
@@ -752,6 +834,18 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         let mut budget = conns.len() * 40 + 100;
         while let Some(ci) = queue.pop_front() {
             let (a, b, net) = conns[ci];
+            let corridor = opts.corridors.iter().find(|c| c.net == layout.nets[net].name);
+            let corridor = corridor.map(|c| {
+                let mut c = c.clone();
+                let r = opts.grid * 12.0;
+                for e in [a, b] {
+                    for l in copper.iter() {
+                        c.cells.push((l.clone(), [e[0] - r, e[1] - r], [e[0] + r, e[1] + r]));
+                    }
+                }
+                c
+            });
+            grid.set_corridor(corridor.as_ref(), &layer_of, 0.5);
             let attract = gap.and_then(|gap| {
                 let other = partner(net)?;
                 let geo: Vec<&Conn> = routed.iter().flatten().filter(|c| c.net == other).collect();
@@ -766,7 +860,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             let hard = search(&grid, &obstacles, &fresh, net, a, b, &ctx, false, attract.as_ref());
             let path = match hard {
                 Ok(p) => p,
-                Err(reason) if budget == 0 || ripped[ci] > 30 => {
+                Err(reason) if budget == 0 || ripped[ci] > opts.rip_limit => {
                     failed.push((ci, reason));
                     continue;
                 }
@@ -1214,6 +1308,10 @@ fn fewer_vias(
             layers: Vec::new(),
             via: Vec::new(),
             via_cost: ctx.opts.via_cost * 10.0 + 10.0,
+            corridors: Vec::new(),
+            fences: Vec::new(),
+            tiers: Vec::new(),
+            class_order: Vec::new(),
             ..*ctx.opts
         };
         let wary = Ctx { widths: ctx.widths.clone(), opts: &dear, ..*ctx };
@@ -1622,7 +1720,14 @@ fn attraction(
     out
 }
 
-fn build_grid(layout: &Layout, g: f64, halves: &[f64], vias: &[ViaOption], edge: f64) -> Grid {
+fn build_grid(
+    layout: &Layout,
+    g: f64,
+    halves: &[f64],
+    vias: &[ViaOption],
+    edge: f64,
+    fences: &[Fence],
+) -> Grid {
     let layers = halves.len();
     let b = layout.bounds();
     let snap = |v: f64| ((v / g).floor() - 1.5) * g;
@@ -1639,7 +1744,29 @@ fn build_grid(layout: &Layout, g: f64, halves: &[f64], vias: &[ViaOption], edge:
         vias: vias.iter().map(|_| ViaMap::new(layers, w, h)).collect(),
         rt: vec![FREE; layers * w * h],
         hist: vec![0.0; layers * w * h],
+        corridor: None,
+        window: None,
+        fence: vec![0; w * h],
+        fence_nets: Vec::new(),
     };
+    for f in fences {
+        let allowed: Vec<usize> = layout
+            .nets
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| f.nets.contains(&n.name))
+            .map(|(i, _)| i)
+            .collect();
+        grid.fence_nets.push(allowed);
+        let id = grid.fence_nets.len() as u16;
+        for y in 0..h {
+            for x in 0..w {
+                if geom::point_in_polygon(grid.center(x, y), &f.outline) {
+                    grid.fence[y * w + x] = id;
+                }
+            }
+        }
+    }
     let board = layout.edge();
     let edges: Vec<(P, P)> =
         if board.is_closed() { board.segments().collect() } else { Vec::new() };
@@ -1980,8 +2107,11 @@ fn search_between(
         let step = if diagonal { std::f64::consts::SQRT_2 } else { 1.0 };
         let pull = if attract.is_some_and(|a| a.contains(&j)) { 0.5 } else { 1.0 };
         let push = if repel.is_some_and(|r| r.contains(&j)) { 8.0 } else { 0.0 };
+        let off = if grid.corridor.as_ref().is_some_and(|c| !c[j]) { 1.0 } else { 0.0 };
         Some(
-            (step * pull + push) * grid.g + grid.hist[j] as f64 + if clash { penalty } else { 0.0 },
+            (step * (pull + off) + push) * grid.g
+                + grid.hist[j] as f64
+                + if clash { penalty } else { 0.0 },
         )
     };
     let corner_ok = |l: usize, x: usize, y: usize, nx: usize, ny: usize| {
@@ -1990,12 +2120,23 @@ fn search_between(
                 && grid.ok(grid.idx(l, x, ny), net, soft).0)
     };
     let mut margin = opts.margin;
+    let mut boxed = true;
     loop {
         let lo = grid.cell([a[0].min(b[0]) - margin, a[1].min(b[1]) - margin]);
         let hi = grid.cell([a[0].max(b[0]) + margin, a[1].max(b[1]) + margin]);
-        let (wx0, wy0) = (lo.0.max(0) as usize, lo.1.max(0) as usize);
-        let (wx1, wy1) =
+        let (mut wx0, mut wy0) = (lo.0.max(0) as usize, lo.1.max(0) as usize);
+        let (mut wx1, mut wy1) =
             ((hi.0.max(0) as usize).min(grid.w - 1), (hi.1.max(0) as usize).min(grid.h - 1));
+        let window = grid.window.filter(|_| boxed);
+        if let Some([cx0, cy0, cx1, cy1]) = window {
+            wx0 = wx0.max(cx0);
+            wy0 = wy0.max(cy0);
+            wx1 = wx1.min(cx1).max(wx0);
+            wy1 = wy1.min(cy1).max(wy0);
+        }
+        let capped = window.is_some_and(|[cx0, cy0, cx1, cy1]| {
+            wx0 <= cx0 && wy0 <= cy0 && wx1 >= cx1 && wy1 >= cy1
+        });
         let (ww, wh) = (wx1 - wx0 + 1, wy1 - wy0 + 1);
         let inside = |x: i64, y: i64| {
             x >= wx0 as i64 && y >= wy0 as i64 && x <= wx1 as i64 && y <= wy1 as i64
@@ -2172,6 +2313,10 @@ fn search_between(
             }
         }
         let whole = wx0 == 0 && wy0 == 0 && wx1 == grid.w - 1 && wy1 == grid.h - 1;
+        if capped {
+            boxed = false;
+            continue;
+        }
         if whole || (!soft && margin > opts.margin) {
             return Err("no path within the rules".into());
         }
@@ -2703,6 +2848,10 @@ mod tests {
             vias: vec![ViaMap::new(layers, w, h)],
             rt: vec![FREE; layers * w * h],
             hist: vec![0.0; layers * w * h],
+            corridor: None,
+            window: None,
+            fence: vec![0; w * h],
+            fence_nets: Vec::new(),
         }
     }
 

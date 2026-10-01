@@ -1952,3 +1952,154 @@ pub fn stackup(name: &str) -> Result<Value, String> {
     v["layers"] = serde_json::to_value(&p.layers).unwrap_or_default();
     Ok(v)
 }
+
+pub struct LayoutArgs {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub only: Option<String>,
+    pub write: bool,
+}
+
+pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, String> {
+    let p = load(root)?;
+    let i = layout_index(&p, name)?;
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let sch = &p
+        .schematics
+        .iter()
+        .find(|s| s.name == layout.schematic)
+        .ok_or("the layout's schematic is missing")?
+        .item;
+    let text = std::fs::read_to_string(&entry.path)
+        .map_err(|e| format!("{}: {e}", entry.path.display()))?;
+    let file: agentee_core::layout::LayoutFile = agentee_core::project::parse(&text)
+        .map_err(|(at, m)| format!("{}: {at}: {m}", entry.path.display()))?;
+    let sims: Vec<agentee_core::sim::SimFile> = p
+        .sims
+        .iter()
+        .filter_map(|s| std::fs::read_to_string(&s.path).ok())
+        .filter_map(|src| agentee_core::project::parse(&src).ok())
+        .collect();
+    let heat = agentee_core::place::thermal_heat(&sims, &entry.name);
+    let keepouts: Vec<Vec<[f64; 2]>> = file
+        .place
+        .as_ref()
+        .map(|s| s.keepouts.iter().map(|k| k.iter().map(|q| q.to_mm()).collect()).collect())
+        .unwrap_or_default();
+    let engine = file.engine.clone().unwrap_or_default();
+    let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
+        p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect();
+    let dir = entry.path.parent().map(Path::to_path_buf).unwrap_or_default();
+    let path = entry.path.clone();
+    let heat_for_cx = heat.clone();
+    let resolve = |t: &str| -> Result<
+        (agentee_core::layout::LayoutFile, agentee_core::layout::Layout),
+        String,
+    > {
+        let f: agentee_core::layout::LayoutFile =
+            agentee_core::project::parse(t).map_err(|(at, m)| format!("{at}: {m}"))?;
+        let cx = agentee_core::layout::Context {
+            dir: dir.clone(),
+            board,
+            schematic: sch,
+            footprints: footprints.clone(),
+            heat: heat_for_cx.clone(),
+        };
+        let mut d = agentee_core::diag::Diags::new(&f.name);
+        let resolved = f.resolve(&cx, &mut d);
+        Ok((f, resolved))
+    };
+    let mut model = agentee_layout::Model {
+        board,
+        schematic: sch,
+        layout: layout.clone(),
+        file,
+        keepouts,
+        heat,
+        escape: None,
+        placement: None,
+        planes: None,
+        layers: None,
+        global: None,
+        detail: None,
+        text: String::new(),
+        finished_escape: None,
+    };
+    let cfg = agentee_layout::Config {
+        engine,
+        from: a.from.clone(),
+        to: a.to.clone(),
+        only: a.only.clone(),
+        text: text.clone(),
+        resolve: &resolve,
+    };
+    let r = agentee_layout::run(&mut model, &cfg)?;
+    if a.write && r.text != text {
+        std::fs::write(&path, &r.text).map_err(|e| e.to_string())?;
+    }
+    let mut v = serde_json::to_value(&r).unwrap_or_default();
+    v["score_table"] = json!(r.score.table());
+    Ok(v)
+}
+
+pub fn pinswap(
+    root: &Path,
+    name: &str,
+    part: &str,
+    seed: u64,
+    write: bool,
+) -> Result<Value, String> {
+    let p = load(root)?;
+    let i = layout_index(&p, name)?;
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
+    let sch = &p
+        .schematics
+        .iter()
+        .find(|s| s.name == layout.schematic)
+        .ok_or("the layout's schematic is missing")?
+        .item;
+    let text = std::fs::read_to_string(&entry.path)
+        .map_err(|e| format!("{}: {e}", entry.path.display()))?;
+    let file: agentee_core::layout::LayoutFile = agentee_core::project::parse(&text)
+        .map_err(|(at, m)| format!("{}: {at}: {m}", entry.path.display()))?;
+    let r = agentee_layout::pinswap::run(layout, board, sch, &file, part, seed)?;
+    let mut v = serde_json::to_value(&r).unwrap_or_default();
+    if write && !r.swaps.is_empty() {
+        let mut map: Vec<(String, String)> =
+            r.swaps.iter().map(|sw| (sw.from.clone(), sw.to.clone())).collect();
+        let freed: Vec<String> = r
+            .swaps
+            .iter()
+            .filter(|sw| !r.swaps.iter().any(|o| o.to == sw.from))
+            .map(|sw| sw.from.clone())
+            .collect();
+        let taken: Vec<String> = r
+            .swaps
+            .iter()
+            .filter(|sw| !r.swaps.iter().any(|o| o.from == sw.to))
+            .map(|sw| sw.to.clone())
+            .collect();
+        map.extend(taken.into_iter().zip(freed));
+        let mut edited = Vec::new();
+        for s in &p.schematics {
+            let Ok(src) = std::fs::read_to_string(&s.path) else { continue };
+            let mut out = src.clone();
+            for (k, (from, _)) in map.iter().enumerate() {
+                out = out.replace(&format!("\"{part}.{from}\""), &format!("\"\u{0}{k}\u{0}\""));
+            }
+            for (k, (_, to)) in map.iter().enumerate() {
+                out = out.replace(&format!("\"\u{0}{k}\u{0}\""), &format!("\"{part}.{to}\""));
+            }
+            if out != src {
+                std::fs::write(&s.path, &out).map_err(|e| format!("{}: {e}", s.path.display()))?;
+                edited.push(s.path.display().to_string());
+            }
+        }
+        v["written"] = json!(edited);
+    }
+    Ok(v)
+}

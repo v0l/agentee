@@ -69,9 +69,11 @@ and the board outline; output is the regions and a first placement of anchors.
   laid out as a line from its connector, in net order, and its parts are locked relative to
   each other for the rest of the flow.
 - **Large chips** (BGAs, anything over 25 mm2 with 16+ pins) get a region each, sized by their
-  courtyard plus an escape ring (two ball pitches) that nothing else may enter. Their rotation
-  is chosen here by pin access: for each of the four rotations, the sum over pin groups (a
-  bank, an interface, a chain end) of the distance to where that group's other end sits.
+  courtyard plus the room their escape needs: once the escape phase has run, that is the actual
+  escape tracks and via sites, which later phases treat as copper; before it has, a ring of two
+  ball pitches stands in. Their rotation is chosen here by pin access: for each of the four
+  rotations, the sum over pin groups (a bank, an interface, a chain end) of the distance to
+  where that group's other end sits.
 - **Zone rules**: switchers keep a distance from RF and clock regions, hot parts from each
   other, MLCCs out of the flex zone. These are constraints the later phases keep.
 
@@ -100,17 +102,26 @@ as penalties. This is the current annealing refinement, kept.
 
 ### 4. Escape
 
-For every BGA, decides how each ball leaves the package. Ball rings are assigned to layers
-outside in: ring 0 and 1 on the top layer, ring 2 and 3 on the next signal layer, and so on,
-with plane balls dropped straight to their plane. Each ball on an inner ring gets a via site
-(dog-bone or in-pad, by the fab rule) and its escape track to the package edge is found by
-min-cost flow on the ball grid, all balls of a layer at once, so no two escapes cross. Ordered
-buses (a byte lane, an LVDS bus) are kept in order and on one layer where the flow allows.
+For every BGA, decides how each ball leaves the package. Plane balls get a via straight to
+their plane. Signal balls are escaped a layer at a time, outside in: the top layer first, then
+each signal layer in the board order. On each layer the ball grid becomes a flow network on a
+half-pitch grid (ball cells, the gaps between balls, the channel crossings), with the pads (top
+layer) or the vias already placed (inner layers) as blocked cells, one track per gap cell, and
+the package edge as the sink. Each ball wants the side its net's other pins are on (the
+centroid of them, relative to the package), so the layer is run one side at a time: the balls
+that want that side, a min-cost flow in which a step costs 1, that side's edge costs 0, the
+neighbouring sides cost a package width and the far side four, and the escapes it finds are
+fixed before the next side runs; a last pass takes whatever is left to any edge. Each path is
+its track, and no two cross. A ball that escapes on an inner
+layer gets a via in its pad. Inside the package tracks run at the fab minimum width and
+clearance (the class width would not fit between 0.75 mm balls), and the detailed router widens
+them past the edge. Balls that reach no edge on any layer are reported.
 
 Escape also decides the via site for every fine-pitch SMD pad that needs one (QFN, DFN, 0201),
 so decaps and routing know where the holes are before either commits.
 
-Output: via sites and escape tracks in the plan, written as ordinary vias and tracks.
+Output: via sites and escape tracks in the plan, written into the layout file between
+`# plan escape` and `# end plan escape` as ordinary vias and tracks; a rerun replaces them.
 
 ### 5. Planes
 
@@ -261,6 +272,35 @@ pub trait Phase {
 
 The driver runs the configured list, checkpoints after each, and handles the global/detail
 iteration. Phases do not call each other.
+
+## State
+
+`agentee layout NAME` runs the score and the phases that exist: floorplan, place, legalise,
+escape, planes, global and detail. Assign and finish are listed as skipped. After each phase the driver writes its plan into the
+layout file between `# plan <phase>` markers and resolves the layout again, so the next phase
+sees the zones filled around the new copper. `--only X` and `--from X` drop the plans of X and
+every later phase first.
+
+Floorplan finds the chains from each connector and lays them in a line inward from it (on
+`examples/sdr` the RX and TX RF paths, the reference input and the PPS input). Place runs the
+existing placer (its global placement, legalisation and annealing) on every part that is not
+locked or chained, so the chains hold. Regions and the analytical placer described above are not
+built: an ePlace style pass gave 10 to 11 m of wirelength against the existing placer's 6.7 m.
+Legalise moves only parts that still overlap.
+
+Escape uses dog-bone vias unless `[engine.escape] via_in_pad = true`, and falls back to via in
+pad where the pitch leaves no room for one (U2 at 0.8 mm, U3 at 0.75 mm). Plane balls take the
+diagonal crossing least crowded by signal balls and share a via with a neighbour on the same net
+where they can. On `examples/sdr` 22 inner balls of U1 find no escape.
+
+Planes grows each rail from its vias on the plane layer (1.5 mm reach), joins pieces with 0.8 mm
+necks up to 6 mm long, and reopens the base rail where a rail cut its vias off. Pieces it cannot
+join are left to routing. On `examples/sdr` In3 gets 39 rail regions and the 3V3 base stays whole.
+
+Global routes every net except ground, power nets only between the islands the planes leave.
+Detail routes with the core grid router; global's corridors are a cost (off-corridor cells cost
+4x) and bound each search's box. `[engine.detail] corridors = false` turns them off. On
+`examples/sdr` floorplan to detail takes about 60 s and routes 272 of 361 connections.
 
 ## Order of work
 

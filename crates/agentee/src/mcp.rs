@@ -40,6 +40,17 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "layout",
+            "description": "Run the layout engine on a layout: the configured [engine] phases in order, then the score per term with the worst offenders of each. Phases not implemented yet are listed as skipped.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "from": { "type": "string", "description": "start at this phase" },
+                "to": { "type": "string", "description": "stop after this phase" },
+                "only": { "type": "string", "description": "run one phase" },
+                "dry_run": { "type": "boolean", "description": "report without writing the plan" },
+            }), &["name"]),
+        },
+        {
             "name": "stackups",
             "description": "Stackup presets for a board's `stackup.preset`: JLCPCB and PCBWay builds and generic HDI builds with layer thicknesses and er. Filter the list, or give name to get one preset's layers.",
             "inputSchema": s(json!({
@@ -317,6 +328,19 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let p = ops::load(root)?;
             let (t, _) = ops::drc(&p, arg(a, "name").ok_or("name is required")?, flag(a, "list"))?;
             Ok(ok(vec![text(t)]))
+        }
+        "layout" => {
+            let r = ops::layout_engine(
+                root,
+                arg(a, "name").ok_or("name is required")?,
+                &ops::LayoutArgs {
+                    from: arg(a, "from").map(String::from),
+                    to: arg(a, "to").map(String::from),
+                    only: arg(a, "only").map(String::from),
+                    write: !flag(a, "dry_run"),
+                },
+            )?;
+            Ok(ok(vec![text(pretty(&r))]))
         }
         "stackups" => {
             if let Some(n) = arg(a, "name") {
