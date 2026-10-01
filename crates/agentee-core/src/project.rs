@@ -959,15 +959,27 @@ impl Project {
 
     pub fn layout_inputs(&self, i: usize) -> Result<LayoutInputs, String> {
         let entry = &self.layouts[i];
-        let board =
-            self.boards.iter().find(|b| b.name == entry.item.board).ok_or("board is missing")?;
+        self.inputs_for(&entry.path, &entry.item.board, &entry.item.schematic)
+    }
+
+    pub fn inputs_for(
+        &self,
+        path: &Path,
+        board: &str,
+        schematic: &str,
+    ) -> Result<LayoutInputs, String> {
+        let board = self
+            .boards
+            .iter()
+            .find(|b| b.name == board)
+            .ok_or_else(|| format!("no board named `{board}`"))?;
         let schematic = self
             .schematics
             .iter()
-            .find(|s| s.name == entry.item.schematic)
-            .ok_or("the layout's schematic is missing")?;
+            .find(|s| s.name == schematic)
+            .ok_or_else(|| format!("no schematic named `{schematic}`"))?;
         Ok(LayoutInputs {
-            path: entry.path.clone(),
+            path: path.to_path_buf(),
             board: board.item.clone(),
             schematic: schematic.item.clone(),
             footprints: self.footprints.iter().map(|e| (e.name.clone(), e.item.clone())).collect(),

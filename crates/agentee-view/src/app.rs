@@ -39,6 +39,8 @@ pub struct App {
     polled: Instant,
     ctx: egui::Context,
     closing: bool,
+    new_layout: Option<crate::newlayout::Form>,
+    pending_select: Option<String>,
 }
 
 impl App {
@@ -69,6 +71,8 @@ impl App {
             polled: Instant::now() - Duration::from_secs(5),
             ctx: cc.egui_ctx.clone(),
             closing: false,
+            new_layout: None,
+            pending_select: None,
         };
         app.st.view_3d = view_3d;
         app.reload();
@@ -122,6 +126,12 @@ impl App {
                 self.project = p;
                 self.error = None;
                 self.st.sync(&self.ctx, &self.project);
+                if let Some(n) = self.pending_select.clone()
+                    && let Some(r) = self.project.find(&format!("pcb:{n}"))
+                {
+                    self.pending_select = None;
+                    self.select(r);
+                }
             }
             Err(e) => self.error = Some(e),
         }
@@ -229,6 +239,17 @@ impl App {
     }
 
     fn list(&mut self, ui: &mut Ui) {
+        if self.tab == Kind::Layout {
+            let dir = self.path.is_dir();
+            if ui
+                .add_enabled(dir, egui::Button::new("new layout"))
+                .on_disabled_hover_text("open a project directory to add files to it")
+                .clicked()
+            {
+                self.new_layout = Some(crate::newlayout::Form::new(&self.project));
+            }
+            ui.add_space(6.0);
+        }
         field(ui, &mut self.filter, "filter");
         ui.add_space(6.0);
         let needle = self.filter.to_lowercase();
@@ -396,6 +417,17 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.guard_close(&ctx);
         self.poll(&ctx);
+        if let Some(f) = &mut self.new_layout {
+            match crate::newlayout::show(&ctx, &self.project, &self.project.root, f) {
+                crate::newlayout::Outcome::Open => {}
+                crate::newlayout::Outcome::Cancelled => self.new_layout = None,
+                crate::newlayout::Outcome::Created(name) => {
+                    self.new_layout = None;
+                    self.pending_select = Some(name);
+                    self.dirty = Some(Instant::now());
+                }
+            }
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::F)) && !ctx.egui_wants_keyboard_input() {
             self.st.view.fitted = false;
         }

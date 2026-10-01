@@ -356,3 +356,43 @@ fn the_engine_runs_into_the_editor_and_waits_for_save() {
     h.settle();
     assert!(!h.ed().text().contains("# plan escape"), "one undo takes the run back");
 }
+
+#[test]
+fn reset_clears_routing_and_places_again_in_one_undo() {
+    use agentee_layout::start::Reset;
+    use agentee_view::engine::ResetForm;
+    let dir = lna();
+    let mut h = Harness::new(&dir);
+    let ctx = h.ctx.clone();
+    let project = Project::load(&dir).unwrap();
+    let before = part_at(&project, "C1");
+    let form =
+        ResetForm { what: Reset { routing: true, ..Default::default() }, place: true, seed: 3 };
+    agentee_view::engine::reset(h.ed_mut(), &ctx, &project, 0, form);
+    h.settle();
+    let l = h.ed().layout(&h.project, 0);
+    assert!(l.tracks.is_empty() && !l.ratsnest.is_empty());
+    let after = l.parts.iter().find(|p| p.reference == "C1").unwrap().at.to_mm();
+    assert_ne!(after, before, "the placer ran");
+    assert!(h.ed().layout(&h.project, 0).vias.is_empty());
+    h.key(Key::Z, Modifiers::COMMAND);
+    h.settle();
+    assert!(!h.ed().dirty);
+}
+
+#[test]
+fn a_new_layout_comes_with_every_part_placed() {
+    let dir = lna();
+    let project = Project::load(&dir).unwrap();
+    let mut form = agentee_view::newlayout::Form::new(&project);
+    assert_eq!(form.name, "lna-2");
+    form.seed = 2;
+    let (path, text, inputs) = agentee_view::newlayout::create(&project, &dir, &form).unwrap();
+    agentee_view::newlayout::write(&path, &text, inputs.as_ref(), form.seed).unwrap();
+    let p = Project::load(&dir).unwrap();
+    let l = p.layouts.iter().find(|l| l.name == "lna-2").unwrap();
+    assert_eq!(l.item.parts.len(), project.layouts[0].item.parts.len());
+    let unplaced: Vec<_> = l.diags.iter().filter(|d| d.message.contains("is not placed")).collect();
+    assert!(unplaced.is_empty(), "{unplaced:?}");
+    assert!(agentee_view::newlayout::create(&p, &dir, &form).is_err(), "names stay unique");
+}

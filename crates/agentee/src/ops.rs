@@ -1677,37 +1677,6 @@ pub struct PlaceArgs {
     pub write: bool,
 }
 
-fn move_board_texts(doc: &mut toml_edit::DocumentMut, moves: &[agentee_core::place::TextMove]) {
-    let Some(graphics) = doc.get_mut("graphics").and_then(|v| v.as_array_of_tables_mut()) else {
-        return;
-    };
-    for m in moves {
-        let found = graphics.iter_mut().find(|t| {
-            let at: Vec<f64> = t
-                .get("at")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|x| x.as_float().or(x.as_integer().map(|i| i as f64)))
-                        .collect()
-                })
-                .unwrap_or_default();
-            t.get("kind").and_then(|v| v.as_str()) == Some("text")
-                && t.get("text").and_then(|v| v.as_str()) == Some(m.text.as_str())
-                && t.get("layer").and_then(|v| v.as_str()).unwrap_or("F.SilkS") == m.layer
-                && at.len() == 2
-                && (at[0] - m.from[0]).abs() < 1e-6
-                && (at[1] - m.from[1]).abs() < 1e-6
-        });
-        if let Some(t) = found {
-            let mut pt = toml_edit::Array::new();
-            pt.push(m.to[0]);
-            pt.push(m.to[1]);
-            t["at"] = toml_edit::value(pt);
-        }
-    }
-}
-
 pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     use agentee_core::place as pl;
     let sides = match a.side.to_ascii_uppercase().as_str() {
@@ -1804,70 +1773,8 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         return Ok(out);
     }
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
-    if doc.get("footprints").and_then(|v| v.as_array_of_tables()).is_none() {
-        doc["footprints"] = toml_edit::Item::ArrayOfTables(toml_edit::ArrayOfTables::new());
-    }
-    let parts = doc
-        .get_mut("footprints")
-        .and_then(|v| v.as_array_of_tables_mut())
-        .ok_or("[[footprints]] is not an array of tables")?;
-    for pm in &r.placements {
-        let mut pt = toml_edit::Array::new();
-        pt.push(pm.at[0]);
-        pt.push(pm.at[1]);
-        let found = parts
-            .iter_mut()
-            .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(pm.reference.as_str()));
-        let t = match found {
-            Some(t) => t,
-            None => {
-                let mut t = toml_edit::Table::new();
-                t["ref"] = toml_edit::value(pm.reference.as_str());
-                parts.push(t);
-                parts.iter_mut().last().ok_or("could not add a footprint")?
-            }
-        };
-        t["at"] = toml_edit::value(pt);
-        if pm.rotation != 0.0 {
-            t["rotation"] = toml_edit::value(pm.rotation);
-        } else {
-            t.remove("rotation");
-        }
-        if pm.bottom {
-            t["side"] = toml_edit::value("bottom");
-        } else {
-            t.remove("side");
-        }
-        let hidden = t
-            .get("label")
-            .and_then(|v| v.as_inline_table())
-            .and_then(|l| l.get("hide"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if let Some((at, rotation)) = pm.label {
-            let mut label =
-                t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
-            let mut pt = toml_edit::Array::new();
-            pt.push(at[0]);
-            pt.push(at[1]);
-            label.insert("at", pt.into());
-            if rotation != 0.0 {
-                label.insert("rotation", rotation.into());
-            } else {
-                label.remove("rotation");
-            }
-            t["label"] = toml_edit::value(label);
-        } else if let Some(mut label) = t.get("label").and_then(|v| v.as_inline_table()).cloned() {
-            label.remove("at");
-            label.remove("rotation");
-            if label.is_empty() && !hidden {
-                t.remove("label");
-            } else {
-                t["label"] = toml_edit::value(label);
-            }
-        }
-    }
-    move_board_texts(&mut doc, &r.texts_moved);
+    agentee_layout::start::write_placements(&mut doc, &r.placements)?;
+    agentee_layout::start::move_board_texts(&mut doc, &r.texts_moved);
     std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
     let p = load(root)?;
     let i = layout_index(&p, &layout_name)?;
@@ -1875,32 +1782,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     let board = &p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?.item;
     let (moved, failing) = layout.settle_labels(board);
     if !moved.is_empty() {
-        let parts = doc
-            .get_mut("footprints")
-            .and_then(|v| v.as_array_of_tables_mut())
-            .ok_or("[[footprints]] is not an array of tables")?;
-        for f in &moved {
-            let (Some(at), Some(t)) = (
-                f.at,
-                parts
-                    .iter_mut()
-                    .find(|t| t.get("ref").and_then(|v| v.as_str()) == Some(f.reference.as_str())),
-            ) else {
-                continue;
-            };
-            let mut label =
-                t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
-            let mut pt = toml_edit::Array::new();
-            pt.push(at[0]);
-            pt.push(at[1]);
-            label.insert("at", pt.into());
-            if f.rotation != 0.0 {
-                label.insert("rotation", f.rotation.into());
-            } else {
-                label.remove("rotation");
-            }
-            t["label"] = toml_edit::value(label);
-        }
+        agentee_layout::start::write_labels(&mut doc, &moved)?;
         std::fs::write(&path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     out["labels_moved"] = json!(moved.len());

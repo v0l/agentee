@@ -9,6 +9,7 @@ pub mod pinswap;
 pub mod placement;
 pub mod planes;
 pub mod score;
+pub mod start;
 pub mod tangle;
 
 use agentee_core::board::Board;

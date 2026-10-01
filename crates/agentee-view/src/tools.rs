@@ -697,6 +697,15 @@ pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     if ui.add_enabled(ed.dirty, egui::Button::new("revert")).clicked() {
         ed.revert(&ctx);
     }
+    let busy = crate::engine::running(ed);
+    if ui
+        .add_enabled(!busy, egui::Button::new("reset"))
+        .on_hover_text("clear routing, rules, zones or labels, or place the parts again")
+        .clicked()
+    {
+        ed.engine.reset = Some(Default::default());
+    }
+    crate::engine::reset_dialog(ui, project, i, ed);
     if ed.dirty {
         lamp(ui, "unsaved", false, false);
     }
@@ -706,7 +715,7 @@ pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     if ed.routing() {
         lamp(ui, "routing", true, false);
     }
-    if crate::engine::running(ed) {
+    if busy {
         lamp(ui, "engine running, editing paused", true, false);
     }
 }

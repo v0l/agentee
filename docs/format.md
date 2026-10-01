@@ -1342,6 +1342,13 @@ handed to the autorouter as one connection or as its whole net, with the same ru
 `count` row, is taken out of its rule when you move, change or delete it: the rule gets a
 `skip_at` entry for the spot and the via is written as its own `[[vias]]`.
 
+`reset` in the toolbar clears what you tick: routing (tracks, vias and the engine's plan
+sections), the `[[fanouts]]` and `[[stitching]]` rules, zones with their stored fills, and silk
+label positions, and can place every unlocked part again with the placer (`agentee place`, with a
+seed). Like every edit it stays unsaved until you save. `new layout` on the layouts tab asks for a
+name, board and schematic, writes `NAME.pcb.toml` next to the project and, unless you untick it,
+places every part with the placer first.
+
 The `layout engine` card runs the phases of `agentee layout` (see `docs/layout-engine.md`) on the
 layout as it stands in the window, unsaved edits included: `run` takes the phases from..to,
 `run X only` reruns one, `stop` ends the run after the phase that is running. Editing pauses while

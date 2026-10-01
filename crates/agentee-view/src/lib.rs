@@ -7,6 +7,7 @@ pub mod eye;
 pub mod gl3d;
 pub mod headless;
 pub mod heat;
+pub mod newlayout;
 pub mod pages;
 pub mod paint;
 pub mod pcb;
