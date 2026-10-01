@@ -30,6 +30,7 @@ diameter = "0.5mm"
 name = "bga"
 drill = "0.2mm"
 diameter = "0.35mm"
+fill = "filled_capped"
 
 [[netclasses]]
 name = "Default"

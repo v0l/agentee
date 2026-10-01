@@ -223,6 +223,8 @@ pub struct LayoutFile {
     pub test: Option<crate::testpoint::TestFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<crate::place::PlaceFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<crate::engine::EngineFile>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -556,6 +558,7 @@ pub struct Layout {
     pub watermark: Option<SilkText>,
     pub watermark_problem: Option<String>,
     pub test: crate::testpoint::TestSpec,
+    pub engine: crate::engine::EngineFile,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1840,6 +1843,8 @@ impl LayoutFile {
             &mut found,
         );
         let test = self.test.clone().unwrap_or_default().resolve(d);
+        let engine = self.engine.clone().unwrap_or_default();
+        engine.check(d);
         crate::drc::run(
             &crate::drc::Ctx::new(
                 board,
@@ -1883,6 +1888,7 @@ impl LayoutFile {
             watermark,
             watermark_problem,
             test,
+            engine,
         }
     }
 

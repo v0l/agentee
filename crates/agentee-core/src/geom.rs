@@ -317,3 +317,53 @@ mod tests {
         assert!((p[0]).abs() < 1e-12 && (p[1] + 1.0).abs() < 1e-12);
     }
 }
+
+pub fn intersection_area(a: &[P], b: &[P]) -> f64 {
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
+    if a.len() < 3 || b.len() < 3 {
+        return 0.0;
+    }
+    let orient = |r: &[P]| {
+        let mut v = r.to_vec();
+        if signed_area(&v) < 0.0 {
+            v.reverse();
+        }
+        v
+    };
+    let shapes =
+        vec![orient(a)].overlay(&vec![orient(b)], OverlayRule::Intersect, FillRule::NonZero);
+    shapes
+        .iter()
+        .map(|shape| {
+            shape
+                .iter()
+                .enumerate()
+                .map(|(i, r)| if i == 0 { signed_area(r).abs() } else { -signed_area(r).abs() })
+                .sum::<f64>()
+        })
+        .sum::<f64>()
+        .max(0.0)
+}
+
+#[cfg(test)]
+mod intersection_tests {
+    use super::*;
+
+    #[test]
+    fn touching_rectangles_share_no_area_and_overlapping_ones_do() {
+        let a = vec![[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]];
+        let b = vec![[2.0, 0.0], [4.0, 0.0], [4.0, 2.0], [2.0, 2.0]];
+        assert!(intersection_area(&a, &b).abs() < 1e-9);
+        let c = vec![[1.0, 1.0], [3.0, 1.0], [3.0, 3.0], [1.0, 3.0]];
+        assert!((intersection_area(&a, &c) - 1.0).abs() < 1e-6);
+        let cw: Vec<P> = c.iter().rev().copied().collect();
+        assert!((intersection_area(&a, &cw) - 1.0).abs() < 1e-6);
+        let u1 = vec![[74.5, 28.0], [74.5, 9.0], [55.5, 9.0], [55.5, 28.0]];
+        let ring = vec![[53.5, 7.0], [76.5, 7.0], [76.5, 9.0], [53.5, 9.0]];
+        assert!(intersection_area(&u1, &ring).abs() < 1e-9, "{}", intersection_area(&u1, &ring));
+        let side = vec![[74.5, 9.0], [76.5, 9.0], [76.5, 28.0], [74.5, 28.0]];
+        assert!(intersection_area(&u1, &side).abs() < 1e-9, "{}", intersection_area(&u1, &side));
+    }
+}

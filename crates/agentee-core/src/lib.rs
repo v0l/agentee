@@ -4,6 +4,7 @@ pub mod calc;
 pub mod contour;
 pub mod diag;
 pub mod drc;
+pub mod engine;
 pub mod font;
 pub mod footprint;
 pub mod geom;

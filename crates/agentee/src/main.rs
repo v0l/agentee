@@ -334,6 +334,39 @@ enum Cmd {
         #[command(subcommand)]
         calc: Calc,
     },
+    /// Run the layout engine on a layout: the configured phases in order, then the score per term
+    Layout {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Start at this phase, keeping the results of the phases before it
+        #[arg(long)]
+        from: Option<String>,
+        /// Stop after this phase
+        #[arg(long)]
+        to: Option<String>,
+        /// Run one phase only
+        #[arg(long)]
+        only: Option<String>,
+        /// Report without writing the plan into the layout file
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Reassign a chip's swappable I/O (same bank, pairs as pairs, clock pins kept on clock pins) to untangle the ratsnest
+    Pinswap {
+        name: String,
+        #[arg(long)]
+        part: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Rewrite the schematic pin references
+        #[arg(long)]
+        write: bool,
+    },
     /// List the fab stackup presets a board's `stackup.preset` can name, or print one
     Stackups {
         /// Print this preset's layers as JSON
@@ -752,6 +785,26 @@ fn run(cli: Cli) -> Result<bool, String> {
                 && r["unrouted"].as_array().is_none_or(|f| f.is_empty());
             print_json(&r);
             Ok(ok)
+        }
+        Cmd::Layout { name, project, from, to, only, dry_run, json } => {
+            let r = ops::layout_engine(
+                &project,
+                &name,
+                &ops::LayoutArgs { from, to, only, write: !dry_run },
+            )?;
+            if json {
+                print_json(&r);
+            } else {
+                for s in r["skipped"].as_array().into_iter().flatten() {
+                    println!("skipped {}", s.as_str().unwrap_or(""));
+                }
+                print!("{}", r["score_table"].as_str().unwrap_or(""));
+            }
+            Ok(true)
+        }
+        Cmd::Pinswap { name, part, project, seed, write } => {
+            print_json(&ops::pinswap(&project, &name, &part, seed, write)?);
+            Ok(true)
         }
         Cmd::Stackups { name, fab, layers, thickness, search, json } => {
             if let Some(name) = name {
