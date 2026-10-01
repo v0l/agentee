@@ -153,6 +153,15 @@ fn tools() -> Value {
             }), &["from", "to", "add"]),
         },
         {
+            "name": "tie",
+            "description": "Tie every SMD pad of a plane net (a net with a [[zones]] entry) to the nearest plane layer with a short stub and a via beside the pad, away from the part body, and append them to the layout file. Use this for ground and supply pads instead of routing tracks between them; `route` with a glob skips plane nets.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "nets": { "type": "string", "description": "comma separated plane nets, globs allowed, default every net with a zone" },
+                "dry_run": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "route",
             "description": "Autoroute the ratsnest of the named nets of a layout on a grid, keeping each class's width, clearance, layers and via, and append the tracks and vias to the layout file. Existing copper is never moved unless reroute is set.",
             "inputSchema": s(json!({
@@ -490,6 +499,16 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             arg(a, "amplitude").unwrap_or("0.6mm"),
             arg(a, "pitch").unwrap_or("0.4mm"),
         )?))])),
+        "tie" => {
+            let name = arg(a, "name").ok_or("name is required")?;
+            let nets: Vec<String> = arg(a, "nets")
+                .map(|v| {
+                    v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+                })
+                .unwrap_or_default();
+            let r = ops::tie(&ops::load(root)?, name, &nets, !flag(a, "dry_run"))?;
+            Ok(ok(vec![text(pretty(&r))]))
+        }
         "route" => {
             let name = arg(a, "name").ok_or("name is required")?;
             let split = |k: &str| -> Vec<String> {

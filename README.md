@@ -47,6 +47,7 @@ agentee view                                   # live window, reloads on save, e
 agentee view --3d                              # layouts open in the 3D view
 agentee models                                 # fetch the KiCad 3D models the footprints name
 agentee fill sensor-node                       # fill the zones and store the copper in the layout
+agentee tie sensor-node                        # a via beside every ground and supply pad
 ```
 
 `check` exits 1 when there are errors, so it fits in a loop or CI.

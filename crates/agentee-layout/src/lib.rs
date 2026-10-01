@@ -11,6 +11,7 @@ pub mod planes;
 pub mod score;
 pub mod start;
 pub mod tangle;
+pub mod tie;
 
 use agentee_core::board::Board;
 use agentee_core::engine::EngineFile;
@@ -40,6 +41,7 @@ pub struct Model<'a> {
     pub detail: Option<detail::DetailPlan>,
     pub text: String,
     pub finished_escape: Option<String>,
+    pub tie: Option<agentee_core::tie::TieResult>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -129,6 +131,7 @@ pub fn run_text(
         detail: None,
         text: String::new(),
         finished_escape: None,
+        tie: None,
     };
     let cfg = Config {
         engine,
@@ -171,6 +174,7 @@ pub fn phases() -> Vec<Box<dyn Phase>> {
         Box::new(placement::Legalise),
         Box::new(layers::Layers),
         Box::new(escape::Escape),
+        Box::new(tie::Tie),
         Box::new(planes::Planes),
         Box::new(global::Global),
         Box::new(detail::Detail),
@@ -336,6 +340,17 @@ pub fn plan_section(model: &Model, phase: &str) -> Option<String> {
             }
             Some(t)
         }
+        "tie" => {
+            let plan = model.tie.as_ref()?;
+            let mut t = String::new();
+            for tr in &plan.tracks {
+                t += &track_toml(&tr.net, &tr.layer, tr.width, &tr.points);
+            }
+            for v in &plan.vias {
+                t += &via_toml(&v.net, v.at, &v.via);
+            }
+            Some(t)
+        }
         "detail" => {
             let plan = model.detail.as_ref()?;
             let mut t = String::new();
@@ -397,6 +412,13 @@ pub fn write_moves(text: &str, moves: &[placement::Move]) -> Result<String, Stri
         else {
             continue;
         };
+        let num = |v: &toml_edit::Value| v.as_float().or_else(|| v.as_integer().map(|i| i as f64));
+        let point_of = |i: Option<&toml_edit::Item>| -> Option<P> {
+            let a = i?.as_array()?;
+            Some([num(a.get(0)?)?, num(a.get(1)?)?])
+        };
+        let old_at = point_of(t.get("at"));
+        let old_rot = t.get("rotation").and_then(|v| v.as_value()).and_then(num).unwrap_or(0.0);
         let mut pt = toml_edit::Array::new();
         pt.push(m.at[0]);
         pt.push(m.at[1]);
@@ -407,7 +429,19 @@ pub fn write_moves(text: &str, moves: &[placement::Move]) -> Result<String, Stri
         } else {
             t["rotation"] = toml_edit::value(rot);
         }
-        t.remove("label");
+        let label = t.get_mut("label").and_then(|l| l.as_table_like_mut());
+        if let (Some(label), Some(from)) = (label, old_at)
+            && let Some(la) = point_of(label.get("at"))
+        {
+            let off = agentee_core::geom::rotate(
+                [la[0] - from[0], la[1] - from[1]],
+                m.rotation - old_rot,
+            );
+            let mut q = toml_edit::Array::new();
+            q.push(((m.at[0] + off[0]) * 1e4).round() / 1e4);
+            q.push(((m.at[1] + off[1]) * 1e4).round() / 1e4);
+            label.insert("at", toml_edit::value(q));
+        }
     }
     Ok(doc.to_string())
 }

@@ -25,6 +25,7 @@ pub mod sparam;
 pub mod stackups;
 pub mod symbol;
 pub mod testpoint;
+pub mod tie;
 pub mod tune;
 pub mod units;
 pub mod version;

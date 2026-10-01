@@ -276,7 +276,7 @@ iteration. Phases do not call each other.
 ## State
 
 `agentee layout NAME` runs the score and the phases that exist: floorplan, place, legalise,
-escape, planes, global and detail. Assign and finish are listed as skipped. After each phase the driver writes its plan into the
+escape, tie, planes, global, detail and finish. Assign is listed as skipped. After each phase the driver writes its plan into the
 layout file between `# plan <phase>` markers and resolves the layout again, so the next phase
 sees the zones filled around the new copper. `--only X` and `--from X` drop the plans of X and
 every later phase first.
@@ -290,6 +290,15 @@ existing placer (its global placement, legalisation and annealing) on every part
 locked or chained, so the chains hold. Regions and the analytical placer described above are not
 built: an ePlace style pass gave 10 to 11 m of wirelength against the existing placer's 6.7 m.
 Legalise moves only parts that still overlap.
+
+Floorplan leaves RF connectors alone: the place phase runs the core placer, which lays each RF
+path in a line (see Placement in `docs/format.md`). Legalise holds edge-mount parts (an `edge`
+pad or `overhang`) and mounting holes where they are, since its inside-the-outline test would
+otherwise pull an edge connector onto the board. Moving a part carries its label with it.
+
+Tie, between escape and planes, runs `agentee tie`: a stub and a via beside every SMD pad of a
+net with a zone, so supply and ground pads reach their plane before planes cuts the rails and
+before detail routing, which leaves plane nets out of `*`.
 
 Escape uses dog-bone vias unless `[engine.escape] via_in_pad = true`, and falls back to via in
 pad where the pitch leaves no room for one (U2 at 0.8 mm, U3 at 0.75 mm). Plane balls take the

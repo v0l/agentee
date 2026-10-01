@@ -8,6 +8,7 @@ pub const PHASES: &[&str] = &[
     "legalise",
     "layers",
     "escape",
+    "tie",
     "planes",
     "global",
     "assign",

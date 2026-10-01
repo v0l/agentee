@@ -1049,6 +1049,20 @@ What goes where, strongest first, and why:
   Devices", 2012). `[place] edges` pins a connector to an edge. Mounting holes go in the corners
   (diagonal first), fiducials in the free corners with their pads 3 mm or more from the edge,
   clear of the conveyor rails and clamps (SMEMA Fiducial Mark Standard 3.1).
+- An RF path is laid in a straight line. Starting at each connector with a pad on an RF net (a
+  class with `impedance` and no `diff_gap`), the placer follows RF nets through the parts that
+  carry two or more of them and have at most 16 pins (DC blocks, attenuators, switches, LNAs,
+  baluns), and takes the longest path that ends at another connector or at a larger chip with
+  RF pins; a switch with a bypass goes through the amplifier, not the bypass. When both ends
+  are connectors they go on opposite edges of the board's long axis and slide along them onto
+  one line, through the board centre where both fit. Each part on the path turns so its input
+  and output pads sit on that line, in order, packed toward the input with at most 1.5 mm of
+  extra gap each, and the rest of the room goes to the last run. A two or three pin part with
+  one pad on a node of the path (an ESD clamp, a bias choke, a shunt cap) sits beside the line at
+  that node, turned so its other pads point away, close enough that its RF pad meets the track and
+  far enough that its other pads keep the class clearance; two shunts at one node take opposite
+  sides. The path is fixed before the rest is placed around it, and a part that would leave the
+  board or land on another is left to the general placer.
 - Large chips (BGA, 16+ pin packages over 25 mm2, else the highest pin count part) are pulled to
   the board centre and kept within `off_centre` of it, where they have room to escape their pins on every side (Xilinx UG1099,
   Recommended Design Rules and Strategies for BGA Devices) and away from the edges and
@@ -1175,6 +1189,23 @@ partner at the pair gap; `--pairs` tries to route both halves together as one co
 first. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
 first, then let the router fill in the rest, a class at a time.
+
+A net with a `[[zones]]` entry is a plane net. A glob in `--nets` never matches it, so
+`--nets '*'` routes every signal and supply that has no pour and leaves ground to the planes;
+name the net exactly to route it with tracks anyway. Vias placed by `[[stitching]]` rules are not
+obstacles to the router: the rule places them again around the new copper.
+
+`agentee tie NAME [--nets GND] [--dry-run]` (MCP `tie`) connects each SMD pad of a plane net to
+the nearest layer its zone covers with a short stub and a via beside the pad, which is how ground
+and supply pads join a plane instead of tracks between them. The via goes on the side of the pad
+away from the part's centre, as close as it can: its copper clear of every SMD pad (its own too,
+so no via-in-pad), its hole `min_hole_to_smd_pad` from them, `min_hole_to_hole` from other holes,
+`min_via_hole_to_copper` and the class clearance from other nets, `min_copper_to_edge` in from
+the outline, and the stub clear of other nets on the pad's layer. It tries 16 directions, nearest
+the outward one first, up to 1.2 mm past the pad. A pad that already has a via of its net within
+0.8 mm of its edge is left alone, through-hole pads and BGA balls (`escape` handles those) are
+skipped, and a pad with no legal spot is listed under `failed`. The stubs and vias are appended
+as ordinary `[[tracks]]` and `[[vias]]`.
 
 `agentee neck NAME [--nets 'VBUS,RF_*'] [--taper] [--dry-run]` (MCP `neck`) necks down copper that
 is already there. It looks at both ends of every track of the named nets (default all) that end
@@ -1347,7 +1378,11 @@ sections), the `[[fanouts]]` and `[[stitching]]` rules, zones with their stored 
 label positions, and can place every unlocked part again with the placer (`agentee place`, with a
 seed). Like every edit it stays unsaved until you save. `new layout` on the layouts tab asks for a
 name, board and schematic, writes `NAME.pcb.toml` next to the project and, unless you untick it,
-places every part with the placer first.
+places every part with the placer first. The new file starts with a zone on every copper layer
+for each ground net of the schematic and, when the schematic has RF nets, a `[[stitching]]` grid
+of ground vias at 2.5 mm plus a fence along the RF tracks when their class has a
+`coplanar_gap`. The engine card's `tie plane pads` runs `agentee tie` on the window's layout, and
+a selected ratsnest line of a plane net offers `tie pads to the plane` before a route.
 
 The `layout engine` card runs the phases of `agentee layout` (see `docs/layout-engine.md`) on the
 layout as it stands in the window, unsaved edits included: `run` takes the phases from..to,

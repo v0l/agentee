@@ -780,8 +780,22 @@ pub fn selection(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
                 reading(ui, "from", format!("{}, {}", trim(a[0], 3), trim(a[1], 3)));
                 reading(ui, "to", format!("{}, {}", trim(b[0], 3), trim(b[1], 3)));
                 reading(ui, "length", format!("{} mm", trim(geom::dist(a, b), 2)));
+                let plane = agentee_core::tie::plane_nets(ed.layout(project, i)).contains(&n);
                 ui.horizontal(|ui| {
                     let idle = !ed.routing();
+                    if plane {
+                        if ui
+                            .button("tie pads to the plane")
+                            .on_hover_text("a stub and a via beside each pad of this net")
+                            .clicked()
+                        {
+                            ed.tie_planes(&ctx, project, i, std::slice::from_ref(&names.nets[n]));
+                        }
+                        if ui.add_enabled(idle, egui::Button::new("route with tracks")).clicked() {
+                            ed.route_connection(&ctx, project, i, n, Some((a, b)));
+                        }
+                        return;
+                    }
                     if ui.add_enabled(idle, egui::Button::new("route connection")).clicked() {
                         ed.route_connection(&ctx, project, i, n, Some((a, b)));
                     }

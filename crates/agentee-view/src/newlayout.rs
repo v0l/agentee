@@ -48,14 +48,6 @@ fn file_stem(name: &str) -> String {
         .collect()
 }
 
-pub fn starter(name: &str, board: &str, schematic: &str) -> String {
-    let mut doc = toml_edit::DocumentMut::new();
-    doc["name"] = toml_edit::value(name);
-    doc["board"] = toml_edit::value(board);
-    doc["schematic"] = toml_edit::value(schematic);
-    doc.to_string()
-}
-
 pub fn create(
     project: &Project,
     root: &Path,
@@ -73,7 +65,17 @@ pub fn create(
     if path.exists() {
         return Err(format!("{} exists", path.display()));
     }
-    let text = starter(name, &f.board, &f.schematic);
+    let board = project
+        .boards
+        .iter()
+        .find(|b| b.name == f.board)
+        .ok_or_else(|| format!("no board named `{}`", f.board))?;
+    let sch = project
+        .schematics
+        .iter()
+        .find(|s| s.name == f.schematic)
+        .ok_or_else(|| format!("no schematic named `{}`", f.schematic))?;
+    let text = agentee_layout::start::starter(name, &board.item, &sch.item);
     let inputs =
         if f.place { Some(project.inputs_for(&path, &f.board, &f.schematic)?) } else { None };
     Ok((path, text, inputs))

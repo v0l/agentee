@@ -239,6 +239,9 @@ fn chains(bd: &Board, model: &Model) -> Vec<(usize, Vec<usize>)> {
             }
             let class = &l.nets[start].class;
             let rf = place::is_rf_class(b, class);
+            if rf {
+                continue;
+            }
             let kin = |n: usize| {
                 let c = &l.nets[n].class;
                 signal(n) && (!rf || place::is_rf_class(b, c))
@@ -489,9 +492,21 @@ impl Phase for Legalise {
                 b
             })
             .collect();
+        let anchored: Vec<&str> = model
+            .layout
+            .parts
+            .iter()
+            .filter(|p| {
+                place::edge_mount(&p.footprint)
+                    || place::role_of(&p.reference, &p.footprint_name, &p.footprint)
+                        == place::Role::Hole
+            })
+            .map(|p| p.reference.as_str())
+            .collect();
+        let held = |c: &Cell| c.fixed || anchored.contains(&c.reference.as_str());
         let mut placed: Vec<[f64; 4]> =
-            bd.cells.iter().filter(|c| c.fixed).map(|c| rect_of(c, c.at, 0.0)).collect();
-        let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !bd.cells[i].fixed).collect();
+            bd.cells.iter().filter(|c| held(c)).map(|c| rect_of(c, c.at, 0.0)).collect();
+        let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !held(&bd.cells[i])).collect();
         order.sort_by(|&a, &b| {
             let (ca, cb) = (&bd.cells[a], &bd.cells[b]);
             cb.chained.cmp(&ca.chained).then(cb.area.total_cmp(&ca.area))

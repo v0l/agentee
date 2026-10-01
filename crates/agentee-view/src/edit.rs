@@ -446,6 +446,36 @@ impl Editor {
         self.note = None;
     }
 
+    pub fn tie_planes(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        i: usize,
+        nets: &[String],
+    ) {
+        let inputs = match self.inputs(project, i) {
+            Ok(x) => x,
+            Err(e) => {
+                self.note = Some(e);
+                return;
+            }
+        };
+        match agentee_core::tie::tie(self.layout(project, i), &inputs.board, nets) {
+            Ok(t) => {
+                let failed = t.failed.len();
+                let r = RouteResult { tracks: t.tracks, vias: t.vias, ..Default::default() };
+                self.apply_route(ctx, project, i, r);
+                self.note = Some(format!(
+                    "{} pads tied, {} had a via already{}",
+                    t.tied,
+                    t.already,
+                    if failed > 0 { format!(", {failed} without room") } else { String::new() }
+                ));
+            }
+            Err(e) => self.note = Some(e),
+        }
+    }
+
     fn apply_route(&mut self, ctx: &egui::Context, project: &Project, i: usize, r: RouteResult) {
         self.note = r.failed.first().map(|f| format!("{}: {}", f.net, f.reason));
         if r.tracks.is_empty() && r.vias.is_empty() {

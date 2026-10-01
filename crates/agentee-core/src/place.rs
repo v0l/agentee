@@ -1,3 +1,5 @@
+mod rf;
+
 use crate::board::Board;
 use crate::footprint::{Footprint, PadKind};
 use crate::geom::{self, P, Transform};
@@ -1935,6 +1937,117 @@ fn rotation_for(u: P, n: P, bottom: bool) -> f64 {
 }
 
 pub fn place<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceResult, String> {
+    let geo = rf::geometry(input);
+    let chains = rf::chains(input, &geo);
+    if chains.is_empty() {
+        return place_once(input, opts);
+    }
+    let chosen = |r: &str| opts.parts.is_empty() || opts.parts.iter().any(|g| glob(g, r));
+    let fixed = |r: &str| {
+        input
+            .placements
+            .iter()
+            .find(|f| f.reference == r)
+            .is_some_and(|f| f.locked || opts.keep_placed || !chosen(r))
+            || (input.placements.iter().all(|f| f.reference != r) && !chosen(r))
+    };
+    let mut spec = input.spec.clone();
+    for c in &chains {
+        for (r, e) in rf::edges_for(c, input, &geo) {
+            if !fixed(&r) {
+                spec.edges.insert(r, e);
+            }
+        }
+    }
+    let first = place_once(&with_spec(input, input.placements, &spec), opts)?;
+    let pose = |r: &str| -> Option<rf::Pose> {
+        if let Some(p) = first.placements.iter().find(|p| p.reference == r) {
+            return Some(rf::Pose { at: p.at, rot: p.rotation, movable: !p.bottom && !fixed(r) });
+        }
+        input.placements.iter().find(|f| f.reference == r).map(|f| rf::Pose {
+            at: f.at.to_mm(),
+            rot: f.rotation.unwrap_or(0.0),
+            movable: false,
+        })
+    };
+    let mut taken: Vec<Bounds> = input
+        .placements
+        .iter()
+        .filter(|f| fixed(&f.reference) && f.side != Some(BoardSide::Bottom))
+        .filter_map(|f| {
+            rf::footprint_box(&geo, &f.reference, f.at.to_mm(), f.rotation.unwrap_or(0.0))
+        })
+        .collect();
+    let mut laid: Vec<Placement> = Vec::new();
+    for c in &chains {
+        let one = rf::lay_out(c, input, &geo, &pose, input.outline);
+        laid.extend(rf::prune(one, &geo, &mut taken, input));
+    }
+    if laid.is_empty() {
+        return Ok(first);
+    }
+    let mut placements: Vec<PlacementFile> = input
+        .placements
+        .iter()
+        .filter(|f| !laid.iter().any(|l| l.reference == f.reference))
+        .cloned()
+        .collect();
+    for l in &laid {
+        placements.push(PlacementFile {
+            reference: l.reference.clone(),
+            at: crate::units::Point::mm(l.at[0], l.at[1]),
+            rotation: Some(l.rotation),
+            side: None,
+            label: None,
+            mlcc: None,
+            locked: true,
+        });
+    }
+    let mut second = place_once(&with_spec(input, &placements, &spec), opts)?;
+    second.kept.retain(|k| !laid.iter().any(|l| &l.reference == k));
+    second.placements.retain(|p| !laid.iter().any(|l| l.reference == p.reference));
+    for l in &mut laid {
+        let Some(was) = first.placements.iter().find(|p| p.reference == l.reference) else {
+            continue;
+        };
+        l.label = was.label.map(|(at, rot)| {
+            let off =
+                geom::rotate([at[0] - was.at[0], at[1] - was.at[1]], l.rotation - was.rotation);
+            let snap = |v: f64| (v / GRID).round() * GRID;
+            (
+                [snap(l.at[0] + off[0]), snap(l.at[1] + off[1])],
+                (rot + l.rotation - was.rotation).rem_euclid(180.0),
+            )
+        });
+        if let Some(e) = first.edges.get(&l.reference) {
+            second.edges.insert(l.reference.clone(), *e);
+        }
+    }
+    second.placements.extend(laid);
+    Ok(second)
+}
+
+fn with_spec<'b>(
+    input: &PlaceInput<'b>,
+    placements: &'b [PlacementFile],
+    spec: &'b PlaceFile,
+) -> PlaceInput<'b> {
+    PlaceInput {
+        board: input.board,
+        outline: input.outline,
+        cutouts: input.cutouts,
+        schematic: input.schematic,
+        footprints: input.footprints,
+        placements,
+        spec,
+        fast_nets: input.fast_nets.clone(),
+        heat: input.heat.clone(),
+        silk: input.silk.clone(),
+        texts: input.texts.clone(),
+    }
+}
+
+fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceResult, String> {
     let board = input.board;
     let sch = input.schematic;
     if input.outline.len() < 3 {

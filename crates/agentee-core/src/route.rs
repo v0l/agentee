@@ -526,8 +526,13 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
     if routing.is_empty() {
         routing = (0..copper.len()).collect();
     }
+    let planes = crate::tie::plane_nets(layout);
     let targets: Vec<usize> = (0..layout.nets.len())
-        .filter(|&n| opts.nets.iter().any(|g| glob(g, &layout.nets[n].name)))
+        .filter(|&n| {
+            let name = &layout.nets[n].name;
+            opts.nets.iter().any(|g| g == name)
+                || (!planes.contains(&n) && opts.nets.iter().any(|g| glob(g, name)))
+        })
         .collect();
     if targets.is_empty() {
         return Err("no net matches".into());
@@ -580,7 +585,8 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             });
         }
     }
-    for v in &layout.vias {
+    let fixed = |v: &&crate::layout::Via| !matches!(v.source, crate::layout::ViaSource::Stitch(_));
+    for v in layout.vias.iter().filter(fixed) {
         obstacles.push(Obstacle {
             net: Some(v.net),
             layers: v.layers.iter().filter_map(|c| layer_of(c)).collect(),
@@ -593,6 +599,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
     let mut drills: Vec<(P, f64, u32)> = layout
         .vias
         .iter()
+        .filter(fixed)
         .map(|v| {
             let span = v.span_of(copper).map(|(a, b)| dielectrics(a, b)).unwrap_or(through);
             (v.at, v.drill / 2.0, span)

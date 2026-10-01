@@ -240,6 +240,19 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Tie every SMD pad of a plane net (a net with a zone) to its plane with a stub and a via
+    /// beside the pad, and append them to the layout file
+    Tie {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Plane nets to tie, globs allowed, default every net with a zone
+        #[arg(long, value_delimiter = ',')]
+        nets: Vec<String>,
+        /// Report without writing the file
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Meander the short net of every pair over its skew limit and every match group member
     /// short of its target, and write the new points into the tracks
     Tune {
@@ -714,6 +727,13 @@ fn run(cli: Cli) -> Result<bool, String> {
             let p = ops::load(&project)?;
             print_json(&ops::fab(&p, &name, &out)?);
             Ok(true)
+        }
+        Cmd::Tie { name, project, nets, dry_run } => {
+            let p = ops::load(&project)?;
+            let r = ops::tie(&p, &name, &nets, !dry_run)?;
+            let ok = r["failed"].as_array().is_some_and(|f| f.is_empty());
+            print_json(&r);
+            Ok(ok)
         }
         Cmd::Route {
             name,

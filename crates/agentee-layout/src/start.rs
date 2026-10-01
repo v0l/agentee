@@ -50,6 +50,62 @@ pub fn reset(text: &str, r: &Reset) -> Result<String, String> {
     Ok(doc.to_string())
 }
 
+pub fn starter(
+    name: &str,
+    board: &agentee_core::board::Board,
+    schematic: &agentee_core::schematic::Schematic,
+) -> String {
+    let mut doc = DocumentMut::new();
+    doc["name"] = value(name);
+    doc["board"] = value(board.name.as_str());
+    doc["schematic"] = value(schematic.name.as_str());
+    let copper = board.stackup.copper_names();
+    let mut grounds: Vec<&str> =
+        schematic.nets.iter().filter(|n| pl::is_ground(&n.name)).map(|n| n.name.as_str()).collect();
+    grounds.sort_by_key(|n| {
+        std::cmp::Reverse(schematic.nets.iter().find(|x| x.name == *n).map(|x| x.pins.len()))
+    });
+    let rf: Vec<&str> = schematic
+        .nets
+        .iter()
+        .filter(|n| pl::is_rf_class(board, &n.class))
+        .map(|n| n.name.as_str())
+        .collect();
+    let coplanar = schematic.nets.iter().any(|n| {
+        pl::is_rf_class(board, &n.class)
+            && board.netclasses.iter().any(|c| c.name == n.class && c.coplanar_gap.is_some())
+    });
+    let mut zones = ArrayOfTables::new();
+    for g in &grounds {
+        let mut t = Table::new();
+        t["net"] = value(*g);
+        let mut layers = Array::new();
+        copper.iter().for_each(|l| layers.push(l.as_str()));
+        t["layers"] = value(layers);
+        zones.push(t);
+    }
+    if !zones.is_empty() {
+        doc["zones"] = Item::ArrayOfTables(zones);
+    }
+    if let Some(g) = grounds.first().filter(|_| !rf.is_empty()) {
+        let mut stitching = ArrayOfTables::new();
+        if coplanar {
+            let mut t = Table::new();
+            t["net"] = value(*g);
+            let mut fence = Array::new();
+            rf.iter().for_each(|n| fence.push(*n));
+            t["fence"] = value(fence);
+            stitching.push(t);
+        }
+        let mut t = Table::new();
+        t["net"] = value(*g);
+        t["pitch"] = value("2.5mm");
+        stitching.push(t);
+        doc["stitching"] = Item::ArrayOfTables(stitching);
+    }
+    doc.to_string()
+}
+
 pub fn place_text(
     inputs: &LayoutInputs,
     text: &str,

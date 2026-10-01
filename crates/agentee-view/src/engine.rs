@@ -303,6 +303,17 @@ pub fn panel(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
                 job.stop.store(true, Ordering::Relaxed);
             }
         });
+        ui.horizontal(|ui| {
+            let planes = !agentee_core::tie::plane_nets(ed.layout(project, i)).is_empty();
+            if ui
+                .add_enabled(!busy && planes, egui::Button::new("tie plane pads"))
+                .on_hover_text("a stub and a via beside every SMD pad of a net with a zone")
+                .on_disabled_hover_text("no net has a zone yet")
+                .clicked()
+            {
+                ed.tie_planes(&ctx, project, i, &[]);
+            }
+        });
         if let Some(job) = &ed.engine.job {
             let now = match &job.phase {
                 Some((p, t)) => format!("{p}  {:.0} s", t.elapsed().as_secs_f32()),

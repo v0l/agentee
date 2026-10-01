@@ -986,6 +986,29 @@ pub fn route(
     }))
 }
 
+pub fn tie(p: &Project, name: &str, nets: &[String], write: bool) -> Result<Value, String> {
+    let i = layout_index(p, name)?;
+    let entry = &p.layouts[i];
+    let board = p.boards.iter().find(|b| b.name == entry.item.board).ok_or("board is missing")?;
+    let r = agentee_core::tie::tie(&entry.item, &board.item, nets)?;
+    if write {
+        let routed = agentee_core::route::RouteResult {
+            tracks: r.tracks.clone(),
+            vias: r.vias.clone(),
+            ..Default::default()
+        };
+        append_route(&entry.path, "agentee tie", &routed)?;
+    }
+    Ok(json!({
+        "layout": entry.name,
+        "written": write,
+        "tied": r.tied,
+        "already": r.already,
+        "vias": r.vias.len(),
+        "failed": r.failed,
+    }))
+}
+
 fn append_route(
     path: &Path,
     header: &str,
