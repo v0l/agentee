@@ -43,16 +43,35 @@ impl View {
     }
 
     pub fn show(&mut self, ui: &mut Ui, bounds: &Bounds, margin: f32) -> (Response, Xf) {
+        self.show_with(ui, bounds, margin, false)
+    }
+
+    pub fn pan(&mut self, d: Vec2) {
+        self.center[0] -= (d.x / self.scale) as f64;
+        self.center[1] -= (d.y / self.scale) as f64;
+    }
+
+    pub fn show_with(
+        &mut self,
+        ui: &mut Ui,
+        bounds: &Bounds,
+        margin: f32,
+        editing: bool,
+    ) -> (Response, Xf) {
         let (rect, resp) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         ui.painter().rect_filled(rect, 0.0, WELL);
         ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
-        if !self.fitted || resp.double_clicked() {
+        if !self.fitted || (!editing && resp.double_clicked()) {
             self.fit(rect, bounds, margin);
         }
-        if resp.dragged() {
-            let d = resp.drag_delta();
-            self.center[0] -= (d.x / self.scale) as f64;
-            self.center[1] -= (d.y / self.scale) as f64;
+        let panning = if editing {
+            resp.dragged_by(egui::PointerButton::Middle)
+                || resp.dragged_by(egui::PointerButton::Secondary)
+        } else {
+            resp.dragged()
+        };
+        if panning {
+            self.pan(resp.drag_delta());
         }
         if let Some(hover) = resp.hover_pos() {
             let (scroll, zoom) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));

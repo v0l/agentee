@@ -1,8 +1,9 @@
 # agentee
 
 Electronic design for agents. The design is plain TOML that an agent writes and edits; agentee
-checks it, computes what the stackup gives you, and draws it. The window is a viewer for the
-human watching, not an editor.
+checks it, computes what the stackup gives you, and draws it. The window is where the human
+watches, and on a layout they can move parts, route tracks and place vias by hand, saved back
+into the same TOML.
 
 This first cut covers the board spec (stackup, fab rules, vias, net classes with impedance and
 current targets) and the parts library (schematic symbols and footprints), with an importer for
@@ -42,7 +43,7 @@ agentee show sensor-node                       # resolved model and trace analys
 agentee render LM358 -o lm358.png              # PNG exactly as the viewer draws it
 agentee calc impedance --layer F.Cu --target 50ohm
 agentee calc trace-width --current 2A
-agentee view                                   # live window, reloads on save
+agentee view                                   # live window, reloads on save, edits layouts
 agentee view --3d                              # layouts open in the 3D view
 agentee models                                 # fetch the KiCad 3D models the footprints name
 agentee fill sensor-node                       # fill the zones and store the copper in the layout

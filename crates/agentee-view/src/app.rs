@@ -37,6 +37,8 @@ pub struct App {
     loaded: Instant,
     progress: std::collections::HashMap<String, agentee_core::sim::SimProgress>,
     polled: Instant,
+    ctx: egui::Context,
+    closing: bool,
 }
 
 impl App {
@@ -65,6 +67,8 @@ impl App {
             loaded: Instant::now(),
             progress: Default::default(),
             polled: Instant::now() - Duration::from_secs(5),
+            ctx: cc.egui_ctx.clone(),
+            closing: false,
         };
         app.st.view_3d = view_3d;
         app.reload();
@@ -117,6 +121,7 @@ impl App {
             Ok(p) => {
                 self.project = p;
                 self.error = None;
+                self.st.sync(&self.ctx, &self.project);
             }
             Err(e) => self.error = Some(e),
         }
@@ -197,6 +202,11 @@ impl App {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let e = self.project.count(Severity::Error);
                 let w = self.project.count(Severity::Warning);
+                let unsaved = self.st.dirty();
+                if unsaved > 0 {
+                    lamp(ui, &format!("{unsaved} unsaved"), false, true)
+                        .on_hover_text("layouts with edits not written yet, ctrl+S saves");
+                }
                 lamp(ui, "live", self.events.is_some(), false).on_hover_text(format!(
                     "reloads on save, last {:.0}s ago",
                     self.loaded.elapsed().as_secs_f32()
@@ -344,9 +354,47 @@ fn failure(ui: &mut Ui, d: &Diagnostic) {
     Line::new().value(&d.message).tint(FAULT).size(11.5).wrapped(ui);
 }
 
+impl App {
+    fn guard_close(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested()) && self.st.dirty() > 0 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.closing = true;
+        }
+        if !self.closing {
+            return;
+        }
+        let mut close = false;
+        egui::Modal::new(egui::Id::new("unsaved-edits")).show(ctx, |ui| {
+            modal_title(ui, "unsaved layout edits");
+            note(ui, format!("{} layouts have edits that are not saved.", self.st.dirty()), VALUE);
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("save and quit").clicked() {
+                    match self.st.save_all() {
+                        Ok(()) => close = true,
+                        Err(e) => self.error = Some(e),
+                    }
+                }
+                if ui.button("quit without saving").clicked() {
+                    self.st.editors.clear();
+                    close = true;
+                }
+                if ui.button("cancel").clicked() {
+                    self.closing = false;
+                }
+            });
+        });
+        if close {
+            self.closing = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _f: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.guard_close(&ctx);
         self.poll(&ctx);
         if ctx.input(|i| i.key_pressed(egui::Key::F)) && !ctx.egui_wants_keyboard_input() {
             self.st.view.fitted = false;

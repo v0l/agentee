@@ -13,6 +13,7 @@ agentee-sim.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_bench.workspace = true
+toml_edit.workspace = true
 png = "0.18"
 notify = "8"
 earcutr = "0.5.0"

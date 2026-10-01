@@ -252,6 +252,8 @@ pub struct StitchFile {
     pub fence: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<Length>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip_at: Vec<Point>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -271,6 +273,8 @@ pub struct FanoutFile {
     pub nets: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skip_at: Vec<Point>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -433,8 +437,22 @@ pub struct Track {
     pub points: Vec<P>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub enum ViaSource {
+    #[default]
+    Generated,
+    File {
+        index: usize,
+        k: u32,
+    },
+    Fanout(usize),
+    Stitch(usize),
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Via {
+    #[serde(skip)]
+    pub source: ViaSource,
     pub net: usize,
     pub at: P,
     pub drill: f64,
@@ -452,6 +470,7 @@ pub struct Via {
 impl Via {
     pub fn of(spec: &crate::board::Via, net: usize, at: P, copper: &[String]) -> Via {
         Via {
+            source: ViaSource::Generated,
             net,
             at,
             drill: spec.drill.to_mm(),
@@ -777,6 +796,10 @@ pub struct Context<'a> {
     pub heat: Vec<(String, f64)>,
 }
 
+fn skipped(at: &[Point], c: P) -> bool {
+    at.iter().any(|q| geom::dist(q.to_mm(), c) < 1e-3)
+}
+
 fn max_clear_of(nets: &[LayoutNet], default: f64) -> f64 {
     nets.iter().map(|n| n.clearance).fold(default, f64::max)
 }
@@ -999,12 +1022,15 @@ impl LayoutFile {
             let pitch = v.pitch.unwrap_or(Point::ZERO).to_mm();
             for k in 0..count {
                 let [x, y] = v.at.to_mm();
-                vias.push(Via::of(
-                    spec,
-                    net,
-                    [x + pitch[0] * k as f64, y + pitch[1] * k as f64],
-                    &copper,
-                ));
+                vias.push(Via {
+                    source: ViaSource::File { index: i, k },
+                    ..Via::of(
+                        spec,
+                        net,
+                        [x + pitch[0] * k as f64, y + pitch[1] * k as f64],
+                        &copper,
+                    )
+                });
             }
         }
 
@@ -1047,7 +1073,7 @@ impl LayoutFile {
                 let rings = f.skip_rings.unwrap_or(0) as f64;
                 for (pad, c) in &pads {
                     let Some(net) = pad.net else { continue };
-                    if f.skip.contains(&pad.number) {
+                    if f.skip.contains(&pad.number) || skipped(&f.skip_at, *c) {
                         continue;
                     }
                     if !f.nets.is_empty() && !f.nets.iter().any(|g| glob(g, &nets[net].name)) {
@@ -1073,7 +1099,10 @@ impl LayoutFile {
                         d.error(&at, "the board defines no [[vias]]");
                         break;
                     };
-                    vias.push(Via::of(spec, net, *c, &copper));
+                    vias.push(Via {
+                        source: ViaSource::Fanout(i),
+                        ..Via::of(spec, net, *c, &copper)
+                    });
                     placed += 1;
                 }
             }
@@ -1276,7 +1305,7 @@ impl LayoutFile {
                 .collect();
             let own = nets[net].clearance;
             let mut placed = 0;
-            for c in candidates {
+            for c in candidates.into_iter().filter(|c| !skipped(&st.skip_at, *c)) {
                 let board_edge = geom::BoardEdge::new(&outline, &board_cutouts);
                 if !board_edge.contains(c)
                     || board_edge.distance(c) < edge - 1e-9
@@ -1317,7 +1346,7 @@ impl LayoutFile {
                 if blocked {
                     continue;
                 }
-                vias.push(Via::of(spec, net, c, &copper));
+                vias.push(Via { source: ViaSource::Stitch(i), ..Via::of(spec, net, c, &copper) });
                 items.push(Item {
                     owner: Owner::Via(vias.len() - 1),
                     net: Some(net),

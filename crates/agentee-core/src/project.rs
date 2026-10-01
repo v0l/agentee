@@ -957,34 +957,31 @@ impl Project {
         self.diagnostics().iter().filter(|d| d.severity == s).count()
     }
 
-    pub fn relayout(&mut self, i: usize, text: &str) -> Result<(), String> {
-        let path = self.layouts[i].path.clone();
-        let file: LayoutFile =
-            parse(text).map_err(|(at, m)| format!("{}: {at}: {m}", path.display()))?;
-        let layout = &self.layouts[i].item;
+    pub fn layout_inputs(&self, i: usize) -> Result<LayoutInputs, String> {
+        let entry = &self.layouts[i];
         let board =
-            self.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
+            self.boards.iter().find(|b| b.name == entry.item.board).ok_or("board is missing")?;
         let schematic = self
             .schematics
             .iter()
-            .find(|s| s.name == layout.schematic)
+            .find(|s| s.name == entry.item.schematic)
             .ok_or("the layout's schematic is missing")?;
-        let sim_files: Vec<crate::sim::SimFile> = self
-            .sims
-            .iter()
-            .filter_map(|e| std::fs::read_to_string(&e.path).ok())
-            .filter_map(|src| parse(&src).ok())
-            .collect();
-        let cx = Context {
-            dir: path.parent().map(Path::to_path_buf).unwrap_or_default(),
-            board: &board.item,
-            schematic: &schematic.item,
-            footprints: self.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect(),
-            heat: crate::place::thermal_heat(&sim_files, &file.name),
-        };
-        let mut d = Diags::new(&file.name);
-        let item = file.resolve(&cx, &mut d);
-        self.layouts[i] = Entry { name: item.name.clone(), diags: tag(d, &path), path, item };
+        Ok(LayoutInputs {
+            path: entry.path.clone(),
+            board: board.item.clone(),
+            schematic: schematic.item.clone(),
+            footprints: self.footprints.iter().map(|e| (e.name.clone(), e.item.clone())).collect(),
+            sims: self
+                .sims
+                .iter()
+                .filter_map(|e| std::fs::read_to_string(&e.path).ok())
+                .filter_map(|src| parse(&src).ok())
+                .collect(),
+        })
+    }
+
+    pub fn relayout(&mut self, i: usize, text: &str) -> Result<(), String> {
+        self.layouts[i] = self.layout_inputs(i)?.resolve(text)?;
         self.leave_placed_via_types_to_layouts();
         Ok(())
     }
@@ -1000,4 +997,30 @@ fn push<T>(e: &mut Entry<T>, severity: Severity, at: &str, message: String) {
         message,
         rule: None,
     });
+}
+
+pub struct LayoutInputs {
+    pub path: PathBuf,
+    pub board: Board,
+    pub schematic: Schematic,
+    pub footprints: Vec<(String, crate::footprint::Footprint)>,
+    pub sims: Vec<crate::sim::SimFile>,
+}
+
+impl LayoutInputs {
+    pub fn resolve(&self, text: &str) -> Result<Entry<crate::layout::Layout>, String> {
+        let path = &self.path;
+        let file: LayoutFile =
+            parse(text).map_err(|(at, m)| format!("{}: {at}: {m}", path.display()))?;
+        let cx = Context {
+            dir: path.parent().map(Path::to_path_buf).unwrap_or_default(),
+            board: &self.board,
+            schematic: &self.schematic,
+            footprints: self.footprints.iter().map(|(n, f)| (n.as_str(), f)).collect(),
+            heat: crate::place::thermal_heat(&self.sims, &file.name),
+        };
+        let mut d = Diags::new(&file.name);
+        let item = file.resolve(&cx, &mut d);
+        Ok(Entry { name: item.name.clone(), diags: tag(d, path), path: path.clone(), item })
+    }
 }

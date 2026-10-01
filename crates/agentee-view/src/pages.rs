@@ -13,6 +13,8 @@ use agentee_core::{Diagnostic, Severity};
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use egui_bench::prelude::*;
 
+type SceneKey = (u64, usize, u64, u64);
+
 pub struct PageState {
     pub item: Option<ItemRef>,
     pub view: View,
@@ -36,12 +38,13 @@ pub struct PageState {
     pub show_tdr: bool,
     pub view_3d: bool,
     pub camera: crate::board3d::Camera,
-    pub scene: Option<((u64, usize, u64), std::sync::Arc<crate::board3d::Scene>)>,
+    pub scene: Option<(SceneKey, std::sync::Arc<crate::board3d::Scene>)>,
     pub show_parts: bool,
     pub soft_3d: crate::board3d::SoftCache,
     pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
     pub runs: crate::simrun::Runs,
     pub wave: crate::wave::WaveView,
+    pub editors: std::collections::HashMap<std::path::PathBuf, crate::edit::Editor>,
 }
 
 impl Default for PageState {
@@ -75,11 +78,44 @@ impl Default for PageState {
             tdr_cache: None,
             runs: Default::default(),
             wave: Default::default(),
+            editors: Default::default(),
         }
     }
 }
 
 impl PageState {
+    pub fn dirty(&self) -> usize {
+        self.editors.values().filter(|e| e.dirty).count()
+    }
+
+    pub fn save_all(&mut self) -> Result<(), String> {
+        self.editors.values_mut().filter(|e| e.dirty).try_for_each(|e| e.save())
+    }
+
+    pub fn sync(&mut self, ctx: &egui::Context, project: &Project) {
+        self.editors.retain(|path, ed| {
+            match project.layouts.iter().position(|l| &l.path == path) {
+                Some(i) => {
+                    ed.sync(ctx, project, i);
+                    true
+                }
+                None => ed.dirty,
+            }
+        });
+    }
+
+    fn editor(&mut self, project: &Project, i: usize) -> Option<&mut crate::edit::Editor> {
+        if !self.interactive {
+            return None;
+        }
+        let path = project.layouts[i].path.clone();
+        if !self.editors.contains_key(&path) {
+            let ed = crate::edit::Editor::open(project, i).ok()?;
+            self.editors.insert(path.clone(), ed);
+        }
+        self.editors.get_mut(&path)
+    }
+
     pub fn select(&mut self, item: ItemRef) {
         if self.item != Some(item) {
             self.item = Some(item);
@@ -93,7 +129,15 @@ pub const SIDE_W: f32 = 400.0;
 
 pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
     st.select(item);
-    let diags = project.diags_of(item);
+    let ctx = ui.ctx().clone();
+    let edited = match item {
+        ItemRef::Layout(i) => st.editor(project, i).map(|ed| {
+            ed.poll(&ctx, project, i);
+            ed.entry(project, i).diags.clone()
+        }),
+        _ => None,
+    };
+    let diags = edited.as_deref().unwrap_or(project.diags_of(item));
     if !st.panels {
         egui::CentralPanel::no_frame().show(ui, |ui| match item {
             ItemRef::Symbol(i) => symbol_canvas(ui, &project.symbols[i].item, st),
@@ -125,7 +169,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
                 ItemRef::Footprint(i) => footprint_props(ui, &project.footprints[i].item, st),
                 ItemRef::Board(i) => board_props(ui, &project.boards[i].item),
                 ItemRef::Schematic(i) => schematic_props(ui, &project.schematics[i].item),
-                ItemRef::Layout(i) => layout_props(ui, &project.layouts[i].item, st),
+                ItemRef::Layout(i) => layout_props(ui, project, i, st),
                 ItemRef::Sim(i) => sim_props(ui, project, &project.sims[i].item, st),
             });
         });
@@ -868,7 +912,21 @@ fn schematic_props(ui: &mut Ui, s: &Schematic) {
 }
 
 fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
-    let l = &project.layouts[i].item;
+    let path = project.layouts[i].path.clone();
+    let mut ed = st.editors.remove(&path).filter(|_| st.interactive);
+    layout_view(ui, project, i, st, ed.as_mut());
+    if let Some(ed) = ed {
+        st.editors.insert(path, ed);
+    }
+}
+
+fn layout_view(
+    ui: &mut Ui,
+    project: &Project,
+    i: usize,
+    st: &mut PageState,
+    mut ed: Option<&mut crate::edit::Editor>,
+) {
     if st.panels {
         ui.horizontal(|ui| {
             ui.add_space(8.0);
@@ -883,11 +941,21 @@ fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
                 if toggle(ui, "parts", st.show_parts).clicked() {
                     st.show_parts = !st.show_parts;
                 }
+            } else if let Some(ed) = ed.as_deref_mut() {
+                crate::tools::toolbar(ui, project, i, ed);
             }
         });
+        if let Some(ed) = ed.as_deref_mut() {
+            crate::tools::conflict(ui, ed);
+        }
     }
     if st.view_3d {
-        let key = (project.generation, i, agentee_3d::generation());
+        let l = match &ed {
+            Some(e) => e.layout(project, i),
+            None => &project.layouts[i].item,
+        };
+        let edits = ed.as_ref().map(|e| e.revision()).unwrap_or(0);
+        let key = (project.generation, i, agentee_3d::generation(), edits);
         if st.scene.as_ref().map(|s| s.0) != Some(key)
             && let Some(board) = project.boards.iter().find(|b| b.name == l.board)
         {
@@ -911,17 +979,34 @@ fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
         }
         return;
     }
+    st.view.max_fit = 2000.0;
+    let bounds = st.region.unwrap_or(project.layouts[i].item.bounds());
+    let (resp, xf) = st.view.show_with(ui, &bounds, 30.0, ed.is_some());
+    let canvas =
+        crate::tools::Canvas { project, index: i, layers: &st.pcb_layers, ratsnest: st.ratsnest };
+    let hover = if st.interactive { resp.hover_pos() } else { None };
+    if let Some(ed) = ed.as_deref_mut() {
+        canvas.interact(ui, &resp, &xf, &mut st.view, ed);
+        canvas.keys(ui, ed, hover.map(|h| xf.mm(h)), &xf, resp.hovered());
+    }
+    let l = match &ed {
+        Some(e) => e.layout(project, i),
+        None => &project.layouts[i].item,
+    };
     let key = (project.generation, i);
     if st.zone_key != Some(key) {
         st.zone_tex = pcb::zone_textures(ui.ctx(), l);
         st.zone_key = Some(key);
     }
-    st.view.max_fit = 2000.0;
-    let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(l.bounds()), 30.0);
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 1.0);
-    let hover = if st.interactive { resp.hover_pos() } else { None };
-    let hit = pcb::layout(&p, &xf, l, &st.pcb_layers, &st.zone_tex, hover, st.ratsnest);
+    let quiet = ed.as_ref().is_some_and(|e| e.drag.is_some() || e.draft.is_some());
+    let probe = if quiet { None } else { hover };
+    let hit = pcb::layout(&p, &xf, l, &st.pcb_layers, &st.zone_tex, probe, st.ratsnest);
+    if let Some(ed) = ed.as_deref() {
+        canvas.overlay(&p, &xf, ed, hover.map(|h| xf.mm(h)));
+        crate::tools::hint(ui, xf.rect, ed);
+    }
     scale_bar(&p, &xf);
     cursor_readout(ui, &xf, hover);
     if hit.net.is_some() || hit.pad.is_some() {
@@ -942,7 +1027,15 @@ fn layout_canvas(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
     }
 }
 
-fn layout_props(ui: &mut Ui, l: &Layout, st: &mut PageState) {
+fn layout_props(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
+    let path = project.layouts[i].path.clone();
+    if let Some(ed) = st.editors.get_mut(&path) {
+        crate::tools::selection(ui, project, i, ed);
+    }
+    let l = match st.editors.get(&path) {
+        Some(ed) => ed.layout(project, i),
+        None => &project.layouts[i].item,
+    };
     let unrouted = l.unrouted();
     card(
         ui,

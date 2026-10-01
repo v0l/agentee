@@ -840,6 +840,7 @@ ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans
 # skip_rings = 2               # leave the two outer rings for escape on the outer layer
 # always = ["GND", "LVDS_*"]   # nets that get a via even in those rings, globs allowed
 # skip = ["A1", "B7"]          # pads to leave alone
+# skip_at = [[4.5, 3.0]]       # no via at these spots (the viewer adds one when you edit a via)
 # nets = ["GND", "3V3"]        # only pads on these nets, globs allowed
 # exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob; a glob never
                                # matches test points, a probe pad keeps no via
@@ -853,6 +854,7 @@ net = "GND"
 # fence = ["RF_*"]             # instead of a grid: a row either side of these nets' tracks
 # offset = "0.5mm"             # fence row distance from the track centre, default just past
                                # the class coplanar gap
+# skip_at = [[4.5, 3.0]]       # no via at these spots (the viewer adds one when you edit a via)
 
 [[zones]]
 net = "GND"
@@ -1309,6 +1311,36 @@ shift-drag to pan, scroll to zoom, double-click to reset. The viewer draws with 
 ([three-d](https://github.com/asny/three-d)); `agentee render pcb:NAME --show 3d` (or `3d-top`,
 `3d-bottom`) draws the same scene in software, `--hide parts` leaves the models out and `--region`
 aims the camera at that area.
+
+### Editing in the viewer
+
+The 2D layout page of `agentee view` edits the layout by hand. Edits stay in the window until
+`save` (ctrl+S) writes them into the `.pcb.toml` through the same comment and order preserving
+writer the CLI uses; `revert` drops them. Every edit is checked in the background the way `check`
+would, so the diagnostics panel and the net table follow along, and the header counts unsaved
+layouts. When the file changes on disk under unsaved edits the page asks whether to keep yours or
+load the file. Closing the window with unsaved edits asks first.
+
+| key | does |
+|---|---|
+| click | select a part, track, via or ratsnest line |
+| drag | move it: a part with its label, a via, a track corner, or a whole track segment |
+| right or middle drag, wheel | pan, zoom |
+| R, shift+R | rotate the selected part by 90 degrees |
+| Del | delete the selected track or via |
+| X | route tool: click a pad, via or track to start, click to add 45 degree corners, `/` flips the bend, V drops a via and moves to the next layer the net's class vias reach, Backspace steps back, Enter, a double click or a click on copper of the net ends |
+| V | via tool: click copper with a net to place a class via of that net |
+| PgUp, PgDn | active layer |
+| ctrl+Z, ctrl+shift+Z | undo, redo |
+| Esc | cancel the track, back to select, clear the selection |
+
+Moves snap to the grid picked in the toolbar. New tracks take the class width (no `width` key);
+the properties panel sets the net, layer and an own width of a track, the position, net and type
+of a via, and the position, rotation, side and `locked` of a part. A selected ratsnest line can be
+handed to the autorouter as one connection or as its whole net, with the same rules as
+`agentee route`. A via that a `[[fanouts]]` or `[[stitching]]` rule placed, or one element of a
+`count` row, is taken out of its rule when you move, change or delete it: the rule gets a
+`skip_at` entry for the spot and the via is written as its own `[[vias]]`.
 
 Common parts are drawn from the footprint without loading a model: chip resistors, capacitors,
 inductors, LEDs and diodes (names with a `Metric` size), vertical pin headers and sockets, SOIC,
@@ -1933,7 +1965,8 @@ text.
    `agentee render pcb:NAME`, move and `locked = true` the parts that matter, run `agentee place
    NAME --keep-placed` or with another `--seed` for the rest, then `agentee silk NAME`.
 5. `agentee check` until there are no errors, `agentee render NAME -o out.png` to look.
-6. `agentee view` keeps a live window open for a human.
+6. `agentee view` keeps a live window open for a human, who can also move parts, route tracks
+   and place vias there and save them into the layout.
 7. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
 
 ## Importing a KiCad board

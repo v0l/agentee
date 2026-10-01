@@ -17,6 +17,7 @@ pub struct RouteOptions {
     pub margin: f64,
     pub pairs: bool,
     pub via_in_pad: bool,
+    pub connection: Option<(P, P)>,
 }
 
 impl Default for RouteOptions {
@@ -31,6 +32,7 @@ impl Default for RouteOptions {
             margin: 5.0,
             pairs: false,
             via_in_pad: false,
+            connection: None,
         }
     }
 }
@@ -671,8 +673,18 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         grid.block_smd(&ctx);
         grid.block_silk(&layout.silk, &options);
 
-        let conns: Vec<(P, P, usize)> =
-            layout.ratsnest.iter().filter(|(_, _, n)| nets.contains(n)).cloned().collect();
+        let picked = |a: P, b: P| {
+            opts.connection.is_none_or(|(x, y)| {
+                let near = |p: P, q: P| geom::dist(p, q) < 1e-6;
+                (near(a, x) && near(b, y)) || (near(a, y) && near(b, x))
+            })
+        };
+        let conns: Vec<(P, P, usize)> = layout
+            .ratsnest
+            .iter()
+            .filter(|(a, b, n)| nets.contains(n) && picked(*a, *b))
+            .cloned()
+            .collect();
         let crowd: Vec<usize> = conns
             .iter()
             .map(|c| grid.crowd(c.2, c.0, routing) + grid.crowd(c.2, c.1, routing))
