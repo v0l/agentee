@@ -281,6 +281,9 @@ layout file between `# plan <phase>` markers and resolves the layout again, so t
 sees the zones filled around the new copper. `--only X` and `--from X` drop the plans of X and
 every later phase first.
 
+The viewer runs the same pipeline from the layout page (`layout engine` card) on the unsaved
+layout in the window, with the phase range, the `[engine]` settings and pinswap there.
+
 Floorplan finds the chains from each connector and lays them in a line inward from it (on
 `examples/sdr` the RX and TX RF paths, the reference input and the PPS input). Place runs the
 existing placer (its global placement, legalisation and annealing) on every part that is not

@@ -125,6 +125,7 @@ version = "0.1.0"
 dependencies = [
  "agentee-3d",
  "agentee-core",
+ "agentee-layout",
  "agentee-sim",
  "earcutr",
  "eframe",

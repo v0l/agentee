@@ -1342,6 +1342,16 @@ handed to the autorouter as one connection or as its whole net, with the same ru
 `count` row, is taken out of its rule when you move, change or delete it: the rule gets a
 `skip_at` entry for the spot and the via is written as its own `[[vias]]`.
 
+The `layout engine` card runs the phases of `agentee layout` (see `docs/layout-engine.md`) on the
+layout as it stands in the window, unsaved edits included: `run` takes the phases from..to,
+`run X only` reruns one, `stop` ends the run after the phase that is running. Editing pauses while
+it runs. The result lands in the window like any other edit, unsaved and one undo away, with the
+time and score of each phase and the score terms that weigh most. `phases to run` and `settings`
+write `[engine]` into the layout (`phases`, `tile`, `rounds`, `[engine.place] seed`,
+`[engine.escape]`, `[engine.global] via_cost`, `[engine.detail]`), and `default` drops a setting
+again. A selected part with 16 or more pads has `pinswap`, which searches swaps of its I/O like
+`agentee pinswap` and writes them into the schematic files on `write to the schematic`.
+
 Common parts are drawn from the footprint without loading a model: chip resistors, capacitors,
 inductors, LEDs and diodes (names with a `Metric` size), vertical pin headers and sockets, SOIC,
 SOT, QFP, QFN, DFN, SON, TSLP and BGA packages, crystals and oscillators, edge mount SMA

@@ -109,7 +109,10 @@ impl Harness {
     fn settle(&mut self) {
         for _ in 0..400 {
             self.frame(vec![]);
-            if !self.ed().checking() && !self.ed().routing() {
+            if !self.ed().checking()
+                && !self.ed().routing()
+                && !agentee_view::engine::running(self.ed())
+            {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -331,4 +334,25 @@ fn a_selected_track_over_a_pad_drags_before_the_pad() {
     assert!(agentee_core::geom::dist(moved.points[0], to) < 0.03, "{:?}", moved.points[0]);
     let p = l.parts.iter().find(|p| p.reference == part).unwrap();
     assert_eq!(p.at.to_mm(), before);
+}
+
+#[test]
+fn the_engine_runs_into_the_editor_and_waits_for_save() {
+    let dir = example("hdi");
+    let mut h = Harness::new(&dir);
+    let before = h.file();
+    let ctx = h.ctx.clone();
+    let project = Project::load(&dir).unwrap();
+    h.ed_mut().engine_set(&ctx, &project, 0, "detail", "rip_limit", Some(12.into()));
+    agentee_view::engine::start(h.ed_mut(), &ctx, &project, 0, None, None, None);
+    assert!(agentee_view::engine::running(h.ed()));
+    h.settle();
+    assert!(h.ed().dirty);
+    assert_eq!(h.file(), before);
+    let text = h.ed().text();
+    assert!(text.contains("[engine.detail]\nrip_limit = 12"), "{text}");
+    assert!(text.contains("# plan escape"), "the engine wrote its escape plan");
+    h.key(Key::Z, Modifiers::COMMAND);
+    h.settle();
+    assert!(!h.ed().text().contains("# plan escape"), "one undo takes the run back");
 }

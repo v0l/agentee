@@ -312,3 +312,27 @@ pub fn run(
         swaps,
     })
 }
+
+pub fn rewrite(src: &str, part: &str, swaps: &[Swap]) -> String {
+    let mut map: Vec<(String, String)> =
+        swaps.iter().map(|sw| (sw.from.clone(), sw.to.clone())).collect();
+    let freed: Vec<String> = swaps
+        .iter()
+        .filter(|sw| !swaps.iter().any(|o| o.to == sw.from))
+        .map(|sw| sw.from.clone())
+        .collect();
+    let taken: Vec<String> = swaps
+        .iter()
+        .filter(|sw| !swaps.iter().any(|o| o.from == sw.to))
+        .map(|sw| sw.to.clone())
+        .collect();
+    map.extend(taken.into_iter().zip(freed));
+    let mut out = src.to_string();
+    for (k, (from, _)) in map.iter().enumerate() {
+        out = out.replace(&format!("\"{part}.{from}\""), &format!("\"\u{0}{k}\u{0}\""));
+    }
+    for (k, (_, to)) in map.iter().enumerate() {
+        out = out.replace(&format!("\"\u{0}{k}\u{0}\""), &format!("\"{part}.{to}\""));
+    }
+    out
+}

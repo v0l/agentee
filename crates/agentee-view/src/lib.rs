@@ -2,6 +2,7 @@ pub mod app;
 pub mod board3d;
 pub mod canvas;
 pub mod edit;
+pub mod engine;
 pub mod eye;
 pub mod gl3d;
 pub mod headless;

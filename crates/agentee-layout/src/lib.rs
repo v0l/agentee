@@ -64,6 +64,82 @@ pub struct Config<'a> {
     pub only: Option<String>,
     pub text: String,
     pub resolve: &'a dyn Fn(&str) -> Result<(LayoutFile, Layout), String>,
+    pub watch: Option<&'a dyn Fn(Event)>,
+    pub stop: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+pub enum Event<'a> {
+    Start(&'a str),
+    Done(&'a PhaseReport),
+}
+
+pub struct Run<'a> {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub only: Option<String>,
+    pub watch: Option<&'a dyn Fn(Event)>,
+    pub stop: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+pub fn run_text(
+    inputs: &agentee_core::project::LayoutInputs,
+    text: &str,
+    a: &Run,
+) -> Result<RunReport, String> {
+    let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
+        inputs.footprints.iter().map(|(n, f)| (n.as_str(), f)).collect();
+    let dir = inputs.path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+    let first: LayoutFile =
+        agentee_core::project::parse(text).map_err(|(at, m)| format!("{at}: {m}"))?;
+    let heat = agentee_core::place::thermal_heat(&inputs.sims, &first.name);
+    let resolve = |t: &str| -> Result<(LayoutFile, Layout), String> {
+        let f: LayoutFile =
+            agentee_core::project::parse(t).map_err(|(at, m)| format!("{at}: {m}"))?;
+        let cx = agentee_core::layout::Context {
+            dir: dir.clone(),
+            board: &inputs.board,
+            schematic: &inputs.schematic,
+            footprints: footprints.clone(),
+            heat: heat.clone(),
+        };
+        let mut d = agentee_core::diag::Diags::new(&f.name);
+        let resolved = f.resolve(&cx, &mut d);
+        Ok((f, resolved))
+    };
+    let (file, layout) = resolve(text)?;
+    let keepouts: Vec<Vec<P>> = file
+        .place
+        .as_ref()
+        .map(|s| s.keepouts.iter().map(|k| k.iter().map(|q| q.to_mm()).collect()).collect())
+        .unwrap_or_default();
+    let engine = file.engine.clone().unwrap_or_default();
+    let mut model = Model {
+        board: &inputs.board,
+        schematic: &inputs.schematic,
+        layout,
+        file,
+        keepouts,
+        heat: heat.clone(),
+        escape: None,
+        placement: None,
+        planes: None,
+        layers: None,
+        global: None,
+        detail: None,
+        text: String::new(),
+        finished_escape: None,
+    };
+    let cfg = Config {
+        engine,
+        from: a.from.clone(),
+        to: a.to.clone(),
+        only: a.only.clone(),
+        text: text.to_string(),
+        resolve: &resolve,
+        watch: a.watch,
+        stop: a.stop,
+    };
+    run(&mut model, &cfg)
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -168,8 +244,15 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         if !run_it {
             continue;
         }
+        if cfg.stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed)) {
+            skipped.push(format!("{name}: stopped"));
+            continue;
+        }
         match all.iter().find(|p| p.name() == name) {
             Some(p) => {
+                if let Some(w) = cfg.watch {
+                    w(Event::Start(name));
+                }
                 let t0 = std::time::Instant::now();
                 model.text = text.clone();
                 let mut r = p.run(model, &cfg.engine, &mut field);
@@ -192,6 +275,9 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                 }
                 r.reload_ms = t1.elapsed().as_millis();
                 r.score = Some(score_of(model, Some(&field)));
+                if let Some(w) = cfg.watch {
+                    w(Event::Done(&r));
+                }
                 reports.push(r);
             }
             None => skipped.push(format!("{name}: not implemented yet")),

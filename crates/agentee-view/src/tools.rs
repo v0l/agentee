@@ -706,6 +706,9 @@ pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     if ed.routing() {
         lamp(ui, "routing", true, false);
     }
+    if crate::engine::running(ed) {
+        lamp(ui, "engine running, editing paused", true, false);
+    }
 }
 
 pub fn conflict(ui: &mut Ui, ed: &mut Editor) {
@@ -793,7 +796,7 @@ fn part_props(
 ) {
     let Some(p) = ed.layout(project, i).parts.iter().find(|p| p.reference == r) else { return };
     let (value, footprint) = (p.value.clone(), p.footprint_name.clone());
-    let (at, rotation, side) = (p.at.to_mm(), p.rotation, p.bottom);
+    let (at, rotation, side, pads) = (p.at.to_mm(), p.rotation, p.bottom, p.pads.len());
     reading(ui, "value", value);
     reading(ui, "footprint", footprint);
     let mut xy = at;
@@ -836,6 +839,9 @@ fn part_props(
     });
     if rot != rotation || bottom != side || locked != ed.locked(r) {
         ed.set_part(ctx, project, i, r, rot, bottom, locked);
+    }
+    if pads >= 16 {
+        crate::engine::pinswap(ui, project, i, ed, r);
     }
 }
 

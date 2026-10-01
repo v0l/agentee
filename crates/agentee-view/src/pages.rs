@@ -981,11 +981,12 @@ fn layout_view(
     }
     st.view.max_fit = 2000.0;
     let bounds = st.region.unwrap_or(project.layouts[i].item.bounds());
-    let (resp, xf) = st.view.show_with(ui, &bounds, 30.0, ed.is_some());
+    let busy = ed.as_deref().is_some_and(crate::engine::running);
+    let (resp, xf) = st.view.show_with(ui, &bounds, 30.0, ed.is_some() && !busy);
     let canvas =
         crate::tools::Canvas { project, index: i, layers: &st.pcb_layers, ratsnest: st.ratsnest };
     let hover = if st.interactive { resp.hover_pos() } else { None };
-    if let Some(ed) = ed.as_deref_mut() {
+    if let Some(ed) = ed.as_deref_mut().filter(|_| !busy) {
         canvas.interact(ui, &resp, &xf, &mut st.view, ed);
         canvas.keys(ui, ed, hover.map(|h| xf.mm(h)), &xf, resp.hovered());
     }
@@ -1061,6 +1062,14 @@ fn layout_props(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
             reading(ui, "schematic", l.schematic.clone());
         },
     );
+    if let Some(ed) = st.editors.get_mut(&path) {
+        ui.add_space(8.0);
+        crate::engine::panel(ui, project, i, ed);
+    }
+    let l = match st.editors.get(&path) {
+        Some(ed) => ed.layout(project, i),
+        None => &project.layouts[i].item,
+    };
     ui.add_space(8.0);
     Line::new().legend("layers").show(ui);
     let side = |a: &str, b: &str| vec![a.to_string(), b.to_string()];

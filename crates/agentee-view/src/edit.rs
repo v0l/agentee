@@ -68,6 +68,7 @@ pub struct Editor {
     pub grid: f64,
     pub snap: bool,
     pub note: Option<String>,
+    pub engine: crate::engine::Panel,
 }
 
 impl Editor {
@@ -99,6 +100,7 @@ impl Editor {
             grid: 0.05,
             snap: true,
             note: None,
+            engine: Default::default(),
         })
     }
 
@@ -137,7 +139,11 @@ impl Editor {
         p.map(|v| (v / self.grid).round() * self.grid)
     }
 
-    fn inputs(&mut self, project: &Project, i: usize) -> Result<Arc<LayoutInputs>, String> {
+    pub(crate) fn inputs(
+        &mut self,
+        project: &Project,
+        i: usize,
+    ) -> Result<Arc<LayoutInputs>, String> {
         if self.inputs.is_none() {
             self.inputs = Some(Arc::new(project.layout_inputs(i)?));
         }
@@ -208,6 +214,7 @@ impl Editor {
     }
 
     pub fn poll(&mut self, ctx: &egui::Context, project: &Project, i: usize) {
+        crate::engine::poll(self, ctx, project, i);
         if let Some(rx) = &self.route_job
             && let Ok(r) = rx.try_recv()
         {
@@ -358,6 +365,54 @@ impl Editor {
         self.shown = None;
         self.job = None;
         self.seq += 1;
+    }
+
+    pub fn text(&self) -> String {
+        self.doc.to_string()
+    }
+
+    pub fn replace_text(&mut self, ctx: &egui::Context, project: &Project, i: usize, text: &str) {
+        self.commit(
+            ctx,
+            project,
+            i,
+            None,
+            |doc| {
+                *doc = text.parse().map_err(|e| format!("{e}"))?;
+                Ok(())
+            },
+            |_, _| {},
+        );
+        self.sel = None;
+        self.draft = None;
+    }
+
+    pub fn engine_get(&self, section: &str, key: &str) -> Option<&Item> {
+        let engine = self.doc.get("engine")?;
+        if section.is_empty() { engine.get(key) } else { engine.get(section)?.get(key) }
+    }
+
+    pub fn engine_set(
+        &mut self,
+        ctx: &egui::Context,
+        project: &Project,
+        i: usize,
+        section: &str,
+        key: &str,
+        value: Option<Value>,
+    ) {
+        let merge = format!("engine {section}.{key}");
+        self.commit(
+            ctx,
+            project,
+            i,
+            Some(&merge),
+            |doc| {
+                set_engine(doc, section, key, value);
+                Ok(())
+            },
+            |_, _| {},
+        );
     }
 
     pub fn route_connection(
@@ -973,6 +1028,37 @@ struct Detach {
     tail: Option<usize>,
 }
 
+fn subtable<'a>(t: &'a mut Table, key: &str) -> Option<&'a mut Table> {
+    if !t.contains_key(key) {
+        let mut sub = Table::new();
+        sub.set_implicit(true);
+        sub.set_position(Some(0));
+        t.insert(key, Item::Table(sub));
+    }
+    t.get_mut(key)?.as_table_mut()
+}
+
+fn set_engine(doc: &mut DocumentMut, section: &str, key: &str, value: Option<Value>) {
+    let Some(engine) = subtable(doc.as_table_mut(), "engine") else { return };
+    let target = if section.is_empty() { Some(engine) } else { subtable(engine, section) };
+    let Some(t) = target else { return };
+    match value {
+        Some(v) => set(t, key, v),
+        None => {
+            t.remove(key);
+        }
+    }
+    let Some(engine) = doc.get_mut("engine").and_then(Item::as_table_mut) else { return };
+    if !section.is_empty()
+        && engine.get(section).and_then(Item::as_table).is_some_and(|t| t.is_empty())
+    {
+        engine.remove(section);
+    }
+    if engine.is_empty() {
+        doc.remove("engine");
+    }
+}
+
 pub fn near(a: P, b: P) -> bool {
     geom::dist(a, b) < 1e-6
 }
@@ -1284,6 +1370,17 @@ mod tests {
 
     fn doc(s: &str) -> DocumentMut {
         s.parse().unwrap()
+    }
+
+    #[test]
+    fn engine_settings_land_in_their_section_and_leave_when_cleared() {
+        let mut d = doc("name = \"x\"\n\n[[footprints]]\nref = \"R1\"\nat = [0, 0]\n");
+        set_engine(&mut d, "detail", "rip_limit", Some(Value::from(12)));
+        let s = d.to_string();
+        assert!(s.contains("[engine.detail]\nrip_limit = 12"), "{s}");
+        assert!(s.find("[engine.detail]") < s.find("[[footprints]]"), "{s}");
+        set_engine(&mut d, "detail", "rip_limit", None);
+        assert!(!d.to_string().contains("engine"), "{d}");
     }
 
     #[test]
