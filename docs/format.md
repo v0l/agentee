@@ -1323,8 +1323,8 @@ load the file. Closing the window with unsaved edits asks first.
 
 | key | does |
 |---|---|
-| click | select a part, track, via or ratsnest line |
-| drag | move it: a part with its label, a via, a track corner, or a whole track segment |
+| click | select a part, track, via or ratsnest line; clicking the selection again picks the next item under the pointer |
+| drag | move it: a part with its label, a via, a track corner, or a whole track segment; the selected item wins over what lies under it |
 | right or middle drag, wheel | pan, zoom |
 | R, shift+R | rotate the selected part by 90 degrees |
 | Del | delete the selected track or via |

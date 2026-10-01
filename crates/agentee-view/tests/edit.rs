@@ -299,3 +299,36 @@ fn routing_one_connection_closes_it() {
     assert!(h.ed().note.is_none(), "{:?}", h.ed().note);
     assert!(h.ed().layout(&h.project, 0).ratsnest.is_empty());
 }
+
+#[test]
+fn a_selected_track_over_a_pad_drags_before_the_pad() {
+    let dir = lna();
+    let mut h = Harness::new(&dir);
+    let l = &h.project.layouts[0].item;
+    let (t, part) = l
+        .tracks
+        .iter()
+        .find_map(|t| {
+            let p0 = t.points[0];
+            let part = l.parts.iter().find(|p| {
+                p.pads.iter().any(|q| {
+                    q.outlines.iter().any(|o| agentee_core::geom::point_in_polygon(p0, o))
+                })
+            })?;
+            Some((t.clone(), part.reference.clone()))
+        })
+        .expect("a track that ends in a pad");
+    let before = part_at(&h.project, &part);
+    h.click(t.points[0]);
+    assert_eq!(h.ed().sel, Some(Sel::Part(part.clone())), "the pad wins the first click");
+    h.click(t.points[0]);
+    assert_eq!(h.ed().sel, Some(Sel::Track(t.source)), "a second click cycles to the track");
+    let to = [t.points[0][0], t.points[0][1] + 0.5];
+    h.drag(t.points[0], to);
+    h.settle();
+    let l = h.ed().layout(&h.project, 0);
+    let moved = l.tracks.iter().find(|x| x.source == t.source).unwrap();
+    assert!(agentee_core::geom::dist(moved.points[0], to) < 0.03, "{:?}", moved.points[0]);
+    let p = l.parts.iter().find(|p| p.reference == part).unwrap();
+    assert_eq!(p.at.to_mm(), before);
+}

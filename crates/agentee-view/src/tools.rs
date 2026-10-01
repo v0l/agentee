@@ -67,21 +67,25 @@ fn project_onto(m: P, a: P, b: P) -> P {
     [a[0] + d[0] * t, a[1] + d[1] * t]
 }
 
-fn pick(l: &Layout, layers: &Layers, m: P, tol: f64, ratsnest: bool) -> Option<Pick> {
+fn picks(l: &Layout, layers: &Layers, m: P, tol: f64, ratsnest: bool) -> Vec<Pick> {
+    let mut out = Vec::new();
     for (k, v) in l.vias.iter().enumerate().rev() {
         if v.layers.iter().any(|x| layers.shows(x)) && geom::dist(m, v.at) <= v.diameter / 2.0 + tol
         {
-            return Some(Pick::Via(k));
+            out.push(Pick::Via(k));
         }
     }
-    for (k, p) in l.parts.iter().enumerate().filter(|(_, p)| side_shown(p, layers)) {
+    let shown: Vec<(usize, &Placed)> =
+        l.parts.iter().enumerate().filter(|(_, p)| side_shown(p, layers)).collect();
+    for (k, p) in &shown {
         if p.pads.iter().any(|q| q.outlines.iter().any(|o| geom::point_in_polygon(m, o))) {
-            return Some(Pick::Part(k));
+            out.push(Pick::Part(*k));
         }
     }
-    let mut best: Option<(f64, Pick)> = None;
+    let mut tracks: Vec<(f64, Pick)> = Vec::new();
     for (k, t) in l.tracks.iter().enumerate().filter(|(_, t)| layers.shows(&t.layer)) {
         let reach = t.width / 2.0 + tol;
+        let mut best: Option<(f64, Pick)> = None;
         for (s, w) in t.points.windows(2).enumerate() {
             let d = geom::point_segment_distance(m, w[0], w[1]);
             if d <= reach && best.is_none_or(|(b, _)| d < b) {
@@ -89,32 +93,62 @@ fn pick(l: &Layout, layers: &Layers, m: P, tol: f64, ratsnest: bool) -> Option<P
                 best = Some((d, Pick::Track { index: k, segment: s, vertex }));
             }
         }
+        tracks.extend(best);
     }
-    if let Some((_, p)) = best {
-        return Some(p);
-    }
-    let mut part: Option<(f64, usize)> = None;
-    for (k, p) in l.parts.iter().enumerate().filter(|(_, p)| side_shown(p, layers)) {
-        let b = part_box(p);
-        let [w, h] = b.size();
-        if inside(&b, m) && part.is_none_or(|(a, _)| w * h < a) {
-            part = Some((w * h, k));
-        }
-    }
-    if let Some((_, k)) = part {
-        return Some(Pick::Part(k));
-    }
+    tracks.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out.extend(tracks.into_iter().map(|(_, p)| p));
+    let mut bodies: Vec<(f64, usize)> = shown
+        .iter()
+        .filter(|(k, _)| !out.iter().any(|p| matches!(p, Pick::Part(x) if x == k)))
+        .filter_map(|(k, p)| {
+            let b = part_box(p);
+            let [w, h] = b.size();
+            inside(&b, m).then_some((w * h, *k))
+        })
+        .collect();
+    bodies.sort_by(|a, b| a.0.total_cmp(&b.0));
+    out.extend(bodies.into_iter().map(|(_, k)| Pick::Part(k)));
     if ratsnest {
-        return l
+        let mut lines: Vec<(f64, usize)> = l
             .ratsnest
             .iter()
             .enumerate()
             .map(|(k, (a, b, _))| (geom::point_segment_distance(m, *a, *b), k))
             .filter(|(d, _)| *d <= tol)
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, k)| Pick::Ratsnest(k));
+            .collect();
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        out.extend(lines.into_iter().map(|(_, k)| Pick::Ratsnest(k)));
     }
-    None
+    out
+}
+
+fn is_selected(l: &Layout, p: Pick, sel: Option<&Sel>) -> bool {
+    match (p, sel) {
+        (Pick::Part(k), Some(Sel::Part(r))) => l.parts[k].reference == *r,
+        (Pick::Track { index, .. }, Some(Sel::Track(t))) => l.tracks[index].source == *t,
+        (Pick::Via(k), Some(Sel::Via(s, at))) => l.vias[k].source == *s && near(l.vias[k].at, *at),
+        (Pick::Ratsnest(k), Some(Sel::Ratsnest(a, b, _))) => {
+            near(l.ratsnest[k].0, *a) && near(l.ratsnest[k].1, *b)
+        }
+        _ => false,
+    }
+}
+
+fn pick(
+    l: &Layout,
+    layers: &Layers,
+    m: P,
+    tol: f64,
+    ratsnest: bool,
+    sel: Option<&Sel>,
+    cycle: bool,
+) -> Option<Pick> {
+    let all = picks(l, layers, m, tol, ratsnest);
+    match all.iter().position(|p| is_selected(l, *p, sel)) {
+        Some(k) if cycle => all.get((k + 1) % all.len()).copied(),
+        Some(k) => all.get(k).copied(),
+        None => all.first().copied(),
+    }
 }
 
 struct Copper {
@@ -205,7 +239,7 @@ impl Canvas<'_> {
                 && let Some(m) = origin
             {
                 let l = ed.layout(project, i);
-                let grabbed = match pick(l, self.layers, m, tol, false) {
+                let grabbed = match pick(l, self.layers, m, tol, false, ed.sel.as_ref(), false) {
                     Some(Pick::Part(k)) => {
                         let p = &l.parts[k];
                         let at = p.at.to_mm();
@@ -267,15 +301,16 @@ impl Canvas<'_> {
             match ed.tool {
                 Tool::Select => {
                     let l = ed.layout(project, i);
-                    ed.sel = pick(l, self.layers, m, tol, self.ratsnest).map(|p| match p {
-                        Pick::Part(k) => Sel::Part(l.parts[k].reference.clone()),
-                        Pick::Track { index, .. } => Sel::Track(l.tracks[index].source),
-                        Pick::Via(k) => Sel::Via(l.vias[k].source, l.vias[k].at),
-                        Pick::Ratsnest(k) => {
-                            let (a, b, n) = l.ratsnest[k];
-                            Sel::Ratsnest(a, b, n)
-                        }
-                    });
+                    ed.sel = pick(l, self.layers, m, tol, self.ratsnest, ed.sel.as_ref(), true)
+                        .map(|p| match p {
+                            Pick::Part(k) => Sel::Part(l.parts[k].reference.clone()),
+                            Pick::Track { index, .. } => Sel::Track(l.tracks[index].source),
+                            Pick::Via(k) => Sel::Via(l.vias[k].source, l.vias[k].at),
+                            Pick::Ratsnest(k) => {
+                                let (a, b, n) = l.ratsnest[k];
+                                Sel::Ratsnest(a, b, n)
+                            }
+                        });
                 }
                 Tool::Route => self.route_click(&ctx, ed, m, tol),
                 Tool::Via => {
