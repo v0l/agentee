@@ -311,9 +311,9 @@ fn a_selected_track_over_a_pad_drags_before_the_pad() {
         .find_map(|t| {
             let p0 = t.points[0];
             let part = l.parts.iter().find(|p| {
-                p.pads.iter().any(|q| {
-                    q.outlines.iter().any(|o| agentee_core::geom::point_in_polygon(p0, o))
-                })
+                p.pads
+                    .iter()
+                    .any(|q| q.outlines.iter().any(|o| agentee_core::geom::point_in_polygon(p0, o)))
             })?;
             Some((t.clone(), part.reference.clone()))
         })
