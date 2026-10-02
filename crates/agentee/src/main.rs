@@ -1,3 +1,4 @@
+mod edit;
 mod mcp;
 mod ops;
 mod templates;
@@ -5,7 +6,7 @@ mod templates;
 use agentee_core::Severity;
 use agentee_core::project::Kind;
 use clap::{Parser, Subcommand, ValueEnum};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub const FORMAT: &str = include_str!("../../../docs/format.md");
@@ -399,8 +400,50 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Edit a schematic, layout or board with commands instead of writing TOML by hand
+    ///
+    /// Every edit takes the item name and a command. `agentee edit sch help` lists them with
+    /// their arguments. A list of commands also works: `agentee edit sch -` reads them from
+    /// stdin, one per line, and `agentee edit sch FILE` from a file, one load, one check at the
+    /// end. It rewrites the TOML, keeps the comments and layout of the file, and prints the
+    /// check report of the files it touched.
+    ///
+    /// Pin references are REF.PIN, by number (U1.3) or by a unique pin name (U1.VCC). The pin
+    /// numbers that came back are in the JSON facts.
+    Edit {
+        /// schematic, layout or board
+        #[arg(value_enum)]
+        target: EditKind,
+        /// Item name, `-` for stdin, a script file, or a command
+        name: String,
+        /// Arguments of the command
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+        /// List the item's parts and nets, or its tracks, vias and zones
+        #[arg(long)]
+        list: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the file format reference
     Docs,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum EditKind {
+    Sch,
+    Pcb,
+    Board,
+}
+
+impl EditKind {
+    fn kind(self) -> Kind {
+        match self {
+            EditKind::Sch => Kind::Schematic,
+            EditKind::Pcb => Kind::Layout,
+            EditKind::Board => Kind::Board,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -845,11 +888,84 @@ fn run(cli: Cli) -> Result<bool, String> {
             }
             Ok(true)
         }
+        Cmd::Edit { target, name, args, list, json } => {
+            let root = PathBuf::from(".");
+            if name == "help" && args.is_empty() {
+                println!("{}", edit_help(target.kind()));
+                return Ok(true);
+            }
+            if list {
+                let mut s = edit::Session::open(&root)?;
+                let path = s.target(target.kind(), &name)?;
+                let v = match target.kind() {
+                    Kind::Schematic => edit::sch::show(&s, &path),
+                    _ => edit::pcb::show(&s, &path),
+                };
+                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+                return Ok(true);
+            }
+            let (text, v, ok) = if name == "-" {
+                let lines = read_lines(&mut std::io::stdin().lock())?;
+                edit::run_lines(&root, target.kind(), "", &lines)?
+            } else if args.is_empty() && Path::new(&name).is_file() {
+                let file = std::fs::File::open(&name).map_err(|e| format!("{name}: {e}"))?;
+                let mut reader = std::io::BufReader::new(file);
+                let lines = read_lines(&mut reader)?;
+                let item =
+                    edit::only_item(&root, target.kind()).map_err(|e| format!("{name}: {e}"))?;
+                edit::run_lines(&root, target.kind(), &item, &lines)?
+            } else if args.is_empty() {
+                return Err("give a command: `agentee edit sch ITEM help` lists them".into());
+            } else {
+                edit::run_one(&root, target.kind(), &name, &args)?
+            };
+            report(text, &v, json, ok)
+        }
         Cmd::Docs => {
             print!("{FORMAT}");
             Ok(true)
         }
     }
+}
+
+fn report(text: String, v: &serde_json::Value, json: bool, ok: bool) -> Result<bool, String> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
+    } else {
+        print!("{text}");
+    }
+    Ok(ok)
+}
+
+fn read_lines(r: &mut dyn std::io::BufRead) -> Result<Vec<String>, String> {
+    let mut lines = Vec::new();
+    for line in std::io::BufRead::lines(r) {
+        lines.push(line.map_err(|e| e.to_string())?);
+    }
+    Ok(lines)
+}
+
+fn edit_help(kind: Kind) -> String {
+    let mut text = String::new();
+    let stem = match kind {
+        Kind::Schematic => "sch",
+        Kind::Layout => "pcb",
+        _ => "board",
+    };
+    text += &format!(
+        "agentee edit {stem} ITEM COMMAND [args]   (sch = sch:NAME, pcb = pcb:NAME)\n\
+         agentee edit {stem} -   commands on stdin, one per line\n\
+         agentee edit {stem} FILE   commands from a file; the project needs exactly one {} for this\n\n",
+        match kind {
+            Kind::Schematic => "schematic",
+            Kind::Layout => "layout",
+            _ => "board",
+        }
+    );
+    for cmd in edit::commands(kind) {
+        text += &format!("  {}\n", edit::usage(kind, cmd));
+    }
+    text
 }
 
 fn main() -> ExitCode {

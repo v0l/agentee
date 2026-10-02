@@ -1,13 +1,17 @@
 ---
 name: agentee
-description: Design and iterate on electronics with agentee, where boards, symbols, footprints, schematics, layouts and simulations are plain TOML files checked by the `agentee` CLI or MCP server. Use when creating or editing `*.board.toml`, `*.sym.toml`, `*.fp.toml`, `*.sch.toml`, `*.pcb.toml` or `*.sim.toml` files, importing KiCad parts, fixing `agentee check` errors, routing a layout, sizing traces for impedance or current, running FDTD, cascade, channel, PDN, DC drop or thermal sims, or writing a fab package.
+description: Design and iterate on electronics with agentee, where boards, symbols, footprints, schematics, layouts and simulations are plain TOML files checked by the `agentee` CLI or MCP server. Use when creating or editing a design with `agentee edit` (sch, pcb, board commands), or when hand-writing `*.board.toml`, `*.sym.toml`, `*.fp.toml`, `*.sch.toml`, `*.pcb.toml` or `*.sim.toml` files, importing KiCad parts, fixing `agentee check` errors, routing a layout, sizing traces for impedance or current, running FDTD, cascade, channel, PDN, DC drop or thermal sims, or writing a fab package.
 ---
 
 # agentee
 
 A project is a directory of TOML files. You write the files; `agentee` loads everything under
 the directory, checks it, computes what the stackup gives, and renders it. There is no editor
-state to sync: the files are the design.
+state to sync: the files are the design. `agentee edit` writes those files for you.
+
+Prefer `agentee edit` over writing the TOML yourself. It has the same result, it keeps the
+comments and layout of the file, and it checks what it changed. Reach for a text editor only for
+a key it has no command for. See "Editing with commands" below.
 
 The full key-by-key reference is `agentee docs` (MCP `format_reference`). Read the section for
 the file kind you are about to write before writing it. This skill covers how to work, not every
@@ -17,9 +21,10 @@ key.
 
 Every edit goes through the same four steps. Do not batch several unchecked edits.
 
-1. Edit one file.
+1. Edit one file, with `agentee edit` where there is a command for it.
 2. `agentee check` (exit 0 clean, 1 errors, 2 load failure). Add `--item pcb:NAME` to scope it,
-   `--info` for notes, `--json` for machine output.
+   `--info` for notes, `--json` for machine output. An `agentee edit` already ran this for the
+   files it touched and printed the result, so `check` is for anything else you changed.
 3. `agentee render KIND:NAME -o /tmp/x.png` and look at the PNG. Check passing does not mean it
    looks right: crowded silk, a part on the wrong side of the line, or a detour in a track only
    show up in the picture.
@@ -62,8 +67,8 @@ Order of work, each stage passing check before the next:
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same
    number in its footprint.
 3. **Schematic.** Place parts, list nets as `REF.PIN`, and give every net a `class`; a net left in
-   `Default` is a warning. Leave `wires` out and agentee routes them.
-   Put deliberately open pins in `no_connect`.
+   `Default` is a warning. Leave `wires` out and agentee routes them. `agentee edit sch` does all
+   of this. Put deliberately open pins in `no_connect`.
 4. **Layout.** Place footprints, add zones, then tracks and vias net by net. Check reports the
    ratsnest for every unrouted connection, so route until `unrouted` is 0 on every net in
    `show pcb:NAME`.
@@ -90,6 +95,50 @@ KiCad silk is often 0.12 mm and JLCPCB wants 0.15 mm, so widen it in the importe
 When KiCad lacks the part, `agentee new symbol NAME` / `new footprint NAME` and build it from the
 datasheet. Use `[[bodies]]` with per-side pin lists for box symbols and pad rows (`count`,
 `pitch`) for footprints instead of listing every pin or pad.
+
+## Editing with commands
+
+`agentee edit TARGET ITEM COMMAND [args]`, where TARGET is `sch` (schematic), `pcb` (layout) or
+`board` (board spec). `agentee edit sch help` (or `pcb`, `board`) lists every command with its
+arguments.
+
+```sh
+agentee edit sch sensor-node add R1 R 10k --footprint R_0402_1005Metric --at 25.4,25.4
+agentee edit sch sensor-node add C1 C 100n --footprint C_0402_1005Metric
+agentee edit sch sensor-node net VBUS C1.1 U1.7 --class Power
+agentee edit sch sensor-node nc U2.3
+agentee edit sch sensor-node --list
+```
+
+- A pin is `REF.PIN`, by number (`U1.3`) or by a unique pin name (`U1.VCC`). A name that several
+  pins share is an error naming them, so the number comes back and you use it next time.
+- A pin given a net it is already on is moved to the new net, not duplicated.
+- `add` places the part to the right of everything there, on the 1.27 mm grid; `--at X,Y` overrides
+  it and is snapped to that grid.
+- The symbol must be in the project. If it is not but `--footprint` is, the symbol that uses that
+  footprint is used. Otherwise import it first.
+
+For a layout: `place`, `track NET LAYER X,Y X,Y ...`, `via NET X,Y`, `zone NET --layers ...`,
+`pair`, `stitch`, `fanout`, `text`, `test`, `watermark`. For a board: `class`, `via`, `outline`,
+`cutout`, `stackup`. Every one is listed by `help` with its flags.
+
+Write several commands to a file, or pipe them in, when a change is more than one part or one
+net. It is one load and one check at the end, so it is much faster and the intermediate states
+that check would flag never happen:
+
+```sh
+agentee edit sch - <<'EOF'
+add R1 R 10k --footprint R_0402_1005Metric
+add R2 R 4k7
+add C1 C 100n --footprint C_0402_1005Metric
+net MID R1.2 R2.1 C1.1 --class Signal
+nc R2.2
+note "input divider"
+EOF
+```
+
+`agentee edit sch build.txt` does the same from a file. It edits the one schematic or layout the
+project has, so name the file only when the project has a single one.
 
 ## Traps
 

@@ -1,0 +1,261 @@
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn bin() -> &'static str {
+    env!("CARGO_BIN_EXE_agentee")
+}
+
+fn dir(tag: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("agentee-edit-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(d.join("symbols")).unwrap();
+    std::fs::create_dir_all(d.join("footprints")).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    for f in [
+        "symbols/R.sym.toml",
+        "symbols/C.sym.toml",
+        "footprints/R_0402_1005Metric.fp.toml",
+        "footprints/C_0402_1005Metric.fp.toml",
+    ] {
+        std::fs::copy(lna.join(f), d.join(f)).unwrap();
+    }
+    d
+}
+
+fn run(d: &Path, args: &[&str]) -> (String, String, bool) {
+    let out = Command::new(bin()).args(args).current_dir(d).output().unwrap();
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        out.status.success(),
+    )
+}
+
+fn edit(d: &Path, args: &[&str]) -> String {
+    let mut all = vec!["edit"];
+    all.extend_from_slice(args);
+    let (out, err, ok) = run(d, &all);
+    assert!(ok, "agentee {all:?} failed: {err}{out}");
+    out
+}
+
+fn sch(d: &Path, file: &str) -> String {
+    std::fs::read_to_string(d.join(file)).unwrap()
+}
+
+#[test]
+fn adds_parts_and_nets_by_pin_name() {
+    let d = dir("sch");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\n\
+         [[netclasses]]\nname = \"Signal\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\n\
+         [[netclasses]]\nname = \"Power\"\ntrack_width = \"0.5mm\"\nclearance = \"0.15mm\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\nboard = \"b\"\n").unwrap();
+
+    edit(&d, &["sch", "t", "add", "R1", "R", "1k", "--footprint", "R_0402_1005Metric"]);
+    edit(&d, &["sch", "t", "add", "R2", "R", "10k"]);
+    edit(&d, &["sch", "t", "net", "MID", "R1.2", "R2.1", "--class", "Signal"]);
+    edit(&d, &["sch", "t", "nc", "R2.2"]);
+
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("ref = \"R1\""), "{text}");
+    assert!(text.contains("symbol = \"R\""), "{text}");
+    assert!(text.contains("pins = [\"R1.2\", \"R2.1\"]"), "{text}");
+    assert!(text.contains("class = \"Signal\""), "{text}");
+    assert!(text.contains("no_connect = [\"R2.2\"]"), "{text}");
+    assert!(text.contains("at = [5.08, 0.0]"), "{text}");
+}
+
+#[test]
+fn pin_names_resolve_to_numbers() {
+    let d = dir("pinnames");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    let out = edit(&d, &["sch", "t", "add", "R1", "R", "1k"]);
+    assert!(!out.contains("\"R1.2\""), "no facts in text mode: {out}");
+    edit(&d, &["sch", "t", "net", "A", "R1.2"]);
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("pins = [\"R1.2\"]"), "{text}");
+}
+
+#[test]
+fn one_load_for_a_whole_script() {
+    let d = dir("script");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    let script = d.join("build.txt");
+    std::fs::write(
+        &script,
+        "# a divider\nadd R1 R 1k --footprint R_0402_1005Metric\nadd R2 R 10k\n\
+         net MID R1.2 R2.1\nnc R2.2\nnote \"voltage divider\"\n",
+    )
+    .unwrap();
+    let out = run(&d, &["edit", "sch", script.to_str().unwrap()]);
+    assert!(out.2, "{}", out.1);
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("ref = \"R2\""), "{text}");
+    assert!(text.contains("pins = [\"R1.2\", \"R2.1\"]"), "{text}");
+    assert!(text.contains("description = \"voltage divider\""), "{text}");
+}
+
+#[test]
+fn a_pin_moves_when_it_joins_another_net() {
+    let d = dir("move");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    edit(&d, &["sch", "t", "add", "R1", "R", "1k"]);
+    edit(&d, &["sch", "t", "add", "R2", "R", "10k"]);
+    edit(&d, &["sch", "t", "net", "A", "R1.1", "R1.2"]);
+    edit(&d, &["sch", "t", "net", "B", "R2.1", "R1.2"]);
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("pins = [\"R1.1\"]"), "{text}");
+    assert!(text.contains("pins = [\"R2.1\", \"R1.2\"]"), "{text}");
+    let count = |net: &str| -> usize {
+        sch(&d, "t.sch.toml")
+            .split("name = \"")
+            .find(|chunk| chunk.starts_with(&format!("{net}\"")))
+            .and_then(|chunk| chunk.split_once("pins = ["))
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(pins, _)| pins.split(',').count())
+            .unwrap_or(0)
+    };
+    assert_eq!(count("A"), 1, "R1.1 is the only pin left on A");
+    assert_eq!(count("B"), 2, "R1.2 moved to B");
+}
+
+#[test]
+fn comments_and_formatting_survive() {
+    let d = dir("keep");
+    std::fs::write(
+        d.join("t.sch.toml"),
+        "# the top sheet\nname = \"t\"  # trailing note\n\n[[parts]]\nref = \"R1\"\n\
+         symbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n",
+    )
+    .unwrap();
+    edit(&d, &["sch", "t", "net", "A", "R1.1"]);
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("# the top sheet"), "{text}");
+    assert!(text.contains("# trailing note"), "{text}");
+    assert!(text.contains("at = [10.16, 20.32]"), "{text}");
+}
+
+#[test]
+fn board_and_layout_edits_write_the_keys() {
+    let d = dir("pcb");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.sch.toml"),
+        "name = \"t\"\nboard = \"b\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n\
+         footprint = \"R_0402_1005Metric\"\n[[parts]]\nref = \"R2\"\nsymbol = \"R\"\nvalue = \"10k\"\nat = [20.32, 20.32]\n\
+         footprint = \"R_0402_1005Metric\"\n\
+         [[nets]]\nname = \"A\"\nclass = \"Default\"\npins = [\"R1.1\", \"R2.1\"]\n\
+         [[nets]]\nname = \"GND\"\nclass = \"Default\"\nstyle = \"power\"\npins = [\"R1.2\", \"R2.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("t.pcb.toml"), "name = \"t\"\nboard = \"b\"\nschematic = \"t\"\n")
+        .unwrap();
+
+    edit(
+        &d,
+        &[
+            "board",
+            "b",
+            "class",
+            "Power",
+            "--track-width",
+            "0.5mm",
+            "--current",
+            "1A",
+            "--via",
+            "std",
+        ],
+    );
+    let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();
+    assert!(board.contains("name = \"Power\""), "{board}");
+    assert!(board.contains("current = \"1A\""), "{board}");
+
+    edit(&d, &["board", "b", "outline", "--size", "40,25", "--corner-radius", "2mm"]);
+    let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();
+    assert!(board.contains("size = [40.0, 25.0]"), "{board}");
+
+    let script = d.join("pcb.txt");
+    std::fs::write(
+        &script,
+        "place R1 10,10\nplace R2 12,10\ntrack A F.Cu 10,9.5 12,9.5\nvia GND 11,8 --via std\n         zone GND --layers F.Cu --priority 1\n",
+    )
+    .unwrap();
+    let out = run(&d, &["edit", "pcb", script.to_str().unwrap()]);
+    assert!(out.0.contains("A"), "the track and zone did not land: {}\n{}", out.0, out.1);
+    let pcb = std::fs::read_to_string(d.join("t.pcb.toml")).unwrap();
+    for want in [
+        "ref = \"R1\"",
+        "at = [10.0, 10.0]",
+        "[[tracks]]",
+        "points = [[10.0, 9.5], [12.0, 9.5]]",
+        "[[vias]]",
+        "via = \"std\"",
+        "[[zones]]",
+        "priority = 1",
+    ] {
+        assert!(pcb.contains(want), "missing {want} in\n{pcb}");
+    }
+}
+
+#[test]
+fn bad_input_is_refused_and_nothing_is_written() {
+    let d = dir("bad");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    let before = sch(&d, "t.sch.toml");
+    for args in [
+        vec!["sch", "t", "add", "R1", "NoSuchSymbol"],
+        vec!["sch", "t", "net", "A", "R1.1"],
+        vec!["sch", "t", "add", "R1", "R", "1k", "--at", "north"],
+        vec!["sch", "nope", "add", "R1", "R", "1k"],
+        vec!["sch", "t", "add", "R1", "R", "1k", "--colour", "red"],
+    ] {
+        let mut all = vec!["edit"];
+        all.extend(args.iter().copied());
+        let out = Command::new(bin()).args(&all).current_dir(&d).output().unwrap();
+        assert!(!out.status.success(), "agentee {all:?} should have failed");
+        assert!(!String::from_utf8_lossy(&out.stderr).is_empty(), "{all:?} said nothing");
+        assert_eq!(before, sch(&d, "t.sch.toml"), "{all:?} wrote the file anyway");
+    }
+}
+
+#[test]
+fn help_lists_the_commands() {
+    let d = dir("help");
+    let (out, _, ok) = run(&d, &["edit", "sch", "help"]);
+    assert!(ok, "edit sch help");
+    for want in ["add", "net", "connect", "nc", "move", "set"] {
+        assert!(out.contains(want), "sch help misses {want}: {out}");
+    }
+    let (out, _, _) = run(&d, &["edit", "pcb", "help"]);
+    for want in ["place", "track", "via", "zone", "pair", "stitch", "fanout", "watermark"] {
+        assert!(out.contains(want), "pcb help misses {want}: {out}");
+    }
+    let (out, _, _) = run(&d, &["edit", "board", "help"]);
+    for want in ["class", "unclass", "via", "outline", "cutout", "stackup"] {
+        assert!(out.contains(want), "board help misses {want}: {out}");
+    }
+}
+
+#[test]
+fn list_shows_the_item() {
+    let d = dir("list");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    edit(&d, &["sch", "t", "add", "R1", "R", "1k"]);
+    edit(&d, &["sch", "t", "net", "A", "R1.1", "R1.2"]);
+    let (out, _, ok) = run(&d, &["edit", "sch", "t", "--list"]);
+    assert!(ok);
+    assert!(out.contains("\"R1\""), "{out}");
+    assert!(out.contains("\"A\""), "{out}");
+    assert!(out.contains("\"R1.2\""), "{out}");
+}

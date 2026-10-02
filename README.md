@@ -52,6 +52,36 @@ agentee tie sensor-node                        # a via beside every ground and s
 
 `check` exits 1 when there are errors, so it fits in a loop or CI.
 
+## Editing with commands
+
+`agentee edit` is the CLI for changing a design, so an agent never has to hand-write the TOML. It
+edits the file in place, keeping the comments and the layout of the file, and prints the check
+report for the files it touched.
+
+```sh
+agentee edit sch help                          # the commands, with their arguments
+agentee edit sch sensor-node add R1 R 10k --footprint R_0402_1005Metric
+agentee edit sch sensor-node net VBUS R1.1 C1.1 --class Power
+agentee edit pcb sensor-node place R1 12.7,20.32
+agentee edit board sensor-node class RF --impedance 50ohm --coplanar-gap 0.2mm --solver field
+```
+
+A pin is `REF.PIN`, by number or by a unique pin name (`U1.3` or `U1.VCC`); the number it resolved
+to comes back in the JSON facts. Giving a pin a net it is already on moves it. Passing a symbol
+the project does not have, with a `--footprint` it does, finds the symbol that uses that footprint.
+
+Commands also run as a list, one per line, so a whole section costs one load and one check:
+
+```sh
+agentee edit sch - < build.txt
+agentee edit sch build.txt                    # or from a file
+agentee edit sch sensor-node --list           # the parts and nets as JSON
+agentee edit pcb sensor-node help
+agentee edit board sensor-node help
+```
+
+Targets are `sch` (a schematic), `pcb` (a layout) and `board` (a board spec).
+
 ## Simulation on the GPU
 
 Both solvers run through wgpu (Vulkan, Metal or DX12) and fall back to the CPU only for the 2D one.
