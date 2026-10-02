@@ -230,6 +230,37 @@ fn bad_input_is_refused_and_nothing_is_written() {
 }
 
 #[test]
+fn a_class_is_allowed_before_the_board_exists() {
+    let d = dir("nobody");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    edit(&d, &["sch", "t", "add", "R1", "R", "1k"]);
+    edit(&d, &["sch", "t", "net", "VCC", "R1.1", "--class", "Power"]);
+    assert!(sch(&d, "t.sch.toml").contains("class = \"Power\""));
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\n",
+    )
+    .unwrap();
+    let (out, err, ok) = run(&d, &["edit", "sch", "t", "net", "VCC", "R1.1", "--class", "Nope"]);
+    assert!(!ok, "a class the board does not have must be refused");
+    assert!(err.contains("Nope"), "{err}");
+}
+
+#[test]
+fn an_unknown_item_is_refused_with_the_names_it_has() {
+    let d = dir("two");
+    std::fs::write(d.join("a.sch.toml"), "name = \"a\"\n").unwrap();
+    std::fs::write(d.join("b.sch.toml"), "name = \"b\"\n").unwrap();
+    let (_, err, ok) = run(&d, &["edit", "sch", "nope", "add", "R1", "R", "1k"]);
+    assert!(!ok, "an unknown schematic must fail");
+    assert!(err.contains("no schematic named `nope`"), "{err}");
+    assert!(err.contains("there is a, b"), "{err}");
+    assert_eq!(sch(&d, "a.sch.toml"), "name = \"a\"\n");
+    assert_eq!(sch(&d, "b.sch.toml"), "name = \"b\"\n");
+}
+
+#[test]
 fn help_lists_the_commands() {
     let d = dir("help");
     let (out, _, ok) = run(&d, &["edit", "sch", "help"]);

@@ -508,7 +508,9 @@ impl Session {
     }
 
     pub fn check_class(&self, board: Option<&str>, class: &str) -> Result<(), String> {
-        let mut names = self.classes(board)?;
+        let Ok(mut names) = self.classes(board) else {
+            return Ok(());
+        };
         if !names.iter().any(|c| c == class) {
             names.sort();
             return Err(format!(

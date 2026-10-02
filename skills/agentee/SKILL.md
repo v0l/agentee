@@ -11,7 +11,8 @@ state to sync: the files are the design. `agentee edit` writes those files for y
 
 Prefer `agentee edit` over writing the TOML yourself. It has the same result, it keeps the
 comments and layout of the file, and it checks what it changed. Reach for a text editor only for
-a key it has no command for. See "Editing with commands" below.
+a key it has no command for. It covers schematics, layouts and board specs, not symbols and
+footprints: those still go in a text editor, or in from KiCad. See "Editing with commands" below.
 
 The full key-by-key reference is `agentee docs` (MCP `format_reference`). Read the section for
 the file kind you are about to write before writing it. This skill covers how to work, not every
@@ -64,13 +65,16 @@ Order of work, each stage passing check before the next:
    `agentee stackups --fab jlcpcb --layers 4` rather than typing layers in. Define `Default` and
    one net class per kind of net (RF, power, pairs). Put impedance and current targets on the
    class and let check solve the widths; `agentee show board:NAME` prints them per layer.
+   `agentee edit board` does all of this, and check names the width a class needs.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same
    number in its footprint.
 3. **Schematic.** Place parts, list nets as `REF.PIN`, and give every net a `class`; a net left in
    `Default` is a warning. Leave `wires` out and agentee routes them. `agentee edit sch` does all
-   of this. Put deliberately open pins in `no_connect`.
-4. **Layout.** Place footprints, add zones, then tracks and vias net by net. Check reports the
-   ratsnest for every unrouted connection, so route until `unrouted` is 0 on every net in
+   of this, one batch of commands for the whole sheet. Put deliberately open pins in `no_connect`.
+4. **Layout.** Place footprints, add zones, then tracks and vias net by net. `agentee edit pcb`
+   writes a placement, a track, a via or a zone by hand; `agentee place`, `route` and `tie` are
+   the automatic ones and are usually better for anything with many connections. Check reports
+   the ratsnest for every unrouted connection, so route until `unrouted` is 0 on every net in
    `show pcb:NAME`.
 5. **Simulate** what the design depends on (see below).
 6. **Fab.** `agentee fab pcb:NAME -o fab/` once check has no errors.
@@ -100,27 +104,32 @@ datasheet. Use `[[bodies]]` with per-side pin lists for box symbols and pad rows
 
 `agentee edit TARGET ITEM COMMAND [args]`, where TARGET is `sch` (schematic), `pcb` (layout) or
 `board` (board spec). `agentee edit sch help` (or `pcb`, `board`) lists every command with its
-arguments.
+arguments. Every command below is on one of those three.
 
 ```sh
-agentee edit sch sensor-node add R1 R 10k --footprint R_0402_1005Metric --at 25.4,25.4
-agentee edit sch sensor-node add C1 C 100n --footprint C_0402_1005Metric
-agentee edit sch sensor-node net VBUS C1.1 U1.7 --class Power
-agentee edit sch sensor-node nc U2.3
-agentee edit sch sensor-node --list
+agentee edit sch NAME add R1 R 10k --footprint R_0402_1005Metric --at 25.4,25.4
+agentee edit sch NAME add C1 C 100n --footprint C_0402_1005Metric
+agentee edit sch NAME net VBUS C1.1 U1.7 --class Power
+agentee edit sch NAME nc U2.3
+agentee edit sch NAME --list
+agentee edit sch NAME --json add R1 R 10k     # the resolved pins and coordinates as JSON
 ```
 
-- A pin is `REF.PIN`, by number (`U1.3`) or by a unique pin name (`U1.VCC`). A name that several
-  pins share is an error naming them, so the number comes back and you use it next time.
-- A pin given a net it is already on is moved to the new net, not duplicated.
-- `add` places the part to the right of everything there, on the 1.27 mm grid; `--at X,Y` overrides
-  it and is snapped to that grid.
-- The symbol must be in the project. If it is not but `--footprint` is, the symbol that uses that
-  footprint is used. Otherwise import it first.
+**Schematic** (`add`, `remove`, `move`, `set`, `net`, `connect`, `disconnect`, `nc`, `unnc`,
+`note`). A pin is `REF.PIN`, by number (`U1.3`) or by a unique pin name (`U1.VCC`); a name several
+pins share is an error listing the numbers. A pin given a net it is already on is moved to the
+new net, not duplicated. `add` puts the part to the right of everything there on the 1.27 mm
+grid; `--at X,Y` overrides that and snaps to the grid. `--footprint` names the footprint, and if
+the symbol is missing but a symbol in the project uses that footprint, that one is used.
 
-For a layout: `place`, `track NET LAYER X,Y X,Y ...`, `via NET X,Y`, `zone NET --layers ...`,
-`pair`, `stitch`, `fanout`, `text`, `test`, `watermark`. For a board: `class`, `via`, `outline`,
-`cutout`, `stackup`. Every one is listed by `help` with its flags.
+**Layout** (`place`, `unplace`, `track NET LAYER X,Y X,Y ...`, `untrack`, `via NET X,Y`, `unvia`,
+`zone NET --layers ...`, `unzone`, `pair`, `text`, `fanout`, `stitch`, `watermark`, `test`,
+`board`, `schematic`). A net, layer or via name that is not in the project is an error naming
+what is, so a typo never becomes a net of its own.
+
+**Board** (`class NAME --track-width ... --impedance ... --via ...`, `unclass`, `via NAME --drill
+... --diameter ...`, `unvia`, `outline`, `cutout`, `stackup`). `class` edits the netclass of that
+name in place or adds it. `stackup --preset NAME` takes a name from `agentee stackups`.
 
 Write several commands to a file, or pipe them in, when a change is more than one part or one
 net. It is one load and one check at the end, so it is much faster and the intermediate states
@@ -137,8 +146,17 @@ note "input divider"
 EOF
 ```
 
-`agentee edit sch build.txt` does the same from a file. It edits the one schematic or layout the
-project has, so name the file only when the project has a single one.
+`agentee edit sch build.txt` does the same from a file. Both edit the one schematic the project
+has; with more than one it says so and names them, so pass the item name instead.
+
+Each edit writes the file, refills a layout's stored zone fills if the layout stored them, and
+prints the check diagnostics of the files it touched. It exits 1 if any of those is an error, so a
+batch that leaves the design broken fails the same way `check` does. A pin or symbol that does
+not exist, a flag it has no meaning for, or a value it cannot read is an error before anything is
+written, so the file is untouched when a command is wrong.
+
+`--class` is only checked against the board once there is one. Build a schematic before its board
+and the class is written as given; add the netclass to the board before you route.
 
 ## Traps
 
