@@ -261,6 +261,97 @@ fn an_unknown_item_is_refused_with_the_names_it_has() {
 }
 
 #[test]
+fn a_part_on_a_child_sheet_can_be_placed() {
+    let d = dir("hier");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("top.sch.toml"),
+        "name = \"top\"\nboard = \"b\"\nsheets = [\"power\", \"rf\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("power.sch.toml"),
+        "name = \"power\"\nboard = \"b\"\nsheets = [\"reg\"]\n\
+         [[parts]]\nref = \"U1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("reg.sch.toml"),
+        "name = \"reg\"\nboard = \"b\"\n[[parts]]\nref = \"U2\"\nsymbol = \"R\"\nvalue = \"1k\"\n\
+         at = [20.32, 20.32]\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("rf.sch.toml"), "name = \"rf\"\nboard = \"b\"\n").unwrap();
+    std::fs::write(d.join("p.pcb.toml"), "name = \"p\"\nboard = \"b\"\nschematic = \"top\"\n")
+        .unwrap();
+
+    let (out, _, _) = run(&d, &["edit", "pcb", "p", "--json", "place", "U1", "12,8"]);
+    assert!(out.contains("\"U1 placed at 12,8\""), "{out}");
+    assert!(out.contains("sheet power"), "the sheet should be named: {out}");
+    let (out, err, _) = run(&d, &["edit", "pcb", "p", "place", "U2", "14,8"]);
+    assert!(!err.starts_with("error:"), "a part two sheets down must place: {err}");
+    assert!(out.contains("U2 placed"), "{out}");
+    assert!(sch(&d, "p.pcb.toml").contains("ref = \"U2\""));
+    assert!(!sch(&d, "p.pcb.toml").contains("power"));
+
+    let (_, err, ok) = run(&d, &["edit", "pcb", "p", "place", "R9", "1,1"]);
+    assert!(!ok, "a part of no sheet must fail");
+    assert!(err.contains("not a part of schematic `top` or of any sheet it lists"), "{err}");
+}
+
+#[test]
+fn a_net_on_a_child_sheet_is_known_to_the_layout() {
+    let d = dir("hiernet");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n\
+         [[netclasses]]\nname = \"Power\"\ntrack_width = \"0.5mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("top.sch.toml"), "name = \"top\"\nboard = \"b\"\nsheets = [\"power\"]\n")
+        .unwrap();
+    std::fs::write(
+        d.join("power.sch.toml"),
+        "name = \"power\"\nboard = \"b\"\n[[parts]]\nref = \"U1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n\
+         [[nets]]\nname = \"VCC\"\nclass = \"Power\"\npins = [\"U1.1\"]\n\
+         [[nets]]\nname = \"GND\"\nclass = \"Power\"\nstyle = \"power\"\npins = [\"U1.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(d.join("p.pcb.toml"), "name = \"p\"\nboard = \"b\"\nschematic = \"top\"\n")
+        .unwrap();
+
+    for args in [
+        vec!["track", "VCC", "F.Cu", "5,5", "6,6"],
+        vec!["via", "GND", "7,7"],
+        vec!["zone", "VCC", "--layers", "F.Cu"],
+    ] {
+        let mut all = vec!["edit", "pcb", "p"];
+        all.extend(args.iter().copied());
+        let (out, err, _) = run(&d, &all);
+        assert!(!err.starts_with("error:"), "agentee {all:?} refused a real net: {err}");
+        assert!(out.contains("VCC") || out.contains("GND"), "{out}");
+    }
+    let pcb = sch(&d, "p.pcb.toml");
+    assert!(pcb.contains("net = \"VCC\""), "{pcb}");
+    assert!(pcb.contains("net = \"GND\""), "{pcb}");
+
+    let before = sch(&d, "p.pcb.toml");
+    let (_, err, ok) = run(&d, &["edit", "pcb", "p", "track", "VCD", "F.Cu", "5,5", "6,6"]);
+    assert!(!ok, "a net of no sheet must be refused, not invented");
+    assert!(err.contains("`VCD` is not a net of top or its sheets"), "{err}");
+    assert!(err.contains("it has GND, VCC"), "{err}");
+    assert_eq!(before, sch(&d, "p.pcb.toml"), "the file changed on a refused net");
+}
+
+#[test]
 fn help_lists_the_commands() {
     let d = dir("help");
     let (out, _, ok) = run(&d, &["edit", "sch", "help"]);

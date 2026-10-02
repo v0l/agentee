@@ -50,7 +50,7 @@ const LENGTH_KEYS: &[&str] = &[
 const BOOL_KEYS: &[&str] =
     &["mirror", "dnp", "locked", "hide", "stacked", "skip", "relief_tht_only"];
 
-const F64_KEYS: &[&str] = &["min_island_area", "cost", "er", "loss_tangent"];
+const F64_KEYS: &[&str] = &["min_island_area", "cost", "er", "loss_tangent", "rotation"];
 const INT_KEYS: &[&str] = &["priority"];
 
 const ENUMS: &[(&str, &[&str])] = &[

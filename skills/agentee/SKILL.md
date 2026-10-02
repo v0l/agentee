@@ -124,8 +124,10 @@ the symbol is missing but a symbol in the project uses that footprint, that one 
 
 **Layout** (`place`, `unplace`, `track NET LAYER X,Y X,Y ...`, `untrack`, `via NET X,Y`, `unvia`,
 `zone NET --layers ...`, `unzone`, `pair`, `text`, `fanout`, `stitch`, `watermark`, `test`,
-`board`, `schematic`). A net, layer or via name that is not in the project is an error naming
-what is, so a typo never becomes a net of its own.
+`board`, `schematic`). `place` takes a part of the layout's schematic or of any sheet that
+schematic lists, at any depth, and says which sheet it found it on. A net, layer or via name
+that is not in the schematic or its sheets is an error naming what is, so a typo never becomes a
+net or a placement of its own.
 
 **Board** (`class NAME --track-width ... --impedance ... --via ...`, `unclass`, `via NAME --drill
 ... --diameter ...`, `unvia`, `outline`, `cutout`, `stackup`). `class` edits the netclass of that

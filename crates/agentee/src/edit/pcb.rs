@@ -89,36 +89,94 @@ fn board_name(s: &Session, path: &Path) -> Result<String, String> {
     Ok(s.read(path)?.get("board").and_then(|v| v.as_str()).unwrap_or_default().to_string())
 }
 
-fn net_known(s: &Session, path: &Path, net: &str) -> Result<(), String> {
-    if !net.is_empty() {
-        return Ok(());
+impl Session {
+    fn sheet_tree(&self, root: &str) -> Vec<(String, PathBuf)> {
+        let mut out = Vec::new();
+        let mut queue: Vec<String> = vec![root.to_string()];
+        let mut seen: Vec<String> = Vec::new();
+        while !queue.is_empty() {
+            let name = queue.remove(0);
+            if seen.contains(&name) {
+                continue;
+            }
+            seen.push(name.clone());
+            let named = self.docs.keys().find(|p| {
+                Kind::of(p) == Some(Kind::Schematic)
+                    && self.read(p).ok().and_then(|d| d.get("name")).and_then(|v| v.as_str())
+                        == Some(name.as_str())
+            });
+            let Some(path) = named.cloned() else { continue };
+            let children = self.read(&path).map(|d| texts(d, "sheets")).unwrap_or_default();
+            out.push((name, path));
+            queue.extend(children);
+        }
+        out
     }
+
+    pub fn sheet_of(&self, root: &str, reference: &str) -> Option<(String, PathBuf)> {
+        self.sheet_tree(root)
+            .into_iter()
+            .find(|(_, path)| self.read(path).is_ok_and(|d| part_index_of(d, reference)))
+    }
+}
+
+fn part_index_of(doc: &DocumentMut, reference: &str) -> bool {
+    doc.get("parts")
+        .and_then(|v| v.as_array_of_tables())
+        .is_some_and(|a| a.iter().any(|t| text(t, "ref").as_deref() == Some(reference)))
+}
+
+fn net_known(s: &Session, path: &Path, net: &str) -> Result<(), String> {
     let schematic =
         s.read(path)?.get("schematic").and_then(|v| v.as_str()).unwrap_or_default().to_string();
     if schematic.is_empty() {
         return Err("this layout names no schematic, so its netlist is unknown".into());
     }
-    let Some(sheet) = s
-        .docs
-        .keys()
-        .find(|p| {
-            s.read(p).ok().and_then(|d| d.get("name")).and_then(|v| v.as_str())
-                == Some(schematic.as_str())
+    let tree = s.sheet_tree(&schematic);
+    if tree.is_empty() {
+        return Err(format!("no schematic named `{schematic}` in the project"));
+    }
+    let mut nets: Vec<String> = Vec::new();
+    for (_, sheet) in &tree {
+        let Ok(doc) = s.read(sheet) else { continue };
+        let here = doc
+            .get("nets")
+            .and_then(|v| v.as_array_of_tables())
+            .map(|a| a.iter().filter_map(|t| text(t, "name")).collect::<Vec<_>>())
+            .unwrap_or_default();
+        nets.extend(here);
+    }
+    nets.sort();
+    nets.dedup();
+    if nets.iter().any(|n| n == net) {
+        return Ok(());
+    }
+    if nets.is_empty() {
+        return Err(format!("`{schematic}` and its sheets have no nets yet"));
+    }
+    let show = |v: &[String]| {
+        if v.len() > 12 {
+            format!("{} and {} more", v[..12].join(", "), v.len() - 12)
+        } else {
+            v.join(", ")
+        }
+    };
+    let near: Vec<String> = nets
+        .iter()
+        .filter(|n| {
+            n.to_lowercase().contains(&net.to_lowercase())
+                || net.to_lowercase().contains(&n.to_lowercase())
         })
         .cloned()
-    else {
-        return Err(format!("no schematic named `{schematic}` in the project"));
-    };
-    let doc = s.read(&sheet)?;
-    let nets = doc
-        .get("nets")
-        .and_then(|v| v.as_array_of_tables())
-        .map(|a| a.iter().filter_map(|t| text(t, "name")).collect::<Vec<_>>())
-        .unwrap_or_default();
-    if nets.is_empty() {
-        return Err(format!("`{schematic}` has no nets yet"));
-    }
-    Err(format!("`{net}` is not a net of {schematic}; it has {}", nets.join(", ")))
+        .collect();
+    Err(if near.is_empty() {
+        format!("`{net}` is not a net of {schematic} or its sheets; it has {}", show(&nets))
+    } else {
+        format!(
+            "`{net}` is not a net of {schematic} or its sheets; did you mean: {}",
+            near.join(", ")
+        )
+    })
 }
 
 fn place(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
@@ -135,20 +193,11 @@ fn place(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     o.done("place", 0)?;
     let schematic =
         s.read(path)?.get("schematic").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    let known = s.docs.keys().filter(|p| Kind::of(p) == Some(Kind::Schematic)).any(|p| {
-        let doc = match s.read(p) {
-            Ok(doc) => doc,
-            Err(_) => return false,
-        };
-        let named = doc.get("name").and_then(|v| v.as_str()).unwrap_or_default() == schematic;
-        let has = doc.get("parts").and_then(|v| v.as_array_of_tables()).is_some_and(|a| {
-            a.iter().any(|t| text(t, "ref").as_deref() == Some(reference.as_str()))
-        });
-        named && has
-    });
-    if !known {
-        return Err(format!("`{reference}` is not a part of schematic `{schematic}`"));
-    }
+    let Some((sheet, _)) = s.sheet_of(&schematic, &reference) else {
+        return Err(format!(
+            "`{reference}` is not a part of schematic `{schematic}` or of any sheet it lists"
+        ));
+    };
     let existing =
         s.read(path)?.get("footprints").and_then(|v| v.as_array_of_tables()).and_then(|a| {
             a.iter().position(|t| text(t, "ref").as_deref() == Some(reference.as_str()))
@@ -192,6 +241,10 @@ fn place(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         set(&mut t, "locked", true);
     }
     let (x, y) = spot_at(&t);
+    let mut log = vec![format!("{reference} placed at {x},{y}")];
+    if schematic != sheet {
+        log.push(format!("{reference} is a part of sheet {sheet}"));
+    }
     let doc = s.doc(path)?;
     match existing {
         Some(i) => {
@@ -203,10 +256,7 @@ fn place(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         }
         None => insert(doc, "footprints", t),
     }
-    Ok(Report {
-        log: vec![format!("{reference} placed at {x},{y}")],
-        facts: vec![json!({ "ref": reference, "at": [x, y] })],
-    })
+    Ok(Report { log, facts: vec![json!({ "ref": reference, "at": [x, y], "sheet": sheet })] })
 }
 
 fn spot_at(t: &Table) -> (f64, f64) {
