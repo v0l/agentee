@@ -5,6 +5,7 @@ pub mod finish;
 pub mod flow;
 pub mod global;
 pub mod layers;
+pub mod negotiate;
 pub mod pinswap;
 pub mod placement;
 pub mod planes;
@@ -324,6 +325,17 @@ pub(crate) fn track_toml(net: &str, layer: &str, width: Option<f64>, points: &[P
 
 pub(crate) fn via_toml(net: &str, at: P, via: &str) -> String {
     format!("\n[[vias]]\nnet = \"{net}\"\nat = {}\nvia = \"{via}\"\n", pt(at))
+}
+
+pub fn routed_toml(r: &agentee_core::route::RouteResult) -> String {
+    let mut t = String::new();
+    for tr in &r.tracks {
+        t += &track_toml(&tr.net, &tr.layer, tr.width, &tr.points);
+    }
+    for v in &r.vias {
+        t += &via_toml(&v.net, v.at, &v.via);
+    }
+    t
 }
 
 pub fn plan_section(model: &Model, phase: &str) -> Option<String> {
