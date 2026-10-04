@@ -2,41 +2,41 @@ use crate::units::Length;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const PHASES: &[&str] = &[
-    "floorplan",
-    "place",
-    "legalise",
-    "layers",
-    "escape",
-    "tie",
-    "planes",
-    "global",
-    "assign",
-    "detail",
-    "finish",
+pub const PHASES: &[&str] = &["constraints", "place", "access", "global", "detail", "finish"];
+
+pub const RETIRED: &[(&str, &str)] = &[
+    ("floorplan", "place"),
+    ("legalise", "place"),
+    ("layers", "access"),
+    ("escape", "access"),
+    ("tie", "access"),
+    ("planes", "access"),
+    ("assign", "global"),
 ];
+
+pub fn stage_of(name: &str) -> Option<&'static str> {
+    PHASES
+        .iter()
+        .copied()
+        .find(|p| *p == name)
+        .or_else(|| RETIRED.iter().find(|(old, _)| *old == name).map(|(_, new)| *new))
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EngineFile {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, alias = "stages", skip_serializing_if = "Vec::is_empty")]
     pub phases: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tile: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rounds: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outline: Option<Search>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub layers: Option<Search>,
+    pub place_rounds: Option<u32>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub score: BTreeMap<String, f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub floorplan: Option<FloorplanFile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<PlacePhaseFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub escape: Option<EscapeFile>,
+    pub access: Option<AccessFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub planes: Option<PlanesFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -58,23 +58,26 @@ pub struct TangleFile {
 #[serde(deny_unknown_fields)]
 pub struct DetailFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub corridors: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fences: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rip_limit: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grid: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rounds: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via_cost: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bend_cost: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pairs: Option<bool>,
+    pub fences: Option<bool>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub criticality: BTreeMap<String, f64>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccessFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tiers: Option<bool>,
+    pub via_in_pad: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub class_order: Vec<String>,
+    pub escape_layers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -94,24 +97,6 @@ pub struct PlanesFile {
     pub span: Option<Length>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Search {
-    Search,
-    Fixed,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FloorplanFile {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub regions: BTreeMap<String, Vec<String>>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub edges: BTreeMap<String, crate::place::Edge>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub escape_ring: Option<f64>,
-}
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlacePhaseFile {
@@ -125,18 +110,11 @@ pub struct PlacePhaseFile {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct EscapeFile {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub layers: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub via_in_pad: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signals: Option<bool>,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct GlobalFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tile: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rounds: Option<u32>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub direction: BTreeMap<String, Direction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -152,19 +130,31 @@ pub enum Direction {
 impl EngineFile {
     pub fn phases(&self) -> Vec<String> {
         if self.phases.is_empty() {
-            PHASES.iter().map(|s| s.to_string()).collect()
-        } else {
-            self.phases.clone()
+            return PHASES.iter().map(|s| s.to_string()).collect();
         }
+        let mut out: Vec<String> = Vec::new();
+        for p in &self.phases {
+            if let Some(s) = stage_of(p)
+                && !out.iter().any(|o| o == s)
+            {
+                out.push(s.to_string());
+            }
+        }
+        out.sort_by_key(|s| PHASES.iter().position(|p| p == s));
+        out
     }
 
     pub fn check(&self, d: &mut crate::diag::Diags) {
         for p in &self.phases {
-            if !PHASES.contains(&p.as_str()) {
-                d.error(
+            match stage_of(p) {
+                None => d.error(
                     "engine.phases",
-                    format!("no phase `{p}`, the phases are {}", PHASES.join(", ")),
-                );
+                    format!("no stage `{p}`, the stages are {}", PHASES.join(", ")),
+                ),
+                Some(s) if s != p => {
+                    d.warn("engine.phases", format!("`{p}` is now part of the `{s}` stage"))
+                }
+                Some(_) => {}
             }
         }
         for k in self.score.keys() {
@@ -200,6 +190,8 @@ pub const SCORE_TERMS: &[&str] = &[
     "plane_reach",
     "area",
     "layers",
+    "copper_overlap",
+    "access",
 ];
 
 pub fn default_weight(term: &str) -> f64 {
@@ -225,6 +217,8 @@ pub fn default_weight(term: &str) -> f64 {
         "plane_reach" => 20.0,
         "area" => 0.01,
         "layers" => 100.0,
+        "copper_overlap" => 200.0,
+        "access" => 200.0,
         _ => 0.0,
     }
 }

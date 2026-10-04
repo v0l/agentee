@@ -1405,11 +1405,11 @@ mod tests {
     #[test]
     fn engine_settings_land_in_their_section_and_leave_when_cleared() {
         let mut d = doc("name = \"x\"\n\n[[footprints]]\nref = \"R1\"\nat = [0, 0]\n");
-        set_engine(&mut d, "detail", "rip_limit", Some(Value::from(12)));
+        set_engine(&mut d, "detail", "rounds", Some(Value::from(12)));
         let s = d.to_string();
-        assert!(s.contains("[engine.detail]\nrip_limit = 12"), "{s}");
+        assert!(s.contains("[engine.detail]\nrounds = 12"), "{s}");
         assert!(s.find("[engine.detail]") < s.find("[[footprints]]"), "{s}");
-        set_engine(&mut d, "detail", "rip_limit", None);
+        set_engine(&mut d, "detail", "rounds", None);
         assert!(!d.to_string().contains("engine"), "{d}");
     }
 

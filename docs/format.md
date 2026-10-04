@@ -1403,14 +1403,14 @@ of ground vias at 2.5 mm plus a fence along the RF tracks when their class has a
 `coplanar_gap`. The engine card's `tie plane pads` runs `agentee tie` on the window's layout, and
 a selected ratsnest line of a plane net offers `tie pads to the plane` before a route.
 
-The `layout engine` card runs the phases of `agentee layout` (see `docs/layout-engine.md`) on the
-layout as it stands in the window, unsaved edits included: `run` takes the phases from..to,
-`run X only` reruns one, `stop` ends the run after the phase that is running. Editing pauses while
+The `layout engine` card runs the stages of `agentee layout` (see `docs/layout-engine-2.md`) on
+the layout as it stands in the window, unsaved edits included: `run` takes the stages from..to,
+`run X only` reruns one, `stop` ends the run after the stage that is running. Editing pauses while
 it runs. The result lands in the window like any other edit, unsaved and one undo away, with the
-time and score of each phase and the score terms that weigh most. `phases to run` and `settings`
-write `[engine]` into the layout (`phases`, `tile`, `rounds`, `[engine.place] seed`,
-`[engine.escape]`, `[engine.global] via_cost`, `[engine.detail]`), and `default` drops a setting
-again. A selected part with 16 or more pads has `pinswap`, which searches swaps of its I/O like
+time and score of each stage and the score terms that weigh most. `phases to run` and `settings`
+write `[engine]` into the layout (`phases`, `rounds`, `place_rounds`, `[engine.place] seed`,
+`[engine.access] via_in_pad`, `[engine.global]`, `[engine.detail]`), and `default` drops a
+setting again. A selected part with 16 or more pads has `pinswap`, which searches swaps of its I/O like
 `agentee pinswap` and writes them into the schematic files on `write to the schematic`.
 
 Common parts are drawn from the footprint without loading a model: chip resistors, capacitors,

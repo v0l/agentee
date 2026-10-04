@@ -17,6 +17,8 @@ pub struct Move {
 pub struct PlacePlan {
     pub chains: Vec<Vec<String>>,
     pub moves: Vec<Move>,
+    #[serde(skip)]
+    pub texts: Vec<place::TextMove>,
 }
 
 #[derive(Clone, Debug)]
@@ -209,252 +211,167 @@ fn hpwl(bd: &Board) -> f64 {
         .sum()
 }
 
-pub struct Floorplan;
-
-fn chains(bd: &Board, model: &Model) -> Vec<(usize, Vec<usize>)> {
-    let l = &model.layout;
-    let b = model.board;
-    let mut on_net: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (ci, c) in bd.cells.iter().enumerate() {
-        for &(n, _) in &c.pins {
-            let v = on_net.entry(n).or_default();
-            if !v.contains(&ci) {
-                v.push(ci);
-            }
-        }
-    }
-    let signal = |n: usize| {
-        let net = &l.nets[n];
-        !place::is_power_net(b, &net.name, &net.class)
-    };
-    let mut out: Vec<(usize, Vec<usize>)> = Vec::new();
-    let mut used: Vec<usize> = Vec::new();
-    for (ci, c) in bd.cells.iter().enumerate() {
-        if !c.reference.starts_with('J') {
-            continue;
-        }
-        for &(start, _) in &c.pins {
-            if !signal(start) {
-                continue;
-            }
-            let class = &l.nets[start].class;
-            let rf = place::is_rf_class(b, class);
-            if rf {
-                continue;
-            }
-            let kin = |n: usize| {
-                let c = &l.nets[n].class;
-                signal(n) && (!rf || place::is_rf_class(b, c))
-            };
-            let shunt = |k: usize, net: usize| {
-                bd.cells[k].pins.iter().all(|&(n, _)| n == net || !signal(n))
-            };
-            let mut chain = Vec::new();
-            let mut net = start;
-            for _ in 0..12 {
-                let others: Vec<usize> = on_net[&net]
-                    .iter()
-                    .copied()
-                    .filter(|&k| k != ci && !chain.contains(&k) && !shunt(k, net))
-                    .collect();
-                if others.len() != 1 {
-                    break;
-                }
-                let next = others[0];
-                let nc = &bd.cells[next];
-                if nc.fixed || nc.pin_count > 16 || used.contains(&next) {
-                    break;
-                }
-                chain.push(next);
-                let onward: Vec<usize> = nc
-                    .pins
-                    .iter()
-                    .map(|p| p.0)
-                    .filter(|&n| n != net && kin(n))
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .collect();
-                let Some(&n) = onward.first() else { break };
-                net = n;
-            }
-            if chain.len() >= 2 {
-                used.extend(&chain);
-                out.push((ci, chain));
-            }
-        }
-    }
-    out
-}
-
-impl Phase for Floorplan {
-    fn name(&self) -> &'static str {
-        "floorplan"
-    }
-
-    fn run(
-        &self,
-        model: &mut Model,
-        _cfg: &EngineFile,
-        _field: &mut crate::field::CostField,
-    ) -> PhaseReport {
-        let mut report = PhaseReport { phase: "floorplan".into(), ..Default::default() };
-        let mut bd = build(model);
-
-        let found = chains(&bd, model);
-        for (conn_i, ch) in &found {
-            let conn = bd.cells[*conn_i].at;
-            let edge_d = [
-                (conn[0] - bd.bounds.min[0], [1.0, 0.0]),
-                (bd.bounds.max[0] - conn[0], [-1.0, 0.0]),
-                (conn[1] - bd.bounds.min[1], [0.0, 1.0]),
-                (bd.bounds.max[1] - conn[1], [0.0, -1.0]),
-            ];
-            let dir: P = edge_d.iter().min_by(|a, b| a.0.total_cmp(&b.0)).map(|e| e.1).unwrap();
-            let horizontal = dir[1] == 0.0;
-            let cc = &bd.cells[*conn_i];
-            let conn_cell = if horizontal {
-                cc.half[0] + dir[0] * cc.box_off[0]
-            } else {
-                cc.half[1] + dir[1] * cc.box_off[1]
-            };
-            let mut s = conn_cell + 0.6;
-            for &ci in ch.iter() {
-                let c = &mut bd.cells[ci];
-                if c.pins.len() == 2 {
-                    let axis = [c.pins[1].1[0] - c.pins[0].1[0], c.pins[1].1[1] - c.pins[0].1[1]];
-                    let along = if horizontal {
-                        axis[0].abs() >= axis[1].abs()
-                    } else {
-                        axis[1].abs() >= axis[0].abs()
-                    };
-                    if !along {
-                        rotate_cell(c, 90.0);
-                    }
-                }
-                let len = if horizontal { c.half[0] } else { c.half[1] };
-                s += len;
-                c.at = [conn[0] + dir[0] * s - c.box_off[0], conn[1] + dir[1] * s - c.box_off[1]];
-                if horizontal {
-                    c.at[1] = conn[1] - c.box_off[1];
-                } else {
-                    c.at[0] = conn[0] - c.box_off[0];
-                }
-                s += len + 0.6;
-                c.chained = true;
-            }
-        }
-
-        for (_, ch) in &found {
-            report.notes.push(format!(
-                "chain: {}",
-                ch.iter().map(|&i| bd.cells[i].reference.as_str()).collect::<Vec<_>>().join(" > ")
-            ));
-        }
-        let chained: Vec<Vec<String>> = found
-            .iter()
-            .map(|(_, ch)| ch.iter().map(|&i| bd.cells[i].reference.clone()).collect())
-            .collect();
-        let moves: Vec<Move> = moves_of(&bd)
-            .into_iter()
-            .filter(|m| chained.iter().flatten().any(|r| *r == m.reference))
-            .collect();
-        report.changed = !moves.is_empty();
-        model.placement = Some(PlacePlan { chains: chained, moves });
-        report
-    }
-}
+const SPACING: f64 = 0.2;
 
 pub struct Place;
 
-impl Phase for Place {
-    fn name(&self) -> &'static str {
-        "place"
-    }
-
-    fn run(
-        &self,
-        model: &mut Model,
-        cfg: &EngineFile,
-        _field: &mut crate::field::CostField,
-    ) -> PhaseReport {
-        let mut report = PhaseReport { phase: "place".into(), ..Default::default() };
-        let mut bd = build(model);
-        let prior = model.placement.clone().unwrap_or_default();
-        apply_plan(&mut bd, &prior);
-        let before = hpwl(&bd);
-        let free: Vec<String> = bd
-            .cells
-            .iter()
-            .filter(|c| !c.fixed && !c.chained)
-            .map(|c| c.reference.clone())
-            .collect();
-        let l = &model.layout;
-        let footprints: HashMap<&str, &agentee_core::footprint::Footprint> =
-            l.parts.iter().map(|p| (p.footprint_name.as_str(), &p.footprint)).collect();
-        let mut fast: Vec<String> =
-            model.file.interfaces.iter().flat_map(|f| f.nets.clone()).collect();
-        for pr in &model.file.pairs {
-            fast.push(pr.p.clone());
-            fast.push(pr.n.clone());
-        }
-        let mut placements = model.file.footprints.clone();
-        for m in &prior.moves {
-            if let Some(f) = placements.iter_mut().find(|f| f.reference == m.reference) {
-                f.at = agentee_core::units::Point::mm(m.at[0], m.at[1]);
-                f.rotation = Some(m.rotation);
-            }
-        }
-        let spec = model.file.place.clone().unwrap_or_default();
-        let cutouts = l.board_cutouts.clone();
-        let input = place::PlaceInput {
-            board: model.board,
-            outline: &l.outline,
-            cutouts: &cutouts,
-            schematic: model.schematic,
-            footprints: &footprints,
-            placements: &placements,
-            spec: &spec,
-            fast_nets: fast,
-            heat: model.heat.clone(),
-            silk: Vec::new(),
-            texts: Vec::new(),
-        };
-        let opts = place::PlaceOptions {
-            parts: free.clone(),
-            seed: cfg.place.as_ref().and_then(|p| p.seed).unwrap_or(1),
-            ..Default::default()
-        };
-        let result = match place::place(&input, &opts) {
-            Ok(r) => r,
-            Err(e) => {
-                report.failed.push(e);
-                return report;
-            }
-        };
-        for pm in &result.placements {
-            if let Some(c) = bd.cells.iter_mut().find(|c| c.reference == pm.reference) {
-                let delta = pm.rotation - c.rotation;
-                rotate_cell(c, delta);
-                c.at = pm.at;
-            }
-        }
-        report.failed.extend(result.failed.iter().map(|f| format!("{f}: not placed")));
-        report.notes.push(format!(
-            "{} parts placed around {} chained, hpwl {before:.0} -> {:.0} mm, {} crossings",
-            free.len(),
-            bd.cells.iter().filter(|c| c.chained).count(),
-            hpwl(&bd),
-            result.after.crossings
-        ));
-        report.changed = true;
-        let mut plan = prior;
-        plan.moves = moves_of(&bd);
-        model.placement = Some(plan);
-        report
-    }
+#[derive(Clone, Debug, Serialize)]
+pub struct Hot {
+    pub at: P,
+    pub size: f64,
+    pub overflow: f64,
 }
 
-pub struct Legalise;
+fn chain_pins(c: &Cell, nets: &[usize]) -> Option<P> {
+    let hits: Vec<P> = c.pins.iter().filter(|p| nets.contains(&p.0)).map(|p| p.1).collect();
+    (!hits.is_empty()).then(|| {
+        let n = hits.len() as f64;
+        [hits.iter().map(|q| q[0]).sum::<f64>() / n, hits.iter().map(|q| q[1]).sum::<f64>() / n]
+    })
+}
+
+fn template_chains(
+    bd: &mut Board,
+    chains: &[crate::constraints::Chain],
+    signal: &[bool],
+) -> Vec<Vec<String>> {
+    let index = |bd: &Board, r: &str| bd.cells.iter().position(|c| c.reference == r);
+    let nets_of = |c: &Cell| -> Vec<usize> {
+        c.pins.iter().map(|p| p.0).filter(|&n| signal.get(n).copied().unwrap_or(false)).collect()
+    };
+    let mut placed = Vec::new();
+    for ch in chains {
+        let Some(conn_i) = index(bd, &ch.from) else { continue };
+        let members: Vec<usize> = ch
+            .parts
+            .iter()
+            .filter_map(|r| index(bd, r))
+            .filter(|&i| !bd.cells[i].fixed && !bd.cells[i].chained)
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        let conn = bd.cells[conn_i].at;
+        let edge_d = [
+            (conn[0] - bd.bounds.min[0], [1.0, 0.0]),
+            (bd.bounds.max[0] - conn[0], [-1.0, 0.0]),
+            (conn[1] - bd.bounds.min[1], [0.0, 1.0]),
+            (bd.bounds.max[1] - conn[1], [0.0, -1.0]),
+        ];
+        let dir: P = edge_d.iter().min_by(|a, b| a.0.total_cmp(&b.0)).map(|e| e.1).unwrap();
+        let horizontal = dir[1] == 0.0;
+        let along = |q: P| q[0] * dir[0] + q[1] * dir[1];
+        let first_nets = nets_of(&bd.cells[members[0]]);
+        let cc = &bd.cells[conn_i];
+        let line =
+            chain_pins(cc, &first_nets).map(|o| [cc.at[0] + o[0], cc.at[1] + o[1]]).unwrap_or(conn);
+        let conn_edge = along([cc.at[0] + cc.box_off[0], cc.at[1] + cc.box_off[1]])
+            + if horizontal { cc.half[0] } else { cc.half[1] };
+        let mut s = along(line).max(conn_edge) + 0.6;
+        let mut prev_nets = nets_of(&bd.cells[conn_i]);
+        for (k, &ci) in members.iter().enumerate() {
+            let next_nets: Vec<usize> =
+                members.get(k + 1).map(|&n| nets_of(&bd.cells[n])).unwrap_or_default();
+            let mut best = 0.0;
+            let mut best_rot = 0.0;
+            for rot in [0.0, 90.0, 180.0, 270.0] {
+                let mut c = bd.cells[ci].clone();
+                rotate_cell(&mut c, rot);
+                let (Some(a), Some(b)) = (chain_pins(&c, &prev_nets), chain_pins(&c, &next_nets))
+                else {
+                    continue;
+                };
+                let v = along(b) - along(a);
+                if v > best + 1e-6 {
+                    best = v;
+                    best_rot = rot;
+                }
+            }
+            let c = &mut bd.cells[ci];
+            rotate_cell(c, best_rot);
+            let entry = chain_pins(c, &prev_nets).unwrap_or(c.box_off);
+            let len = if horizontal { c.half[0] } else { c.half[1] };
+            let centre = s + len;
+            c.at = if horizontal {
+                [centre * dir[0] - c.box_off[0], line[1] - entry[1]]
+            } else {
+                [line[0] - entry[0], centre * dir[1] - c.box_off[1]]
+            };
+            s = centre + len + 0.6;
+            c.chained = true;
+            prev_nets = nets_of(c).into_iter().filter(|n| !prev_nets.contains(n)).collect();
+            if prev_nets.is_empty() {
+                prev_nets = nets_of(c);
+            }
+        }
+        placed.push(members.iter().map(|&i| bd.cells[i].reference.clone()).collect());
+    }
+    placed
+}
+
+fn global_place(
+    model: &Model,
+    cfg: &EngineFile,
+    bd: &mut Board,
+    texts: &mut Vec<place::TextMove>,
+) -> Result<(String, Vec<String>), String> {
+    let free: Vec<String> =
+        bd.cells.iter().filter(|c| !c.fixed && !c.chained).map(|c| c.reference.clone()).collect();
+    let l = &model.layout;
+    let footprints: HashMap<&str, &agentee_core::footprint::Footprint> =
+        l.parts.iter().map(|p| (p.footprint_name.as_str(), &p.footprint)).collect();
+    let mut fast: Vec<String> = model.file.interfaces.iter().flat_map(|f| f.nets.clone()).collect();
+    for pr in &model.file.pairs {
+        fast.push(pr.p.clone());
+        fast.push(pr.n.clone());
+    }
+    let mut placements = model.file.footprints.clone();
+    for c in bd.cells.iter().filter(|c| c.chained) {
+        if let Some(f) = placements.iter_mut().find(|f| f.reference == c.reference) {
+            f.at = agentee_core::units::Point::mm(c.at[0], c.at[1]);
+            f.rotation = Some(c.rotation);
+            f.locked = true;
+        }
+    }
+    let spec = model.file.place.clone().unwrap_or_default();
+    let cutouts = l.board_cutouts.clone();
+    let input = place::PlaceInput {
+        board: model.board,
+        outline: &l.outline,
+        cutouts: &cutouts,
+        schematic: model.schematic,
+        footprints: &footprints,
+        placements: &placements,
+        spec: &spec,
+        fast_nets: fast,
+        heat: model.heat.clone(),
+        silk: place::board_silk(&l.graphics, &l.artwork),
+        texts: place::movable_texts(&l.graphics),
+    };
+    let opts = place::PlaceOptions {
+        parts: free.clone(),
+        seed: cfg.place.as_ref().and_then(|p| p.seed).unwrap_or(1),
+        ..Default::default()
+    };
+    let before = hpwl(bd);
+    let result = place::place(&input, &opts)?;
+    for pm in &result.placements {
+        if let Some(c) = bd.cells.iter_mut().find(|c| c.reference == pm.reference) {
+            let delta = pm.rotation - c.rotation;
+            rotate_cell(c, delta);
+            c.at = pm.at;
+        }
+    }
+    let note = format!(
+        "{} parts placed around {} chained, hpwl {before:.0} -> {:.0} mm, {} crossings",
+        free.len(),
+        bd.cells.iter().filter(|c| c.chained).count(),
+        hpwl(bd),
+        result.after.crossings
+    );
+    *texts = result.texts_moved.clone();
+    Ok((note, result.failed.iter().map(|f| format!("{f}: not placed")).collect()))
+}
 
 fn rect_of(c: &Cell, at: P, gap: f64) -> [f64; 4] {
     let cx = at[0] + c.box_off[0];
@@ -466,108 +383,154 @@ fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
-impl Phase for Legalise {
-    fn name(&self) -> &'static str {
-        "legalise"
-    }
-
-    fn run(
-        &self,
-        model: &mut Model,
-        _cfg: &EngineFile,
-        _field: &mut crate::field::CostField,
-    ) -> PhaseReport {
-        let mut report = PhaseReport { phase: "legalise".into(), ..Default::default() };
-        let mut bd = build(model);
-        let prior = model.placement.clone().unwrap_or_default();
-        apply_plan(&mut bd, &prior);
-        let gap = 0.0;
-        let edge = 0.3;
-        let keep: Vec<Bounds> = bd
-            .keepouts
-            .iter()
-            .map(|k| {
-                let mut b = Bounds::EMPTY;
-                k.iter().for_each(|q| b.add(*q));
-                b
+fn legalise(model: &Model, bd: &mut Board, grow: &HashMap<usize, f64>) -> (String, Vec<String>) {
+    let edge = 0.3;
+    let keep: Vec<Bounds> = bd
+        .keepouts
+        .iter()
+        .map(|k| {
+            let mut b = Bounds::EMPTY;
+            k.iter().for_each(|q| b.add(*q));
+            b
+        })
+        .collect();
+    let anchored: Vec<&str> = model
+        .layout
+        .parts
+        .iter()
+        .filter(|p| {
+            place::edge_mount(&p.footprint)
+                || place::role_of(&p.reference, &p.footprint_name, &p.footprint)
+                    == place::Role::Hole
+        })
+        .map(|p| p.reference.as_str())
+        .collect();
+    let held = |c: &Cell| c.fixed || anchored.contains(&c.reference.as_str());
+    let gap_of = |i: usize| grow.get(&i).copied().unwrap_or(0.0);
+    let mut placed: Vec<[f64; 4]> = (0..bd.cells.len())
+        .filter(|&i| held(&bd.cells[i]))
+        .map(|i| rect_of(&bd.cells[i], bd.cells[i].at, gap_of(i)))
+        .collect();
+    let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !held(&bd.cells[i])).collect();
+    order.sort_by(|&a, &b| {
+        let (ca, cb) = (&bd.cells[a], &bd.cells[b]);
+        cb.chained.cmp(&ca.chained).then(cb.area.total_cmp(&ca.area))
+    });
+    let inside = |r: [f64; 4]| {
+        let corners = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+        corners.iter().all(|q| geom::point_in_polygon(*q, &bd.outline))
+            && bd.outline.windows(2).all(|w| {
+                corners.iter().all(|q| geom::point_segment_distance(*q, w[0], w[1]) >= edge)
             })
-            .collect();
-        let anchored: Vec<&str> = model
-            .layout
-            .parts
-            .iter()
-            .filter(|p| {
-                place::edge_mount(&p.footprint)
-                    || place::role_of(&p.reference, &p.footprint_name, &p.footprint)
-                        == place::Role::Hole
-            })
-            .map(|p| p.reference.as_str())
-            .collect();
-        let held = |c: &Cell| c.fixed || anchored.contains(&c.reference.as_str());
-        let mut placed: Vec<[f64; 4]> =
-            bd.cells.iter().filter(|c| held(c)).map(|c| rect_of(c, c.at, 0.0)).collect();
-        let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !held(&bd.cells[i])).collect();
-        order.sort_by(|&a, &b| {
-            let (ca, cb) = (&bd.cells[a], &bd.cells[b]);
-            cb.chained.cmp(&ca.chained).then(cb.area.total_cmp(&ca.area))
-        });
-        let inside = |r: [f64; 4]| {
-            let corners = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
-            corners.iter().all(|q| geom::point_in_polygon(*q, &bd.outline))
-                && bd.outline.windows(2).all(|w| {
-                    corners.iter().all(|q| geom::point_segment_distance(*q, w[0], w[1]) >= edge)
-                })
-        };
-        let mut failed = Vec::new();
-        let mut moved = 0.0;
-        for &i in &order {
-            let want = bd.cells[i].at;
-            let mut found = None;
-            'search: for ring in 0..400 {
-                let r = ring as f64 * 0.1;
-                let steps = if ring == 0 { 1 } else { (ring * 8).min(160) };
-                for k in 0..steps {
-                    let a = k as f64 / steps as f64 * std::f64::consts::TAU;
-                    let at = [want[0] + r * a.cos(), want[1] + r * a.sin()];
-                    for rot in [0.0, 90.0] {
-                        let mut c = bd.cells[i].clone();
-                        rotate_cell(&mut c, rot);
-                        let rc = rect_of(&c, at, gap);
-                        let bare = rect_of(&c, at, 0.0);
-                        if !inside(bare)
-                            || placed.iter().any(|p| overlaps(rc, *p))
-                            || keep
-                                .iter()
-                                .any(|k| overlaps(bare, [k.min[0], k.min[1], k.max[0], k.max[1]]))
-                        {
-                            continue;
-                        }
-                        found = Some((at, rot, bare));
-                        break 'search;
+    };
+    let mut failed = Vec::new();
+    let mut moved = 0.0;
+    for &i in &order {
+        let want = bd.cells[i].at;
+        let gap = gap_of(i) + SPACING;
+        let mut found = None;
+        'search: for ring in 0..400 {
+            let r = ring as f64 * 0.1;
+            let steps = if ring == 0 { 1 } else { (ring * 8).min(160) };
+            for k in 0..steps {
+                let a = k as f64 / steps as f64 * std::f64::consts::TAU;
+                let at = [want[0] + r * a.cos(), want[1] + r * a.sin()];
+                let rots: &[f64] = if bd.cells[i].chained { &[0.0] } else { &[0.0, 90.0] };
+                for &rot in rots {
+                    let mut c = bd.cells[i].clone();
+                    rotate_cell(&mut c, rot);
+                    let rc = rect_of(&c, at, gap);
+                    let bare = rect_of(&c, at, 0.0);
+                    if !inside(bare)
+                        || placed.iter().any(|p| overlaps(rc, *p))
+                        || keep
+                            .iter()
+                            .any(|k| overlaps(bare, [k.min[0], k.min[1], k.max[0], k.max[1]]))
+                    {
+                        continue;
                     }
+                    found = Some((at, rot, rc));
+                    break 'search;
                 }
-            }
-            match found {
-                Some((at, rot, bare)) => {
-                    moved += geom::dist(at, want);
-                    rotate_cell(&mut bd.cells[i], rot);
-                    bd.cells[i].at = at;
-                    placed.push(bare);
-                }
-                None => failed.push(bd.cells[i].reference.clone()),
             }
         }
-        report.notes.push(format!(
+        match found {
+            Some((at, rot, rc)) => {
+                moved += geom::dist(at, want);
+                rotate_cell(&mut bd.cells[i], rot);
+                bd.cells[i].at = at;
+                placed.push(rc);
+            }
+            None => failed.push(format!("{}: no free spot", bd.cells[i].reference)),
+        }
+    }
+    (
+        format!(
             "{} parts legal, {:.1} mm moved in total, hpwl {:.0} mm",
             order.len() - failed.len(),
             moved,
-            hpwl(&bd)
-        ));
-        for f in failed {
-            report.failed.push(format!("{f}: no free spot"));
+            hpwl(bd)
+        ),
+        failed,
+    )
+}
+
+impl Phase for Place {
+    fn name(&self) -> &'static str {
+        "place"
+    }
+
+    fn run(&self, model: &mut Model, cfg: &EngineFile) -> PhaseReport {
+        let mut report = PhaseReport { phase: "place".into(), ..Default::default() };
+        let mut bd = build(model);
+        let mut plan = model.placement.clone().unwrap_or_default();
+        apply_plan(&mut bd, &plan);
+        let mut grow: HashMap<usize, f64> = HashMap::new();
+        if model.hot.is_empty() {
+            let chains = model.constraints.as_ref().map(|g| g.chains.clone()).unwrap_or_default();
+            let signal: Vec<bool> = model
+                .layout
+                .nets
+                .iter()
+                .map(|n| !place::is_power_net(model.board, &n.name, &n.class))
+                .collect();
+            plan.chains = template_chains(&mut bd, &chains, &signal);
+            for ch in &plan.chains {
+                report.notes.push(format!("chain in a line: {}", ch.join(" > ")));
+            }
+            match global_place(model, cfg, &mut bd, &mut plan.texts) {
+                Ok((note, failed)) => {
+                    report.notes.push(note);
+                    report.failed.extend(failed);
+                }
+                Err(e) => report.failed.push(e),
+            }
+        } else {
+            for (i, c) in bd.cells.iter().enumerate() {
+                let r = rect_of(c, c.at, 0.0);
+                let over: f64 = model
+                    .hot
+                    .iter()
+                    .filter(|h| {
+                        let s = h.size / 2.0;
+                        overlaps(r, [h.at[0] - s, h.at[1] - s, h.at[0] + s, h.at[1] + s])
+                    })
+                    .map(|h| h.overflow)
+                    .sum();
+                if over > 0.0 && !c.fixed {
+                    grow.insert(i, over.min(2.0));
+                }
+            }
+            report.notes.push(format!(
+                "{} hot tiles, {} parts inflated by their overflow",
+                model.hot.len(),
+                grow.len()
+            ));
         }
+        let (note, failed) = legalise(model, &mut bd, &grow);
+        report.notes.push(note);
+        report.failed.extend(failed);
         report.changed = true;
-        let mut plan = prior;
         plan.moves = moves_of(&bd);
         model.placement = Some(plan);
         report

@@ -1,13 +1,10 @@
+use crate::Model;
 use crate::flow::Flow;
-use crate::{Model, Phase, PhaseReport};
-use agentee_core::engine::EngineFile;
 use agentee_core::footprint::PadKind;
 use agentee_core::geom::{self, P};
 use agentee_core::graphic::Bounds;
 use agentee_core::place::{self, Role};
 use serde::Serialize;
-
-pub struct Escape;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct EscapeTrack {
@@ -52,76 +49,23 @@ struct Ball {
     plane: bool,
 }
 
-impl Phase for Escape {
-    fn name(&self) -> &'static str {
-        "escape"
-    }
-
-    fn run(
-        &self,
-        model: &mut Model,
-        cfg: &EngineFile,
-        _field: &mut crate::field::CostField,
-    ) -> PhaseReport {
-        let mut report = PhaseReport { phase: "escape".into(), ..Default::default() };
-        let layers: Vec<String> = cfg
-            .escape
-            .as_ref()
-            .map(|e| e.layers.clone())
-            .filter(|l| !l.is_empty())
-            .unwrap_or_else(|| signal_layers(model));
-        let mut plan = EscapePlan::default();
-        let prefer: std::collections::HashMap<usize, String> = model
-            .layers
-            .as_ref()
-            .map(|lp| {
-                lp.groups
-                    .iter()
-                    .flat_map(|g| {
-                        g.nets.iter().filter_map(|n| {
-                            model
-                                .layout
-                                .nets
-                                .iter()
-                                .position(|x| x.name == *n)
-                                .map(|i| (i, g.layer.clone()))
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        for i in 0..model.layout.parts.len() {
-            let p = &model.layout.parts[i];
-            if place::role_of(&p.reference, &p.footprint_name, &p.footprint) != Role::Chip {
-                continue;
-            }
-            if !is_bga(p) {
-                continue;
-            }
-            let in_pad = cfg.escape.as_ref().and_then(|e| e.via_in_pad).unwrap_or(false);
-            let signals = cfg.escape.as_ref().and_then(|e| e.signals).unwrap_or(false);
-            let pe = escape_part(model, i, &layers, in_pad, signals, &prefer, &mut plan);
-            if !pe.failed.is_empty() {
-                report.failed.extend(pe.failed.iter().map(|f| format!("{}: {f}", pe.reference)));
-            }
-            let how = if signals {
-                format!("{} signal balls escaped per layer {:?}", pe.signals, pe.per_layer)
-            } else {
-                format!("{} signal balls left to routing", pe.signals)
-            };
-            report.notes.push(format!(
-                "{}: pitch {:.2}, {} plane balls fanned out, {how}{}",
-                pe.reference,
-                pe.pitch,
-                pe.plane,
-                pe.note.as_ref().map(|n| format!("; {n}")).unwrap_or_default()
-            ));
-            plan.per_part.push(pe);
+pub fn plan(model: &Model, layers: &[String], in_pad: bool) -> (EscapePlan, Vec<String>) {
+    let layers: Vec<String> =
+        if layers.is_empty() { signal_layers(model) } else { layers.to_vec() };
+    let mut plan = EscapePlan::default();
+    let mut failed = Vec::new();
+    let prefer = std::collections::HashMap::new();
+    for i in 0..model.layout.parts.len() {
+        let p = &model.layout.parts[i];
+        if place::role_of(&p.reference, &p.footprint_name, &p.footprint) != Role::Chip || !is_bga(p)
+        {
+            continue;
         }
-        report.changed = !plan.tracks.is_empty() || !plan.vias.is_empty();
-        model.escape = Some(plan);
-        report
+        let pe = escape_part(model, i, &layers, in_pad, true, &prefer, &mut plan);
+        failed.extend(pe.failed.iter().map(|f| format!("{}: {f}", pe.reference)));
+        plan.per_part.push(pe);
     }
+    (plan, failed)
 }
 
 fn signal_layers(model: &Model) -> Vec<String> {

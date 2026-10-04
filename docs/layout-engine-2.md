@@ -198,34 +198,45 @@ All of these exist; spread is new.
 
 The terms and weights in [layout-engine.md](layout-engine.md) stay, and every stage reports the
 score per term. `unrouted` counts plane and ground connections too, since they are now routed.
-Two terms are added: `overlap` from detail rounds (weight 200) and `access` for pads with no legal
-exit (weight 200).
+Two terms are added: `copper_overlap`, the nets detail still found overlapping before its last
+pass (weight 200), and `access`, pads with no legal exit (weight 200). `overflow` is now the
+global route's overflow in mm.
 
 ## Configuration
 
 ```toml
 [engine]
-stages = ["constraints", "place", "access", "global", "detail", "finish"]
+phases = ["constraints", "place", "access", "global", "detail", "finish"]
 rounds = 3                     # global and detail repetitions
 place_rounds = 3               # placement passes driven by hot tiles
+
+[engine.access]
+via_in_pad = true
+escape_layers = ["F.Cu", "In2.Cu", "B.Cu"]
 
 [engine.global]
 tile = "1mm"
 rounds = 30
+via_cost = "1mm"
 direction = { "In2.Cu" = "H" }
 
 [engine.detail]
 grid = "0.05mm"
-rounds = 40
+rounds = 30
 via_cost = "1mm"
+bend_cost = "0.1mm"
+fences = true
 criticality = { RF = 1.0, LVDS = 0.8, USB_SS = 0.8, Clock = 0.5 }
-
-[engine.access]
-via_in_pad = true
 ```
 
-`class_order`, `tiers`, `corridors`, `fences` and `rip_limit` go away. Old phase names in
-`phases` map to the stage that now does that work, with a warning.
+`stages` is accepted for `phases`. `class_order`, `tiers`, `corridors`, `rip_limit`, `pairs`, `tile`,
+`[engine.escape]` and `[engine.floorplan]` are gone. Old phase names in `phases` map to the stage
+that now does that work (`floorplan` and `legalise` to `place`, `layers`, `escape`, `tie` and
+`planes` to `access`, `assign` to `global`), with a warning.
+
+The engine writes `# plan planes` for the rail regions and `# plan route` for all engine copper.
+Running a routing stage strips those and the retired `detail`, `escape`, `tie` and `global`
+sections first.
 
 ## Benchmarks
 

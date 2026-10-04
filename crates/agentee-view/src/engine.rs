@@ -77,20 +77,18 @@ enum Knob {
 }
 
 const KNOBS: &[(&str, &str, Knob, &str)] = &[
-    ("", "tile", Knob::Mm(0.25), "tile of the shared cost field"),
-    ("", "rounds", Knob::Int(3), "negotiation rounds of the global route"),
+    ("", "rounds", Knob::Int(3), "global and detail repetitions"),
+    ("", "place_rounds", Knob::Int(3), "placement passes driven by hot tiles"),
     ("place", "seed", Knob::Int(1), "seed of the placer, try others for other layouts"),
-    ("escape", "signals", Knob::Flag(false), "escape BGA signal balls, not just plane balls"),
-    ("escape", "via_in_pad", Knob::Flag(false), "allow filled vias in BGA and SMD pads"),
+    ("access", "via_in_pad", Knob::Flag(false), "allow filled vias in BGA and SMD pads"),
+    ("global", "tile", Knob::Mm(1.0), "tile of the global route"),
+    ("global", "rounds", Knob::Int(30), "negotiation rounds of the global route"),
     ("global", "via_cost", Knob::Mm(1.0), "track length a layer change costs in the global route"),
     ("detail", "grid", Knob::Mm(0.05), "routing grid"),
-    ("detail", "via_cost", Knob::Mm(1.0), "track length a via costs, default the global via cost"),
+    ("detail", "rounds", Knob::Int(30), "negotiation rounds of the detail route"),
+    ("detail", "via_cost", Knob::Mm(1.0), "track length a via costs"),
     ("detail", "bend_cost", Knob::Mm(0.1), "track length a 45 degree bend costs"),
-    ("detail", "rip_limit", Knob::Int(8), "how often a connection may rip up others"),
-    ("detail", "corridors", Knob::Flag(true), "follow the global route corridors"),
     ("detail", "fences", Knob::Flag(true), "keep foreign nets out of BGA fields"),
-    ("detail", "tiers", Knob::Flag(true), "route class tiers in order"),
-    ("detail", "pairs", Knob::Flag(true), "route pairs as coupled tracks"),
 ];
 
 pub fn running(ed: &Editor) -> bool {

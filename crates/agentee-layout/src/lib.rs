@@ -1,10 +1,10 @@
+pub mod access;
+pub mod constraints;
 pub mod detail;
 pub mod escape;
-pub mod field;
 pub mod finish;
 pub mod flow;
 pub mod global;
-pub mod layers;
 pub mod negotiate;
 pub mod pinswap;
 pub mod placement;
@@ -12,20 +12,19 @@ pub mod planes;
 pub mod score;
 pub mod start;
 pub mod tangle;
-pub mod tie;
 
 use agentee_core::board::Board;
-use agentee_core::engine::EngineFile;
+use agentee_core::engine::{EngineFile, stage_of};
 use agentee_core::geom::P;
-use agentee_core::graphic::Bounds;
 use agentee_core::layout::{Layout, LayoutFile};
+use agentee_core::route::{RoutedTrack, RoutedVia};
 use agentee_core::schematic::Schematic;
-use field::CostField;
 use score::{Context, Score, Weights};
 use serde::Serialize;
 
-pub const DEFAULT_TILE_MM: f64 = 0.25;
-pub const DEFAULT_ROUNDS: u32 = 3;
+pub const ROUTE: &str = "route";
+pub const PLANES: &str = "planes";
+pub const RETIRED_PLANS: &[&str] = &["detail", "escape", "tie", "global"];
 
 pub struct Model<'a> {
     pub board: &'a Board,
@@ -34,15 +33,24 @@ pub struct Model<'a> {
     pub file: LayoutFile,
     pub keepouts: Vec<Vec<P>>,
     pub heat: Vec<(String, f64)>,
+    pub constraints: Option<constraints::Groups>,
     pub placement: Option<placement::PlacePlan>,
-    pub escape: Option<escape::EscapePlan>,
+    pub access: Option<access::AccessPlan>,
     pub planes: Option<planes::PlanesPlan>,
-    pub layers: Option<layers::LayerPlan>,
     pub global: Option<global::GlobalPlan>,
     pub detail: Option<detail::DetailPlan>,
+    pub hot: Vec<placement::Hot>,
+    pub base: Option<negotiate::Base>,
     pub text: String,
-    pub finished_escape: Option<String>,
-    pub tie: Option<agentee_core::tie::TieResult>,
+}
+
+impl Model<'_> {
+    pub fn ensure_base(&mut self, opts: &negotiate::Options) -> Result<(), String> {
+        if self.base.is_none() {
+            self.base = Some(negotiate::Base::new(&self.layout, self.board, opts)?);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -58,7 +66,7 @@ pub struct PhaseReport {
 
 pub trait Phase {
     fn name(&self) -> &'static str;
-    fn run(&self, model: &mut Model, cfg: &EngineFile, field: &mut CostField) -> PhaseReport;
+    fn run(&self, model: &mut Model, cfg: &EngineFile) -> PhaseReport;
 }
 
 pub struct Config<'a> {
@@ -124,15 +132,15 @@ pub fn run_text(
         file,
         keepouts,
         heat: heat.clone(),
-        escape: None,
+        constraints: None,
         placement: None,
+        access: None,
         planes: None,
-        layers: None,
         global: None,
         detail: None,
+        hot: Vec::new(),
+        base: None,
         text: String::new(),
-        finished_escape: None,
-        tie: None,
     };
     let cfg = Config {
         engine,
@@ -155,52 +163,24 @@ pub struct RunReport {
     #[serde(skip)]
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub escape: Option<escape::EscapePlan>,
+    pub constraints: Option<constraints::Groups>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub placement: Option<placement::PlacePlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub planes: Option<planes::PlanesPlan>,
+    pub access: Option<access::AccessPlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub layers: Option<layers::LayerPlan>,
+    pub planes: Option<planes::PlanesPlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub global: Option<global::GlobalPlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<detail::DetailPlan>,
 }
 
-pub fn phases() -> Vec<Box<dyn Phase>> {
-    vec![
-        Box::new(placement::Floorplan),
-        Box::new(placement::Place),
-        Box::new(placement::Legalise),
-        Box::new(layers::Layers),
-        Box::new(escape::Escape),
-        Box::new(tie::Tie),
-        Box::new(planes::Planes),
-        Box::new(global::Global),
-        Box::new(detail::Detail),
-        Box::new(finish::Finish),
-    ]
-}
-
-pub fn new_field(layout: &Layout, tile: f64) -> CostField {
-    let mut b = Bounds::EMPTY;
-    layout.outline.iter().for_each(|p| b.add(*p));
-    if b.is_empty() {
-        b = Bounds { min: [0.0, 0.0], max: [1.0, 1.0] };
-    }
-    let mut f = CostField::new(b, tile, layout.copper.clone());
-    for l in 0..layout.copper.len() {
-        f.fill_capacity(l, (tile / 0.2).max(1.0) as f32);
-    }
-    f
-}
-
 pub fn plane_nets(file: &LayoutFile) -> Vec<String> {
     file.zones.iter().map(|z| z.net.clone()).collect()
 }
 
-pub fn score_of(model: &Model, field: Option<&CostField>) -> Score {
+pub fn score_of(model: &Model) -> Score {
     let weights = Weights::from_file(&model.layout.engine.score);
     let planes = plane_nets(&model.file);
     let tangle = model.layout.engine.tangle.clone().map(|t| t.weights).unwrap_or_default();
@@ -209,7 +189,9 @@ pub fn score_of(model: &Model, field: Option<&CostField>) -> Score {
             board: model.board,
             schematic: model.schematic,
             layout: &model.layout,
-            field,
+            overflow: model.global.as_ref().map(|g| g.overflow),
+            access: model.access.as_ref().filter(|a| a.pads > 0).map(|a| a.stuck.len()),
+            copper_overlap: model.detail.as_ref().map(|d| d.overlap_left),
             keepouts: &model.keepouts,
             heat: &model.heat,
             planes: &planes,
@@ -219,89 +201,346 @@ pub fn score_of(model: &Model, field: Option<&CostField>) -> Score {
     )
 }
 
-pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
+struct Driver<'c, 'a> {
+    cfg: &'c Config<'a>,
+    text: String,
+    reports: Vec<PhaseReport>,
+    skipped: Vec<String>,
+}
+
+impl Driver<'_, '_> {
+    fn stopped(&self) -> bool {
+        self.cfg.stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    fn reload(&mut self, model: &mut Model) -> Result<u128, String> {
+        let t = std::time::Instant::now();
+        (model.file, model.layout) = (self.cfg.resolve)(&self.text)?;
+        model.base = None;
+        Ok(t.elapsed().as_millis())
+    }
+
+    fn start(&self, name: &str) -> std::time::Instant {
+        if let Some(w) = self.cfg.watch {
+            w(Event::Start(name));
+        }
+        std::time::Instant::now()
+    }
+
+    fn done(&mut self, model: &Model, mut r: PhaseReport, t0: std::time::Instant, reload_ms: u128) {
+        r.ms = t0.elapsed().as_millis().saturating_sub(reload_ms);
+        r.reload_ms = reload_ms;
+        r.score = Some(score_of(model));
+        if let Some(w) = self.cfg.watch {
+            w(Event::Done(&r));
+        }
+        self.reports.push(r);
+    }
+
+    fn step(&mut self, model: &mut Model, p: &dyn Phase) {
+        let t0 = self.start(p.name());
+        model.text = self.text.clone();
+        let r = p.run(model, &self.cfg.engine);
+        self.done(model, r, t0, 0);
+    }
+
+    fn write_route(&mut self, model: &mut Model) -> Result<u128, String> {
+        let Some(d) = model.detail.as_ref() else { return Ok(0) };
+        self.text = write_plan(&self.text, ROUTE, &route_toml(&d.tracks, &d.vias));
+        self.reload(model)
+    }
+}
+
+fn selected(cfg: &Config) -> Result<Vec<String>, String> {
     let wanted = cfg.engine.phases();
-    let all = phases();
-    let index = |name: &str| wanted.iter().position(|p| p == name);
-    let start = match cfg.only.as_ref().or(cfg.from.as_ref()) {
-        Some(f) => index(f).ok_or_else(|| format!("no phase `{f}` in the configured phases"))?,
-        None => 0,
+    let pick = |n: &str| -> Result<usize, String> {
+        let s = stage_of(n).ok_or_else(|| format!("no stage `{n}`"))?;
+        wanted
+            .iter()
+            .position(|w| w == s)
+            .ok_or_else(|| format!("stage `{n}` is not in the configured stages"))
     };
-    let end = match &cfg.to {
-        Some(t) => index(t).ok_or_else(|| format!("no phase `{t}` in the configured phases"))?,
-        None => wanted.len().saturating_sub(1),
-    };
-    let tile = cfg.engine.tile.map(|t| t.to_mm()).unwrap_or(DEFAULT_TILE_MM);
-    let mut field = new_field(&model.layout, tile);
-    let mut text = cfg.text.clone();
-    for name in wanted.iter().skip(start) {
-        text = strip_plan(&text, name);
+    if let Some(o) = &cfg.only {
+        return Ok(vec![wanted[pick(o)?].clone()]);
     }
-    if text != cfg.text {
-        (model.file, model.layout) = (cfg.resolve)(&text)?;
+    let start = cfg.from.as_deref().map(pick).transpose()?.unwrap_or(0);
+    let end = cfg.to.as_deref().map(pick).transpose()?.unwrap_or(wanted.len().saturating_sub(1));
+    Ok(wanted.get(start..=end).map(|s| s.to_vec()).unwrap_or_default())
+}
+
+pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
+    let chosen = selected(cfg)?;
+    let has = |s: &str| chosen.iter().any(|x| x == s);
+    let routes = has("global") || has("detail");
+    let mut d = Driver { cfg, text: cfg.text.clone(), reports: Vec::new(), skipped: Vec::new() };
+    if routes {
+        for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
+            d.text = strip_plan(&d.text, p);
+        }
     }
-    let mut reports = Vec::new();
-    let mut skipped = Vec::new();
-    for (i, name) in wanted.iter().enumerate() {
-        let run_it = match &cfg.only {
-            Some(o) => o == name,
-            None => i >= start && i <= end,
-        };
-        if !run_it {
-            continue;
+    if has("access") {
+        d.text = strip_plan(&d.text, PLANES);
+    }
+    if d.text != cfg.text {
+        d.reload(model)?;
+    }
+    if has("finish") && !has("detail") {
+        model.detail = route_from_text(&d.text);
+    }
+    let dopts = detail::options(&cfg.engine);
+    if has("constraints") {
+        d.step(model, &constraints::Constraints);
+    }
+    let place_rounds = if has("place") { cfg.engine.place_rounds.unwrap_or(3).max(1) } else { 1 };
+    let rounds = cfg.engine.rounds.unwrap_or(3).max(1);
+    for pass in 0..place_rounds {
+        if d.stopped() {
+            d.skipped.push("stopped".into());
+            break;
         }
-        if cfg.stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed)) {
-            skipped.push(format!("{name}: stopped"));
-            continue;
-        }
-        match all.iter().find(|p| p.name() == name) {
-            Some(p) => {
-                if let Some(w) = cfg.watch {
-                    w(Event::Start(name));
-                }
-                let t0 = std::time::Instant::now();
-                model.text = text.clone();
-                let mut r = p.run(model, &cfg.engine, &mut field);
-                r.ms = t0.elapsed().as_millis();
-                let t1 = std::time::Instant::now();
-                if let Some(section) = plan_section(model, p.name()) {
-                    text = write_plan(&text, p.name(), &section);
-                    (model.file, model.layout) = (cfg.resolve)(&text)?;
-                }
-                if let Some(body) = model.finished_escape.take() {
-                    text = write_plan(&text, "escape", &body);
-                    (model.file, model.layout) = (cfg.resolve)(&text)?;
-                }
-                if matches!(p.name(), "floorplan" | "place" | "legalise")
-                    && let Some(plan) = &model.placement
-                    && !plan.moves.is_empty()
-                {
-                    text = write_moves(&text, &plan.moves)?;
-                    (model.file, model.layout) = (cfg.resolve)(&text)?;
-                }
-                r.reload_ms = t1.elapsed().as_millis();
-                r.score = Some(score_of(model, Some(&field)));
-                if let Some(w) = cfg.watch {
-                    w(Event::Done(&r));
-                }
-                reports.push(r);
+        if has("place") {
+            if pass > 0 && model.hot.is_empty() {
+                break;
             }
-            None => skipped.push(format!("{name}: not implemented yet")),
+            let t0 = d.start("place");
+            model.text = d.text.clone();
+            let r = placement::Place.run(model, &cfg.engine);
+            let mut reload_ms = 0;
+            if let Some(plan) = &model.placement
+                && !plan.moves.is_empty()
+            {
+                d.text = write_moves(&d.text, &plan.moves)?;
+                if !plan.texts.is_empty() {
+                    let mut doc: toml_edit::DocumentMut =
+                        d.text.parse().map_err(|e| format!("{e}"))?;
+                    start::move_board_texts(&mut doc, &plan.texts);
+                    d.text = doc.to_string();
+                }
+                reload_ms = d.reload(model)?;
+                for _ in 0..3 {
+                    let (moved, _) = model.layout.settle_labels(model.board);
+                    if moved.is_empty() {
+                        break;
+                    }
+                    let mut doc: toml_edit::DocumentMut =
+                        d.text.parse().map_err(|e| format!("{e}"))?;
+                    start::write_labels(&mut doc, &moved)?;
+                    d.text = doc.to_string();
+                    reload_ms += d.reload(model)?;
+                }
+            }
+            model.hot.clear();
+            d.done(model, r, t0, reload_ms);
+        }
+        if has("access") && !d.stopped() {
+            let t0 = d.start("access");
+            model.text = d.text.clone();
+            let mut r = access::Access.run(model, &cfg.engine);
+            let mut reload_ms = 0;
+            if let Some(section) = planes_toml(model) {
+                d.text = write_plan(&d.text, PLANES, &section);
+                reload_ms = d.reload(model)?;
+            }
+            match model.ensure_base(&dopts) {
+                Ok(()) => access::pin_access(model, &mut r, &dopts),
+                Err(e) => r.failed.push(e),
+            }
+            d.done(model, r, t0, reload_ms);
+        }
+        if routes {
+            let mut best = 0;
+            let mut kept: Option<detail::DetailPlan> = None;
+            for _ in 0..rounds {
+                if d.stopped() {
+                    d.skipped.push("stopped".into());
+                    break;
+                }
+                if has("global") {
+                    let t0 = d.start("global");
+                    let r = match model.ensure_base(&dopts) {
+                        Ok(()) => global::Global.run(model, &cfg.engine),
+                        Err(e) => PhaseReport {
+                            phase: "global".into(),
+                            failed: vec![e],
+                            ..Default::default()
+                        },
+                    };
+                    d.done(model, r, t0, 0);
+                }
+                if has("detail") {
+                    d.step(model, &detail::Detail);
+                }
+                let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
+                let clean = model
+                    .detail
+                    .as_ref()
+                    .is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
+                if routed <= best && kept.is_some() {
+                    break;
+                }
+                best = routed;
+                kept = model.detail.clone();
+                if clean || !has("global") || !has("detail") {
+                    break;
+                }
+            }
+            if kept.is_some() {
+                model.detail = kept;
+            }
+        }
+        model.hot = model.global.as_ref().map(|g| g.hot.clone()).unwrap_or_default();
+        if let Some(x) = &model.detail {
+            let tile = model.global.as_ref().map(|g| g.tile).unwrap_or(1.0);
+            for f in &x.failed {
+                model.hot.push(placement::Hot {
+                    at: [(f.from[0] + f.to[0]) / 2.0, (f.from[1] + f.to[1]) / 2.0],
+                    size: tile,
+                    overflow: 0.5,
+                });
+            }
+        }
+        if !has("place") {
+            break;
         }
     }
-    let score = score_of(model, Some(&field));
+    if has("detail") {
+        d.write_route(model)?;
+        for _ in 0..2 {
+            if d.stopped() || !repair(&mut d, model, &dopts)? {
+                break;
+            }
+        }
+    }
+    if has("finish") && !d.stopped() {
+        let t0 = d.start("finish");
+        let mut r = finish::Finish.run(model, &cfg.engine);
+        let mut reload_ms = 0;
+        if r.changed {
+            reload_ms += d.write_route(model)?;
+        }
+        let before = r.changed;
+        r.changed = false;
+        finish::tune(model, &mut r);
+        if r.changed {
+            reload_ms += d.write_route(model)?;
+        }
+        r.changed |= before;
+        d.done(model, r, t0, reload_ms);
+    }
+    let score = score_of(model);
     Ok(RunReport {
-        phases: reports,
+        phases: d.reports,
         score,
-        skipped,
-        text,
+        skipped: d.skipped,
+        text: d.text,
+        constraints: model.constraints.clone(),
         placement: model.placement.clone(),
-        escape: model.escape.clone(),
+        access: model.access.clone(),
         planes: model.planes.clone(),
-        layers: model.layers.clone(),
         global: model.global.clone(),
         detail: model.detail.clone(),
     })
+}
+
+fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Result<bool, String> {
+    let Some(plan) = model.detail.as_ref() else { return Ok(false) };
+    let stray: Vec<String> = model
+        .layout
+        .nets
+        .iter()
+        .filter(|n| n.unrouted > 0 && !plan.failed.iter().any(|f| f.net == n.name))
+        .map(|n| n.name.clone())
+        .collect();
+    if stray.is_empty() {
+        return Ok(false);
+    }
+    let t0 = d.start("detail");
+    let o = negotiate::Options { nets: stray.clone(), ..opts.clone() };
+    let mut r = PhaseReport { phase: "detail".into(), ..Default::default() };
+    let mut gained = false;
+    match negotiate::Base::new(&model.layout, model.board, &o) {
+        Ok(base) => {
+            let out = negotiate::route_on(&model.layout, &base, &o, &negotiate::Guide::default());
+            let res = out.result;
+            r.notes.push(format!(
+                "repair on the refilled pours: {} nets, {} of {} connections",
+                stray.len(),
+                res.routed,
+                res.connections
+            ));
+            r.failed = res.failed.iter().map(|f| format!("{}: {}", f.net, f.reason)).collect();
+            gained = res.routed > 0;
+            let plan = model.detail.as_mut().expect("detail plan");
+            plan.failed.retain(|f| !stray.contains(&f.net));
+            plan.failed.extend(res.failed);
+            plan.tracks.extend(res.tracks);
+            plan.vias.extend(res.vias);
+        }
+        Err(e) => r.failed.push(e),
+    }
+    let ms = if gained { d.write_route(model)? } else { 0 };
+    r.changed = gained;
+    d.done(model, r, t0, ms);
+    Ok(gained)
+}
+
+fn planes_toml(model: &Model) -> Option<String> {
+    let plan = model.planes.as_ref().filter(|p| !p.zones.is_empty())?;
+    let mut t = String::new();
+    for z in &plan.zones {
+        let pts: Vec<String> = z.outline.iter().map(|q| pt(*q)).collect();
+        t += &format!(
+            "\n[[zones]]\nnet = \"{}\"\nlayers = [\"{}\"]\npriority = {}\noutline = [{}]\n",
+            z.net,
+            z.layer,
+            z.priority,
+            pts.join(", ")
+        );
+    }
+    Some(t)
+}
+
+pub fn route_toml(tracks: &[RoutedTrack], vias: &[RoutedVia]) -> String {
+    let mut t = String::new();
+    for tr in tracks {
+        t += &track_toml(&tr.net, &tr.layer, tr.width, &tr.points);
+    }
+    for v in vias {
+        t += &via_toml(&v.net, v.at, &v.via);
+    }
+    t
+}
+
+fn route_from_text(text: &str) -> Option<detail::DetailPlan> {
+    let start = format!("# plan {ROUTE}\n");
+    let end = format!("# end plan {ROUTE}\n");
+    let a = text.find(&start)? + start.len();
+    let b = text[a..].find(&end)? + a;
+    let doc: toml::Table = text[a..b].parse().ok()?;
+    let point = |v: &toml::Value| -> Option<P> {
+        let q = v.as_array()?;
+        let num = |x: &toml::Value| x.as_float().or_else(|| x.as_integer().map(|i| i as f64));
+        Some([num(q.first()?)?, num(q.get(1)?)?])
+    };
+    let mut plan = detail::DetailPlan::default();
+    for t in doc.get("tracks").and_then(|v| v.as_array()).into_iter().flatten() {
+        let t = t.as_table()?;
+        plan.tracks.push(RoutedTrack {
+            net: t.get("net")?.as_str()?.to_string(),
+            layer: t.get("layer")?.as_str()?.to_string(),
+            width: t.get("width").and_then(|w| w.as_float()),
+            points: t.get("points")?.as_array()?.iter().filter_map(point).collect(),
+        });
+    }
+    for v in doc.get("vias").and_then(|v| v.as_array()).into_iter().flatten() {
+        let v = v.as_table()?;
+        plan.vias.push(RoutedVia {
+            net: v.get("net")?.as_str()?.to_string(),
+            at: point(v.get("at")?)?,
+            via: v.get("via")?.as_str()?.to_string(),
+        });
+    }
+    Some(plan)
 }
 
 fn fmt(v: f64) -> String {
@@ -336,61 +575,6 @@ pub fn routed_toml(r: &agentee_core::route::RouteResult) -> String {
         t += &via_toml(&v.net, v.at, &v.via);
     }
     t
-}
-
-pub fn plan_section(model: &Model, phase: &str) -> Option<String> {
-    let nets = &model.layout.nets;
-    match phase {
-        "escape" => {
-            let plan = model.escape.as_ref()?;
-            let mut t = String::new();
-            for tr in &plan.tracks {
-                t += &track_toml(&nets[tr.net].name, &tr.layer, Some(tr.width), &tr.points);
-            }
-            for v in &plan.vias {
-                t += &via_toml(&nets[v.net].name, v.at, &v.via);
-            }
-            Some(t)
-        }
-        "tie" => {
-            let plan = model.tie.as_ref()?;
-            let mut t = String::new();
-            for tr in &plan.tracks {
-                t += &track_toml(&tr.net, &tr.layer, tr.width, &tr.points);
-            }
-            for v in &plan.vias {
-                t += &via_toml(&v.net, v.at, &v.via);
-            }
-            Some(t)
-        }
-        "detail" => {
-            let plan = model.detail.as_ref()?;
-            let mut t = String::new();
-            for tr in &plan.tracks {
-                t += &track_toml(&tr.net, &tr.layer, tr.width, &tr.points);
-            }
-            for v in &plan.vias {
-                t += &via_toml(&v.net, v.at, &v.via);
-            }
-            Some(t)
-        }
-        "planes" => {
-            let plan = model.planes.as_ref()?;
-            let mut t = String::new();
-            for z in &plan.zones {
-                let pts: Vec<String> = z.outline.iter().map(|q| pt(*q)).collect();
-                t += &format!(
-                    "\n[[zones]]\nnet = \"{}\"\nlayers = [\"{}\"]\npriority = {}\noutline = [{}]\n",
-                    z.net,
-                    z.layer,
-                    z.priority,
-                    pts.join(", ")
-                );
-            }
-            Some(t)
-        }
-        _ => None,
-    }
 }
 
 pub fn strip_plan(text: &str, phase: &str) -> String {

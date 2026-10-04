@@ -348,18 +348,18 @@ enum Cmd {
         #[command(subcommand)]
         calc: Calc,
     },
-    /// Run the layout engine on a layout: the configured phases in order, then the score per term
+    /// Run the layout engine on a layout: the configured stages in order, then the score per term
     Layout {
         name: String,
         #[arg(short, long, default_value = ".")]
         project: PathBuf,
-        /// Start at this phase, keeping the results of the phases before it
+        /// Start at this stage, keeping the results of the stages before it
         #[arg(long)]
         from: Option<String>,
-        /// Stop after this phase
+        /// Stop after this stage
         #[arg(long)]
         to: Option<String>,
-        /// Run one phase only
+        /// Run one stage only
         #[arg(long)]
         only: Option<String>,
         /// Report without writing the plan into the layout file

@@ -1,5 +1,5 @@
-use crate::{Model, Phase, PhaseReport};
-use agentee_core::engine::EngineFile;
+use crate::Model;
+use agentee_core::engine::PlanesFile;
 use agentee_core::footprint::PadKind;
 use agentee_core::geom::{self, P};
 use agentee_core::graphic::Bounds;
@@ -7,8 +7,6 @@ use agentee_core::place;
 use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
-
-pub struct Planes;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct PlaneZone {
@@ -253,322 +251,322 @@ fn outer_loop(r: &Raster, cells: &[usize]) -> Vec<P> {
         .collect()
 }
 
-impl Phase for Planes {
-    fn name(&self) -> &'static str {
-        "planes"
-    }
+pub fn plan(model: &Model, pc: &PlanesFile) -> (PlanesPlan, Vec<String>, Vec<String>) {
+    let mut notes: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+    let l = &model.layout;
+    let step = pc.step.map(|s| s.to_mm()).unwrap_or(0.1);
+    let reach = pc.reach.map(|s| s.to_mm()).unwrap_or(1.5);
+    let neck = pc.neck.map(|s| s.to_mm()).unwrap_or(0.8);
+    let keep = pc.keep.map(|s| s.to_mm()).unwrap_or(0.35);
+    let span = pc.span.map(|s| s.to_mm()).unwrap_or(6.0);
+    let net_id = |name: &str| l.nets.iter().position(|n| n.name == name);
+    let full_zone =
+        |z: &agentee_core::layout::ZoneFile| z.outline.as_ref().is_none_or(|o| o.is_empty());
 
-    fn run(
-        &self,
-        model: &mut Model,
-        cfg: &EngineFile,
-        _field: &mut crate::field::CostField,
-    ) -> PhaseReport {
-        let mut report = PhaseReport { phase: "planes".into(), ..Default::default() };
-        let l = &model.layout;
-        let pc = cfg.planes.clone().unwrap_or_default();
-        let step = pc.step.map(|s| s.to_mm()).unwrap_or(0.1);
-        let reach = pc.reach.map(|s| s.to_mm()).unwrap_or(1.5);
-        let neck = pc.neck.map(|s| s.to_mm()).unwrap_or(0.8);
-        let keep = pc.keep.map(|s| s.to_mm()).unwrap_or(0.35);
-        let span = pc.span.map(|s| s.to_mm()).unwrap_or(6.0);
-        let net_id = |name: &str| l.nets.iter().position(|n| n.name == name);
-        let full_zone =
-            |z: &agentee_core::layout::ZoneFile| z.outline.as_ref().is_none_or(|o| o.is_empty());
-
-        let mut layers: Vec<(String, Vec<String>)> = pc.layers.clone().into_iter().collect();
-        if layers.is_empty() {
-            for z in model.file.zones.iter().filter(|z| full_zone(z)) {
-                if geom_is_ground(&z.net) {
-                    continue;
-                }
-                for layer in &z.layers {
-                    if !layers.iter().any(|(ly, _)| ly == layer) {
-                        layers.push((layer.clone(), vec![z.net.clone()]));
-                    }
-                }
-            }
-            let full: HashSet<&str> =
-                model.file.zones.iter().filter(|z| full_zone(z)).map(|z| z.net.as_str()).collect();
-            for (layer, rails) in layers.iter_mut() {
-                for n in &l.nets {
-                    if full.contains(n.name.as_str())
-                        || geom_is_ground(&n.name)
-                        || !place::is_power_net(model.board, &n.name, &n.class)
-                    {
-                        continue;
-                    }
-                    let carries = model
-                        .board
-                        .netclasses
-                        .iter()
-                        .any(|c| c.name == n.class && c.current.is_some());
-                    let ni = net_id(&n.name).unwrap();
-                    let reach =
-                        l.vias.iter().filter(|v| v.net == ni && v.layers.contains(layer)).count();
-                    if carries && reach >= 2 {
-                        rails.push(n.name.clone());
-                    }
-                }
-            }
-        }
-
-        let mut b = Bounds::EMPTY;
-        l.outline.iter().for_each(|q| b.add(*q));
-        let (w, h) = (
-            ((b.max[0] - b.min[0]) / step).ceil() as usize,
-            ((b.max[1] - b.min[1]) / step).ceil() as usize,
-        );
-        let mut raster = Raster { origin: b.min, step, w, h, inside: vec![false; w * h] };
-        for i in 0..w * h {
-            let c = raster.center(i);
-            raster.inside[i] = geom::point_in_polygon(c, &l.outline)
-                && !l.board_cutouts.iter().any(|k| geom::point_in_polygon(c, k));
-        }
-
-        let mut plan = PlanesPlan::default();
-        for (layer, rails) in &layers {
-            if rails.len() < 2 {
+    let mut layers: Vec<(String, Vec<String>)> = pc.layers.clone().into_iter().collect();
+    if layers.is_empty() {
+        for z in model.file.zones.iter().filter(|z| full_zone(z)) {
+            if geom_is_ground(&z.net) {
                 continue;
             }
-            let rail_of: HashMap<usize, u16> = rails
-                .iter()
-                .enumerate()
-                .filter_map(|(k, n)| net_id(n).map(|ni| (ni, k as u16)))
-                .collect();
-            let mut terminals: Vec<(usize, u16)> = Vec::new();
-            let mut foreign: HashSet<usize> = HashSet::new();
-            for v in l.vias.iter().filter(|v| v.layers.contains(layer)) {
-                let Some(c) = raster.cell(v.at) else { continue };
-                match rail_of.get(&v.net) {
+            for layer in &z.layers {
+                if !layers.iter().any(|(ly, _)| ly == layer) {
+                    layers.push((layer.clone(), vec![z.net.clone()]));
+                }
+            }
+        }
+        let full: HashSet<&str> =
+            model.file.zones.iter().filter(|z| full_zone(z)).map(|z| z.net.as_str()).collect();
+        for (_, rails) in layers.iter_mut() {
+            for n in &l.nets {
+                if full.contains(n.name.as_str())
+                    || geom_is_ground(&n.name)
+                    || !place::is_power_net(model.board, &n.name, &n.class)
+                {
+                    continue;
+                }
+                let carries =
+                    model.board.netclasses.iter().any(|c| c.name == n.class && c.current.is_some());
+                let ni = net_id(&n.name).unwrap();
+                let reach = l
+                    .parts
+                    .iter()
+                    .flat_map(|p| p.pads.iter())
+                    .filter(|q| q.net == Some(ni))
+                    .count();
+                if carries && reach >= 2 {
+                    rails.push(n.name.clone());
+                }
+            }
+        }
+    }
+
+    let mut b = Bounds::EMPTY;
+    l.outline.iter().for_each(|q| b.add(*q));
+    let (w, h) = (
+        ((b.max[0] - b.min[0]) / step).ceil() as usize,
+        ((b.max[1] - b.min[1]) / step).ceil() as usize,
+    );
+    let mut raster = Raster { origin: b.min, step, w, h, inside: vec![false; w * h] };
+    for i in 0..w * h {
+        let c = raster.center(i);
+        raster.inside[i] = geom::point_in_polygon(c, &l.outline)
+            && !l.board_cutouts.iter().any(|k| geom::point_in_polygon(c, k));
+    }
+
+    let mut plan = PlanesPlan::default();
+    for (layer, rails) in &layers {
+        if rails.len() < 2 {
+            continue;
+        }
+        let rail_of: HashMap<usize, u16> = rails
+            .iter()
+            .enumerate()
+            .filter_map(|(k, n)| net_id(n).map(|ni| (ni, k as u16)))
+            .collect();
+        let mut terminals: Vec<(usize, u16)> = Vec::new();
+        let mut foreign: HashSet<usize> = HashSet::new();
+        for v in l.vias.iter().filter(|v| v.layers.contains(layer)) {
+            let Some(c) = raster.cell(v.at) else { continue };
+            match rail_of.get(&v.net) {
+                Some(&k) => terminals.push((c, k)),
+                None => foreign.extend(raster.disc(c, v.diameter / 2.0 + keep)),
+            }
+        }
+        for p in &l.parts {
+            for pad in &p.pads {
+                if pad.drill.is_none() {
+                    if let (Some(&k), Some(c)) =
+                        (pad.net.and_then(|ni| rail_of.get(&ni)), raster.cell(pad_centre(pad)))
+                    {
+                        terminals.push((c, k));
+                    }
+                    continue;
+                }
+                if !pad.copper.contains(layer) {
+                    continue;
+                }
+                let Some(ni) = pad.net else { continue };
+                let Some(at) = pad.drill.map(|d| d.0) else { continue };
+                let Some(c) = raster.cell(at) else { continue };
+                match rail_of.get(&ni) {
                     Some(&k) => terminals.push((c, k)),
-                    None => foreign.extend(raster.disc(c, v.diameter / 2.0 + keep)),
+                    None if !matches!(pad.kind, PadKind::Npth) => {
+                        foreign.extend(raster.disc(c, 0.5 + keep))
+                    }
+                    None => {}
                 }
             }
-            for p in &l.parts {
-                for pad in &p.pads {
-                    if !pad.copper.contains(layer) || pad.drill.is_none() {
-                        continue;
-                    }
-                    let Some(ni) = pad.net else { continue };
-                    let Some(at) = pad.drill.map(|d| d.0) else { continue };
-                    let Some(c) = raster.cell(at) else { continue };
-                    match rail_of.get(&ni) {
-                        Some(&k) => terminals.push((c, k)),
-                        None if !matches!(pad.kind, PadKind::Npth) => {
-                            foreign.extend(raster.disc(c, 0.5 + keep))
-                        }
-                        None => {}
-                    }
-                }
-            }
+        }
 
-            let n = w * h;
-            let mut owner = vec![0u16; n];
-            let mut dist = vec![f32::MAX; n];
-            let mut heap = BinaryHeap::new();
-            for &(c, k) in &terminals {
-                if k == 0 {
-                    continue;
-                }
-                owner[c] = k;
-                dist[c] = 0.0;
-                heap.push(Node(0.0, c));
+        let n = w * h;
+        let mut owner = vec![0u16; n];
+        let mut dist = vec![f32::MAX; n];
+        let mut heap = BinaryHeap::new();
+        for &(c, k) in &terminals {
+            if k == 0 {
+                continue;
             }
-            let limit = (reach / step) as f32;
-            while let Some(Node(d, i)) = heap.pop() {
-                if d > dist[i] {
-                    continue;
-                }
-                for (j, s) in raster.neighbours(i) {
-                    let nd = d + s;
-                    if nd <= limit && nd < dist[j] && !foreign.contains(&j) {
-                        dist[j] = nd;
-                        owner[j] = owner[i];
-                        heap.push(Node(nd, j));
-                    }
-                }
+            owner[c] = k;
+            dist[c] = 0.0;
+            heap.push(Node(0.0, c));
+        }
+        let limit = (reach / step) as f32;
+        while let Some(Node(d, i)) = heap.pop() {
+            if d > dist[i] {
+                continue;
             }
-            let base_terms: HashSet<usize> =
-                terminals.iter().filter(|t| t.1 == 0).map(|t| t.0).collect();
-            let mut protected: HashSet<usize> = HashSet::new();
-            for &c in &base_terms {
-                for j in raster.disc(c, 0.3 + keep) {
-                    owner[j] = 0;
-                    protected.insert(j);
+            for (j, s) in raster.neighbours(i) {
+                let nd = d + s;
+                if nd <= limit && nd < dist[j] && !foreign.contains(&j) {
+                    dist[j] = nd;
+                    owner[j] = owner[i];
+                    heap.push(Node(nd, j));
                 }
             }
-            for i in 0..n {
-                if !raster.inside[i] {
-                    owner[i] = FREE;
-                }
+        }
+        let base_terms: HashSet<usize> =
+            terminals.iter().filter(|t| t.1 == 0).map(|t| t.0).collect();
+        let mut protected: HashSet<usize> = HashSet::new();
+        for &c in &base_terms {
+            for j in raster.disc(c, 0.3 + keep) {
+                owner[j] = 0;
+                protected.insert(j);
             }
+        }
+        for i in 0..n {
+            if !raster.inside[i] {
+                owner[i] = FREE;
+            }
+        }
 
-            let term_of = |k: u16| -> Vec<usize> {
-                terminals.iter().filter(|t| t.1 == k).map(|t| t.0).collect()
-            };
-            let limit = (span / step) as f32 + 60.0;
-            let join_rail = |owner: &mut Vec<u16>, protected: &HashSet<usize>, k: u16| -> usize {
-                let terms: HashSet<usize> = term_of(k).into_iter().collect();
-                loop {
-                    let mut comps: Vec<Vec<usize>> = components(&raster, owner, k)
-                        .into_iter()
-                        .filter(|c| c.iter().any(|i| terms.contains(i)))
-                        .collect();
-                    if comps.len() < 2 {
-                        return 0;
-                    }
-                    comps.sort_by_key(|c| c.len());
-                    let mut joined = false;
-                    for ci in 0..comps.len() {
-                        let target: HashSet<usize> = comps
-                            .iter()
-                            .enumerate()
-                            .filter(|&(cj, _)| cj != ci)
-                            .flat_map(|(_, c)| c.iter().copied())
-                            .collect();
-                        let path =
-                            path_between(&raster, &comps[ci], &target, limit, |j| match owner[j] {
-                                o if o == k => Some(0.05),
-                                0 if !protected.contains(&j) && !foreign.contains(&j) => Some(1.0),
-                                _ => None,
-                            });
-                        let Some(path) = path else { continue };
-                        if path.iter().filter(|&&j| owner[j] == 0).count() as f64 * step > span {
-                            continue;
-                        }
-                        for c in path {
-                            for j in raster.disc(c, neck / 2.0) {
-                                if owner[j] == 0 && !protected.contains(&j) && !foreign.contains(&j)
-                                {
-                                    owner[j] = k;
-                                }
-                            }
-                        }
-                        joined = true;
-                        break;
-                    }
-                    if !joined {
-                        return comps.len() - 1;
-                    }
-                }
-            };
-            for k in 1..rails.len() as u16 {
-                let left = join_rail(&mut owner, &protected, k);
-                if left > 0 {
-                    report.failed.push(format!(
-                        "{} on {layer}: {left} pieces could not be joined, left to routing",
-                        rails[k as usize]
-                    ));
-                }
-            }
-            let rail_terms: HashSet<usize> =
-                terminals.iter().filter(|t| t.1 != 0).map(|t| t.0).collect();
-            let rail_rings: HashSet<usize> =
-                rail_terms.iter().flat_map(|&c| raster.disc(c, 0.3 + keep)).collect();
-            let mut touched: HashSet<u16> = HashSet::new();
-            for _ in 0..64 {
-                let comps: Vec<Vec<usize>> = components(&raster, &owner, 0)
+        let term_of =
+            |k: u16| -> Vec<usize> { terminals.iter().filter(|t| t.1 == k).map(|t| t.0).collect() };
+        let limit = (span / step) as f32 + 60.0;
+        let join_rail = |owner: &mut Vec<u16>, protected: &HashSet<usize>, k: u16| -> usize {
+            let terms: HashSet<usize> = term_of(k).into_iter().collect();
+            loop {
+                let mut comps: Vec<Vec<usize>> = components(&raster, owner, k)
                     .into_iter()
-                    .filter(|c| c.iter().any(|i| base_terms.contains(i)))
+                    .filter(|c| c.iter().any(|i| terms.contains(i)))
                     .collect();
                 if comps.len() < 2 {
-                    break;
+                    return 0;
                 }
-                let main = comps.iter().max_by_key(|c| c.len()).unwrap();
-                let Some(lost) =
-                    comps.iter().filter(|c| !std::ptr::eq(*c, main)).min_by_key(|c| c.len())
-                else {
-                    break;
-                };
-                let target: HashSet<usize> = main.iter().copied().collect();
-                let path = path_between(&raster, lost, &target, limit, |j| match owner[j] {
-                    0 => Some(0.05),
-                    FREE => None,
-                    _ if rail_rings.contains(&j) || foreign.contains(&j) => None,
-                    _ => Some(1.0),
-                });
-                let Some(path) = path else { break };
-                for c in path {
-                    for j in raster.disc(c, neck / 2.0) {
-                        if owner[j] != FREE && owner[j] != 0 && !rail_rings.contains(&j) {
-                            touched.insert(owner[j]);
-                            owner[j] = 0;
-                        }
-                        if owner[j] == 0 {
-                            protected.insert(j);
+                comps.sort_by_key(|c| c.len());
+                let mut joined = false;
+                for ci in 0..comps.len() {
+                    let target: HashSet<usize> = comps
+                        .iter()
+                        .enumerate()
+                        .filter(|&(cj, _)| cj != ci)
+                        .flat_map(|(_, c)| c.iter().copied())
+                        .collect();
+                    let path =
+                        path_between(&raster, &comps[ci], &target, limit, |j| match owner[j] {
+                            o if o == k => Some(0.05),
+                            0 if !protected.contains(&j) && !foreign.contains(&j) => Some(1.0),
+                            _ => None,
+                        });
+                    let Some(path) = path else { continue };
+                    if path.iter().filter(|&&j| owner[j] == 0).count() as f64 * step > span {
+                        continue;
+                    }
+                    for c in path {
+                        for j in raster.disc(c, neck / 2.0) {
+                            if owner[j] == 0 && !protected.contains(&j) && !foreign.contains(&j) {
+                                owner[j] = k;
+                            }
                         }
                     }
+                    joined = true;
+                    break;
+                }
+                if !joined {
+                    return comps.len() - 1;
                 }
             }
-            for k in touched {
-                let left = join_rail(&mut owner, &protected, k);
-                if left > 0 {
-                    report.failed.push(format!(
-                        "{} on {layer}: {left} pieces left after opening the base, left to routing",
-                        rails[k as usize]
-                    ));
-                }
+        };
+        for k in 1..rails.len() as u16 {
+            let left = join_rail(&mut owner, &protected, k);
+            if left > 0 {
+                failed.push(format!(
+                    "{} on {layer}: {left} pieces could not be joined, left to routing",
+                    rails[k as usize]
+                ));
             }
-            let base_comps: Vec<Vec<usize>> = components(&raster, &owner, 0)
+        }
+        let rail_terms: HashSet<usize> =
+            terminals.iter().filter(|t| t.1 != 0).map(|t| t.0).collect();
+        let rail_rings: HashSet<usize> =
+            rail_terms.iter().flat_map(|&c| raster.disc(c, 0.3 + keep)).collect();
+        let mut touched: HashSet<u16> = HashSet::new();
+        for _ in 0..64 {
+            let comps: Vec<Vec<usize>> = components(&raster, &owner, 0)
                 .into_iter()
                 .filter(|c| c.iter().any(|i| base_terms.contains(i)))
                 .collect();
-            if base_comps.len() > 1 {
-                let stranded: usize = base_comps
-                    .iter()
-                    .map(|c| c.iter().filter(|i| base_terms.contains(i)).count())
-                    .sum::<usize>()
-                    - base_comps
-                        .iter()
-                        .map(|c| c.iter().filter(|i| base_terms.contains(i)).count())
-                        .max()
-                        .unwrap_or(0);
-                report.failed.push(format!(
-                    "{} on {layer}: {stranded} vias cut off from the plane by other rails",
-                    rails[0]
-                ));
+            if comps.len() < 2 {
+                break;
             }
-
-            let mut zones: Vec<PlaneZone> = Vec::new();
-            for k in 1..rails.len() as u16 {
-                let terms: HashSet<usize> = term_of(k).into_iter().collect();
-                for comp in components(&raster, &owner, k) {
-                    if !comp.iter().any(|i| terms.contains(i)) {
-                        continue;
+            let main = comps.iter().max_by_key(|c| c.len()).unwrap();
+            let Some(lost) =
+                comps.iter().filter(|c| !std::ptr::eq(*c, main)).min_by_key(|c| c.len())
+            else {
+                break;
+            };
+            let target: HashSet<usize> = main.iter().copied().collect();
+            let path = path_between(&raster, lost, &target, limit, |j| match owner[j] {
+                0 => Some(0.05),
+                FREE => None,
+                _ if rail_rings.contains(&j) || foreign.contains(&j) => None,
+                _ => Some(1.0),
+            });
+            let Some(path) = path else { break };
+            for c in path {
+                for j in raster.disc(c, neck / 2.0) {
+                    if owner[j] != FREE && owner[j] != 0 && !rail_rings.contains(&j) {
+                        touched.insert(owner[j]);
+                        owner[j] = 0;
                     }
-                    let outline = outer_loop(&raster, &comp);
-                    if outline.len() < 3 {
-                        continue;
+                    if owner[j] == 0 {
+                        protected.insert(j);
                     }
-                    zones.push(PlaneZone {
-                        net: rails[k as usize].clone(),
-                        layer: layer.clone(),
-                        priority: 0,
-                        area: geom::signed_area(&outline).abs(),
-                        outline,
-                    });
                 }
             }
-            zones.sort_by(|a, b| a.area.total_cmp(&b.area));
-            let top = zones.len() as i32;
-            for (i, z) in zones.iter_mut().enumerate() {
-                z.priority = 10 + top - i as i32;
-            }
-            report.notes.push(format!(
-                "{layer}: base {}, {} rail regions for {}",
-                rails[0],
-                zones.len(),
-                rails[1..].join(", ")
-            ));
-            plan.zones.extend(zones);
         }
-        report.changed = !plan.zones.is_empty();
-        model.planes = Some(plan);
-        report
+        for k in touched {
+            let left = join_rail(&mut owner, &protected, k);
+            if left > 0 {
+                failed.push(format!(
+                    "{} on {layer}: {left} pieces left after opening the base, left to routing",
+                    rails[k as usize]
+                ));
+            }
+        }
+        let base_comps: Vec<Vec<usize>> = components(&raster, &owner, 0)
+            .into_iter()
+            .filter(|c| c.iter().any(|i| base_terms.contains(i)))
+            .collect();
+        if base_comps.len() > 1 {
+            let stranded: usize = base_comps
+                .iter()
+                .map(|c| c.iter().filter(|i| base_terms.contains(i)).count())
+                .sum::<usize>()
+                - base_comps
+                    .iter()
+                    .map(|c| c.iter().filter(|i| base_terms.contains(i)).count())
+                    .max()
+                    .unwrap_or(0);
+            failed.push(format!(
+                "{} on {layer}: {stranded} vias cut off from the plane by other rails",
+                rails[0]
+            ));
+        }
+
+        let mut zones: Vec<PlaneZone> = Vec::new();
+        for k in 1..rails.len() as u16 {
+            let terms: HashSet<usize> = term_of(k).into_iter().collect();
+            for comp in components(&raster, &owner, k) {
+                if !comp.iter().any(|i| terms.contains(i)) {
+                    continue;
+                }
+                let outline = outer_loop(&raster, &comp);
+                if outline.len() < 3 {
+                    continue;
+                }
+                zones.push(PlaneZone {
+                    net: rails[k as usize].clone(),
+                    layer: layer.clone(),
+                    priority: 0,
+                    area: geom::signed_area(&outline).abs(),
+                    outline,
+                });
+            }
+        }
+        zones.sort_by(|a, b| a.area.total_cmp(&b.area));
+        let top = zones.len() as i32;
+        for (i, z) in zones.iter_mut().enumerate() {
+            z.priority = 10 + top - i as i32;
+        }
+        notes.push(format!(
+            "{layer}: base {}, {} rail regions for {}",
+            rails[0],
+            zones.len(),
+            rails[1..].join(", ")
+        ));
+        plan.zones.extend(zones);
     }
+    (plan, notes, failed)
 }
 
 fn geom_is_ground(name: &str) -> bool {
     place::is_ground(name)
+}
+
+fn pad_centre(pad: &agentee_core::layout::PlacedPad) -> P {
+    let mut b = Bounds::EMPTY;
+    pad.outlines.iter().flatten().for_each(|q| b.add(*q));
+    b.center()
 }

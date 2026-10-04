@@ -17,7 +17,9 @@ fn main() {
     let i = p.layouts.iter().position(|l| &l.item.name == name).expect("layout");
     let inputs = p.layout_inputs(i).unwrap();
     let mut text = std::fs::read_to_string(&p.layouts[i].path).unwrap();
-    for phase in ["escape", "tie", "global", "detail"] {
+    for phase in
+        std::iter::once(agentee_layout::ROUTE).chain(agentee_layout::RETIRED_PLANS.iter().copied())
+    {
         text = agentee_layout::strip_plan(&text, phase);
     }
     if strip_tracks {
@@ -52,6 +54,6 @@ fn main() {
         eprintln!("  {}: {}", f.net, f.reason);
     }
     let body = agentee_layout::routed_toml(&r);
-    let text = agentee_layout::write_plan(&text, "detail", &body);
+    let text = agentee_layout::write_plan(&text, agentee_layout::ROUTE, &body);
     std::fs::write(&p.layouts[i].path, text).unwrap();
 }

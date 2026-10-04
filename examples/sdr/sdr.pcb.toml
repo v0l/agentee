@@ -9,7 +9,7 @@ keepouts = [[[53.5, 7.0], [76.5, 7.0], [76.5, 9.0], [53.5, 9.0]], [[53.5, 28.0],
 
 
 
-[engine.escape]
+[engine.access]
 via_in_pad = true
 
 [engine.place]
@@ -17,9 +17,6 @@ seed = 5
 
 [engine.detail]
 via_cost = "3mm"
-rip_limit = 30
-corridors = false
-class_order = ["Ground", "PowerHi", "RF", "USB_SS", "USB_HS", "LVDS", "Clock", "Analog", "Data", "Power", "Signal", "Default"]
 
 [engine.tangle]
 weights = { Clock = 3.0, Analog = 2.0 }

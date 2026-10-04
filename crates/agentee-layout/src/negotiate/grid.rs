@@ -277,10 +277,8 @@ impl Grid {
             }
         }
         let net_id = |n: Option<usize>| n.map(|n| n as u16).unwrap_or(NONE);
-        let hole_reach = rules.vias.iter().map(|o| o.dr).fold(0.0, f64::max)
-            + rules.hole_gap
-            + rules.slack
-            + g;
+        let hole_reach =
+            rules.vias.iter().map(|o| o.dr).fold(0.0, f64::max) + rules.hole_gap + rules.slack + g;
         for part in &layout.parts {
             for pad in &part.pads {
                 let layers: Vec<usize> = pad.copper.iter().filter_map(|c| layer_of(c)).collect();
@@ -293,7 +291,13 @@ impl Grid {
                 if let Some((c, s, _)) = pad.drill {
                     if pad.kind == PadKind::Npth || layers.is_empty() {
                         let all: Vec<usize> = (0..nl).collect();
-                        grid.stamp(&Shape::Circle(c, s[0].max(s[1]) / 2.0), &all, NONE, 0.0, reach);
+                        grid.stamp(
+                            &Shape::Circle(c, s[0].max(s[1]) / 2.0),
+                            &all,
+                            NONE,
+                            rules.npth,
+                            reach,
+                        );
                     }
                     grid.stamp_hole(c, s[0].min(s[1]) / 2.0, hole_reach);
                 }
@@ -308,9 +312,8 @@ impl Grid {
         }
         for v in layout.vias.iter().filter(|v| !matches!(v.source, ViaSource::Stitch(_))) {
             let layers: Vec<usize> = v.layers.iter().filter_map(|c| layer_of(c)).collect();
-            let clr = layout.nets[v.net]
-                .clearance
-                .max(v.drill / 2.0 + rules.hole_cu - v.diameter / 2.0);
+            let clr =
+                layout.nets[v.net].clearance.max(v.drill / 2.0 + rules.hole_cu - v.diameter / 2.0);
             grid.stamp(&Shape::Circle(v.at, v.diameter / 2.0), &layers, v.net as u16, clr, reach);
             grid.stamp_hole(v.at, v.drill / 2.0, hole_reach);
         }
@@ -353,7 +356,11 @@ impl Grid {
             let reach = via.r.max(via.dr + rules.hole_smd) + 1e-3 + rules.slack;
             for part in &layout.parts {
                 for pad in part.pads.iter().filter(|p| p.drill.is_none()) {
-                    if !pad.copper.iter().filter_map(|c| layer_of(c)).any(|l| via.layers.contains(&l))
+                    if !pad
+                        .copper
+                        .iter()
+                        .filter_map(|c| layer_of(c))
+                        .any(|l| via.layers.contains(&l))
                     {
                         continue;
                     }
@@ -364,8 +371,8 @@ impl Grid {
                         } else {
                             0.0
                         };
-                        let site = (via.in_pad && inscribed >= via.r + 1e-3)
-                            .then(|| self.cell(centre));
+                        let site =
+                            (via.in_pad && inscribed >= via.r + 1e-3).then(|| self.cell(centre));
                         let mut hits = Vec::new();
                         self.near(&Shape::Poly(o.clone()), reach, |x, y, _| hits.push((x, y)));
                         for (x, y) in hits {
@@ -416,15 +423,10 @@ impl Grid {
     }
 
     #[inline]
-    pub fn via_ok(
-        &self,
-        c2: usize,
-        layers: &[usize],
-        k: usize,
-        net: u16,
-        need: Need,
-    ) -> bool {
-        if self.via_block[c2] & (1 << k) != 0 || self.hole[c2] <= need.hole || !self.fence_ok(c2, net)
+    pub fn via_ok(&self, c2: usize, layers: &[usize], k: usize, net: u16, need: Need) -> bool {
+        if self.via_block[c2] & (1 << k) != 0
+            || self.hole[c2] <= need.hole
+            || !self.fence_ok(c2, net)
         {
             return false;
         }
@@ -433,6 +435,19 @@ impl Grid {
             let i = l * plane + c2;
             self.d[i].foreign(net) > need.d && self.q[i].foreign(net) > need.q
         })
+    }
+
+    #[inline]
+    pub fn open(&self, i: usize, need: Need) -> bool {
+        self.d[i].a > need.d && self.q[i].a > need.q
+    }
+
+    pub fn via_open(&self, c2: usize, layers: &[usize], k: usize, need: Need) -> bool {
+        if self.via_block[c2] & (1 << k) != 0 || self.hole[c2] <= need.hole {
+            return false;
+        }
+        let plane = self.plane();
+        layers.iter().all(|&l| self.open(l * plane + c2, need))
     }
 
     pub fn clearance_at(&self, i: usize, net: u16) -> (f64, f64) {

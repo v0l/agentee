@@ -57,12 +57,7 @@ impl Soft {
         }
     }
 
-    fn cells(
-        grid: &Grid,
-        shape: &Shape,
-        reach: f64,
-        out: &mut Vec<u32>,
-    ) {
+    fn cells(grid: &Grid, shape: &Shape, reach: f64, out: &mut Vec<u32>) {
         grid.near(shape, reach, |x, y, _| out.push((y * grid.w + x) as u32));
     }
 
@@ -76,16 +71,22 @@ impl Soft {
                 let reach = h + bk.h + c.clearance.max(bk.c) + slack;
                 Self::cells(grid, &shape, reach, &mut tracks[bi]);
             }
-            for (vi, vb) in rules.via_buckets.iter().enumerate().filter(|(_, v)| v.layers.contains(&l)) {
-                let reach = (h + vb.r + c.clearance.max(vb.c)).max(h + vb.dr + rules.hole_cu) + slack;
+            for (vi, vb) in
+                rules.via_buckets.iter().enumerate().filter(|(_, v)| v.layers.contains(&l))
+            {
+                let reach =
+                    (h + vb.r + c.clearance.max(vb.c)).max(h + vb.dr + rules.hole_cu) + slack;
                 Self::cells(grid, &shape, reach, &mut vias[vi]);
             }
         }
         for &(at, k) in &c.vias {
             let o = &rules.vias[k];
             let shape = Shape::Circle(at, 0.0);
-            for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| o.layers.contains(&bk.layer)) {
-                let reach = (o.r + bk.h + c.clearance.max(bk.c)).max(o.dr + rules.hole_cu + bk.h) + slack;
+            for (bi, bk) in
+                rules.buckets.iter().enumerate().filter(|(_, bk)| o.layers.contains(&bk.layer))
+            {
+                let reach =
+                    (o.r + bk.h + c.clearance.max(bk.c)).max(o.dr + rules.hole_cu + bk.h) + slack;
                 Self::cells(grid, &shape, reach, &mut tracks[bi]);
             }
             for (vi, vb) in rules.via_buckets.iter().enumerate() {

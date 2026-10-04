@@ -4,6 +4,8 @@ use super::search::{DIRS, Found, seg_cells};
 use super::soft::{Piece, Run, Soft};
 use agentee_core::geom::{self, P};
 
+const REACH_CENTRE: f64 = 0.6;
+
 #[derive(Clone, Debug)]
 pub struct Neck {
     pub layer: usize,
@@ -51,7 +53,8 @@ impl Ctx<'_> {
         let i = self.grid.idx(l, x, y);
         self.grid.track_ok(i, self.net, self.rule.need[l])
             && (self.own.contains(&(i as u32))
-                || self.rule.bucket[l].is_none_or(|b| self.soft.tracks[b][y * self.grid.w + x] == 0))
+                || self.rule.bucket[l]
+                    .is_none_or(|b| self.soft.tracks[b][y * self.grid.w + x] == 0))
     }
 
     pub fn clear_line(&self, l: usize, p: P, q: P) -> bool {
@@ -92,20 +95,34 @@ impl Ctx<'_> {
             let (d, q) = g.clearance_at(i, self.net);
             (d - c).min(q) - slack - 0.2 * g.g
         };
+        let min_half = self.rules.min_width / 2.0 - 1e-9;
+        let inside = |q: P| geom::point_in_polygon(q, &pad.outline);
         for (dx, dy) in DIRS {
             let norm = ((dx * dx + dy * dy) as f64).sqrt();
             let u = [dx as f64 / norm, dy as f64 / norm];
             let mut half = wide / 2.0;
-            let mut k = 1;
+            let mut from: Option<P> = None;
+            let mut k = 0;
             while k as f64 * g.g <= self.rule.neck + 1e-9 {
                 let len = k as f64 * g.g;
                 k += 1;
                 let q = [p[0] + u[0] * len, p[1] + u[1] * len];
-                half = half.min(room(q));
-                if 2.0 * half < self.rules.min_width - 1e-9 {
+                let r = room(q);
+                if from.is_none() {
+                    if !inside(q) {
+                        break;
+                    }
+                    if r >= min_half {
+                        from = Some(q);
+                        half = half.min(r);
+                    }
+                    continue;
+                }
+                half = half.min(r);
+                if half < min_half {
                     break;
                 }
-                if geom::point_in_polygon(q, &pad.outline) && edge_dist(&pad.outline, q) > g.g {
+                if inside(q) && edge_dist(&pad.outline, q) > g.g {
                     continue;
                 }
                 let (x, y) = g.cell(q);
@@ -114,7 +131,7 @@ impl Ctx<'_> {
                 }
                 let width = (2.0 * half).min(wide);
                 let width = (width * 1000.0).floor() / 1000.0;
-                out.push(Neck { layer: l, from: p, to: q, width });
+                out.push(Neck { layer: l, from: from.unwrap_or(p), to: q, width });
                 break;
             }
         }
@@ -164,7 +181,14 @@ impl Ctx<'_> {
         self.soft.vias[self.rule.via_bucket[vi]][c2] as f32
     }
 
-    pub fn stubs(&self, pad: &PadRef, l: usize, hard: bool, via_cost: f64, pres: f32) -> Vec<Access> {
+    pub fn stubs(
+        &self,
+        pad: &PadRef,
+        l: usize,
+        hard: bool,
+        via_cost: f64,
+        pres: f32,
+    ) -> Vec<Access> {
         let g = self.grid;
         let c = pad.centre;
         let mut out = Vec::new();
@@ -192,11 +216,8 @@ impl Ctx<'_> {
             out.push(Access { neck: None, via: Some((c, k)), cost });
             break;
         }
-        let inscribed = if geom::point_in_polygon(c, &pad.outline) {
-            edge_dist(&pad.outline, c)
-        } else {
-            0.0
-        };
+        let inscribed =
+            if geom::point_in_polygon(c, &pad.outline) { edge_dist(&pad.outline, c) } else { 0.0 };
         let reach = match pad.pitch {
             Some(p) => p * 0.75,
             None => inscribed + self.rule.neck,
@@ -295,10 +316,11 @@ impl Ctx<'_> {
         let end = (found.end_tag > 0).then(|| access.get(found.end_tag as usize - 1)).flatten();
         match start {
             Some(a) => {
-                if let (Some(n), None, Some((_, pts))) = (&a.neck, &a.via, runs.first_mut()) {
-                    pts[0] = n.to;
-                }
-                extra.extend(a.neck.clone());
+                let link = match (&a.via, runs.first()) {
+                    (None, Some((_, pts))) => pts.first().copied(),
+                    _ => None,
+                };
+                extra.extend(a.neck.clone().map(|n| (n, link)));
                 vias.extend(a.via);
             }
             None => {
@@ -309,11 +331,11 @@ impl Ctx<'_> {
         }
         match end {
             Some(a) => {
-                if let (Some(n), None, Some((_, pts))) = (&a.neck, &a.via, runs.last_mut()) {
-                    let k = pts.len() - 1;
-                    pts[k] = n.to;
-                }
-                extra.extend(a.neck.clone());
+                let link = match (&a.via, runs.last()) {
+                    (None, Some((_, pts))) => pts.last().copied(),
+                    _ => None,
+                };
+                extra.extend(a.neck.clone().map(|n| (n, link)));
                 vias.extend(a.via);
             }
             None => {
@@ -330,21 +352,43 @@ impl Ctx<'_> {
             })
             .filter(|r| r.points.len() >= 2 || !vias.is_empty())
             .collect();
-        for n in extra {
+        for (n, link) in extra {
             let neck = n.width < self.rule.width[n.layer] - 1e-6;
-            tracks.push(Run { layer: n.layer, points: vec![n.from, n.to], width: n.width, neck });
+            let mut points = vec![n.from, n.to];
+            if let Some(c) = link.filter(|c| geom::dist(*c, n.to) > 1e-6) {
+                points.push(c);
+            }
+            tracks.push(Run { layer: n.layer, points, width: n.width, neck });
         }
         Piece { tracks, vias }
     }
 
     fn extend(&self, l: usize, pts: &mut Vec<P>, pads: &[PadRef], front: bool) {
         let end = if front { pts[0] } else { *pts.last().unwrap() };
-        let Some(pad) = pads.iter().find(|p| {
-            p.layers.contains(&l) && geom::point_in_polygon(end, &p.outline)
-        }) else {
+        let Some(pad) =
+            pads.iter().find(|p| p.layers.contains(&l) && geom::point_in_polygon(end, &p.outline))
+        else {
             return;
         };
-        if geom::dist(pad.centre, end) < 1e-9 || !self.clear_line(l, pad.centre, end) {
+        let inside = |q: P| geom::point_in_polygon(q, &pad.outline);
+        if front {
+            let mut k = 0;
+            while k + 2 < pts.len() && inside(pts[k + 1]) {
+                k += 1;
+            }
+            pts.drain(..k);
+        } else {
+            let mut k = pts.len() - 1;
+            while k >= 2 && inside(pts[k - 1]) {
+                k -= 1;
+            }
+            pts.truncate(k + 1);
+        }
+        let end = if front { pts[0] } else { *pts.last().unwrap() };
+        if geom::dist(pad.centre, end) < 1e-9
+            || geom::dist(pad.centre, end) > REACH_CENTRE
+            || !self.clear_line(l, pad.centre, end)
+        {
             return;
         }
         if front {

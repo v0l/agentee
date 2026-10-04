@@ -1,4 +1,3 @@
-use crate::field::CostField;
 use agentee_core::board::Board;
 use agentee_core::engine::{SCORE_TERMS, default_weight};
 use agentee_core::geom::{self, P};
@@ -45,7 +44,9 @@ pub struct Context<'a> {
     pub board: &'a Board,
     pub schematic: &'a Schematic,
     pub layout: &'a Layout,
-    pub field: Option<&'a CostField>,
+    pub overflow: Option<f64>,
+    pub access: Option<usize>,
+    pub copper_overlap: Option<usize>,
     pub keepouts: &'a [Vec<P>],
     pub heat: &'a [(String, f64)],
     pub planes: &'a [String],
@@ -300,9 +301,17 @@ impl Score {
         put("area", area, true, Vec::new());
         put("layers", l.copper.len() as f64, true, Vec::new());
 
-        match cx.field {
-            Some(f) => put("overflow", f.overflow(), true, Vec::new()),
+        match cx.overflow {
+            Some(f) => put("overflow", f, true, Vec::new()),
             None => put("overflow", 0.0, false, Vec::new()),
+        }
+        match cx.access {
+            Some(n) => put("access", n as f64, true, Vec::new()),
+            None => put("access", 0.0, false, Vec::new()),
+        }
+        match cx.copper_overlap {
+            Some(n) => put("copper_overlap", n as f64, true, Vec::new()),
+            None => put("copper_overlap", 0.0, false, Vec::new()),
         }
         for t in [
             "chain_order",

@@ -63,6 +63,7 @@ pub struct Rules {
     pub hole_gap: f64,
     pub hole_cu: f64,
     pub hole_smd: f64,
+    pub npth: f64,
     pub edge: f64,
     pub min_width: f64,
     pub reach: f64,
@@ -95,8 +96,7 @@ impl Rules {
                 r: v.diameter.to_mm() / 2.0,
                 dr: v.drill.to_mm() / 2.0,
                 cost: v.cost,
-                in_pad: opts.via_in_pad
-                    && v.drill.to_mm() <= r.max_filled_via_drill.to_mm() + 1e-6,
+                in_pad: opts.via_in_pad && v.drill.to_mm() <= r.max_filled_via_drill.to_mm() + 1e-6,
             });
         }
         if vias.len() > 32 {
@@ -111,6 +111,7 @@ impl Rules {
             hole_gap: r.min_hole_to_hole.to_mm(),
             hole_cu: r.min_via_hole_to_copper.to_mm(),
             hole_smd: r.min_hole_to_smd_pad.to_mm(),
+            npth: r.min_npth_to_copper.to_mm(),
             edge: r.min_copper_to_edge.to_mm(),
             min_width: r.min_track_width.to_mm(),
             reach: 0.0,
@@ -127,10 +128,8 @@ impl Rules {
                 None => vec![true; nl],
             };
             let names: Vec<String> = class.map(|c| c.via.clone()).unwrap_or_default();
-            let mut net_vias: Vec<usize> = names
-                .iter()
-                .filter_map(|v| rules.vias.iter().position(|o| &o.name == v))
-                .collect();
+            let mut net_vias: Vec<usize> =
+                names.iter().filter_map(|v| rules.vias.iter().position(|o| &o.name == v)).collect();
             if net_vias.is_empty() && !rules.vias.is_empty() {
                 net_vias.push(0);
             }
@@ -139,13 +138,11 @@ impl Rules {
                 (0..rules.vias.len()).filter(|k| !net_vias.contains(k)).collect();
             spare.sort_by(|&a, &b| rules.vias[a].r.total_cmp(&rules.vias[b].r));
             net_vias.extend(spare);
-            let crit = opts.criticality.get(&net.class).copied().unwrap_or_else(|| {
-                match class {
-                    Some(c) if place::is_rf_class(board, &c.name) => 1.0,
-                    Some(c) if c.impedance.is_some() || c.diff_gap.is_some() => 0.8,
-                    Some(c) if c.layers.len() == 1 => 0.8,
-                    _ => 0.0,
-                }
+            let crit = opts.criticality.get(&net.class).copied().unwrap_or_else(|| match class {
+                Some(c) if place::is_rf_class(board, &c.name) => 1.0,
+                Some(c) if c.impedance.is_some() || c.diff_gap.is_some() => 0.8,
+                Some(c) if c.layers.len() == 1 => 0.8,
+                _ => 0.0,
             });
             let clearance = net.clearance;
             let mut bucket = vec![None; nl];
@@ -154,9 +151,10 @@ impl Rules {
                     continue;
                 }
                 let h = width[l] / 2.0;
-                let found = rules.buckets.iter().position(|b| {
-                    b.layer == l && um(b.h) == um(h) && um(b.c) == um(clearance)
-                });
+                let found = rules
+                    .buckets
+                    .iter()
+                    .position(|b| b.layer == l && um(b.h) == um(h) && um(b.c) == um(clearance));
                 bucket[l] = Some(found.unwrap_or_else(|| {
                     rules.buckets.push(Bucket { layer: l, h, c: clearance });
                     rules.buckets.len() - 1
@@ -185,7 +183,7 @@ impl Rules {
                 .iter()
                 .map(|w| Need {
                     d: um(w / 2.0 + clearance + slack),
-                    q: um(w / 2.0 + clearance + slack),
+                    q: um(w / 2.0 + slack),
                     hole: 0,
                 })
                 .collect();
@@ -194,8 +192,8 @@ impl Rules {
                 .map(|&k| {
                     let o = &rules.vias[k];
                     Need {
-                        d: um(o.dr + rules.hole_cu + slack),
-                        q: um(o.r + clearance + slack),
+                        d: um((o.dr + rules.hole_cu).max(o.r + clearance) + slack),
+                        q: um(o.r + slack),
                         hole: um(o.dr + rules.hole_gap + slack),
                     }
                 })
@@ -215,7 +213,8 @@ impl Rules {
                 via_need,
             });
         }
-        let max_c = layout.nets.iter().map(|n| n.clearance).fold(rules.edge, f64::max);
+        let max_c =
+            layout.nets.iter().map(|n| n.clearance).fold(rules.edge.max(rules.npth), f64::max);
         let widest = rules
             .nets
             .iter()

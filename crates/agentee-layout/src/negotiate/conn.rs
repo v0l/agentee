@@ -103,10 +103,7 @@ impl NetCopper {
     }
 
     pub fn has_pad(&self, g: usize) -> bool {
-        self.items
-            .iter()
-            .zip(&self.group)
-            .any(|(it, &k)| k == g && matches!(it, Item::Pad { .. }))
+        self.items.iter().zip(&self.group).any(|(it, &k)| k == g && matches!(it, Item::Pad { .. }))
     }
 
     pub fn islands(&self, g: usize) -> Vec<(usize, u32)> {
@@ -157,10 +154,8 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
                 lo = [lo[0].min(q[0]), lo[1].min(q[1])];
                 hi = [hi[0].max(q[0]), hi[1].max(q[1])];
             }
-            let centre = pad
-                .drill
-                .map(|d| d.0)
-                .unwrap_or([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]);
+            let centre =
+                pad.drill.map(|d| d.0).unwrap_or([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]);
             items.push(Item::Pad { shapes, layers, centre, pitch });
             part_of.push(Some(pi));
         }
@@ -172,7 +167,9 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
             part_of.push(None);
         }
     }
-    for v in layout.vias.iter().filter(|v| v.net == net && !matches!(v.source, ViaSource::Stitch(_))) {
+    for v in
+        layout.vias.iter().filter(|v| v.net == net && !matches!(v.source, ViaSource::Stitch(_)))
+    {
         let layers: Vec<usize> = v.layers.iter().filter_map(|c| layer_of(c)).collect();
         items.push(Item::Via { at: v.at, r: v.diameter / 2.0, layers });
         part_of.push(None);
@@ -181,10 +178,9 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
     let mut parent: Vec<usize> = (0..solid).collect();
     let shapes_of = |it: &Item| -> Vec<(usize, Shape)> {
         match it {
-            Item::Pad { shapes, layers, .. } => layers
-                .iter()
-                .flat_map(|&l| shapes.iter().map(move |s| (l, s.clone())))
-                .collect(),
+            Item::Pad { shapes, layers, .. } => {
+                layers.iter().flat_map(|&l| shapes.iter().map(move |s| (l, s.clone()))).collect()
+            }
             Item::Seg { layer, shape } => vec![(*layer, shape.clone())],
             Item::Via { at, r, layers } => {
                 layers.iter().map(|&l| (l, Shape::Circle(*at, *r))).collect()

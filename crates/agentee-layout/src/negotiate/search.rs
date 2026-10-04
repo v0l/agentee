@@ -84,6 +84,9 @@ pub struct Query<'a> {
     pub bend_cost: f64,
     pub zone: &'a [u16],
     pub zone_cost: f64,
+    pub extra: Option<&'a [i8]>,
+    pub outside: f32,
+    pub gain: f32,
     pub own: &'a std::collections::HashSet<u32>,
 }
 
@@ -137,6 +140,15 @@ fn bend(d0: u8, d1: usize, cost: f64) -> Option<f64> {
 }
 
 impl Query<'_> {
+    #[inline]
+    fn lean(&self, j: usize) -> f32 {
+        match self.extra.map(|x| x[j]) {
+            Some(1) => self.outside,
+            Some(-1) => -self.gain,
+            _ => 0.0,
+        }
+    }
+
     pub fn congestion(&self) -> f32 {
         (1.0 - 0.9 * self.rule.crit as f32).max(0.05)
     }
@@ -239,14 +251,20 @@ impl Query<'_> {
         let hard = self.hard;
         let rule = self.rule;
         let net = self.net;
-        let own = self.own;
+        let mut mine = vec![false; n];
+        for &c in self.own {
+            if let Some(k) = local(c as usize) {
+                mine[k] = true;
+            }
+        }
+        let at = |l: usize, x: usize, y: usize| l * area + (y - w.y0) * ww + (x - w.x0);
         let ok = |l: usize, x: usize, y: usize| -> bool {
             let i3 = grid.idx(l, x, y);
             if !grid.track_ok(i3, net, rule.need[l]) {
                 return false;
             }
             !hard
-                || own.contains(&(i3 as u32))
+                || mine[at(l, x, y)]
                 || rule.bucket[l].is_none_or(|b| self.soft.tracks[b][y * grid.w + x] == 0)
         };
         for s in &self.sources {
@@ -304,17 +322,20 @@ impl Query<'_> {
                     }
                     let len = if diagonal { diag } else { g };
                     let c2 = gy * grid.w + gx;
-                    let count = if own.contains(&((l * plane + c2) as u32)) {
+                    let count = if mine[l * area + j2] {
                         0.0
                     } else {
                         rule.bucket[l].map(|b| self.soft.tracks[b][c2] as f32).unwrap_or(0.0)
                     };
                     let hist = self.soft.hist[l * plane + c2];
                     let zn = self.zone[l * plane + c2];
-                    let zone = if zn != u16::MAX && zn != net { self.zone_cost as f32 } else { 0.0 };
-                    let step = len * (1.0 + zone + cong * (hist + self.pres * count))
-                        + turn as f32;
+                    let zone =
+                        if zn != u16::MAX && zn != net { self.zone_cost as f32 } else { 0.0 };
                     let j = l * area + j2;
+                    let lean = self.lean(j);
+                    let step = len
+                        * ((1.0 + zone + lean).max(0.4) + cong * (hist + self.pres * count))
+                        + turn as f32;
                     let c = here + step;
                     if c < cost[j] {
                         cost[j] = c;
@@ -352,7 +373,7 @@ impl Query<'_> {
                     }
                     let hist = self.soft.hist[l * plane + c2];
                     let c = (self.via_cost * o.cost) as f32
-                        * (1.0 + cong * (hist + self.pres * count));
+                        * ((1.0 + self.lean(j)).max(0.4) + cong * (hist + self.pres * count));
                     if best.is_none_or(|b| c < b) {
                         best = Some(c);
                     }

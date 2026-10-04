@@ -1,4 +1,3 @@
-use agentee_core::engine::PHASES;
 use agentee_core::layout::{LabelFix, LayoutFile};
 use agentee_core::place::{self as pl, PlaceOptions, PlaceResult, Placement, TextMove};
 use agentee_core::project::LayoutInputs;
@@ -15,7 +14,9 @@ pub struct Reset {
 pub fn reset(text: &str, r: &Reset) -> Result<String, String> {
     let mut text = text.to_string();
     if r.routing {
-        for p in PHASES {
+        for p in
+            [crate::ROUTE, crate::PLANES].into_iter().chain(crate::RETIRED_PLANS.iter().copied())
+        {
             text = crate::strip_plan(&text, p);
         }
     }
