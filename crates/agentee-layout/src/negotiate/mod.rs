@@ -22,6 +22,8 @@ const DEFERRED: &str = "deferred";
 const MAX_PRES: f32 = 100.0;
 const RESERVE_COST: f32 = 2.0;
 const BATCH: usize = 32;
+const RIP_PASSES: usize = 3;
+const RIP_BLOCKERS: usize = 3;
 const CLASH_HALO: i64 = 0;
 const LOST_SHOWN: usize = 6;
 const HIST_STEP: f32 = 0.4;
@@ -590,7 +592,28 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         };
         let many = route_many(&mut states, &conflicted, &env, pres, true, threads);
         spend.add(&many, layout);
-        let (dropped, dropped_ms) = drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
+        let (mut dropped, mut dropped_ms) =
+            drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
+        if std::env::var("AGENTEE_NORIP").is_err() {
+            let tr = Instant::now();
+            let (mut tried, mut won) = (0, 0);
+            let mut lost = HashSet::new();
+            for _ in 0..RIP_PASSES {
+                let (t, w) = rip_and_retry(&mut states, &order, &env, MAX_PRES, threads, &mut lost);
+                tried += t;
+                won += w;
+                if w == 0 {
+                    break;
+                }
+            }
+            let (d2, m2) = drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
+            dropped += d2;
+            dropped_ms += m2;
+            log(format!(
+                "rip-up and retry: {tried} short nets tried, {won} connections won, {:.0} ms",
+                ms(tr)
+            ));
+        }
         spend.dropped_ms = dropped_ms;
         if dropped > 0 {
             log(format!("{dropped} pieces dropped, still overlapping after the hard pass"));
@@ -1402,6 +1425,185 @@ fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflict
     out.sort_unstable();
     out.dedup();
     (out, bad)
+}
+
+struct Saved {
+    pieces: Vec<Piece>,
+    fp: Option<Footprint>,
+    failed: Vec<Unrouted>,
+    joined: usize,
+    bad: Option<Vec<bool>>,
+}
+
+fn save(st: &NetState) -> Saved {
+    Saved {
+        pieces: st.pieces.clone(),
+        fp: st.fp.clone(),
+        failed: st.failed.clone(),
+        joined: st.joined,
+        bad: st.bad.clone(),
+    }
+}
+
+fn restore(st: &mut NetState, s: Saved, soft: &Soft) {
+    if let Some(fp) = st.fp.take() {
+        soft.apply(&fp, false);
+    }
+    if let Some(fp) = &s.fp {
+        soft.apply(fp, true);
+    }
+    st.pieces = s.pieces;
+    st.fp = s.fp;
+    st.failed = s.failed;
+    st.joined = s.joined;
+    st.bad = s.bad;
+}
+
+fn reroute(st: &mut NetState, env: &Env, pres: f32, hard: bool) {
+    let old = st.fp.take();
+    let (r, fp) = route_one(st, env, pres, hard, old.as_ref());
+    st.pieces = r.pieces;
+    st.failed = r.failed;
+    st.joined = r.joined;
+    st.fp = Some(fp);
+}
+
+fn track_cells(st: &NetState, grid: &Grid, rules: &Rules, pieces: &[Piece]) -> Vec<(usize, u32)> {
+    let rule = rules.rule(st.net);
+    let mut out = Vec::new();
+    for p in pieces {
+        for r in &p.tracks {
+            let Some(b) = rule.bucket[r.layer] else { continue };
+            for w in r.points.windows(2) {
+                for (x, y) in seg_cells(grid, w[0], w[1]) {
+                    out.push((b, (y * grid.w + x) as u32));
+                }
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+fn rip_and_retry(
+    states: &mut [NetState],
+    order: &[usize],
+    env: &Env,
+    pres: f32,
+    threads: usize,
+    lost: &mut HashSet<(usize, Vec<usize>)>,
+) -> (usize, usize) {
+    let soft = env.soft;
+    let losers: Vec<usize> = order
+        .iter()
+        .copied()
+        .filter(|&si| {
+            let st = &states[si];
+            st.joined < st.needed && st.failed.iter().any(|f| f.reason != DEAD)
+        })
+        .collect();
+    let probe_env = Env { jacobi: true, ..*env };
+    let held_bad: Vec<Option<Vec<bool>>> =
+        losers.iter().map(|&si| states[si].bad.clone()).collect();
+    for &si in &losers {
+        states[si].bad = Some(vec![false; states[si].pieces.len()]);
+    }
+    let paths: Vec<std::sync::Mutex<Vec<(usize, u32)>>> =
+        losers.iter().map(|_| std::sync::Mutex::new(Vec::new())).collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let shared: &[NetState] = states;
+    std::thread::scope(|s| {
+        for _ in 0..threads.min(losers.len()).max(1) {
+            s.spawn(|| {
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(&si) = losers.get(k) else { break };
+                    let st = &shared[si];
+                    let (probe, _) = route_one(st, &probe_env, pres, false, None);
+                    let fresh = probe.pieces.get(st.pieces.len()..).unwrap_or_default();
+                    *paths[k].lock().expect("path") = track_cells(st, env.grid, env.rules, fresh);
+                }
+            });
+        }
+    });
+    for (&si, bad) in losers.iter().zip(held_bad) {
+        states[si].bad = bad;
+    }
+    let (mut tried, mut won) = (0, 0);
+    for (k, si) in losers.into_iter().enumerate() {
+        let path = std::mem::take(&mut *paths[k].lock().expect("path"));
+        if path.is_empty() {
+            continue;
+        }
+        let held = save(&states[si]);
+        if let Some(fp) = states[si].fp.take() {
+            soft.apply(&fp, false);
+        }
+        states[si].bad = Some(vec![false; states[si].pieces.len()]);
+        let blockers: Vec<usize> = (0..states.len())
+            .filter(|&sj| sj != si)
+            .filter(|&sj| {
+                states[sj]
+                    .fp
+                    .as_ref()
+                    .is_some_and(|fp| path.iter().any(|&(b, c)| fp.0[b].binary_search(&c).is_ok()))
+            })
+            .collect();
+        let key = (si, blockers.clone());
+        if blockers.len() > RIP_BLOCKERS || lost.contains(&key) {
+            restore(&mut states[si], held, soft);
+            continue;
+        }
+        tried += 1;
+        let before: usize = std::iter::once(si)
+            .chain(blockers.iter().copied())
+            .map(|k| states[k].needed - states[k].joined)
+            .sum();
+        let kept: Vec<Saved> = blockers.iter().map(|&sj| save(&states[sj])).collect();
+        for &sj in &blockers {
+            let st = &mut states[sj];
+            if let Some(fp) = st.fp.take() {
+                soft.apply(&fp, false);
+            }
+            let clr = env.rules.rule(st.net).clearance;
+            let bad: Vec<bool> = st
+                .pieces
+                .iter()
+                .map(|p| {
+                    let fp = Soft::footprint(
+                        env.grid,
+                        env.rules,
+                        &Copper::of(std::slice::from_ref(p), clr, &st.pads),
+                    );
+                    path.iter().any(|&(b, c)| fp.0[b].binary_search(&c).is_ok())
+                })
+                .collect();
+            st.bad = Some(bad);
+            st.fp = kept_footprint(st, env.rules, env.grid);
+            if let Some(fp) = &st.fp {
+                soft.apply(fp, true);
+            }
+        }
+        reroute(&mut states[si], env, pres, true);
+        for &sj in &blockers {
+            reroute(&mut states[sj], env, pres, true);
+        }
+        let after: usize = std::iter::once(si)
+            .chain(blockers.iter().copied())
+            .map(|k| states[k].needed - states[k].joined)
+            .sum();
+        if after < before {
+            won += before - after;
+        } else {
+            for (&sj, k) in blockers.iter().zip(kept).rev() {
+                restore(&mut states[sj], k, soft);
+            }
+            restore(&mut states[si], held, soft);
+            lost.insert(key);
+        }
+    }
+    (tried, won)
 }
 
 fn drop_overlaps(
