@@ -239,7 +239,7 @@ fn joined_pad<'a>(outline: &Vec<P>, others: impl Iterator<Item = &'a Vec<P>>) ->
 }
 
 pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckResult, String> {
-    let obstacles = obstacles_of(layout);
+    let obstacles = obstacles_of(layout, board);
     let edge = board.rules.min_copper_to_edge.to_mm();
     let min_w = board.rules.min_track_width.to_mm();
     let mut out = NeckResult::default();

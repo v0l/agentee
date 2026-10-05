@@ -504,7 +504,8 @@ impl Query<'_> {
                     continue;
                 }
                 let j = l2 * area + k2;
-                if !(planar(l2, k2) || flag(flags, epoch, j) & TARGET != 0) || self.blocked(j) {
+                let target = flag(flags, epoch, j) & TARGET != 0;
+                if !(planar(l2, k2) || target) || self.blocked(j) || !(target || ok(l2, x, y)) {
                     continue;
                 }
                 let mut best: Option<(f32, usize)> = None;

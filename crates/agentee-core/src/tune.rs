@@ -157,7 +157,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
         }
     }
 
-    let mut obstacles = obstacles_of(layout);
+    let mut obstacles = obstacles_of(layout, board);
     let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let floor = board.rules.min_clearance.to_mm();
@@ -579,8 +579,10 @@ fn legal(
     true
 }
 
-pub(crate) fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
+pub(crate) fn obstacles_of(layout: &Layout, board: &Board) -> Vec<Obstacle> {
     let mut out = Vec::new();
+    let rules = &board.rules;
+    let nl = layout.copper.len();
     let clearance = |n: Option<usize>| n.map(|n| layout.nets[n].clearance).unwrap_or(0.0);
     for part in &layout.parts {
         for pad in &part.pads {
@@ -592,15 +594,32 @@ pub(crate) fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
                     clearance(pad.net),
                 ));
             }
-            if let Some((c, s, _)) = pad.drill
-                && (pad.kind == PadKind::Npth || pad.copper.is_empty())
-            {
-                out.push(Obstacle::new(
-                    None,
-                    layout.copper.clone(),
-                    Shape::Circle(c, s[0].max(s[1]) / 2.0),
-                    0.0,
-                ));
+            if let Some((c, s, _)) = pad.drill {
+                let r = s[0].max(s[1]) / 2.0;
+                let hole = Shape::Circle(c, r);
+                if pad.kind == PadKind::Npth || pad.copper.is_empty() {
+                    out.push(Obstacle::new(None, layout.copper.clone(), hole, 0.0));
+                } else {
+                    let (outer, inner): (Vec<_>, Vec<_>) = layout
+                        .copper
+                        .iter()
+                        .enumerate()
+                        .partition(|(i, _)| *i == 0 || *i + 1 == nl);
+                    let names =
+                        |v: Vec<(usize, &String)>| v.into_iter().map(|(_, l)| l.clone()).collect();
+                    out.push(Obstacle::new(
+                        pad.net,
+                        names(outer),
+                        Shape::Circle(c, r),
+                        rules.min_pth_hole_to_copper.to_mm(),
+                    ));
+                    out.push(Obstacle::new(
+                        pad.net,
+                        names(inner),
+                        hole,
+                        rules.min_inner_pth_hole_to_copper.to_mm(),
+                    ));
+                }
             }
         }
     }
@@ -620,6 +639,12 @@ pub(crate) fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
             v.layers.clone(),
             Shape::Circle(v.at, v.diameter / 2.0),
             clearance(Some(v.net)),
+        ));
+        out.push(Obstacle::new(
+            Some(v.net),
+            layout.copper.clone(),
+            Shape::Circle(v.at, v.drill / 2.0),
+            rules.min_via_hole_to_copper.to_mm(),
         ));
     }
     out
