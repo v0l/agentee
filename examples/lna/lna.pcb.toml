@@ -127,8 +127,7 @@ points = [[5.08, 12.0], [8.02, 12.0]]
 [[tracks]]
 net = "RF_IN"
 layer = "F.Cu"
-points = [[6.2, 12.0], [6.2, 11.82]]
-width = "0.15mm"
+points = [[6.2, 12.0], [6.2, 11.875]]
 
 [[tracks]]
 net = "RF_AMP_IN"
