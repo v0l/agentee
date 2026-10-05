@@ -41,6 +41,7 @@ pub struct Model<'a> {
     pub detail: Option<detail::DetailPlan>,
     pub hot: Vec<placement::Hot>,
     pub base: Option<negotiate::Base>,
+    pub hist: Option<Vec<f32>>,
     pub text: String,
 }
 
@@ -140,6 +141,7 @@ pub fn run_text(
         detail: None,
         hot: Vec::new(),
         base: None,
+        hist: None,
         text: String::new(),
     };
     let cfg = Config {
@@ -217,6 +219,7 @@ impl Driver<'_, '_> {
         let t = std::time::Instant::now();
         (model.file, model.layout) = (self.cfg.resolve)(&self.text)?;
         model.base = None;
+        model.hist = None;
         Ok(t.elapsed().as_millis())
     }
 

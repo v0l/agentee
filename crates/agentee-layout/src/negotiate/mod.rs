@@ -20,6 +20,7 @@ pub use spread::{illegal, spread};
 const MAX_TARGETS: usize = 3_000_000;
 const DEFERRED: &str = "deferred";
 const MAX_PRES: f32 = 100.0;
+const SETTLED: usize = 2;
 const DEAD: &str = "no path within the rules in an earlier round";
 use soft::{Copper, Piece, Soft};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -75,6 +76,7 @@ pub struct Guide {
     pub corridors: HashMap<usize, HashSet<(usize, i64, i64)>>,
     pub prefer: HashMap<usize, Vec<(usize, P, P)>>,
     pub prefer_vias: HashMap<usize, Vec<P>>,
+    pub hist: Option<Vec<f32>>,
 }
 
 impl Guide {
@@ -88,6 +90,7 @@ impl Guide {
 
 #[derive(Clone, Debug, Default)]
 pub struct Outcome {
+    pub hist: Vec<f32>,
     pub result: RouteResult,
     pub overlap: Vec<(usize, usize, P)>,
     pub rounds: usize,
@@ -338,6 +341,9 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         });
     }
     let mut soft = Soft::new(grid, rules);
+    if let Some(h) = guide.hist.as_ref().filter(|h| h.len() == soft.hist.len()) {
+        soft.hist.clone_from(h);
+    }
     log(format!(
         "grid {}x{}x{}, {} nets, {} connections, {} track buckets, {} via buckets, {} corridors",
         grid.w,
@@ -357,6 +363,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     let plane = grid.plane();
     let mut pres = 0.5f32;
     let tiles = Tiles::new(grid, guide);
+    let mut seen: HashMap<usize, (u64, usize)> = HashMap::new();
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(64);
     let mut todo = order.clone();
     let mut conflicted: Vec<usize> = Vec::new();
@@ -384,10 +391,23 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         conflicted.clear();
         overlap_cells.clear();
         let mut overlap = 0usize;
+        let mut settled = Vec::new();
         for &si in &order {
             let (cells, bad) = conflicts(&states[si], grid, &soft, rules);
             states[si].bad = Some(bad);
             if !cells.is_empty() {
+                let sig = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    cells.hash(&mut h);
+                    h.finish()
+                };
+                let e = seen.entry(si).or_insert((0, 0));
+                e.1 = if e.0 == sig { e.1 + 1 } else { 0 };
+                e.0 = sig;
+                if pres >= MAX_PRES && e.1 >= SETTLED {
+                    settled.push(si);
+                }
                 overlap += cells.len();
                 conflicted.push(si);
                 for &(l, c) in &cells {
@@ -416,7 +436,10 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             }
         }
         pres = (pres * 1.8).min(MAX_PRES);
-        todo = conflicted.clone();
+        todo = conflicted.iter().copied().filter(|si| !settled.contains(si)).collect();
+        if todo.is_empty() {
+            break;
+        }
     }
     let overlap_left = conflicted.len();
     for st in &states {
@@ -533,7 +556,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     for f in &out.failed {
         log(format!("  failed {} at {:?}: {}", f.net, f.from, f.reason));
     }
-    Outcome { result: out, overlap: overlap_cells, rounds, overlap_left }
+    Outcome { hist: soft.hist, result: out, overlap: overlap_cells, rounds, overlap_left }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]

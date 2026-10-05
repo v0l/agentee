@@ -247,16 +247,19 @@ committed layout's, score and time. `AGENTEE_BENCH_OUT=dir` keeps the result fil
 
 | case | before (`8917371`) | now | pass |
 |---|---|---|---|
-| `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.6 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
-| `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 1.1 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
-| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 382 of 498, 69 unrouted, 477 s | 0 unrouted, under 60 s |
-| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 410 of 499, 61 unrouted, 146 errors (121 silk), 1727 s | 0 unrouted, decap term under 20, under 120 s |
+| `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.5 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
+| `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 1.0 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
+| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 417 of 498, 61 unrouted, 254 s | 0 unrouted, under 60 s |
+| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 434 of 503, 48 unrouted, 143 errors (114 silk), 731 s | 0 unrouted, decap term under 20, under 120 s |
 
-Connection counts went up because plane and ground pads are now routed connections. On `sdr` the
-route-only result has the same clearance and drill errors as the committed layout (both from its
-`[[fanouts]]`) plus one doubled same-net segment. Most of what stays unrouted is power and ground
-pads in dense regions, RF nets limited to F.Cu that cross each other, and BGA balls; detail stalls
-with 70 to 90 nets still overlapping and the hard pass drops them.
+Connection counts went up because plane and ground pads are now routed connections. The
+committed `sdr` layout itself leaves 39 connections unrouted. On `sdr` the only clearance errors
+left are the two from the committed `[[fanouts]]`; the rest are pair and interface timing (pairs
+are not routed coupled yet) and the silk the placer leaves. What stays unrouted is mostly the
+LVDS pairs on In2.Cu, whose pin order crosses between the FPGA and the FX5, RF nets limited to
+F.Cu that cross each other, power pads in the BGA fields, and eleven VBUS pads that detail finds
+no legal path out of. One detail run takes about 75 s; the route-only case runs
+three (global and detail repeat while detail gains), the full flow up to nine.
 
 ## Status
 
@@ -282,10 +285,18 @@ Built, in `crates/agentee-layout`:
   between repetitions and raised where detail still overlapped. Edges next to a net's own pads do
   not count as overflow for that net.
 - **Detail.** The negotiated router with corridors as a soft cost, escape preferences as a
-  discount, criticality from the board or `[engine.detail] criticality`, nets that do not touch
-  routed in parallel within a round, a stall stop, and a repair pass for pads cut off from their
-  pour once the zones refill around the new copper.
-- **Finish.** Spread, then length tuning on the tracks the engine made.
+  discount and criticality from the board or `[engine.detail] criticality`. Nets route in
+  parallel inside a round: each net is fenced to its corridor (or to the boxes around the pieces
+  it has to replace), and nets whose fences touch keep their order, so a run does not depend on
+  thread timing. A net that cannot finish inside its fence routes again on its own afterwards.
+  Only the pieces that overlapped are ripped up; a net that keeps the same overlap at full
+  pressure for two rounds is left for the hard pass. Pad clearance and necks use the exact pad
+  shapes, so a 0.12 mm track leaves a 0.4 mm pitch pin. The hard pass ends with an exact clash
+  check that drops any piece still touching another net. A repetition starts from the history of
+  the one before. A repair pass reroutes pads cut off from their pour once the zones refill.
+- **Finish.** Spread (each move checked against the exact copper around it), length tuning that
+  never folds a track onto its own net, then neck down of track ends that enter a pad narrower
+  than the track.
 
 Not built yet:
 

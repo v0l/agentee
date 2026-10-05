@@ -49,9 +49,11 @@ impl Phase for Detail {
             report.failed.push(e);
             return report;
         }
-        let guide = crate::global::guide(model);
+        let mut guide = crate::global::guide(model);
+        guide.hist = model.hist.take();
         let base = model.base.as_ref().expect("base is built");
         let out = negotiate::route_on(&model.layout, base, &opts, &guide);
+        model.hist = Some(out.hist);
         let l = &model.layout;
         let r = out.result;
         report.notes.push(format!(
