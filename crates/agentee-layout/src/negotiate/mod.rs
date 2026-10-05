@@ -987,7 +987,8 @@ fn route_many(
         for i in by_cost {
             let si = todo[i];
             let c = &states[si].clash;
-            let free = (0..groups.len()).find(|&k| groups[k].len() < BATCH && !hit(&seen[k], c));
+            let free =
+                (0..groups.len()).find(|&k| groups[k].len() < batch_size() && !hit(&seen[k], c));
             let k = free.unwrap_or_else(|| {
                 groups.push(Vec::new());
                 seen.push(Vec::new());
@@ -2002,4 +2003,8 @@ fn piece_cells(env: &Env, p: &Piece, win: &Window) -> Vec<usize> {
         shape_cells(grid, &Shape::Circle(at, o.r), &o.layers, win, &mut out);
     }
     out
+}
+
+fn batch_size() -> usize {
+    std::env::var("AGENTEE_BATCH").ok().and_then(|v| v.parse().ok()).unwrap_or(BATCH)
 }

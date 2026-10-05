@@ -331,6 +331,19 @@ impl Ctx<'_> {
             .map(|(_, k)| *k)
     }
 
+    fn fold_if_clear(&self, pts: &mut Vec<P>, n: &Neck, front: bool) {
+        let mut folded = pts.clone();
+        fold_back(&mut folded, n, front);
+        let c = if front { folded.first() } else { folded.last() };
+        let Some(&c) = c else { return };
+        let narrow = n.width < self.rule.width[n.layer] - 1e-6;
+        let long = geom::dist(n.from, n.to) + geom::dist(n.to, c) > self.rule.neck;
+        let w = if narrow && long { self.rule.width[n.layer] } else { n.width };
+        if self.clear_line_w(n.layer, n.to, c, w) {
+            *pts = folded;
+        }
+    }
+
     pub fn piece(
         &self,
         found: &Found,
@@ -394,7 +407,7 @@ impl Ctx<'_> {
                 if let (Some(n), None, Some((l, pts))) = (&a.neck, &a.via, runs.first_mut())
                     && *l == n.layer
                 {
-                    fold_back(pts, n, true);
+                    self.fold_if_clear(pts, n, true);
                 }
                 let link = match (&a.via, runs.first()) {
                     (None, Some((_, pts))) => pts.first().copied(),
@@ -414,7 +427,7 @@ impl Ctx<'_> {
                 if let (Some(n), None, Some((l, pts))) = (&a.neck, &a.via, runs.last_mut())
                     && *l == n.layer
                 {
-                    fold_back(pts, n, false);
+                    self.fold_if_clear(pts, n, false);
                 }
                 let link = match (&a.via, runs.last()) {
                     (None, Some((_, pts))) => pts.last().copied(),
