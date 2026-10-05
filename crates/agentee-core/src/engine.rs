@@ -106,6 +106,12 @@ pub struct PlacePhaseFile {
     pub density: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standoff: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spread: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

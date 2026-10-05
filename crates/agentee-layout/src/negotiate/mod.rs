@@ -90,6 +90,7 @@ impl Guide {
 
 #[derive(Clone, Debug, Default)]
 pub struct Outcome {
+    pub spend: Spend,
     pub hist: Vec<f32>,
     pub result: RouteResult,
     pub overlap: Vec<(usize, usize, P)>,
@@ -106,6 +107,7 @@ struct NetState {
     fence: Option<Vec<bool>>,
     dead: HashSet<usize>,
     bad: Option<Vec<bool>>,
+    spent_ms: f64,
     own: HashSet<u32>,
     copper: NetCopper,
     pads: Vec<PadRef>,
@@ -329,6 +331,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             fence: None,
             dead: HashSet::new(),
             bad: None,
+            spent_ms: 0.0,
             own,
             copper,
             pads,
@@ -371,8 +374,11 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     let mut best = usize::MAX;
     let mut since = 0;
     let mut rounds = 0;
+    let mut spend = Spend { threads, setup_ms: ms(t0), ..Default::default() };
+    let mut last_gain = 0;
     for round in 0..opts.rounds.max(1) {
         rounds = round + 1;
+        let tr = Instant::now();
         let env = Env {
             layout,
             grid,
@@ -386,8 +392,8 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             tiles: &tiles,
             fenced: false,
         };
-        let done = route_many(&mut states, &todo, &env, pres, false, threads);
-        log(format!("round {round}: {done} nets routed again with a wider window"));
+        let many = route_many(&mut states, &todo, &env, pres, false, threads);
+        spend.add(&many);
         conflicted.clear();
         overlap_cells.clear();
         let mut overlap = 0usize;
@@ -419,16 +425,31 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         let joined: usize = states.iter().map(|s| s.joined).sum();
         let needed: usize = states.iter().map(|s| s.needed).sum();
         log(format!(
-            "round {round}: rerouted {}, {joined} of {needed} joined, {} nets overlap ({overlap} cells), pres {pres:.2}",
+            "round {round}: rerouted {}, {joined} of {needed} joined, {} nets overlap ({overlap} cells), pres {pres:.2}, {:.0} ms, {:.0} ms of work, {:.0} ms on the longest chain, {} redone outside their fence",
             todo.len(),
-            conflicted.len()
+            conflicted.len(),
+            ms(tr),
+            many.work_ms,
+            many.critical_ms,
+            many.again
         ));
+        spend.rounds.push(RoundSpend {
+            nets: todo.len(),
+            wall_ms: ms(tr),
+            work_ms: many.work_ms,
+            critical_ms: many.critical_ms,
+            joined,
+            overlap_nets: conflicted.len(),
+            overlap_cells: overlap,
+        });
         if conflicted.is_empty() {
+            last_gain = round;
             break;
         }
         if (overlap as f64) < best as f64 * 0.95 {
             best = overlap;
             since = 0;
+            last_gain = round;
         } else if pres >= MAX_PRES {
             since += 1;
             if since >= opts.stall.max(1) {
@@ -442,6 +463,8 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         }
     }
     let overlap_left = conflicted.len();
+    spend.tail_ms = spend.rounds.iter().skip(last_gain + 1).map(|r| r.wall_ms).sum();
+    spend.stuck_ms = conflicted.iter().map(|&si| states[si].spent_ms).sum();
     for st in &states {
         for f in &st.failed {
             log(format!("  soft failure {} at {:?}: {}", f.net, f.from, f.reason));
@@ -485,6 +508,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             );
         }
     }
+    let th = Instant::now();
     if !conflicted.is_empty() && std::env::var("AGENTEE_ROUTE_SOFT").is_err() {
         for &si in &conflicted {
             if let Some(fp) = states[si].fp.take() {
@@ -511,8 +535,10 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             tiles: &tiles,
             fenced: false,
         };
-        route_many(&mut states, &conflicted, &env, pres, true, threads);
-        let dropped = drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
+        let many = route_many(&mut states, &conflicted, &env, pres, true, threads);
+        spend.add(&many);
+        let (dropped, dropped_ms) = drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
+        spend.dropped_ms = dropped_ms;
         if dropped > 0 {
             log(format!("{dropped} pieces dropped, still overlapping after the hard pass"));
         }
@@ -529,6 +555,10 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             lost.join(" ")
         ));
     }
+    spend.hard_ms = ms(th);
+    spend.final_ms = states.iter().flat_map(|s| &s.pieces).map(|p| p.ms).sum();
+    spend.wall_ms = ms(t0);
+    log(spend.summary());
     let mut out = RouteResult::default();
     for st in &states {
         let name = layout.nets[st.net].name.clone();
@@ -556,7 +586,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     for f in &out.failed {
         log(format!("  failed {} at {:?}: {}", f.net, f.from, f.reason));
     }
-    Outcome { hist: soft.hist, result: out, overlap: overlap_cells, rounds, overlap_left }
+    Outcome { spend, hist: soft.hist, result: out, overlap: overlap_cells, rounds, overlap_left }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -609,7 +639,133 @@ pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAcc
     out
 }
 
-type Routed = (Vec<Piece>, Vec<Unrouted>, usize, Vec<usize>);
+#[derive(Default)]
+struct Routed {
+    pieces: Vec<Piece>,
+    failed: Vec<Unrouted>,
+    joined: usize,
+    dead: Vec<usize>,
+    failed_ms: f64,
+    ripped_ms: f64,
+    ms: f64,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct Spend {
+    pub threads: usize,
+    pub wall_ms: f64,
+    pub setup_ms: f64,
+    pub hard_ms: f64,
+    pub tail_ms: f64,
+    pub work_ms: f64,
+    pub final_ms: f64,
+    pub ripped_ms: f64,
+    pub failed_ms: f64,
+    pub deferred_ms: f64,
+    pub dropped_ms: f64,
+    pub stuck_ms: f64,
+    pub rounds: Vec<RoundSpend>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct RoundSpend {
+    pub nets: usize,
+    pub wall_ms: f64,
+    pub work_ms: f64,
+    pub critical_ms: f64,
+    pub joined: usize,
+    pub overlap_nets: usize,
+    pub overlap_cells: usize,
+}
+
+impl Spend {
+    fn add(&mut self, m: &Many) {
+        self.work_ms += m.work_ms;
+        self.deferred_ms += m.deferred_ms;
+        self.failed_ms += m.failed_ms;
+        self.ripped_ms += m.ripped_ms;
+    }
+
+    pub fn absorb(&mut self, o: &Spend) {
+        self.threads = self.threads.max(o.threads);
+        self.wall_ms += o.wall_ms;
+        self.setup_ms += o.setup_ms;
+        self.hard_ms += o.hard_ms;
+        self.tail_ms += o.tail_ms;
+        self.work_ms += o.work_ms;
+        self.final_ms += o.final_ms;
+        self.ripped_ms += o.ripped_ms;
+        self.failed_ms += o.failed_ms;
+        self.deferred_ms += o.deferred_ms;
+        self.dropped_ms += o.dropped_ms;
+        self.stuck_ms += o.stuck_ms;
+        self.rounds.extend(o.rounds.iter().cloned());
+    }
+
+    pub fn other_ms(&self) -> f64 {
+        (self.work_ms
+            - self.final_ms
+            - self.ripped_ms
+            - self.failed_ms
+            - self.deferred_ms
+            - self.dropped_ms)
+            .max(0.0)
+    }
+
+    pub fn round_wall_ms(&self) -> f64 {
+        self.rounds.iter().map(|r| r.wall_ms).sum()
+    }
+
+    pub fn critical_ms(&self) -> f64 {
+        self.rounds.iter().map(|r| r.critical_ms).sum()
+    }
+
+    pub fn summary(&self) -> String {
+        let pct = |v: f64| if self.work_ms > 0.0 { 100.0 * v / self.work_ms } else { 0.0 };
+        let s = |v: f64| v / 1000.0;
+        format!(
+            "time {:.1} s: setup {:.1} s, {} rounds {:.1} s ({:.1} s after the last round that cut the overlap), hard pass {:.1} s\n\
+             search work {:.1} s on {} threads, {:.1} s on the longest chains: kept {:.1} s ({:.0}%), ripped up later {:.1} s ({:.0}%), found nothing {:.1} s ({:.0}%), redone outside the fence {:.1} s ({:.0}%), dropped as clashes {:.1} s ({:.0}%), bookkeeping {:.1} s ({:.0}%)\n\
+             {:.1} s went to nets that still overlapped when negotiation stopped",
+            s(self.wall_ms),
+            s(self.setup_ms),
+            self.rounds.len(),
+            s(self.round_wall_ms()),
+            s(self.tail_ms),
+            s(self.hard_ms),
+            s(self.work_ms),
+            self.threads,
+            s(self.critical_ms()),
+            s(self.final_ms),
+            pct(self.final_ms),
+            s(self.ripped_ms),
+            pct(self.ripped_ms),
+            s(self.failed_ms),
+            pct(self.failed_ms),
+            s(self.deferred_ms),
+            pct(self.deferred_ms),
+            s(self.dropped_ms),
+            pct(self.dropped_ms),
+            s(self.other_ms()),
+            pct(self.other_ms()),
+            s(self.stuck_ms),
+        )
+    }
+}
+
+#[derive(Default)]
+struct Many {
+    work_ms: f64,
+    critical_ms: f64,
+    deferred_ms: f64,
+    failed_ms: f64,
+    ripped_ms: f64,
+    again: usize,
+}
+
+fn ms(t: Instant) -> f64 {
+    t.elapsed().as_secs_f64() * 1000.0
+}
 
 fn base_margin(env: &Env, st: &NetState) -> f64 {
     let guided = env.guide.corridors.get(&st.net).is_some_and(|c| !c.is_empty());
@@ -666,24 +822,32 @@ fn route_one(
     hard: bool,
     old: Option<&Footprint>,
 ) -> (Routed, Footprint) {
+    let t = Instant::now();
     if let Some(fp) = old {
         env.soft.apply(fp, false);
     }
+    let before: f64 = st.pieces.iter().map(|p| p.ms).sum();
     let mut r = match kept(st) {
         Some(keep) => {
             let nc = st.copper.with(env.layout, env.islands, piece_items(env.rules, &keep));
             let mut r = route_net(st, &nc, env, pres, hard);
             let mut all: Vec<Piece> = keep.into_iter().cloned().collect();
-            all.append(&mut r.0);
-            r.0 = all;
+            r.ripped_ms = before - all.iter().map(|p| p.ms).sum::<f64>();
+            all.append(&mut r.pieces);
+            r.pieces = all;
             r
         }
-        None => route_net(st, &st.copper, env, pres, hard),
+        None => {
+            let mut r = route_net(st, &st.copper, env, pres, hard);
+            r.ripped_ms = before;
+            r
+        }
     };
-    r.2 = st.needed.saturating_sub(r.1.len());
+    r.joined = st.needed.saturating_sub(r.failed.len());
     let rule = env.rules.rule(st.net);
-    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.0, rule.clearance, &st.pads));
+    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.pieces, rule.clearance, &st.pads));
     env.soft.apply(&fp, true);
+    r.ms = ms(t);
     (r, fp)
 }
 
@@ -694,7 +858,7 @@ fn route_many(
     pres: f32,
     hard: bool,
     threads: usize,
-) -> usize {
+) -> Many {
     let n = todo.len();
     let halo = (env.rules.reach / env.tiles.size).ceil() as i64 + 1;
     let mut bits: Vec<Vec<u64>> = Vec::with_capacity(n);
@@ -755,33 +919,33 @@ fn route_many(
             s.spawn(work);
         }
     });
-    let mut again = 0;
+    let mut out = Many::default();
+    let mut ef = vec![0.0f64; n];
     for (i, slot) in results.into_iter().enumerate() {
-        let ((pieces, failed, joined, dead), fp) =
-            slot.into_inner().expect("result").expect("routed");
+        let (mut r, mut fp) = slot.into_inner().expect("result").expect("routed");
+        ef[i] = r.ms + deps[i].iter().map(|&j| ef[j]).fold(0.0, f64::max);
+        out.work_ms += r.ms;
         let st = &mut states[todo[i]];
-        if failed.iter().any(|f| f.reason == DEFERRED) {
+        if r.failed.iter().any(|f| f.reason == DEFERRED) {
             env.soft.apply(&fp, false);
-            let ((pieces, failed, joined, dead), fp) = route_one(st, env, pres, hard, None);
-            if !hard {
-                st.dead.extend(dead);
-            }
-            st.pieces = pieces;
-            st.failed = failed;
-            st.joined = joined;
-            st.fp = Some(fp);
-            again += 1;
-            continue;
+            out.deferred_ms += r.ms;
+            (r, fp) = route_one(st, env, pres, hard, None);
+            out.work_ms += r.ms;
+            out.again += 1;
         }
         if !hard {
-            st.dead.extend(dead);
+            st.dead.extend(std::mem::take(&mut r.dead));
         }
-        st.pieces = pieces;
-        st.failed = failed;
-        st.joined = joined;
+        out.failed_ms += r.failed_ms;
+        out.ripped_ms += r.ripped_ms;
+        st.spent_ms += r.ms;
+        st.pieces = r.pieces;
+        st.failed = r.failed;
+        st.joined = r.joined;
         st.fp = Some(fp);
     }
-    again
+    out.critical_ms = ef.iter().copied().fold(0.0, f64::max);
+    out
 }
 
 fn lean_mask(env: &Env, net: usize, win: &Window, fence: Option<&[bool]>) -> Option<Vec<i8>> {
@@ -934,8 +1098,9 @@ fn drop_overlaps(
     soft: &Soft,
     rules: &Rules,
     layout: &Layout,
-) -> usize {
+) -> (usize, f64) {
     let mut dropped = 0;
+    let mut dropped_ms = 0.0;
     for &si in order {
         let (cells, bad) = conflicts(&states[si], grid, soft, rules);
         if cells.is_empty() {
@@ -968,6 +1133,7 @@ fn drop_overlaps(
                     reason: "overlapped another net".into(),
                 });
                 dropped += 1;
+                dropped_ms += p.ms;
             } else {
                 keep.push(p);
             }
@@ -982,7 +1148,7 @@ fn drop_overlaps(
         soft.apply(&fp, true);
         st.fp = Some(fp);
     }
-    dropped
+    (dropped, dropped_ms)
 }
 
 fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
@@ -1102,7 +1268,7 @@ fn route_net(st: &NetState, nc: &NetCopper, env: &Env, pres: f32, hard: bool) ->
     let Some(&start) =
         pad_groups.iter().max_by_key(|&&g| (!nc.islands(g).is_empty(), size(g), usize::MAX - g))
     else {
-        return (Vec::new(), Vec::new(), 0, Vec::new());
+        return Routed::default();
     };
     let points: Vec<Vec<P>> = (0..nc.groups).map(|g| nc.points(g)).collect();
     let mut tree = vec![start];
@@ -1124,6 +1290,7 @@ fn route_net(st: &NetState, nc: &NetCopper, env: &Env, pres: f32, hard: bool) ->
     let mut failed = Vec::new();
     let mut dead = Vec::new();
     let mut joined = 0;
+    let mut failed_ms = 0.0;
     while !rest.is_empty() {
         let k = (0..rest.len()).min_by(|&i, &j| best[i].0.total_cmp(&best[j].0)).unwrap();
         let g = rest.remove(k);
@@ -1133,8 +1300,10 @@ fn route_net(st: &NetState, nc: &NetCopper, env: &Env, pres: f32, hard: bool) ->
             failed.push(Unrouted { net: name.clone(), from: a, to: b, reason: DEAD.into() });
             continue;
         }
+        let t = Instant::now();
         match connect(st, nc, env, g, &tree, &pieces, a, b, pres, hard) {
-            Ok(piece) => {
+            Ok(mut piece) => {
+                piece.ms = ms(t);
                 let new_pts: Vec<P> =
                     points[g].iter().copied().chain(piece_points(&piece)).collect();
                 let isl = nc.islands(g);
@@ -1158,12 +1327,13 @@ fn route_net(st: &NetState, nc: &NetCopper, env: &Env, pres: f32, hard: bool) ->
             Err(reason) => {
                 if reason != DEFERRED {
                     dead.push(key);
+                    failed_ms += ms(t);
                 }
                 failed.push(Unrouted { net: name.clone(), from: a, to: b, reason })
             }
         }
     }
-    (pieces, failed, joined, dead)
+    Routed { pieces, failed, joined, dead, failed_ms, ..Default::default() }
 }
 
 #[allow(clippy::too_many_arguments)]

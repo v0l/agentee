@@ -9,6 +9,7 @@ pub struct Piece {
     pub tracks: Vec<Run>,
     pub vias: Vec<(P, usize)>,
     pub trimmed: Option<Vec<Run>>,
+    pub ms: f64,
 }
 
 #[derive(Clone, Debug)]

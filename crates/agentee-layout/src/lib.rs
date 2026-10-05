@@ -42,6 +42,7 @@ pub struct Model<'a> {
     pub hot: Vec<placement::Hot>,
     pub base: Option<negotiate::Base>,
     pub hist: Option<Vec<f32>>,
+    pub pass: usize,
     pub text: String,
 }
 
@@ -142,6 +143,7 @@ pub fn run_text(
         hot: Vec::new(),
         base: None,
         hist: None,
+        pass: 0,
         text: String::new(),
     };
     let cfg = Config {
@@ -159,6 +161,7 @@ pub fn run_text(
 
 #[derive(Clone, Debug, Serialize)]
 pub struct RunReport {
+    pub time: TimeReport,
     pub phases: Vec<PhaseReport>,
     pub score: Score,
     pub skipped: Vec<String>,
@@ -208,6 +211,44 @@ struct Driver<'c, 'a> {
     text: String,
     reports: Vec<PhaseReport>,
     skipped: Vec<String>,
+    discarded: Vec<(String, f64)>,
+    search: negotiate::Spend,
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TimeReport {
+    pub total_ms: f64,
+    pub reload_ms: f64,
+    pub stages: Vec<(String, f64)>,
+    pub discarded: Vec<(String, f64)>,
+    pub search: negotiate::Spend,
+}
+
+impl TimeReport {
+    pub fn table(&self) -> String {
+        let s = |v: f64| format!("{:>8.1} s", v / 1000.0);
+        let mut t = format!("{:<52}{}\n", "time", s(self.total_ms));
+        for (name, ms) in &self.stages {
+            t += &format!("  {:<50}{}\n", name, s(*ms));
+        }
+        t += &format!("  {:<50}{}\n", "resolving the file again", s(self.reload_ms));
+        let thrown = self.discarded.iter().map(|d| d.1).fold(0.0, |a, b| a + b);
+        t += &format!("{:<52}{}\n", "thrown away", s(thrown));
+        for (what, ms) in &self.discarded {
+            t += &format!("  {:<50}{}\n", what, s(*ms));
+        }
+        if self.search.work_ms > 0.0 {
+            t += "detail search\n";
+            for line in self.search.summary().lines() {
+                t += &format!("  {line}\n");
+            }
+        }
+        t
+    }
+}
+
+fn ms_since(t: std::time::Instant) -> f64 {
+    t.elapsed().as_secs_f64() * 1000.0
 }
 
 impl Driver<'_, '_> {
@@ -275,7 +316,15 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let chosen = selected(cfg)?;
     let has = |s: &str| chosen.iter().any(|x| x == s);
     let routes = has("global") || has("detail");
-    let mut d = Driver { cfg, text: cfg.text.clone(), reports: Vec::new(), skipped: Vec::new() };
+    let started = std::time::Instant::now();
+    let mut d = Driver {
+        cfg,
+        text: cfg.text.clone(),
+        reports: Vec::new(),
+        skipped: Vec::new(),
+        discarded: Vec::new(),
+        search: negotiate::Spend::default(),
+    };
     if routes {
         for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
             d.text = strip_plan(&d.text, p);
@@ -297,7 +346,9 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let place_rounds = if has("place") { cfg.engine.place_rounds.unwrap_or(3).max(1) } else { 1 };
     let rounds = cfg.engine.rounds.unwrap_or(3).max(1);
     let mut best_pass: Option<(usize, String, Option<detail::DetailPlan>)> = None;
+    let mut best_pass_ms: Option<(u32, f64)> = None;
     for pass in 0..place_rounds {
+        let tp = std::time::Instant::now();
         if d.stopped() {
             d.skipped.push("stopped".into());
             break;
@@ -308,6 +359,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             }
             let t0 = d.start("place");
             model.text = d.text.clone();
+            model.pass = pass as usize;
             let r = placement::Place.run(model, &cfg.engine);
             let mut reload_ms = 0;
             if let Some(plan) = &model.placement
@@ -354,7 +406,9 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         if routes {
             let mut best = 0;
             let mut kept: Option<detail::DetailPlan> = None;
-            for _ in 0..rounds {
+            let mut kept_rep: Option<(u32, f64)> = None;
+            for rep in 0..rounds {
+                let tr = std::time::Instant::now();
                 if d.stopped() {
                     d.skipped.push("stopped".into());
                     break;
@@ -373,18 +427,32 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                 }
                 if has("detail") {
                     d.step(model, &detail::Detail);
+                    if let Some(x) = &model.detail {
+                        d.search.absorb(&x.spend);
+                    }
                 }
+                let rep_ms = ms_since(tr);
                 let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
                 let clean = model
                     .detail
                     .as_ref()
                     .is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
                 let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
+                let label = |k: u32, why: &str| format!("pass {} route {}, {why}", pass + 1, k + 1);
                 if routed < best + step && kept.is_some() {
                     if routed > best {
                         kept = model.detail.clone();
+                        if let Some((k, t)) = kept_rep.replace((rep, rep_ms)) {
+                            d.discarded.push((label(k, "beaten by the next route"), t));
+                        }
+                    } else {
+                        d.discarded
+                            .push((label(rep, "routed no more than the one before"), rep_ms));
                     }
                     break;
+                }
+                if let Some((k, t)) = kept_rep.replace((rep, rep_ms)) {
+                    d.discarded.push((label(k, "beaten by the next route"), t));
                 }
                 best = routed;
                 kept = model.detail.clone();
@@ -413,8 +481,17 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
         let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
         let gained = best_pass.as_ref().is_none_or(|b| routed >= b.0 + step);
+        let pass_ms = ms_since(tp);
         if best_pass.as_ref().is_none_or(|b| routed > b.0) {
             best_pass = Some((routed, d.text.clone(), model.detail.clone()));
+            if let Some((k, t)) = best_pass_ms.replace((pass, pass_ms)) {
+                d.discarded.push((format!("placement pass {}, beaten by a later pass", k + 1), t));
+            }
+        } else {
+            d.discarded.push((
+                format!("placement pass {}, routed no more than pass before", pass + 1),
+                pass_ms,
+            ));
         }
         if !gained {
             break;
@@ -461,7 +538,22 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         d.done(model, r, t0, reload_ms);
     }
     let score = score_of(model);
+    let mut stages: Vec<(String, f64)> = Vec::new();
+    for r in &d.reports {
+        match stages.iter_mut().find(|x| x.0 == r.phase) {
+            Some(x) => x.1 += r.ms as f64,
+            None => stages.push((r.phase.clone(), r.ms as f64)),
+        }
+    }
+    let time = TimeReport {
+        total_ms: ms_since(started),
+        reload_ms: d.reports.iter().map(|r| r.reload_ms as f64).sum(),
+        stages,
+        discarded: d.discarded,
+        search: d.search,
+    };
     Ok(RunReport {
+        time,
         phases: d.reports,
         score,
         skipped: d.skipped,
@@ -494,6 +586,7 @@ fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Resul
     match negotiate::Base::new(&model.layout, model.board, &o) {
         Ok(base) => {
             let out = negotiate::route_on(&model.layout, &base, &o, &negotiate::Guide::default());
+            d.search.absorb(&out.spend);
             let res = out.result;
             r.notes.push(format!(
                 "repair on the refilled pours: {} nets, {} of {} connections",
@@ -513,6 +606,9 @@ fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Resul
     }
     let ms = if gained { d.write_route(model)? } else { 0 };
     r.changed = gained;
+    if !gained {
+        d.discarded.push(("repair that joined nothing".into(), ms_since(t0)));
+    }
     d.done(model, r, t0, ms);
     Ok(gained)
 }

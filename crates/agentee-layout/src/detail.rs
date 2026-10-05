@@ -20,6 +20,7 @@ pub struct DetailPlan {
     pub overlap: Vec<(String, String, P)>,
     #[serde(skip)]
     pub undo: Vec<(usize, Vec<P>)>,
+    pub spend: negotiate::Spend,
 }
 
 pub fn options(cfg: &EngineFile) -> Options {
@@ -65,6 +66,7 @@ impl Phase for Detail {
             out.rounds,
             out.overlap_left
         ));
+        report.notes.extend(out.spend.summary().lines().map(String::from));
         report.failed = r.failed.iter().map(|f| format!("{}: {}", f.net, f.reason)).collect();
         report.changed = !r.tracks.is_empty();
         model.detail = Some(DetailPlan {
@@ -81,6 +83,7 @@ impl Phase for Detail {
                 .map(|&(n, ly, at)| (l.nets[n].name.clone(), l.copper[ly].clone(), at))
                 .collect(),
             undo: Vec::new(),
+            spend: out.spend,
         });
         report
     }

@@ -212,6 +212,22 @@ fn hpwl(bd: &Board) -> f64 {
 }
 
 const SPACING: f64 = 0.2;
+const STANDOFF: f64 = 0.6;
+const SPREAD: f64 = 1.5;
+
+pub struct Spread {
+    pub spacing: f64,
+    pub standoff: f64,
+}
+
+pub fn spread_of(cfg: &EngineFile, pass: usize) -> Spread {
+    let p = cfg.place.clone().unwrap_or_default();
+    let k = p.spread.unwrap_or(SPREAD).max(1.0).powi(pass as i32);
+    Spread {
+        spacing: p.spacing.map(|l| l.to_mm()).unwrap_or(SPACING) * k,
+        standoff: p.standoff.map(|l| l.to_mm()).unwrap_or(STANDOFF) * k,
+    }
+}
 
 pub struct Place;
 
@@ -314,6 +330,7 @@ fn global_place(
     cfg: &EngineFile,
     bd: &mut Board,
     texts: &mut Vec<place::TextMove>,
+    spread: &Spread,
 ) -> Result<(String, Vec<String>), String> {
     let free: Vec<String> =
         bd.cells.iter().filter(|c| !c.fixed && !c.chained).map(|c| c.reference.clone()).collect();
@@ -351,6 +368,8 @@ fn global_place(
     let opts = place::PlaceOptions {
         parts: free.clone(),
         seed: cfg.place.as_ref().and_then(|p| p.seed).unwrap_or(1),
+        spacing: spread.spacing,
+        standoff: spread.standoff,
         ..Default::default()
     };
     let before = hpwl(bd);
@@ -383,7 +402,12 @@ fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
-fn legalise(model: &Model, bd: &mut Board, grow: &HashMap<usize, f64>) -> (String, Vec<String>) {
+fn legalise(
+    model: &Model,
+    bd: &mut Board,
+    grow: &HashMap<usize, f64>,
+    spacing: f64,
+) -> (String, Vec<String>) {
     let edge = model.board.rules.min_copper_to_edge.to_mm().max(0.3);
     let keep: Vec<Bounds> = bd
         .keepouts
@@ -431,7 +455,7 @@ fn legalise(model: &Model, bd: &mut Board, grow: &HashMap<usize, f64>) -> (Strin
     let mut moved = 0.0;
     for &i in &order {
         let want = bd.cells[i].at;
-        let gap = gap_of(i) + SPACING;
+        let gap = gap_of(i) + spacing;
         let mut found = None;
         'search: for ring in 0..400 {
             let r = ring as f64 * 0.1;
@@ -490,26 +514,35 @@ impl Phase for Place {
         let mut plan = model.placement.clone().unwrap_or_default();
         apply_plan(&mut bd, &plan);
         let mut grow: HashMap<usize, f64> = HashMap::new();
-        if model.hot.is_empty() {
-            let chains = model.constraints.as_ref().map(|g| g.chains.clone()).unwrap_or_default();
-            let signal: Vec<bool> = model
-                .layout
-                .nets
-                .iter()
-                .map(|n| !place::is_power_net(model.board, &n.name, &n.class))
-                .collect();
-            plan.chains = template_chains(&mut bd, &chains, &signal);
-            for ch in &plan.chains {
-                report.notes.push(format!("chain in a line: {}", ch.join(" > ")));
+        let spread = spread_of(cfg, model.pass);
+        report.notes.push(format!(
+            "spread pass {}: {:.2} mm between parts, decaps pulled no closer than {:.2} mm",
+            model.pass + 1,
+            spread.spacing,
+            spread.standoff
+        ));
+        let chains = model.constraints.as_ref().map(|g| g.chains.clone()).unwrap_or_default();
+        let signal: Vec<bool> = model
+            .layout
+            .nets
+            .iter()
+            .map(|n| !place::is_power_net(model.board, &n.name, &n.class))
+            .collect();
+        let laid = template_chains(&mut bd, &chains, &signal);
+        if !laid.is_empty() {
+            plan.chains = laid;
+        }
+        for ch in &plan.chains {
+            report.notes.push(format!("chain in a line: {}", ch.join(" > ")));
+        }
+        match global_place(model, cfg, &mut bd, &mut plan.texts, &spread) {
+            Ok((note, failed)) => {
+                report.notes.push(note);
+                report.failed.extend(failed);
             }
-            match global_place(model, cfg, &mut bd, &mut plan.texts) {
-                Ok((note, failed)) => {
-                    report.notes.push(note);
-                    report.failed.extend(failed);
-                }
-                Err(e) => report.failed.push(e),
-            }
-        } else {
+            Err(e) => report.failed.push(e),
+        }
+        if !model.hot.is_empty() {
             for (i, c) in bd.cells.iter().enumerate() {
                 let r = rect_of(c, c.at, 0.0);
                 let over: f64 = model
@@ -531,7 +564,7 @@ impl Phase for Place {
                 grow.len()
             ));
         }
-        let (note, failed) = legalise(model, &mut bd, &grow);
+        let (note, failed) = legalise(model, &mut bd, &grow, spread.spacing);
         report.notes.push(note);
         report.failed.extend(failed);
         report.changed = true;

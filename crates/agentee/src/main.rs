@@ -862,6 +862,7 @@ fn run(cli: Cli) -> Result<bool, String> {
                     println!("skipped {}", s.as_str().unwrap_or(""));
                 }
                 print!("{}", r["score_table"].as_str().unwrap_or(""));
+                print!("{}", r["time_table"].as_str().unwrap_or(""));
             }
             Ok(true)
         }

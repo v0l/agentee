@@ -105,11 +105,20 @@ pub struct PlaceOptions {
     pub keep_placed: bool,
     pub sides: Sides,
     pub seed: u64,
+    pub spacing: f64,
+    pub standoff: f64,
 }
 
 impl Default for PlaceOptions {
     fn default() -> Self {
-        PlaceOptions { parts: Vec::new(), keep_placed: false, sides: Sides::Top, seed: 1 }
+        PlaceOptions {
+            parts: Vec::new(),
+            keep_placed: false,
+            sides: Sides::Top,
+            seed: 1,
+            spacing: 0.0,
+            standoff: 0.0,
+        }
     }
 }
 
@@ -527,6 +536,32 @@ pub fn chip_length(fp_name: &str, fp: &Footprint) -> Option<f64> {
     (d > 1e-6).then_some(d)
 }
 
+fn grow_loop(poly: &[P], d: f64) -> Vec<P> {
+    let n = poly.len();
+    if d <= 0.0 || n < 3 {
+        return poly.to_vec();
+    }
+    let area: f64 = (0..n)
+        .map(|i| {
+            let (a, b) = (poly[i], poly[(i + 1) % n]);
+            a[0] * b[1] - b[0] * a[1]
+        })
+        .sum();
+    let sign = if area >= 0.0 { 1.0 } else { -1.0 };
+    let normal = |a: P, b: P| {
+        let l = geom::dist(a, b).max(1e-12);
+        [sign * (b[1] - a[1]) / l, -sign * (b[0] - a[0]) / l]
+    };
+    (0..n)
+        .map(|i| {
+            let (prev, here, next) = (poly[(i + n - 1) % n], poly[i], poly[(i + 1) % n]);
+            let (u, v) = (normal(prev, here), normal(here, next));
+            let k = (1.0 + u[0] * v[0] + u[1] * v[1]).max(0.2);
+            [here[0] + d * (u[0] + v[0]) / k, here[1] + d * (u[1] + v[1]) / k]
+        })
+        .collect()
+}
+
 pub fn courtyard_loops(fp: &Footprint, layer: &str) -> Vec<Vec<P>> {
     let near = |a: P, b: P| geom::dist(a, b) < 1e-3;
     let mut closed = Vec::new();
@@ -777,7 +812,7 @@ enum End {
 
 #[derive(Clone, Copy)]
 enum LinkKind {
-    Pull { w: f64, thr: f64, extra: f64 },
+    Pull { w: f64, thr: f64, extra: f64, near: f64 },
     Repel { w: f64, thr: f64 },
 }
 
@@ -809,6 +844,7 @@ struct Board2 {
     decap: f64,
     crystal: f64,
     spread: f64,
+    standoff: f64,
     depth: EdgeDepth,
     edges: std::sync::Arc<EdgeIndex>,
     flex_edges: std::sync::Arc<EdgeIndex>,
@@ -1584,7 +1620,9 @@ impl<'a> Placer<'a> {
         }
         let d = geom::dist(self.end_pos(l.a), self.end_pos(l.b));
         match l.kind {
-            LinkKind::Pull { w, thr, extra } => w * d + extra * (d - thr).max(0.0),
+            LinkKind::Pull { w, thr, extra, near } => {
+                w * (d - near).max(0.0) + extra * (d - thr).max(0.0)
+            }
             LinkKind::Repel { w, thr } => w * (thr - d).max(0.0),
         }
     }
@@ -2075,6 +2113,7 @@ fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRe
         decap: pd.decoupling_distance.map(|l| l.to_mm()).unwrap_or(DECOUPLING_DISTANCE),
         crystal: pd.crystal_distance.map(|l| l.to_mm()).unwrap_or(CRYSTAL_DISTANCE),
         spread: pd.cluster_spread.map(|l| l.to_mm()).unwrap_or(CLUSTER_SPREAD),
+        standoff: opts.standoff,
         depth: EdgeDepth::new(input.outline, input.cutouts, &ob),
         edges: std::sync::Arc::new(EdgeIndex::new(
             geom::BoardEdge::new(input.outline, input.cutouts),
@@ -2147,10 +2186,10 @@ fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRe
             .collect();
         let mut loops: Vec<(bool, Vec<P>)> = Vec::new();
         for l in courtyard_loops(fp, "F.CrtYd") {
-            loops.push((false, l));
+            loops.push((false, grow_loop(&l, opts.spacing / 2.0)));
         }
         for l in courtyard_loops(fp, "B.CrtYd") {
-            loops.push((true, l));
+            loops.push((true, grow_loop(&l, opts.spacing / 2.0)));
         }
         if loops.is_empty() {
             let mut bb = Bounds::EMPTY;
@@ -2161,8 +2200,8 @@ fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRe
             if bb.is_empty() {
                 bb.add_circle([0.0, 0.0], 0.5);
             }
-            let (lo, hi) =
-                ([bb.min[0] - 0.25, bb.min[1] - 0.25], [bb.max[0] + 0.25, bb.max[1] + 0.25]);
+            let m = 0.25 + opts.spacing / 2.0;
+            let (lo, hi) = ([bb.min[0] - m, bb.min[1] - m], [bb.max[0] + m, bb.max[1] + m]);
             loops.push((false, vec![lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]]));
         }
         let mut local = Bounds::EMPTY;
@@ -2701,7 +2740,7 @@ impl<'a> Placer<'a> {
                     links.push((
                         End::Pad(m, k),
                         End::Pad(c.anchor, pin),
-                        LinkKind::Pull { w, thr, extra: 5.0 },
+                        LinkKind::Pull { w, thr, extra: 5.0, near: self.b.standoff },
                     ));
                 } else if p.role == Role::Crystal {
                     for n in self.signal_nets(m) {
@@ -2714,7 +2753,7 @@ impl<'a> Placer<'a> {
                         links.push((
                             End::Pad(m, k),
                             End::Pad(c.anchor, pin),
-                            LinkKind::Pull { w: 3.0, thr: self.b.crystal, extra: 5.0 },
+                            LinkKind::Pull { w: 3.0, thr: self.b.crystal, extra: 5.0, near: 0.0 },
                         ));
                     }
                 } else {
@@ -2722,7 +2761,7 @@ impl<'a> Placer<'a> {
                     links.push((
                         End::Centre(m),
                         End::Centre(c.anchor),
-                        LinkKind::Pull { w, thr: self.b.spread / 2.0, extra: 1.0 },
+                        LinkKind::Pull { w, thr: self.b.spread / 2.0, extra: 1.0, near: 0.0 },
                     ));
                 }
             }

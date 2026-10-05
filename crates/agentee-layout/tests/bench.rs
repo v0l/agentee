@@ -103,6 +103,7 @@ fn bench(example: &str, layout: &str, from: Option<&str>) -> Outcome {
         drc.len(),
         r.score.total
     );
+    eprint!("{}", r.time.table());
     eprintln!("errors by rule {:?}", errors(&e.diags));
     eprintln!("hand layout     {hand_errors:?}");
     for d in drc.iter().filter(|d| !d.starts_with("silk")).take(10) {

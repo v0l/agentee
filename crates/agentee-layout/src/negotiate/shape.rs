@@ -383,7 +383,7 @@ impl Ctx<'_> {
                     neck: n.width < self.rule.width[n.layer] - 1e-6,
                 })
                 .collect();
-            return Piece { tracks, vias: vec![va], trimmed: None };
+            return Piece { tracks, vias: vec![va], trimmed: None, ms: 0.0 };
         }
         match start {
             Some(a) => {
@@ -456,7 +456,7 @@ impl Ctx<'_> {
         }
         let trimmed =
             (trimmed.iter().zip(&tracks).any(|(a, b)| a.points != b.points)).then_some(trimmed);
-        Piece { tracks, vias, trimmed }
+        Piece { tracks, vias, trimmed, ms: 0.0 }
     }
 
     fn extend(&self, l: usize, pts: &mut Vec<P>, pads: &[PadRef], front: bool) {

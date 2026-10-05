@@ -1761,6 +1761,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         keep_placed: a.keep_placed,
         sides,
         seed: a.seed,
+        ..Default::default()
     };
     let load_ms = started.elapsed().as_millis();
     let r = pl::place(&input, &opts)?;
@@ -1885,6 +1886,7 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
     }
     let mut v = serde_json::to_value(&r).unwrap_or_default();
     v["score_table"] = json!(r.score.table());
+    v["time_table"] = json!(r.time.table());
     Ok(v)
 }
 

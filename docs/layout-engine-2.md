@@ -210,6 +210,12 @@ phases = ["constraints", "place", "access", "global", "detail", "finish"]
 rounds = 3                     # global and detail repetitions
 place_rounds = 3               # placement passes driven by hot tiles
 
+[engine.place]
+seed = 1
+spacing = "0.2mm"              # gap kept between courtyards
+standoff = "0.6mm"             # decaps are not pulled closer than this to their pin
+spread = 1.5                   # spacing and standoff grow by this each placement pass
+
 [engine.access]
 via_in_pad = true
 escape_layers = ["F.Cu", "In2.Cu", "B.Cu"]
@@ -233,6 +239,16 @@ criticality = { RF = 1.0, LVDS = 0.8, USB_SS = 0.8, Clock = 0.5 }
 `[engine.escape]` and `[engine.floorplan]` are gone. Old phase names in `phases` map to the stage
 that now does that work (`floorplan` and `legalise` to `place`, `layers`, `escape`, `tie` and
 `planes` to `access`, `assign` to `global`), with a warning.
+
+Each placement pass places the parts again with the spacing and standoff grown by `spread`, then
+inflates the parts under the hot tiles of the last route, and the pass that routes the most is
+kept, so the spread is searched rather than fixed.
+
+`agentee layout` ends with a time table: each stage, the time spent resolving the file again, the
+passes and routes that were thrown away because a later one beat them, and where detail search
+time went (pieces kept, pieces ripped up later, searches that found nothing, attempts redone
+outside their fence, pieces dropped as clashes, bookkeeping, and the time spent on nets that
+still overlapped when negotiation stopped).
 
 The engine writes `# plan planes` for the rail regions and `# plan route` for all engine copper.
 Running a routing stage strips those and the retired `detail`, `escape`, `tie` and `global`
