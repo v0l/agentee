@@ -496,7 +496,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             }
         } else {
             d.discarded.push((
-                format!("placement pass {}, routed no more than pass before", pass + 1),
+                format!("placement pass {}, the rest, routed less than the best pass", pass + 1),
                 pass_ms,
             ));
         }
