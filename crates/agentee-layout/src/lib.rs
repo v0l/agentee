@@ -218,6 +218,7 @@ struct Driver<'c, 'a> {
     skipped: Vec<String>,
     discarded: Vec<(String, f64)>,
     search: negotiate::Spend,
+    unfilled: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -261,8 +262,20 @@ impl Driver<'_, '_> {
         self.cfg.stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed))
     }
 
+    fn reload_unfilled(&mut self, model: &mut Model) -> Result<u128, String> {
+        let t = std::time::Instant::now();
+        (model.file, model.layout) =
+            agentee_core::layout::without_fills(|| (self.cfg.resolve)(&self.text))?;
+        model.base = None;
+        model.hist = None;
+        model.warm = None;
+        self.unfilled = true;
+        Ok(t.elapsed().as_millis())
+    }
+
     fn reload(&mut self, model: &mut Model) -> Result<u128, String> {
         let t = std::time::Instant::now();
+        self.unfilled = false;
         (model.file, model.layout) = (self.cfg.resolve)(&self.text)?;
         model.base = None;
         model.hist = None;
@@ -330,6 +343,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         skipped: Vec::new(),
         discarded: Vec::new(),
         search: negotiate::Spend::default(),
+        unfilled: false,
     };
     if routes {
         for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
@@ -379,7 +393,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                     start::move_board_texts(&mut doc, &plan.texts);
                     d.text = doc.to_string();
                 }
-                reload_ms = d.reload(model)?;
+                reload_ms = d.reload_unfilled(model)?;
                 for _ in 0..3 {
                     let (moved, _) = model.layout.settle_labels(model.board);
                     if moved.is_empty() {
@@ -389,7 +403,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                         d.text.parse().map_err(|e| format!("{e}"))?;
                     start::write_labels(&mut doc, &moved)?;
                     d.text = doc.to_string();
-                    reload_ms += d.reload(model)?;
+                    reload_ms += d.reload_unfilled(model)?;
                 }
             }
             model.hot.clear();
@@ -403,6 +417,8 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             if let Some(section) = planes_toml(model) {
                 d.text = write_plan(&d.text, PLANES, &section);
                 reload_ms = d.reload(model)?;
+            } else if d.unfilled {
+                reload_ms = d.reload(model)?;
             }
             match model.ensure_base(&dopts) {
                 Ok(()) => access::pin_access(model, &mut r, &dopts),
@@ -411,6 +427,9 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             d.done(model, r, t0, reload_ms);
         }
         if routes {
+            if d.unfilled {
+                d.reload(model)?;
+            }
             let reps = if has("place") && place_rounds > 1 { 1 } else { rounds };
             route_reps(&mut d, model, &has, &dopts, reps, pass, None);
         }
@@ -504,6 +523,9 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         }
         r.changed |= before || tuned;
         d.done(model, r, t0, reload_ms);
+    }
+    if d.unfilled {
+        d.reload(model)?;
     }
     let score = score_of(model);
     let mut stages: Vec<(String, f64)> = Vec::new();
