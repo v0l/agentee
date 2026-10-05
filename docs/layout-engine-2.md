@@ -257,27 +257,39 @@ sections first.
 ## Benchmarks
 
 `cargo test -p agentee-layout --release --test bench -- --nocapture` runs the `lna` cases;
-`--include-ignored` adds the `sdr` ones, which take minutes. Each case strips the routing from a
-copy of the example and prints routed connections, vias, unrouted, the errors per rule next to the
-committed layout's, score and time. `AGENTEE_BENCH_OUT=dir` keeps the result files.
+`--include-ignored` adds `sdr` and the route-only case of `hackrf-pro`'s `praline`, which take
+minutes. Each case strips the routing from a copy of the example and prints routed connections,
+vias, unrouted, the errors per rule next to the committed layout's, the time table, score and
+time. `AGENTEE_BENCH_OUT=dir` keeps the result files.
 
 | case | before (`8917371`) | now | pass |
 |---|---|---|---|
-| `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.5 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
-| `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 1.0 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
-| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 407 of 498, 62 unrouted, 139 s | 0 unrouted, under 60 s |
-| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 438 of 510, 43 unrouted, 120 errors (89 silk), 456 s | 0 unrouted, decap term under 20, under 120 s |
+| `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.4 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
+| `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 0.7 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
+| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 400 of 498, 67 unrouted, 140 s | 0 unrouted, under 60 s |
+| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 419 of 502, 48 unrouted, 139 errors (118 silk), 251 s | 0 unrouted, decap term under 20, under 120 s |
+| `praline` route only, hand placement | | 1184 to 1195 of 1296, 98 to 112 unrouted, 425 to 683 s | 0 unrouted |
 
 Connection counts went up because plane and ground pads are now routed connections. The
-committed `sdr` layout itself leaves 39 connections unrouted. On `sdr` the only clearance errors
-left are the two from the committed `[[fanouts]]`; the rest are pair and interface timing (pairs
-are not routed coupled yet) and the silk the placer leaves. What stays unrouted is mostly the
-LVDS pairs on In2.Cu, whose pin order crosses between the FPGA and the FX5, RF nets limited to
-F.Cu that cross each other, power pads in the BGA fields, and eleven VBUS pads that detail finds
-no legal path out of. A cold detail run takes about 65 s and a repeat that starts
-from the previous routes about 50 s. On the full flow 238 of the 456 s go to placement passes and
-routes that a later one beat, and three quarters of detail search time goes to pieces that are
-ripped up again, most of it on nets that still overlap when negotiation stops.
+committed `sdr` layout itself leaves 39 connections unrouted; the committed `praline` layout
+routes everything. The unrouted count moves by about seven between runs that differ only in
+small code changes, because negotiation is chaotic, so a change needs to win on more than one
+case to count.
+
+On `sdr` the clearance errors left are the two from the committed `[[fanouts]]` and, now and
+then, one or two more: a via hole 0.183 mm from a tuned LVDS track, and a 0.9 mm 1V0 track
+0.17 mm from a GND via in the full flow. The rest are pair and interface timing (pairs are not
+routed coupled yet) and the silk the placer leaves. On `praline` every error kind is at or under
+the committed layout's count except unrouted.
+
+What stays unrouted on `sdr` is mostly the LVDS pairs on In2.Cu, whose pin order crosses between
+the FPGA and the FX5, RF nets limited to F.Cu that cross each other, power pads in the BGA fields,
+and eleven VBUS pads with no legal path out. On `praline` it is the fanout of the 0.8 mm BGA U23,
+where about 180 nets still overlap when negotiation stops. A cold detail run on `sdr` takes about
+60 s; 127 s of search work ran in 106 s of rounds on 48 threads, because nets whose fences touch
+route in order; on the full flow about half the time
+goes to placement passes and routes a later one beat, and two thirds to three quarters of search
+time to pieces that are ripped up again.
 
 ## Status
 
@@ -313,6 +325,9 @@ Built, in `crates/agentee-layout`:
   shapes, so a 0.12 mm track leaves a 0.4 mm pitch pin. The hard pass ends with an exact clash
   check that drops any piece still touching another net. A repetition starts from the history of
   the one before. A repair pass reroutes pads cut off from their pour once the zones refill.
+  The grid is shifted so the balls of the finest pitch BGA sit on cell centres, which puts the
+  channels between balls and the dog-bone sites on cells too, and the cells around another
+  net's planned escape cost more.
 - **Finish.** Spread (each move checked against the exact copper around it), length tuning that
   never folds a track onto its own net, then neck down of track ends that enter a pad narrower
   than the track.
