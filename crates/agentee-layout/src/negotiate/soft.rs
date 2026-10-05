@@ -1,6 +1,7 @@
 use super::grid::{Grid, Shape};
 use super::rules::Rules;
 use agentee_core::geom::P;
+use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
 
 #[derive(Clone, Debug, Default)]
 pub struct Piece {
@@ -17,8 +18,8 @@ pub struct Run {
 }
 
 pub struct Soft {
-    pub tracks: Vec<Vec<u8>>,
-    pub vias: Vec<Vec<u8>>,
+    tracks: Vec<Vec<AtomicU8>>,
+    vias: Vec<Vec<AtomicU8>>,
     pub hist: Vec<f32>,
 }
 
@@ -51,10 +52,20 @@ impl Soft {
     pub fn new(grid: &Grid, rules: &Rules) -> Soft {
         let plane = grid.plane();
         Soft {
-            tracks: rules.buckets.iter().map(|_| vec![0; plane]).collect(),
-            vias: rules.via_buckets.iter().map(|_| vec![0; plane]).collect(),
+            tracks: rules.buckets.iter().map(|_| zeroed(plane)).collect(),
+            vias: rules.via_buckets.iter().map(|_| zeroed(plane)).collect(),
             hist: vec![0.0; plane * grid.nl],
         }
+    }
+
+    #[inline]
+    pub fn track(&self, bucket: usize, c: usize) -> u8 {
+        self.tracks[bucket][c].load(Relaxed)
+    }
+
+    #[inline]
+    pub fn via(&self, bucket: usize, c: usize) -> u8 {
+        self.vias[bucket][c].load(Relaxed)
     }
 
     fn cells(grid: &Grid, shape: &Shape, reach: f64, out: &mut Vec<u32>) {
@@ -62,7 +73,7 @@ impl Soft {
     }
 
     pub fn footprint(grid: &Grid, rules: &Rules, c: &Copper) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
-        let slack = rules.slack;
+        let slack = rules.slack + grid.g * std::f64::consts::FRAC_1_SQRT_2;
         let mut tracks: Vec<Vec<u32>> = vec![Vec::new(); rules.buckets.len()];
         let mut vias: Vec<Vec<u32>> = vec![Vec::new(); rules.via_buckets.len()];
         for &(l, a, b, h) in &c.segs {
@@ -103,18 +114,16 @@ impl Soft {
         (tracks, vias)
     }
 
-    pub fn apply(&mut self, fp: &(Vec<Vec<u32>>, Vec<Vec<u32>>), add: bool) {
-        for (map, cells) in self.tracks.iter_mut().zip(&fp.0) {
+    pub fn apply(&self, fp: &(Vec<Vec<u32>>, Vec<Vec<u32>>), add: bool) {
+        let step = |v: u8| if add { v.saturating_add(1) } else { v.saturating_sub(1) };
+        for (map, cells) in self.tracks.iter().chain(&self.vias).zip(fp.0.iter().chain(&fp.1)) {
             for &c in cells {
-                let v = &mut map[c as usize];
-                *v = if add { v.saturating_add(1) } else { v.saturating_sub(1) };
-            }
-        }
-        for (map, cells) in self.vias.iter_mut().zip(&fp.1) {
-            for &c in cells {
-                let v = &mut map[c as usize];
-                *v = if add { v.saturating_add(1) } else { v.saturating_sub(1) };
+                let _ = map[c as usize].fetch_update(Relaxed, Relaxed, |v| Some(step(v)));
             }
         }
     }
+}
+
+fn zeroed(n: usize) -> Vec<AtomicU8> {
+    (0..n).map(|_| AtomicU8::new(0)).collect()
 }

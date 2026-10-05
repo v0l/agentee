@@ -18,6 +18,9 @@ pub use shape::{Access, Ctx, PadRef};
 pub use spread::{illegal, spread};
 
 const MAX_TARGETS: usize = 3_000_000;
+const DEFERRED: &str = "deferred";
+const MAX_PRES: f32 = 100.0;
+const DEAD: &str = "no path within the rules in an earlier round";
 use soft::{Copper, Piece, Soft};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Instant;
@@ -92,11 +95,14 @@ pub struct Outcome {
 }
 
 type Footprint = (Vec<Vec<u32>>, Vec<Vec<u32>>);
+type Conflicts = (Vec<(usize, usize)>, Vec<bool>);
 pub type Terminals = Vec<(P, Vec<usize>)>;
 
 struct NetState {
     net: usize,
-    reach: f64,
+    fence: Option<Vec<bool>>,
+    dead: HashSet<usize>,
+    bad: Option<Vec<bool>>,
     own: HashSet<u32>,
     copper: NetCopper,
     pads: Vec<PadRef>,
@@ -117,6 +123,68 @@ struct Env<'a> {
     opts: &'a Options,
     zone: &'a [u16],
     guide: &'a Guide,
+    escalate: usize,
+    tiles: &'a Tiles,
+    fenced: bool,
+}
+
+struct Tiles {
+    size: f64,
+    w: usize,
+    h: usize,
+    tx: Vec<usize>,
+    ty: Vec<usize>,
+    lo: (i64, i64),
+    origin: P,
+}
+
+impl Tiles {
+    fn new(grid: &Grid, guide: &Guide) -> Tiles {
+        let (size, origin) =
+            if guide.tile > 0.0 { (guide.tile, guide.origin) } else { (1.0, [grid.x0, grid.y0]) };
+        let t = |v: f64, o: f64| ((v - o) / size).floor() as i64;
+        let lo = (t(grid.x0, origin[0]), t(grid.y0, origin[1]));
+        let tx: Vec<usize> =
+            (0..grid.w).map(|x| (t(grid.center(x, 0)[0], origin[0]) - lo.0) as usize).collect();
+        let ty: Vec<usize> =
+            (0..grid.h).map(|y| (t(grid.center(0, y)[1], origin[1]) - lo.1) as usize).collect();
+        let w = tx.last().map_or(1, |v| v + 1);
+        let h = ty.last().map_or(1, |v| v + 1);
+        Tiles { size, w, h, tx, ty, lo, origin }
+    }
+
+    fn of(&self, p: P) -> (i64, i64) {
+        (
+            ((p[0] - self.origin[0]) / self.size).floor() as i64 - self.lo.0,
+            ((p[1] - self.origin[1]) / self.size).floor() as i64 - self.lo.1,
+        )
+    }
+
+    fn mark(&self, out: &mut [bool], lo: P, hi: P) {
+        let (a, b) = (self.of(lo), self.of(hi));
+        for y in a.1.max(0)..=b.1.min(self.h as i64 - 1) {
+            for x in a.0.max(0)..=b.0.min(self.w as i64 - 1) {
+                out[y as usize * self.w + x as usize] = true;
+            }
+        }
+    }
+
+    fn grow(&self, v: &[bool], d: i64) -> Vec<bool> {
+        let mut out = v.to_vec();
+        for y in 0..self.h as i64 {
+            for x in 0..self.w as i64 {
+                if !v[y as usize * self.w + x as usize] {
+                    continue;
+                }
+                for yy in (y - d).max(0)..=(y + d).min(self.h as i64 - 1) {
+                    for xx in (x - d).max(0)..=(x + d).min(self.w as i64 - 1) {
+                        out[yy as usize * self.w + xx as usize] = true;
+                    }
+                }
+            }
+        }
+        out
+    }
 }
 
 pub struct Base {
@@ -255,7 +323,9 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         }
         states.push(NetState {
             net: n,
-            reach: 1.0,
+            fence: None,
+            dead: HashSet::new(),
+            bad: None,
             own,
             copper,
             pads,
@@ -286,6 +356,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     });
     let plane = grid.plane();
     let mut pres = 0.5f32;
+    let tiles = Tiles::new(grid, guide);
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(64);
     let mut todo = order.clone();
     let mut conflicted: Vec<usize> = Vec::new();
@@ -295,33 +366,27 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     let mut rounds = 0;
     for round in 0..opts.rounds.max(1) {
         rounds = round + 1;
-        let plan = {
-            let env = Env { layout, grid, soft: &soft, rules, islands, opts, zone, guide };
-            batches(&states, &todo, threads, &env)
+        let env = Env {
+            layout,
+            grid,
+            soft: &soft,
+            rules,
+            islands,
+            opts,
+            zone,
+            guide,
+            escalate: opts.escalate,
+            tiles: &tiles,
+            fenced: false,
         };
-        for batch in plan {
-            let batch = &batch[..];
-            for &si in batch {
-                if let Some(fp) = states[si].fp.take() {
-                    soft.apply(&fp, false);
-                }
-            }
-            let env = Env { layout, grid, soft: &soft, rules, islands, opts, zone, guide };
-            let done = route_batch(&states, batch, &env, pres);
-            for (si, (pieces, failed, joined), fp) in done {
-                let st = &mut states[si];
-                st.pieces = pieces;
-                st.failed = failed;
-                st.joined = joined;
-                soft.apply(&fp, true);
-                st.fp = Some(fp);
-            }
-        }
+        let done = route_many(&mut states, &todo, &env, pres, false, threads);
+        log(format!("round {round}: {done} nets routed again with a wider window"));
         conflicted.clear();
         overlap_cells.clear();
         let mut overlap = 0usize;
         for &si in &order {
-            let cells = conflicts(&states[si], grid, &mut soft, rules);
+            let (cells, bad) = conflicts(&states[si], grid, &soft, rules);
+            states[si].bad = Some(bad);
             if !cells.is_empty() {
                 overlap += cells.len();
                 conflicted.push(si);
@@ -344,40 +409,86 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         if (overlap as f64) < best as f64 * 0.95 {
             best = overlap;
             since = 0;
-        } else {
+        } else if pres >= MAX_PRES {
             since += 1;
             if since >= opts.stall.max(1) {
                 break;
             }
         }
-        if round >= 3 {
-            for &si in &conflicted {
-                states[si].reach = (states[si].reach * 1.5).min(4.0);
-            }
-        }
-        pres = (pres * 1.8).min(100.0);
+        pres = (pres * 1.8).min(MAX_PRES);
         todo = conflicted.clone();
     }
     let overlap_left = conflicted.len();
-    if !conflicted.is_empty() {
+    for st in &states {
+        for f in &st.failed {
+            log(format!("  soft failure {} at {:?}: {}", f.net, f.from, f.reason));
+        }
+    }
+    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "2") {
+        for &si in &conflicted {
+            let (cells, _) = conflicts(&states[si], grid, &soft, rules);
+            let rule = rules.rule(states[si].net);
+            let mut with: BTreeMap<&str, usize> = BTreeMap::new();
+            for &(l, c) in &cells {
+                let Some(b) = rule.bucket[l] else { continue };
+                for (sj, o) in states.iter().enumerate() {
+                    if sj == si {
+                        continue;
+                    }
+                    if o.fp.as_ref().is_some_and(|fp| fp.0[b].binary_search(&(c as u32)).is_ok()) {
+                        *with.entry(layout.nets[o.net].name.as_str()).or_default() += 1;
+                    }
+                }
+            }
+            let at = cells.first().map(|&(l, c)| (l, grid.center(c % grid.w, c / grid.w)));
+            for p in &states[si].pieces {
+                for r in &p.tracks {
+                    let hit = r.points.windows(2).any(|w| {
+                        seg_cells(grid, w[0], w[1])
+                            .iter()
+                            .any(|&(x, y)| cells.contains(&(r.layer, y * grid.w + x)))
+                    });
+                    if hit {
+                        eprintln!("    run neck={} w={} {:?}", r.neck, r.width, r.points);
+                    }
+                }
+            }
+            eprintln!(
+                "  {} {} cells at {:?} with {:?}",
+                layout.nets[states[si].net].name,
+                cells.len(),
+                at,
+                with
+            );
+        }
+    }
+    if !conflicted.is_empty() && std::env::var("AGENTEE_ROUTE_SOFT").is_err() {
         for &si in &conflicted {
             if let Some(fp) = states[si].fp.take() {
                 soft.apply(&fp, false);
             }
-            states[si].pieces.clear();
+            let keep = kept_footprint(&states[si], rules, grid);
+            if let Some(fp) = &keep {
+                soft.apply(fp, true);
+            } else {
+                states[si].bad = None;
+            }
+            states[si].fp = keep;
         }
-        for &si in &conflicted {
-            let env = Env { layout, grid, soft: &soft, rules, islands, opts, zone, guide };
-            let (pieces, failed, joined) = route_net(&states[si], &env, pres, true);
-            let st = &mut states[si];
-            st.pieces = pieces;
-            st.failed = failed;
-            st.joined = joined;
-            let rule = rules.rule(st.net);
-            let fp = Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule.clearance));
-            soft.apply(&fp, true);
-            st.fp = Some(fp);
-        }
+        let env = Env {
+            layout,
+            grid,
+            soft: &soft,
+            rules,
+            islands,
+            opts,
+            zone,
+            guide,
+            escalate: opts.escalate,
+            tiles: &tiles,
+            fenced: false,
+        };
+        route_many(&mut states, &conflicted, &env, pres, true, threads);
         let joined: usize = states.iter().map(|s| s.joined).sum();
         let lost: Vec<&str> = conflicted
             .iter()
@@ -415,6 +526,9 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         out.failed.extend(st.failed.iter().cloned());
     }
     log(format!("{} of {} connections", out.routed, out.connections));
+    for f in &out.failed {
+        log(format!("  failed {} at {:?}: {}", f.net, f.from, f.reason));
+    }
     Outcome { result: out, overlap: overlap_cells, rounds, overlap_left }
 }
 
@@ -467,75 +581,248 @@ pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAcc
     out
 }
 
-type Routed = (Vec<Piece>, Vec<Unrouted>, usize);
+type Routed = (Vec<Piece>, Vec<Unrouted>, usize, Vec<usize>);
 
 fn base_margin(env: &Env, st: &NetState) -> f64 {
     let guided = env.guide.corridors.get(&st.net).is_some_and(|c| !c.is_empty());
-    let m =
-        if guided { (2.0 * env.guide.tile).max(env.opts.margin * 0.5) } else { env.opts.margin };
-    m * st.reach
+    if guided { (2.0 * env.guide.tile).max(env.opts.margin * 0.5) } else { env.opts.margin }
 }
 
-fn batches(states: &[NetState], todo: &[usize], threads: usize, env: &Env) -> Vec<Vec<usize>> {
-    let boxes: Vec<(P, P)> = todo
-        .iter()
-        .map(|&si| {
-            let st = &states[si];
-            let m = base_margin(env, st) * 3f64.powi(env.opts.escalate as i32) + env.rules.reach;
+fn fence_of(env: &Env, st: &NetState) -> Vec<bool> {
+    let t = env.tiles;
+    let mut out = vec![false; t.w * t.h];
+    if kept(st).is_some() {
+        let m = base_margin(env, st);
+        for (p, _) in st.pieces.iter().zip(st.bad.iter().flatten()).filter(|(_, b)| **b) {
+            let pts = piece_points(p);
             let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
-            for p in &st.pads {
-                lo = [lo[0].min(p.centre[0] - m), lo[1].min(p.centre[1] - m)];
-                hi = [hi[0].max(p.centre[0] + m), hi[1].max(p.centre[1] + m)];
+            for q in &pts {
+                lo = [lo[0].min(q[0] - m), lo[1].min(q[1] - m)];
+                hi = [hi[0].max(q[0] + m), hi[1].max(q[1] + m)];
             }
-            (lo, hi)
-        })
-        .collect();
-    let hit = |a: &(P, P), b: &(P, P)| {
-        a.0[0] < b.1[0] && b.0[0] < a.1[0] && a.0[1] < b.1[1] && b.0[1] < a.1[1]
-    };
-    let mut left: Vec<usize> = (0..todo.len()).collect();
-    let mut out = Vec::new();
-    while !left.is_empty() {
-        let mut batch: Vec<usize> = Vec::new();
-        for &k in &left {
-            if batch.len() < threads && batch.iter().all(|&j| !hit(&boxes[k], &boxes[j])) {
-                batch.push(k);
-            }
+            t.mark(&mut out, lo, hi);
         }
-        left.retain(|k| !batch.contains(k));
-        out.push(batch.iter().map(|&k| todo[k]).collect());
+        return out;
     }
-    out
+    let pts: Vec<P> = (0..st.copper.groups).flat_map(|g| st.copper.points(g)).collect();
+    match env.guide.corridors.get(&st.net).filter(|c| !c.is_empty()) {
+        Some(cor) => {
+            for &(_, x, y) in cor {
+                let (x, y) = (x - t.lo.0, y - t.lo.1);
+                if x >= 0 && y >= 0 && (x as usize) < t.w && (y as usize) < t.h {
+                    out[y as usize * t.w + x as usize] = true;
+                }
+            }
+            for p in &pts {
+                t.mark(&mut out, *p, *p);
+            }
+            t.grow(&out, 1)
+        }
+        None => {
+            let m = base_margin(env, st);
+            let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+            for p in &pts {
+                lo = [lo[0].min(p[0] - m), lo[1].min(p[1] - m)];
+                hi = [hi[0].max(p[0] + m), hi[1].max(p[1] + m)];
+            }
+            t.mark(&mut out, lo, hi);
+            out
+        }
+    }
 }
 
-fn route_batch(
-    states: &[NetState],
-    batch: &[usize],
+fn route_one(
+    st: &NetState,
     env: &Env,
     pres: f32,
-) -> Vec<(usize, Routed, Footprint)> {
-    let one = |si: usize| {
-        let st = &states[si];
-        let r = route_net(st, env, pres, false);
-        let rule = env.rules.rule(st.net);
-        let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.0, rule.clearance));
-        (si, r, fp)
-    };
-    if batch.len() == 1 {
-        return vec![one(batch[0])];
+    hard: bool,
+    old: Option<&Footprint>,
+) -> (Routed, Footprint) {
+    if let Some(fp) = old {
+        env.soft.apply(fp, false);
     }
-    std::thread::scope(|s| {
-        let handles: Vec<_> = batch.iter().map(|&si| s.spawn(move || one(si))).collect();
-        handles.into_iter().map(|h| h.join().expect("router thread")).collect()
-    })
+    let mut r = match kept(st) {
+        Some(keep) => {
+            let t = Instant::now();
+            let nc = st.copper.with(env.layout, env.islands, piece_items(env.rules, &keep));
+            let tw = t.elapsed().as_millis();
+            let mut r = route_net(st, &nc, env, pres, hard);
+            if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "6")
+                && t.elapsed().as_millis() > 100
+            {
+                eprintln!(
+                    "      {} with {} ms, route {} ms, {} items, {} groups",
+                    env.layout.nets[st.net].name,
+                    tw,
+                    t.elapsed().as_millis() - tw,
+                    nc.items.len(),
+                    nc.groups
+                );
+            }
+            let mut all: Vec<Piece> = keep.into_iter().cloned().collect();
+            all.append(&mut r.0);
+            r.0 = all;
+            r
+        }
+        None => route_net(st, &st.copper, env, pres, hard),
+    };
+    r.2 = st.needed.saturating_sub(r.1.len());
+    let rule = env.rules.rule(st.net);
+    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.0, rule.clearance));
+    env.soft.apply(&fp, true);
+    (r, fp)
 }
 
-fn lean_mask(env: &Env, net: usize, win: &Window) -> Option<Vec<i8>> {
+fn route_many(
+    states: &mut [NetState],
+    todo: &[usize],
+    env: &Env,
+    pres: f32,
+    hard: bool,
+    threads: usize,
+) -> usize {
+    let n = todo.len();
+    let halo = (env.rules.reach / env.tiles.size).ceil() as i64 + 1;
+    let mut bits: Vec<Vec<u64>> = Vec::with_capacity(n);
+    for &si in todo {
+        let fence = fence_of(env, &states[si]);
+        let wide = env.tiles.grow(&fence, halo);
+        let mut b = vec![0u64; wide.len().div_ceil(64)];
+        for (k, _) in wide.iter().enumerate().filter(|(_, v)| **v) {
+            b[k / 64] |= 1 << (k % 64);
+        }
+        bits.push(b);
+        states[si].fence = Some(fence);
+    }
+    let hit = |a: &[u64], b: &[u64]| a.iter().zip(b).any(|(x, y)| x & y != 0);
+    let deps: Vec<Vec<usize>> =
+        (0..n).map(|i| (0..i).filter(|&j| hit(&bits[i], &bits[j])).collect()).collect();
+    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "4") {
+        for (i, b) in bits.iter().enumerate() {
+            eprintln!(
+                "    {} tiles {} deps {}",
+                env.layout.nets[states[todo[i]].net].name,
+                b.iter().map(|w| w.count_ones()).sum::<u32>(),
+                deps[i].len()
+            );
+        }
+    }
+    let old: Vec<Option<Footprint>> = todo.iter().map(|&si| states[si].fp.take()).collect();
+    let quick = Env { escalate: 0, fenced: true, ..*env };
+    let results: Vec<std::sync::Mutex<Option<(Routed, Footprint)>>> =
+        (0..n).map(|_| std::sync::Mutex::new(None)).collect();
+    struct Queue {
+        started: Vec<bool>,
+        done: Vec<bool>,
+        next: usize,
+    }
+    let queue =
+        std::sync::Mutex::new(Queue { started: vec![false; n], done: vec![false; n], next: 0 });
+    let wake = std::sync::Condvar::new();
+    let t0 = Instant::now();
+    let took: Vec<std::sync::atomic::AtomicU64> =
+        (0..n).map(|_| std::sync::atomic::AtomicU64::new(0)).collect();
+    let shared: &[NetState] = states;
+    let work = || loop {
+        let i = {
+            let mut q = queue.lock().expect("queue");
+            loop {
+                if q.next >= n {
+                    break None;
+                }
+                let start = q.next;
+                let pick =
+                    (start..n).find(|&i| !q.started[i] && deps[i].iter().all(|&j| q.done[j]));
+                if let Some(i) = pick {
+                    q.started[i] = true;
+                    while q.next < n && q.started[q.next] {
+                        q.next += 1;
+                    }
+                    break Some(i);
+                }
+                q = wake.wait(q).expect("queue");
+            }
+        };
+        let Some(i) = i else { break };
+        let ts = Instant::now();
+        let out = route_one(&shared[todo[i]], &quick, pres, hard, old[i].as_ref());
+        took[i].store(ts.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
+        *results[i].lock().expect("result") = Some(out);
+        queue.lock().expect("queue").done[i] = true;
+        wake.notify_all();
+    };
+    std::thread::scope(|s| {
+        for _ in 0..threads.min(n).max(1) {
+            s.spawn(work);
+        }
+    });
+    let t1 = Instant::now();
+    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
+        let mut ef = vec![0u64; n];
+        for i in 0..n {
+            ef[i] = took[i].load(std::sync::atomic::Ordering::Relaxed)
+                + deps[i].iter().map(|&j| ef[j]).max().unwrap_or(0);
+        }
+        let sum: u64 = took.iter().map(|t| t.load(std::sync::atomic::Ordering::Relaxed)).sum();
+        let mut slow: Vec<(u64, &str)> = (0..n)
+            .map(|i| {
+                (
+                    took[i].load(std::sync::atomic::Ordering::Relaxed) / 1000,
+                    env.layout.nets[states[todo[i]].net].name.as_str(),
+                )
+            })
+            .collect();
+        slow.sort_unstable_by(|a, b| b.cmp(a));
+        slow.truncate(8);
+        eprintln!("    slowest {slow:?}");
+        eprintln!(
+            "    work {} ms, critical path {} ms",
+            sum / 1000,
+            ef.iter().max().unwrap_or(&0) / 1000
+        );
+    }
+    let mut again = 0;
+    for (i, slot) in results.into_iter().enumerate() {
+        let ((pieces, failed, joined, dead), fp) =
+            slot.into_inner().expect("result").expect("routed");
+        let st = &mut states[todo[i]];
+        if failed.iter().any(|f| f.reason == DEFERRED) {
+            env.soft.apply(&fp, false);
+            let ((pieces, failed, joined, dead), fp) = route_one(st, env, pres, hard, None);
+            if !hard {
+                st.dead.extend(dead);
+            }
+            st.pieces = pieces;
+            st.failed = failed;
+            st.joined = joined;
+            st.fp = Some(fp);
+            again += 1;
+            continue;
+        }
+        if !hard {
+            st.dead.extend(dead);
+        }
+        st.pieces = pieces;
+        st.failed = failed;
+        st.joined = joined;
+        st.fp = Some(fp);
+    }
+    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
+        eprintln!(
+            "    parallel {} ms, deferred {} ms",
+            (t1 - t0).as_millis(),
+            t1.elapsed().as_millis()
+        );
+    }
+    again
+}
+
+fn lean_mask(env: &Env, net: usize, win: &Window, fence: Option<&[bool]>) -> Option<Vec<i8>> {
     let g = env.guide;
     let corridor = g.corridors.get(&net);
     let prefer = g.prefer.get(&net);
     let vias = g.prefer_vias.get(&net);
-    if corridor.is_none() && prefer.is_none() && vias.is_none() {
+    if corridor.is_none() && prefer.is_none() && vias.is_none() && fence.is_none() {
         return None;
     }
     let grid = env.grid;
@@ -589,6 +876,19 @@ fn lean_mask(env: &Env, net: usize, win: &Window) -> Option<Vec<i8>> {
             }
         }
     }
+    if let Some(f) = fence {
+        let t = env.tiles;
+        for y in 0..wh {
+            let ty = t.ty[y + win.y0];
+            for x in 0..ww {
+                if !f[ty * t.w + t.tx[x + win.x0]] {
+                    for l in 0..grid.nl {
+                        out[l * area + y * ww + x] = search::BLOCKED;
+                    }
+                }
+            }
+        }
+    }
     Some(out)
 }
 
@@ -618,18 +918,20 @@ fn zone_map(layout: &Layout, grid: &Grid) -> Vec<u16> {
     zone
 }
 
-fn conflicts(st: &NetState, grid: &Grid, soft: &mut Soft, rules: &Rules) -> Vec<(usize, usize)> {
-    let Some(fp) = st.fp.as_ref() else { return Vec::new() };
+fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflicts {
+    let Some(fp) = st.fp.as_ref() else { return (Vec::new(), Vec::new()) };
     soft.apply(fp, false);
     let rule = rules.rule(st.net);
     let mut out = Vec::new();
-    for p in &st.pieces {
+    let mut bad = vec![false; st.pieces.len()];
+    for (pi, p) in st.pieces.iter().enumerate() {
+        let before = out.len();
         for r in &p.tracks {
             let Some(b) = rule.bucket[r.layer] else { continue };
             for w in r.points.windows(2) {
                 for (x, y) in seg_cells(grid, w[0], w[1]) {
                     let c = y * grid.w + x;
-                    if soft.tracks[b][c] > 0
+                    if soft.track(b, c) > 0
                         && !st.own.contains(&((r.layer * grid.plane() + c) as u32))
                     {
                         out.push((r.layer, c));
@@ -644,17 +946,54 @@ fn conflicts(st: &NetState, grid: &Grid, soft: &mut Soft, rules: &Rules) -> Vec<
                 continue;
             }
             let c = y as usize * grid.w + x as usize;
-            if soft.vias[rule.via_bucket[vi]][c] > 0 {
+            if soft.via(rule.via_bucket[vi], c) > 0 {
                 for &l in &rules.vias[k].layers {
                     out.push((l, c));
                 }
             }
         }
+        bad[pi] = out.len() > before;
     }
     soft.apply(fp, true);
     out.sort_unstable();
     out.dedup();
+    (out, bad)
+}
+
+fn piece_items(rules: &Rules, pieces: &[&Piece]) -> Vec<Item> {
+    let mut out = Vec::new();
+    for p in pieces {
+        for r in &p.tracks {
+            let h = r.width / 2.0;
+            if r.points.len() == 1 {
+                out.push(Item::Seg {
+                    layer: r.layer,
+                    shape: Shape::Seg(r.points[0], r.points[0], h),
+                });
+            }
+            for w in r.points.windows(2) {
+                out.push(Item::Seg { layer: r.layer, shape: Shape::Seg(w[0], w[1], h) });
+            }
+        }
+        for &(at, k) in &p.vias {
+            let o = &rules.vias[k];
+            out.push(Item::Via { at, r: o.r, layers: o.layers.clone() });
+        }
+    }
     out
+}
+
+fn kept(st: &NetState) -> Option<Vec<&Piece>> {
+    let bad = st.bad.as_ref()?;
+    if bad.len() != st.pieces.len() || !bad.iter().any(|b| !b) {
+        return None;
+    }
+    Some(st.pieces.iter().zip(bad).filter(|(_, b)| !**b).map(|(p, _)| p).collect())
+}
+
+fn kept_footprint(st: &NetState, rules: &Rules, grid: &Grid) -> Option<Footprint> {
+    let keep: Vec<Piece> = kept(st)?.into_iter().cloned().collect();
+    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net).clearance)))
 }
 
 fn piece_points(p: &Piece) -> Vec<P> {
@@ -665,20 +1004,14 @@ fn piece_points(p: &Piece) -> Vec<P> {
     out
 }
 
-fn route_net(
-    st: &NetState,
-    env: &Env,
-    pres: f32,
-    hard: bool,
-) -> (Vec<Piece>, Vec<Unrouted>, usize) {
-    let nc = &st.copper;
+fn route_net(st: &NetState, nc: &NetCopper, env: &Env, pres: f32, hard: bool) -> Routed {
     let name = &env.layout.nets[st.net].name;
     let pad_groups: Vec<usize> = (0..nc.groups).filter(|&g| nc.has_pad(g)).collect();
     let size = |g: usize| nc.group.iter().filter(|&&k| k == g).count();
     let Some(&start) =
         pad_groups.iter().max_by_key(|&&g| (!nc.islands(g).is_empty(), size(g), usize::MAX - g))
     else {
-        return (Vec::new(), Vec::new(), 0);
+        return (Vec::new(), Vec::new(), 0, Vec::new());
     };
     let points: Vec<Vec<P>> = (0..nc.groups).map(|g| nc.points(g)).collect();
     let mut tree = vec![start];
@@ -698,12 +1031,18 @@ fn route_net(
         .collect();
     let mut pieces: Vec<Piece> = Vec::new();
     let mut failed = Vec::new();
+    let mut dead = Vec::new();
     let mut joined = 0;
     while !rest.is_empty() {
         let k = (0..rest.len()).min_by(|&i, &j| best[i].0.total_cmp(&best[j].0)).unwrap();
         let g = rest.remove(k);
         let (_, a, b) = best.remove(k);
-        match connect(st, env, g, &tree, &pieces, a, b, pres, hard) {
+        let key = nc.group.iter().position(|&k| k == g).unwrap_or(usize::MAX);
+        if st.dead.contains(&key) {
+            failed.push(Unrouted { net: name.clone(), from: a, to: b, reason: DEAD.into() });
+            continue;
+        }
+        match connect(st, nc, env, g, &tree, &pieces, a, b, pres, hard) {
             Ok(piece) => {
                 let new_pts: Vec<P> =
                     points[g].iter().copied().chain(piece_points(&piece)).collect();
@@ -725,15 +1064,21 @@ fn route_net(
                 tree.push(g);
                 joined += 1;
             }
-            Err(reason) => failed.push(Unrouted { net: name.clone(), from: a, to: b, reason }),
+            Err(reason) => {
+                if reason != DEFERRED {
+                    dead.push(key);
+                }
+                failed.push(Unrouted { net: name.clone(), from: a, to: b, reason })
+            }
         }
     }
-    (pieces, failed, joined)
+    (pieces, failed, joined, dead)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn connect(
     st: &NetState,
+    nc: &NetCopper,
     env: &Env,
     g: usize,
     tree: &[usize],
@@ -746,7 +1091,6 @@ fn connect(
     let grid = env.grid;
     let rule = env.rules.rule(st.net);
     let net = st.net as u16;
-    let nc = &st.copper;
     let lo = [a[0].min(b[0]), a[1].min(b[1])];
     let hi = [a[0].max(b[0]), a[1].max(b[1])];
     let mut margin = base_margin(env, st);
@@ -793,8 +1137,9 @@ fn connect(
                 && grid.track_ok(i3, net, rule.need[l])
                 && (!hard
                     || st.own.contains(&(i3 as u32))
-                    || rule.bucket[l].is_none_or(|bk| env.soft.tracks[bk][c2] == 0))
+                    || rule.bucket[l].is_none_or(|bk| env.soft.track(bk, c2) == 0))
         };
+        let tc = Instant::now();
         for (i, it) in nc.items.iter().enumerate() {
             let mine = nc.group[i] == g;
             let theirs = tree.contains(&nc.group[i]);
@@ -911,7 +1256,9 @@ fn connect(
             margin *= 3.0;
             continue;
         }
-        let lean = lean_mask(env, st.net, &win);
+        let fence = st.fence.as_deref().filter(|_| env.fenced);
+        let tl = Instant::now();
+        let lean = lean_mask(env, st.net, &win, fence);
         let q = Query {
             grid,
             soft: env.soft,
@@ -935,18 +1282,37 @@ fn connect(
             own: &st.own,
         };
         tries += 1;
+        if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "6")
+            && tc.elapsed().as_millis() > 10
+        {
+            eprintln!(
+                "        connect {} items {} ms, lean {} ms",
+                env.layout.nets[st.net].name,
+                (tl - tc).as_millis(),
+                tl.elapsed().as_millis()
+            );
+        }
         if let Some(found) = q.run() {
             if found.cells.len() <= 1 {
                 margin *= 3.0;
                 if win.is_whole(grid) || tries > env.opts.escalate {
                     return Err("the groups already touch".into());
                 }
+                if tries > env.escalate {
+                    return Err(DEFERRED.into());
+                }
                 continue;
             }
             return Ok(ctx.piece(&found, &st.pads, &access));
         }
+        if env.fenced {
+            return Err(DEFERRED.into());
+        }
         if win.is_whole(grid) || tries > env.opts.escalate {
             return Err("no path within the rules".into());
+        }
+        if tries > env.escalate {
+            return Err(DEFERRED.into());
         }
         margin *= 3.0;
     }

@@ -84,7 +84,7 @@ impl Rules {
         let nl = copper.len();
         let layer_of = |n: &str| copper.iter().position(|c| c == n);
         let r = &board.rules;
-        let slack = opts.grid * 0.75;
+        let slack = opts.grid * 0.25;
         let mut vias = Vec::new();
         for v in &board.vias {
             if board.stackup.drills_via(v).is_err() {

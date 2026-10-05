@@ -10,6 +10,7 @@ pub const DIRS: [(i64, i64); 8] =
 const START: u8 = 8;
 const LANDED: u8 = 9;
 const VIA_ONLY: u8 = 10;
+pub const BLOCKED: i8 = i8::MIN;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Window {
@@ -149,11 +150,41 @@ impl Query<'_> {
         }
     }
 
+    #[inline]
+    fn blocked(&self, j: usize) -> bool {
+        self.extra.is_some_and(|x| x[j] == BLOCKED)
+    }
+
     pub fn congestion(&self) -> f32 {
         (1.0 - 0.9 * self.rule.crit as f32).max(0.05)
     }
 
     pub fn run(&self) -> Option<Found> {
+        let t0 = std::time::Instant::now();
+        let mut pops = 0usize;
+        let mut t1 = t0;
+        let r = self.run_inner(&mut pops, &mut t1);
+        if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "5")
+            && t0.elapsed().as_millis() > 20
+        {
+            eprintln!(
+                "      query net {} src {} tgt {} hard {} {}x{} setup {} ms search {} ms pops {} found {}",
+                self.net,
+                self.sources.len(),
+                self.targets.len(),
+                self.hard,
+                self.window.ww(),
+                self.window.wh(),
+                (t1 - t0).as_millis(),
+                t1.elapsed().as_millis(),
+                pops,
+                r.is_some()
+            );
+        }
+        r
+    }
+
+    fn run_inner(&self, pops: &mut usize, t1: &mut std::time::Instant) -> Option<Found> {
         let grid = self.grid;
         let w = self.window;
         let (ww, wh) = (w.ww(), w.wh());
@@ -265,7 +296,7 @@ impl Query<'_> {
             }
             !hard
                 || mine[at(l, x, y)]
-                || rule.bucket[l].is_none_or(|b| self.soft.tracks[b][y * grid.w + x] == 0)
+                || rule.bucket[l].is_none_or(|b| self.soft.track(b, y * grid.w + x) == 0)
         };
         for s in &self.sources {
             let Some(k) = local(s.at) else { continue };
@@ -285,7 +316,9 @@ impl Query<'_> {
         }
         let bend_cost = self.bend_cost;
         let mut hit = None;
+        *t1 = std::time::Instant::now();
         while let Some(Node { f, i }) = heap.pop() {
+            *pops += 1;
             let k = i as usize;
             let here = cost[k];
             if f > here + heur[k % area] + 1e-4 {
@@ -309,7 +342,7 @@ impl Query<'_> {
                     }
                     let (nx, ny) = (nx as usize, ny as usize);
                     let j2 = ny * ww + nx;
-                    if !planar(l, j2) {
+                    if !planar(l, j2) || self.blocked(l * area + j2) {
                         continue;
                     }
                     let (gx, gy) = (nx + w.x0, ny + w.y0);
@@ -325,7 +358,7 @@ impl Query<'_> {
                     let count = if mine[l * area + j2] {
                         0.0
                     } else {
-                        rule.bucket[l].map(|b| self.soft.tracks[b][c2] as f32).unwrap_or(0.0)
+                        rule.bucket[l].map(|b| self.soft.track(b, c2) as f32).unwrap_or(0.0)
                     };
                     let hist = self.soft.hist[l * plane + c2];
                     let zn = self.zone[l * plane + c2];
@@ -354,7 +387,7 @@ impl Query<'_> {
                     continue;
                 }
                 let j = l2 * area + k2;
-                if !(planar(l2, k2) || target[j]) {
+                if !(planar(l2, k2) || target[j]) || self.blocked(j) {
                     continue;
                 }
                 let mut best: Option<f32> = None;
@@ -367,7 +400,7 @@ impl Query<'_> {
                         continue;
                     }
                     let vb = rule.via_bucket[vi];
-                    let count = self.soft.vias[vb][c2] as f32;
+                    let count = self.soft.via(vb, c2) as f32;
                     if hard && count > 0.0 {
                         continue;
                     }

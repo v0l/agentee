@@ -82,6 +82,9 @@ pub struct NetCopper {
     pub items: Vec<Item>,
     pub group: Vec<usize>,
     pub groups: usize,
+    net: usize,
+    solid: usize,
+    part_of: Vec<Option<usize>>,
 }
 
 impl NetCopper {
@@ -175,6 +178,31 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
         part_of.push(None);
     }
     let solid = items.len();
+    group_items(layout, islands, net, items, part_of, solid)
+}
+
+impl NetCopper {
+    pub fn with(&self, layout: &Layout, islands: &Islands, extra: Vec<Item>) -> NetCopper {
+        let mut items: Vec<Item> = self.items[..self.solid].to_vec();
+        let mut part_of = self.part_of[..self.solid].to_vec();
+        for it in extra {
+            items.push(it);
+            part_of.push(None);
+        }
+        group_items(layout, islands, self.net, items, part_of, self.solid)
+    }
+}
+
+fn group_items(
+    layout: &Layout,
+    islands: &Islands,
+    net: usize,
+    mut items: Vec<Item>,
+    part_of: Vec<Option<usize>>,
+    base: usize,
+) -> NetCopper {
+    let layer_of = |n: &str| layout.copper.iter().position(|c| c == n);
+    let solid = items.len();
     let mut parent: Vec<usize> = (0..solid).collect();
     let shapes_of = |it: &Item| -> Vec<(usize, Shape)> {
         match it {
@@ -189,8 +217,27 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
         }
     };
     let all: Vec<Vec<(usize, Shape)>> = items.iter().map(shapes_of).collect();
+    let boxes: Vec<(P, P)> = all
+        .iter()
+        .map(|v| {
+            v.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), (_, s)| {
+                let (a, b) = s.bounds();
+                ([lo[0].min(a[0]), lo[1].min(a[1])], [hi[0].max(b[0]), hi[1].max(b[1])])
+            })
+        })
+        .collect();
+    let apart = |i: usize, j: usize| {
+        let (a, b) = (boxes[i], boxes[j]);
+        a.1[0] + 1e-6 < b.0[0]
+            || b.1[0] + 1e-6 < a.0[0]
+            || a.1[1] + 1e-6 < b.0[1]
+            || b.1[1] + 1e-6 < a.0[1]
+    };
     for i in 0..solid {
         for j in i + 1..solid {
+            if apart(i, j) {
+                continue;
+            }
             if let (Some(a), Some(b)) = (part_of[i], part_of[j])
                 && a == b
                 && !all[i].iter().any(|(l, s)| all[j].iter().any(|(m, t)| l == m && touch(s, t)))
@@ -265,7 +312,7 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
         group.push(*ids.entry(r).or_insert(n));
     }
     let groups = ids.len();
-    NetCopper { items, group, groups }
+    NetCopper { items, group, groups, net, solid: base, part_of }
 }
 
 pub fn group_distance(

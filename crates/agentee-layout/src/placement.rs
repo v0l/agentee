@@ -418,11 +418,12 @@ fn legalise(model: &Model, bd: &mut Board, grow: &HashMap<usize, f64>) -> (Strin
     });
     let inside = |r: [f64; 4]| {
         let corners = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
-        corners.iter().all(|q| geom::point_in_polygon(*q, &bd.outline))
-            && bd.outline.windows(2).all(|w| {
+        let o = &bd.outline;
+        corners.iter().all(|q| geom::point_in_polygon(*q, o))
+            && (0..o.len()).all(|e| {
+                let (a, b) = (o[e], o[(e + 1) % o.len()]);
                 (0..4).all(|k| {
-                    geom::segment_segment_distance(corners[k], corners[(k + 1) % 4], w[0], w[1])
-                        >= edge
+                    geom::segment_segment_distance(corners[k], corners[(k + 1) % 4], a, b) >= edge
                 })
             })
     };

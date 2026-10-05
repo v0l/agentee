@@ -5,6 +5,7 @@ use super::soft::{Piece, Run, Soft};
 use agentee_core::geom::{self, P};
 
 const REACH_CENTRE: f64 = 0.6;
+const EXACT: f64 = 0.002;
 
 #[derive(Clone, Debug)]
 pub struct Neck {
@@ -53,8 +54,7 @@ impl Ctx<'_> {
         let i = self.grid.idx(l, x, y);
         self.grid.track_ok(i, self.net, self.rule.need[l])
             && (self.own.contains(&(i as u32))
-                || self.rule.bucket[l]
-                    .is_none_or(|b| self.soft.tracks[b][y * self.grid.w + x] == 0))
+                || self.rule.bucket[l].is_none_or(|b| self.soft.track(b, y * self.grid.w + x) == 0))
     }
 
     fn unshared(&self, l: usize, p: P) -> bool {
@@ -65,7 +65,35 @@ impl Ctx<'_> {
         let (x, y) = (x as usize, y as usize);
         let i = self.grid.idx(l, x, y);
         self.own.contains(&(i as u32))
-            || self.rule.bucket[l].is_none_or(|b| self.soft.tracks[b][y * self.grid.w + x] == 0)
+            || self.rule.bucket[l].is_none_or(|b| self.soft.track(b, y * self.grid.w + x) == 0)
+    }
+
+    fn field_at(&self, l: usize, at: P) -> Option<(f64, f64)> {
+        let g = self.grid;
+        let (fx, fy) = ((at[0] - g.x0) / g.g - 0.5, (at[1] - g.y0) / g.g - 0.5);
+        let (cx, cy) = (fx.floor() as i64, fy.floor() as i64);
+        let mut best: Option<(f64, f64)> = None;
+        for (x, y) in [(cx, cy), (cx + 1, cy), (cx, cy + 1), (cx + 1, cy + 1)] {
+            if !g.inside(x, y) {
+                continue;
+            }
+            let c = g.center(x as usize, y as usize);
+            let r = geom::dist(c, at);
+            let (d, q) = g.clearance_at(g.idx(l, x as usize, y as usize), self.net);
+            let (d, q) = (d - r, q - r);
+            best = Some(best.map_or((d, q), |b| (b.0.max(d), b.1.max(q))));
+        }
+        best
+    }
+
+    fn exact_at(&self, l: usize, at: P) -> (f64, f64) {
+        self.grid.exact(l, at, self.net)
+    }
+
+    fn safe_at(&self, l: usize, at: P) -> bool {
+        let w = self.rule.width[l] / 2.0;
+        let pass = |(d, q): (f64, f64)| d > w + self.rule.clearance + EXACT && q > w + EXACT;
+        self.field_at(l, at).is_some_and(pass) || pass(self.exact_at(l, at))
     }
 
     pub fn clear_line(&self, l: usize, p: P, q: P) -> bool {
@@ -74,19 +102,13 @@ impl Ctx<'_> {
         (0..=n).all(|k| {
             let t = k as f64 / n as f64;
             let at = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
-            if !self.planar(l, at) {
+            if !self.planar(l, at) || !self.unshared(l, at) {
                 return false;
             }
             let (x, y) = g.cell(at);
-            if self.ok(l, x, y) {
-                return true;
-            }
-            let (fx, fy) = ((at[0] - g.x0) / g.g - 0.5, (at[1] - g.y0) / g.g - 0.5);
-            let (cx, cy) = (fx.floor() as i64, fy.floor() as i64);
-            [(cx, cy), (cx + 1, cy), (cx, cy + 1), (cx + 1, cy + 1)].into_iter().any(|(x, y)| {
-                let c = [g.x0 + (x as f64 + 0.5) * g.g, g.y0 + (y as f64 + 0.5) * g.g];
-                geom::dist(c, at) <= g.g * 0.6 && self.ok(l, x, y)
-            })
+            g.inside(x, y)
+                && g.fence_ok(y as usize * g.w + x as usize, self.net)
+                && self.safe_at(l, at)
         })
     }
 
@@ -94,17 +116,11 @@ impl Ctx<'_> {
         let g = self.grid;
         let wide = self.rule.width[l];
         let c = self.rule.clearance;
-        let slack = self.rules.slack;
         let p = pad.centre;
         let mut out = Vec::new();
         let room = |at: P| -> f64 {
-            let (x, y) = g.cell(at);
-            if !g.inside(x, y) {
-                return 0.0;
-            }
-            let i = g.idx(l, x as usize, y as usize);
-            let (d, q) = g.clearance_at(i, self.net);
-            (d - c).min(q) - slack - 0.2 * g.g
+            let (d, q) = self.exact_at(l, at);
+            (d - c).min(q) - EXACT
         };
         let min_half = self.rules.min_width / 2.0 - 1e-9;
         let inside = |q: P| geom::point_in_polygon(q, &pad.outline);
@@ -162,11 +178,11 @@ impl Ctx<'_> {
             }
             let (x, y) = (x as usize, y as usize);
             let i = g.idx(l, x, y);
-            let (d, q) = g.clearance_at(i, self.net);
-            room = room.min((d - self.rule.clearance).min(q) - self.rules.slack - 0.2 * g.g);
+            let (d, q) = self.exact_at(l, at);
+            room = room.min((d - self.rule.clearance).min(q) - EXACT);
             if hard
                 && !self.own.contains(&(i as u32))
-                && self.rule.bucket[l].is_some_and(|bk| self.soft.tracks[bk][y * g.w + x] > 0)
+                && self.rule.bucket[l].is_some_and(|bk| self.soft.track(bk, y * g.w + x) > 0)
             {
                 return None;
             }
@@ -184,12 +200,12 @@ impl Ctx<'_> {
         seg_cells(g, a, b)
             .into_iter()
             .filter(|&(x, y)| !self.own.contains(&(g.idx(l, x, y) as u32)))
-            .map(|(x, y)| self.soft.tracks[bk][y * g.w + x] as f32)
+            .map(|(x, y)| self.soft.track(bk, y * g.w + x) as f32)
             .sum()
     }
 
     fn via_load(&self, vi: usize, c2: usize) -> f32 {
-        self.soft.vias[self.rule.via_bucket[vi]][c2] as f32
+        self.soft.via(self.rule.via_bucket[vi], c2) as f32
     }
 
     pub fn stubs(
@@ -327,6 +343,11 @@ impl Ctx<'_> {
         let end = (found.end_tag > 0).then(|| access.get(found.end_tag as usize - 1)).flatten();
         match start {
             Some(a) => {
+                if let (Some(n), None, Some((l, pts))) = (&a.neck, &a.via, runs.first_mut())
+                    && *l == n.layer
+                {
+                    fold_back(pts, n, true);
+                }
                 let link = match (&a.via, runs.first()) {
                     (None, Some((_, pts))) => pts.first().copied(),
                     _ => None,
@@ -342,6 +363,11 @@ impl Ctx<'_> {
         }
         match end {
             Some(a) => {
+                if let (Some(n), None, Some((l, pts))) = (&a.neck, &a.via, runs.last_mut())
+                    && *l == n.layer
+                {
+                    fold_back(pts, n, false);
+                }
                 let link = match (&a.via, runs.last()) {
                     (None, Some((_, pts))) => pts.last().copied(),
                     _ => None,
@@ -491,6 +517,19 @@ impl Ctx<'_> {
         }
         out.push(*pts.last().unwrap());
         out
+    }
+}
+
+fn fold_back(pts: &mut Vec<P>, n: &Neck, front: bool) {
+    let near = |p: P| geom::point_segment_distance(p, n.from, n.to) < n.width;
+    if front {
+        while pts.len() >= 2 && near(pts[1]) {
+            pts.remove(0);
+        }
+    } else {
+        while pts.len() >= 2 && near(pts[pts.len() - 2]) {
+            pts.pop();
+        }
     }
 }
 

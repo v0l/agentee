@@ -135,6 +135,19 @@ pub struct Grid {
     via_block: Vec<u32>,
     fence: Vec<u16>,
     fence_nets: Vec<Vec<u16>>,
+    bin: f64,
+    bw: usize,
+    bh: usize,
+    bins: Vec<Vec<u32>>,
+    obstacles: Vec<Obstacle>,
+}
+
+struct Obstacle {
+    shape: Shape,
+    layers: u64,
+    net: u16,
+    clr: f64,
+    edge: bool,
 }
 
 pub struct Fence {
@@ -193,7 +206,50 @@ impl Grid {
         }
     }
 
+    fn record(&mut self, shape: &Shape, layers: u64, net: u16, clr: f64, edge: bool, reach: f64) {
+        let (lo, hi) = shape.bounds();
+        let k = self.obstacles.len() as u32;
+        let b =
+            |v: f64, o: f64, n: usize| (((v - o) / self.bin).floor().max(0.0) as usize).min(n - 1);
+        let (x0, x1) = (b(lo[0] - reach, self.x0, self.bw), b(hi[0] + reach, self.x0, self.bw));
+        let (y0, y1) = (b(lo[1] - reach, self.y0, self.bh), b(hi[1] + reach, self.y0, self.bh));
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                self.bins[y * self.bw + x].push(k);
+            }
+        }
+        self.obstacles.push(Obstacle { shape: shape.clone(), layers, net, clr, edge });
+    }
+
+    pub fn exact(&self, l: usize, p: P, net: u16) -> (f64, f64) {
+        let (cx, cy) = self.cell(p);
+        if !self.inside(cx, cy) {
+            return (0.0, 0.0);
+        }
+        let i = self.idx(l, cx as usize, cy as usize);
+        if self.d[i].a == 0 && self.d[i].net == NONE && self.q[i].a == 0 {
+            return (0.0, 0.0);
+        }
+        let bx = (((p[0] - self.x0) / self.bin) as usize).min(self.bw - 1);
+        let by = (((p[1] - self.y0) / self.bin) as usize).min(self.bh - 1);
+        let (mut d, mut q) = (1e3f64, 1e3f64);
+        for &k in &self.bins[by * self.bw + bx] {
+            let o = &self.obstacles[k as usize];
+            if o.layers & (1 << l) == 0 || (o.net == net && !o.edge) {
+                continue;
+            }
+            let v = o.shape.dist(p);
+            q = q.min(v - o.clr);
+            if !o.edge {
+                d = d.min(v);
+            }
+        }
+        (d, q.max(0.0))
+    }
+
     fn stamp(&mut self, shape: &Shape, layers: &[usize], net: u16, clr: f64, reach: f64) {
+        let mask = layers.iter().fold(0u64, |m, &l| m | 1 << l);
+        self.record(shape, mask, net, clr, false, reach);
         let plane = self.plane();
         let mut hits = Vec::new();
         self.near(shape, reach, |x, y, d| hits.push((y * self.w + x, d)));
@@ -207,6 +263,7 @@ impl Grid {
     }
 
     fn stamp_edge(&mut self, shape: &Shape, clr: f64, reach: f64) {
+        self.record(shape, u64::MAX, NONE, clr, true, reach);
         let plane = self.plane();
         let mut hits = Vec::new();
         self.near(shape, reach, |x, y, d| hits.push((y * self.w + x, d)));
@@ -245,7 +302,13 @@ impl Grid {
             via_block: vec![0; w * h],
             fence: vec![0; w * h],
             fence_nets: Vec::new(),
+            bin: rules.reach.max(0.5),
+            bw: ((w as f64 * g) / rules.reach.max(0.5)).ceil() as usize + 1,
+            bh: ((h as f64 * g) / rules.reach.max(0.5)).ceil() as usize + 1,
+            bins: Vec::new(),
+            obstacles: Vec::new(),
         };
+        grid.bins = vec![Vec::new(); grid.bw * grid.bh];
         let layer_of = |n: &str| layout.copper.iter().position(|c| c == n);
         let reach = rules.reach;
         let board = layout.edge();
