@@ -248,11 +248,24 @@ The usual split for RF: an FDTD of the passive board with a port where each acti
 measured component sits, then a `cascade` that drops in the vendor `.s2p` files and datasheet NF
 and OIP3. Change the board, rerun the FDTD; change a part, rerun only the cascade.
 
+## Parts and prices
+
+```sh
+agentee parts NAME --boards 5          # stock, price and cheaper drop-ins per BOM line
+agentee parts NAME --refs C11 --json
+```
+
+Give every part `mfr` and `mpn` fields first; lines without an `mpn` are not looked up. Keys
+go in `~/.config/agentee/distributors.toml` (`[mouser] api_key`, `[farnell] api_key` and
+`store`), never in the project. Alternatives keep value, package and ratings for resistors,
+ceramics, generic discretes and LEDs; ICs and connectors only get the same part elsewhere or the
+distributor's suggested replacement. Write the swap into the part's `mpn`, not the BOM.
+
 ## MCP
 
 `agentee mcp <project>` serves the same operations on stdio: `format_reference`, `check`,
 `list_items`, `show_item`, `render_item` (returns the PNG inline), `run_sim`, `sparam`,
-`field_solve`, `impedance`, `trace_width`, `serpentine`, `kicad_search`,
+`field_solve`, `impedance`, `trace_width`, `serpentine`, `parts`, `kicad_search`,
 `import_kicad_symbol`, `import_kicad_footprint`, `new_item`, `models`, `fab`. You still write the
 TOML files yourself with your normal file tools.
 
