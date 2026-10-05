@@ -1372,6 +1372,15 @@ impl Board {
         listed.iter().copied().find(reaches).or(listed.first().copied()).or(self.vias.first())
     }
 
+    pub const NECK_SHARE: f64 = 0.5;
+
+    pub fn impedance_widths(&self, class: &Netclass, layer: &str, share: f64) -> Option<(f64, f64)> {
+        class.impedance?;
+        let g = self.stackup.geometry(layer)?;
+        let allow = class.impedance_tolerance.0 / 100.0 * share;
+        Some(g.width_range(class.width_on(layer).to_mm(), class.line(), allow))
+    }
+
     pub fn analyze(&self) -> Vec<LayerAnalysis> {
         let mut out = Vec::new();
         for n in &self.netclasses {

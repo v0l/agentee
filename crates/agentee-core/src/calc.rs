@@ -79,6 +79,21 @@ impl TraceGeometry {
     pub fn width_for(&self, target: f64, line: Line) -> Option<f64> {
         solve_decreasing(|w| self.impedance(w, line), target, 0.01, 20.0)
     }
+
+    pub fn relative(&self, w_mm: f64, nominal_mm: f64, line: Line) -> f64 {
+        let z = |w: f64| match line.diff_gap_mm {
+            Some(g) => self.differential(w, g),
+            None => self.single_ended(w),
+        };
+        z(w_mm) / z(nominal_mm)
+    }
+
+    pub fn width_range(&self, nominal_mm: f64, line: Line, allow: f64) -> (f64, f64) {
+        let f = |w: f64| self.relative(w, nominal_mm, line);
+        let lo = solve_decreasing(f, 1.0 + allow, 1e-3, nominal_mm).unwrap_or(0.0);
+        let hi = solve_decreasing(f, 1.0 - allow, nominal_mm, 20.0).unwrap_or(f64::INFINITY);
+        (lo, hi)
+    }
 }
 
 fn hj_z01(u: f64) -> f64 {
@@ -188,6 +203,18 @@ fn solve_decreasing(f: impl Fn(f64) -> f64, target: f64, lo: f64, hi: f64) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn width_ratio_tracks_the_field_solver_on_a_thin_core() {
+        let g = TraceGeometry::Microstrip { h_mm: 0.0764, er: 3.91, t_mm: 0.035 };
+        let line = Line::coplanar(0.25);
+        assert!((g.relative(0.09, 0.12, line) - 1.143).abs() < 0.02);
+        assert!((g.relative(0.20, 0.12, line) - 0.756).abs() < 0.02);
+        let (lo, hi) = g.width_range(0.12, line, 0.05);
+        assert!((g.relative(lo, 0.12, line) - 1.05).abs() < 1e-6, "{lo}");
+        assert!((g.relative(hi, 0.12, line) - 0.95).abs() < 1e-6, "{hi}");
+        assert!(lo < 0.12 && hi > 0.12);
+    }
 
     #[test]
     fn microstrip_on_jlc_7628_is_about_fifty_ohm_at_a_third_of_a_mm() {

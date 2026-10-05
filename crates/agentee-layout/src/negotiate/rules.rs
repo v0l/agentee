@@ -34,6 +34,7 @@ pub struct NetRule {
     pub vias: Vec<usize>,
     pub class_vias: usize,
     pub neck: f64,
+    pub narrowest: Vec<f64>,
     pub crit: f64,
     pub bucket: Vec<Option<usize>>,
     pub via_bucket: Vec<usize>,
@@ -203,6 +204,14 @@ impl Rules {
                 })
                 .collect();
             let neck = class.and_then(|c| c.neckdown).map(|l| l.to_mm()).unwrap_or(NECKDOWN);
+            let narrowest = copper
+                .iter()
+                .map(|l| {
+                    class
+                        .and_then(|c| board.impedance_widths(c, l, Board::NECK_SHARE))
+                        .map_or(rules.min_width, |(lo, _)| lo.max(rules.min_width))
+                })
+                .collect();
             rules.nets[n] = Some(NetRule {
                 width,
                 clearance,
@@ -210,6 +219,7 @@ impl Rules {
                 vias: net_vias,
                 class_vias,
                 neck,
+                narrowest,
                 crit,
                 bucket,
                 via_bucket,

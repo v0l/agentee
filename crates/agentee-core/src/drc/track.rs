@@ -34,6 +34,15 @@ pub static RULES: &[Rule] = &[
         check: impedance_width,
     },
     Rule {
+        id: "impedance-trace",
+        category: Category::Signal,
+        severity: Severity::Error,
+        summary: "a track of an impedance class, neck-downs included, whose width moves its impedance outside the class tolerance",
+        when: "impedance classes",
+        applies: with_impedance,
+        check: impedance_trace,
+    },
+    Rule {
         id: "track-overlap",
         category: Category::Copper,
         severity: Severity::Error,
@@ -131,6 +140,31 @@ fn impedance_width(cx: &Ctx, r: &mut Report) {
                     Length::mm(w.width),
                     c.name,
                     Length::mm(w.class_w)
+                ),
+            );
+        }
+    }
+}
+
+fn impedance_trace(cx: &Ctx, r: &mut Report) {
+    for t in cx.tracks {
+        let n = &cx.nets[t.net];
+        let Some(c) = class_of(cx.board, &n.class) else { continue };
+        let (Some(target), Some(g)) = (c.impedance, cx.board.stackup.geometry(&t.layer)) else {
+            continue;
+        };
+        let nominal = c.width_on(&t.layer).to_mm();
+        let ratio = g.relative(t.width, nominal, c.line());
+        if (ratio - 1.0).abs() * 100.0 > c.impedance_tolerance.0 + 1e-9 {
+            r.emit(
+                format!("tracks[{}] {}", t.source, n.name),
+                format!(
+                    "{} wide puts it near {:.1} ohm, outside {} +/- {}; the class width {} holds it",
+                    Length::mm(t.width),
+                    target.0 * ratio,
+                    target,
+                    c.impedance_tolerance,
+                    Length::mm(nominal)
                 ),
             );
         }

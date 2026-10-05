@@ -1202,6 +1202,9 @@ impl LayoutFile {
         }
         let mut seg_track = Vec::new();
         for (ti, t) in tracks.iter().enumerate() {
+            let pour_gap = class_of(board, &nets[t.net].class)
+                .and_then(|c| c.coplanar_gap)
+                .map_or(0.0, Length::to_mm);
             for w in t.points.windows(2) {
                 let shape = Shape::Seg(w[0], w[1], t.width / 2.0);
                 seg_track.push(ti);
@@ -1211,7 +1214,7 @@ impl LayoutFile {
                     layers: vec![t.layer.clone()],
                     bounds: shape.bounds(),
                     shape,
-                    pour_gap: 0.0,
+                    pour_gap,
                 });
             }
         }

@@ -148,7 +148,7 @@ fn cut(
     pad_w: f64,
     rules: &Rules,
     wide: f64,
-    min_w: f64,
+    (min_w, floor): (f64, &str),
     limit: f64,
     taper: bool,
 ) -> Result<Option<Cut>, String> {
@@ -160,7 +160,7 @@ fn cut(
         return Ok(None);
     }
     if wide <= min_w + 1e-9 {
-        return Err(format!("the track is already at min_track_width {}", Length::mm(min_w)));
+        return Err(format!("the track is already at {floor} {}", Length::mm(min_w)));
     }
     let step = 0.01;
     let mut k = 1;
@@ -176,7 +176,7 @@ fn cut(
         let width = neck_width(wide.min(pad_w).min(2.0 * rules.gap(&head)), min_w);
         if width < min_w - 1e-9 {
             why = format!(
-                "a neck of {} would be under min_track_width {}",
+                "a neck of {} would be under {floor} {}",
                 Length::mm(width.max(0.0)),
                 Length::mm(min_w)
             );
@@ -250,6 +250,13 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
         }
         let class = class_of(board, &net.class);
         let limit = class.and_then(|c| c.neckdown).map(Length::to_mm).unwrap_or(NECKDOWN);
+        let floor = match class
+            .and_then(|c| board.impedance_widths(c, &t.layer, Board::NECK_SHARE))
+            .filter(|(lo, _)| *lo > min_w)
+        {
+            Some((lo, _)) => (lo, "the width that holds the class impedance"),
+            None => (min_w, "min_track_width"),
+        };
         let mut points = t.points.clone();
         let mut necks: Vec<NeckSegment> = Vec::new();
         for end in 0..2 {
@@ -288,7 +295,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
             };
             let path: Vec<P> =
                 if end == 0 { points.clone() } else { points.iter().rev().copied().collect() };
-            match cut(&path, outline, pad_w, &rules, t.width, min_w, limit, opts.taper) {
+            match cut(&path, outline, pad_w, &rules, t.width, floor, limit, opts.taper) {
                 Ok(None) => {}
                 Ok(Some(c)) => {
                     let why = if t.width > pad_w + 1e-6 {

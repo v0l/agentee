@@ -505,6 +505,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
 | `class-width` | error | always | a track narrower than its class width that is not a neck-down |
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
+| `impedance-trace` | error | impedance classes | a track of an impedance class, neck-downs included, whose width puts its impedance outside the class tolerance |
 | `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
 | `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap |
 | `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |

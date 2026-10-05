@@ -140,7 +140,7 @@ impl Ctx<'_> {
             let (d, q) = self.exact_at(l, at);
             (d - c).min(q) - EXACT
         };
-        let min_half = self.rules.min_width / 2.0 - 1e-9;
+        let min_half = self.rule.narrowest[l] / 2.0 - 1e-9;
         let inside = |q: P| geom::point_in_polygon(q, &pad.outline);
         for (dx, dy) in DIRS {
             let norm = ((dx * dx + dy * dy) as f64).sqrt();
@@ -210,7 +210,7 @@ impl Ctx<'_> {
             return Some(self.rule.width[l]);
         }
         let w = (2.0 * room * 10000.0).round() / 10000.0;
-        (w >= self.rules.min_width - 1e-9).then_some(w)
+        (w >= self.rule.narrowest[l] - 1e-9).then_some(w)
     }
 
     fn neck_load(&self, l: usize, a: P, b: P) -> f32 {
