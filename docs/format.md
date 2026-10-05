@@ -505,7 +505,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `neckdown` | info | always | a track narrower than its class width but not under `min_track_width`, on a run up to the class `neckdown` length (0.5 mm by default) |
 | `class-width` | error | always | a track narrower than its class width that is not a neck-down |
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
-| `impedance-trace` | error | impedance classes | a track of an impedance class, neck-downs included, whose width puts its impedance outside the class tolerance |
+| `impedance-trace` | error | impedance classes | a track of an impedance class whose width, neck-downs included, or the copper beside it on an outer layer puts its impedance outside the class tolerance; the gap is not checked within the neck-down length of a pad or a junction |
 | `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
 | `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap |
 | `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |
@@ -567,9 +567,10 @@ schematic, a layer that is not copper, a bad preset) are not rules and cannot be
 
 For each net class and routing layer it finds the trace geometry from the stackup (outer layers
 are microstrip, inner layers are stripline between the nearest copper above and below), then the
-impedance (Hammerstad-Jensen microstrip, Wheeler stripline, conformal-mapping grounded coplanar,
-all uncoated and zero-thickness for coplanar), the width that meets the
-target, and the IPC-2221 current capacity. `agentee show <board>` prints all of it as JSON.
+impedance (Hammerstad-Jensen microstrip, Wheeler stripline, conformal-mapping grounded coplanar
+with the copper's thickness and side walls, all uncoated; the coplanar form lands within 4% of
+the field solver from a 0.08 mm to a 0.21 mm core), the width that meets the target, and the
+IPC-2221 current capacity. `agentee show <board>` prints all of it as JSON.
 
 With `solver = "field"` the class is checked by the 2D field solver instead: a node-based finite
 difference Laplace solve on a graded mesh, run on the GPU through wgpu, with copper thickness,

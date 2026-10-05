@@ -1,6 +1,8 @@
 use super::{Category, Ctx, Report, Rule, Setup, every};
+use crate::calc::{COPLANAR_REACH, Line, TraceGeometry};
 use crate::diag::Severity;
 use crate::geom;
+use crate::geom::P;
 use crate::layout::{NECKDOWN, class_of, parallel_overlap, unit};
 use crate::units::Length;
 use std::collections::BTreeMap;
@@ -37,7 +39,7 @@ pub static RULES: &[Rule] = &[
         id: "impedance-trace",
         category: Category::Signal,
         severity: Severity::Error,
-        summary: "a track of an impedance class, neck-downs included, whose width moves its impedance outside the class tolerance",
+        summary: "a track of an impedance class whose width, neck-downs included, or the copper beside it on an outer layer moves its impedance outside the class tolerance",
         when: "impedance classes",
         applies: with_impedance,
         check: impedance_trace,
@@ -61,6 +63,9 @@ pub static RULES: &[Rule] = &[
         check: acute_turn,
     },
 ];
+
+const GAP_SAMPLE: f64 = 0.2;
+const GAP_STEP: f64 = 0.01;
 
 fn with_impedance(s: &Setup) -> bool {
     s.impedance
@@ -147,27 +152,120 @@ fn impedance_width(cx: &Ctx, r: &mut Report) {
 }
 
 fn impedance_trace(cx: &Ctx, r: &mut Report) {
-    for t in cx.tracks {
+    let items = cx.copper_items();
+    for (ti, t) in cx.tracks.iter().enumerate() {
         let n = &cx.nets[t.net];
         let Some(c) = class_of(cx.board, &n.class) else { continue };
         let (Some(target), Some(g)) = (c.impedance, cx.board.stackup.geometry(&t.layer)) else {
             continue;
         };
-        let nominal = c.width_on(&t.layer).to_mm();
-        let ratio = g.relative(t.width, nominal, c.line());
-        if (ratio - 1.0).abs() * 100.0 > c.impedance_tolerance.0 + 1e-9 {
-            r.emit(
-                format!("tracks[{}] {}", t.source, n.name),
-                format!(
-                    "{} wide puts it near {:.1} ohm, outside {} +/- {}; the class width {} holds it",
-                    Length::mm(t.width),
-                    target.0 * ratio,
-                    target,
-                    c.impedance_tolerance,
-                    Length::mm(nominal)
-                ),
-            );
+        let line = c.line();
+        let nominal = g.impedance(c.width_on(&t.layer).to_mm(), line);
+        let reach = match g {
+            TraceGeometry::Microstrip { h_mm, .. } if line.diff_gap_mm.is_none() => {
+                COPLANAR_REACH * h_mm
+            }
+            _ => 0.0,
+        };
+        let entry = c.neckdown.map(Length::to_mm).unwrap_or(NECKDOWN);
+        let own: Vec<&Vec<Vec<P>>> = cx
+            .parts
+            .iter()
+            .flat_map(|p| &p.pads)
+            .filter(|q| q.net == Some(t.net) && q.copper.contains(&t.layer))
+            .map(|q| &q.outlines)
+            .collect();
+        let z_at = |s: Option<f64>| match s {
+            Some(s) => g.impedance(t.width, Line::coplanar(s)),
+            None => g.impedance(t.width, Line::SINGLE),
+        };
+        let flat = g.impedance(t.width, line);
+        let mut worst: Option<(f64, [Option<f64>; 2])> = None;
+        for w in t.points.windows(2) {
+            let len = geom::dist(w[0], w[1]);
+            let Some(u) = unit(w[0], w[1]) else { continue };
+            let mut b = crate::graphic::Bounds::EMPTY;
+            b.add_circle(w[0], t.width / 2.0);
+            b.add_circle(w[1], t.width / 2.0);
+            let (mine, near): (Vec<&super::Cu>, Vec<&super::Cu>) = cx
+                .items_near(&b, reach)
+                .into_iter()
+                .map(|i| &items[i])
+                .filter(|it| it.layers.contains(&t.layer))
+                .filter(|it| !matches!(it.owner, super::Owner::Track(k) if k == ti))
+                .partition(|it| it.net == Some(t.net));
+            let zones: Vec<&crate::layout::ZoneFill> =
+                cx.zones.iter().filter(|z| z.net != t.net && z.layer == t.layer).collect();
+            let copper = |q: P| {
+                near.iter().any(|it| it.shape.circle_gap(q, 0.0) <= 0.0)
+                    || zones.iter().any(|z| z.filled(q))
+            };
+            let joined = |q: P| mine.iter().any(|it| it.shape.circle_gap(q, 0.0) <= 0.0);
+            let steps = (len / GAP_SAMPLE).ceil().max(1.0) as usize;
+            for k in 0..=steps {
+                let p = [
+                    w[0][0] + u[0] * len * k as f64 / steps as f64,
+                    w[0][1] + u[1] * len * k as f64 / steps as f64,
+                ];
+                let entering = own.iter().any(|o| super::rings_point_gap(o, p) <= entry)
+                    || mine.iter().any(|it| it.shape.circle_gap(p, t.width / 2.0) <= entry);
+                let (z, gaps) = if reach <= 0.0 || entering {
+                    (flat, [None, None])
+                } else {
+                    let gap = |side: f64| -> Result<Option<f64>, ()> {
+                        let nrm = [-u[1] * side, u[0] * side];
+                        let mut d = 0.0;
+                        while d < reach {
+                            let off = t.width / 2.0 + d + GAP_STEP / 2.0;
+                            let q = [p[0] + nrm[0] * off, p[1] + nrm[1] * off];
+                            if copper(q) {
+                                return Ok(Some(d));
+                            }
+                            if joined(q) {
+                                return Err(());
+                            }
+                            d += GAP_STEP;
+                        }
+                        Ok(None)
+                    };
+                    match (gap(1.0), gap(-1.0)) {
+                        (Ok(a), Ok(b)) => (2.0 / (1.0 / z_at(a) + 1.0 / z_at(b)), [a, b]),
+                        _ => (flat, [None, None]),
+                    }
+                };
+                let off = z / nominal - 1.0;
+                if worst.is_none_or(|(o, _)| off.abs() > o.abs()) {
+                    worst = Some((off, gaps));
+                }
+            }
         }
+        let Some((off, gaps)) = worst else { continue };
+        if off.abs() * 100.0 <= c.impedance_tolerance.0 + 1e-9 {
+            continue;
+        }
+        let beside = match gaps {
+            [None, None] if reach > 0.0 && (flat / nominal - 1.0 - off).abs() > 1e-9 => {
+                format!(" with no copper within {} either side", Length::mm(reach))
+            }
+            [None, None] => String::new(),
+            [a, b] => format!(
+                " with copper {} and {} beside it",
+                a.map_or("none".into(), |v| format!("{v:.2} mm")),
+                b.map_or("none".into(), |v| format!("{v:.2} mm"))
+            ),
+        };
+        r.emit(
+            format!("tracks[{}] {}", t.source, n.name),
+            format!(
+                "{} wide{beside} puts it near {:.1} ohm, outside {} +/- {}; the class is {} wide{}",
+                Length::mm(t.width),
+                target.0 * (1.0 + off),
+                target,
+                c.impedance_tolerance,
+                Length::mm(c.width_on(&t.layer).to_mm()),
+                c.coplanar_gap.map_or(String::new(), |s| format!(" with the pour {} away", s))
+            ),
+        );
     }
 }
 

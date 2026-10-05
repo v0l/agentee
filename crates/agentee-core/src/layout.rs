@@ -1202,9 +1202,11 @@ impl LayoutFile {
         }
         let mut seg_track = Vec::new();
         for (ti, t) in tracks.iter().enumerate() {
-            let pour_gap = class_of(board, &nets[t.net].class)
-                .and_then(|c| c.coplanar_gap)
-                .map_or(0.0, Length::to_mm);
+            let pour_gap = class_of(board, &nets[t.net].class).map_or(0.0, |c| {
+                c.coplanar_gap.map(Length::to_mm).unwrap_or_else(|| {
+                    board.impedance_gap(c, &t.layer, Board::NECK_SHARE).unwrap_or(0.0)
+                })
+            });
             for w in t.points.windows(2) {
                 let shape = Shape::Seg(w[0], w[1], t.width / 2.0);
                 seg_track.push(ti);
@@ -3673,12 +3675,21 @@ fn open_to_width(shapes: Vec<Vec<Vec<P>>>, min_width: f64) -> Vec<Vec<Vec<P>>> {
     if min_width <= 0.0 {
         return shapes;
     }
+    use i_overlay::core::fill_rule::FillRule;
+    use i_overlay::core::overlay_rule::OverlayRule;
+    use i_overlay::float::single::SingleFloatOverlay;
     use i_overlay::mesh::float::outline::offset::OutlineOffset;
     use i_overlay::mesh::float::style::{LineJoin, OutlineStyle};
     let r = min_width / 2.0;
     let step = 2.0 * (1.0 - 0.002f64.min(r * 0.5) / r).acos();
     let eroded = shapes.outline(&OutlineStyle::new(-r).line_join(LineJoin::Round(step)));
-    eroded.outline(&OutlineStyle::new(r).line_join(LineJoin::Round(step)))
+    let opened: Vec<Vec<P>> = eroded
+        .outline(&OutlineStyle::new(r).line_join(LineJoin::Round(step)))
+        .into_iter()
+        .flatten()
+        .collect();
+    let within: Vec<Vec<P>> = shapes.into_iter().flatten().collect();
+    opened.overlay(&within, OverlayRule::Intersect, FillRule::NonZero)
 }
 
 fn probe_shapes(shapes: Vec<Vec<Vec<P>>>, raster: &ZoneFill) -> Vec<Vec<P>> {

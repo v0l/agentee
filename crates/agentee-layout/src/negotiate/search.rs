@@ -93,6 +93,7 @@ pub struct Query<'a> {
     pub own: &'a std::collections::HashSet<u32>,
     pub holes: &'a [(P, f64)],
     pub old: Option<&'a super::soft::Footprint>,
+    pub entering: Option<&'a [bool]>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -399,7 +400,9 @@ impl Query<'_> {
         let at = |l: usize, x: usize, y: usize| l * area + (y - w.y0) * ww + (x - w.x0);
         let ok = |l: usize, x: usize, y: usize| -> bool {
             let i3 = grid.idx(l, x, y);
-            if !grid.track_ok(i3, net, rule.need[l]) {
+            let near_pad = self.entering.is_none_or(|m| m[(y - w.y0) * ww + (x - w.x0)]);
+            let need = if near_pad { rule.need[l] } else { rule.band_need[l] };
+            if !grid.track_ok(i3, net, need) {
                 return false;
             }
             !hard

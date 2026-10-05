@@ -60,6 +60,9 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> Vec<(
             continue;
         };
         let Some(rule) = base.rules.nets.get(n).and_then(|r| r.as_ref()) else { continue };
+        if rule.band > rule.clearance + 1e-9 {
+            continue;
+        }
         let need = rule.need[l];
         let net = n as u16;
         let half = track.width.unwrap_or(rule.width[l]) / 2.0;

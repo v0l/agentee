@@ -372,8 +372,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             st.dead = dead.clone();
             st.joined = st.needed.saturating_sub(st.failed.len());
             let rule = rules.rule(st.net);
-            let fp =
-                Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule.clearance, &st.pads));
+            let fp = Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule.band, &st.pads));
             soft.apply(&fp, true);
             st.fp = Some(fp);
             cold[si] = !st.failed.is_empty();
@@ -970,7 +969,7 @@ fn route_one(
     };
     r.joined = st.needed.saturating_sub(r.failed.len());
     let rule = env.rules.rule(st.net);
-    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.pieces, rule.clearance, &st.pads));
+    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.pieces, rule.band, &st.pads));
     if !env.jacobi {
         env.soft.apply(&fp, true);
     }
@@ -1297,6 +1296,31 @@ fn zone_map(layout: &Layout, grid: &Grid) -> Vec<u16> {
     zone
 }
 
+fn entry_mask(grid: &Grid, rule: &NetRule, pads: &[PadRef], win: &Window) -> Option<Vec<bool>> {
+    if rule.band <= rule.clearance + 1e-9 {
+        return None;
+    }
+    let ww = win.ww();
+    let mut out = vec![false; ww * win.wh()];
+    for pad in pads {
+        let (lo, hi) = Shape::Poly(pad.outline.clone()).bounds();
+        let (x0, y0, x1, y1) = grid.span(lo, hi, rule.neck);
+        if x1 == usize::MAX || y1 == usize::MAX {
+            continue;
+        }
+        for y in y0.max(win.y0)..=y1.min(win.y1) {
+            for x in x0.max(win.x0)..=x1.min(win.x1) {
+                let c = grid.center(x, y);
+                let inside = geom::point_in_polygon(c, &pad.outline);
+                if inside || grid::edge_dist(&pad.outline, c) <= rule.neck {
+                    out[(y - win.y0) * ww + (x - win.x0)] = true;
+                }
+            }
+        }
+    }
+    Some(out)
+}
+
 fn clash_tiles(tiles: &Tiles, grid: &Grid, cells: &[(usize, usize)]) -> Vec<u64> {
     if cells.is_empty() {
         return Vec::new();
@@ -1566,7 +1590,7 @@ fn rip_and_retry(
             if let Some(fp) = st.fp.take() {
                 soft.apply(&fp, false);
             }
-            let clr = env.rules.rule(st.net).clearance;
+            let clr = env.rules.rule(st.net).band;
             let bad: Vec<bool> = st
                 .pieces
                 .iter()
@@ -1658,7 +1682,7 @@ fn drop_overlaps(
         let fp = Soft::footprint(
             grid,
             rules,
-            &Copper::of(&st.pieces, rules.rule(st.net).clearance, &st.pads),
+            &Copper::of(&st.pieces, rules.rule(st.net).band, &st.pads),
         );
         soft.apply(&fp, true);
         st.fp = Some(fp);
@@ -1746,7 +1770,7 @@ fn kept(st: &NetState) -> Option<Vec<&Piece>> {
 
 fn kept_footprint(st: &NetState, rules: &Rules, grid: &Grid) -> Option<Footprint> {
     let keep: Vec<Piece> = kept(st)?.into_iter().cloned().collect();
-    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net).clearance, &st.pads)))
+    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net).band, &st.pads)))
 }
 
 fn within_fence(env: &Env, st: &NetState, a: &Access) -> bool {
@@ -2073,6 +2097,7 @@ fn connect(
         }
         let fence = st.fence.as_deref().filter(|_| env.fenced);
         let lean = lean_mask(env, st.net, &win, fence);
+        let entering = entry_mask(grid, rule, &st.pads, &win);
         let q = Query {
             grid,
             soft: env.soft,
@@ -2098,6 +2123,7 @@ fn connect(
             own: &st.own,
             holes: &holes,
             old: env.jacobi.then_some(st.fp.as_ref()).flatten(),
+            entering: entering.as_deref(),
         };
         tries += 1;
         if let Some(found) = q.run() {

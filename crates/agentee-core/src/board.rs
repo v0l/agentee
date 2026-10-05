@@ -1374,11 +1374,31 @@ impl Board {
 
     pub const NECK_SHARE: f64 = 0.5;
 
-    pub fn impedance_widths(&self, class: &Netclass, layer: &str, share: f64) -> Option<(f64, f64)> {
+    pub fn impedance_widths(
+        &self,
+        class: &Netclass,
+        layer: &str,
+        share: f64,
+    ) -> Option<(f64, f64)> {
         class.impedance?;
         let g = self.stackup.geometry(layer)?;
         let allow = class.impedance_tolerance.0 / 100.0 * share;
         Some(g.width_range(class.width_on(layer).to_mm(), class.line(), allow))
+    }
+
+    pub fn impedance_gap(&self, class: &Netclass, layer: &str, share: f64) -> Option<f64> {
+        class.impedance?;
+        let g = self.stackup.geometry(layer)?;
+        let allow = class.impedance_tolerance.0 / 100.0 * share;
+        g.gap_floor(class.width_on(layer).to_mm(), class.line(), allow)
+    }
+
+    pub fn needs_pour(&self, class: &Netclass, layer: &str, share: f64) -> bool {
+        let (Some(_), Some(s)) = (class.impedance, class.coplanar_gap) else { return false };
+        let Some(g) = self.stackup.geometry(layer) else { return false };
+        let w = class.width_on(layer).to_mm();
+        let bare = g.impedance(w, Line::SINGLE) / g.impedance(w, Line::coplanar(s.to_mm()));
+        bare - 1.0 > class.impedance_tolerance.0 / 100.0 * share
     }
 
     pub fn analyze(&self) -> Vec<LayerAnalysis> {

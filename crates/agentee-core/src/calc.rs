@@ -62,8 +62,8 @@ impl TraceGeometry {
     pub fn impedance(&self, w_mm: f64, line: Line) -> f64 {
         match (line.diff_gap_mm, line.coplanar_gap_mm, *self) {
             (Some(g), _, _) => self.differential(w_mm, g),
-            (None, Some(s), TraceGeometry::Microstrip { h_mm, er, .. }) => {
-                gcpw_z0(w_mm, s, h_mm, er)
+            (None, Some(s), TraceGeometry::Microstrip { h_mm, er, t_mm }) => {
+                gcpw_z0(w_mm, s, h_mm, er, t_mm)
             }
             _ => self.single_ended(w_mm),
         }
@@ -81,11 +81,18 @@ impl TraceGeometry {
     }
 
     pub fn relative(&self, w_mm: f64, nominal_mm: f64, line: Line) -> f64 {
-        let z = |w: f64| match line.diff_gap_mm {
-            Some(g) => self.differential(w, g),
-            None => self.single_ended(w),
-        };
-        z(w_mm) / z(nominal_mm)
+        self.impedance(w_mm, line) / self.impedance(nominal_mm, line)
+    }
+
+    pub fn gap_floor(&self, w_mm: f64, line: Line, allow: f64) -> Option<f64> {
+        let TraceGeometry::Microstrip { h_mm, .. } = *self else { return None };
+        if line.diff_gap_mm.is_some() {
+            return None;
+        }
+        let nominal = self.impedance(w_mm, line);
+        let f = |s: f64| -self.impedance(w_mm, Line::coplanar(s)) / nominal;
+        let far = line.coplanar_gap_mm.unwrap_or(COPLANAR_REACH * h_mm);
+        Some(solve_decreasing(f, -(1.0 - allow), 1e-3, far).unwrap_or(1e-3))
     }
 
     pub fn width_range(&self, nominal_mm: f64, line: Line, allow: f64) -> (f64, f64) {
@@ -109,16 +116,19 @@ fn hj_eeff(u: f64, er: f64) -> f64 {
     (er + 1.0) / 2.0 + (er - 1.0) / 2.0 * (1.0 + 10.0 / u).powf(-a * b)
 }
 
-pub fn microstrip_z0(w: f64, t: f64, h: f64, er: f64) -> f64 {
+fn thick_u(w: f64, t: f64, h: f64, er: f64) -> f64 {
     let u = w / h;
-    let ur = if t > 0.0 {
-        let th = t / h;
-        let coth = 1.0 / (6.517 * u).sqrt().tanh();
-        let du1 = th / PI * (1.0 + 4.0 * std::f64::consts::E / (th * coth * coth)).ln();
-        u + 0.5 * (1.0 + 1.0 / (er - 1.0).max(0.0).sqrt().cosh()) * du1
-    } else {
-        u
-    };
+    if t <= 0.0 {
+        return u;
+    }
+    let th = t / h;
+    let coth = 1.0 / (6.517 * u).sqrt().tanh();
+    let du1 = th / PI * (1.0 + 4.0 * std::f64::consts::E / (th * coth * coth)).ln();
+    u + 0.5 * (1.0 + 1.0 / (er - 1.0).max(0.0).sqrt().cosh()) * du1
+}
+
+pub fn microstrip_z0(w: f64, t: f64, h: f64, er: f64) -> f64 {
+    let ur = thick_u(w, t, h, er);
     hj_z01(ur) / hj_eeff(ur, er).sqrt()
 }
 
@@ -159,13 +169,16 @@ fn k_ratio(k: f64) -> f64 {
     elliptic_k(k) / elliptic_k((1.0 - k * k).sqrt())
 }
 
-pub fn gcpw_z0(w: f64, s: f64, h: f64, er: f64) -> f64 {
+pub const COPLANAR_REACH: f64 = 5.0;
+
+pub fn gcpw_z0(w: f64, s: f64, h: f64, er: f64, t: f64) -> f64 {
+    let wide = thick_u(w, t, h, er) * h;
     let k = w / (w + 2.0 * s);
-    let k3 = (PI * w / (4.0 * h)).tanh() / (PI * (w + 2.0 * s) / (4.0 * h)).tanh();
+    let k3 = (PI * wide / (4.0 * h)).tanh() / (PI * (wide + 2.0 * s) / (4.0 * h)).tanh();
     let (r, r3) = (k_ratio(k), k_ratio(k3));
-    let q = r3 / r;
-    let eeff = (1.0 + er * q) / (1.0 + q);
-    60.0 * PI / eeff.sqrt() / (r + r3)
+    let walls = if t > 0.0 { t / s } else { 0.0 };
+    let z = 60.0 * PI / ((r + walls + r3) * (r + walls + er * r3)).sqrt();
+    z.min(microstrip_z0(w, t, h, er))
 }
 
 const IPC2221_EXTERNAL: f64 = 0.048;
@@ -203,6 +216,27 @@ fn solve_decreasing(f: impl Fn(f64) -> f64, target: f64, lo: f64, hi: f64) -> Op
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grounded_coplanar_tracks_the_field_solver() {
+        let thin = |w, s| gcpw_z0(w, s, 0.0764, 3.91, 0.035);
+        let thick = |w, s| gcpw_z0(w, s, 0.2104, 4.4, 0.035);
+        for (z, field) in [
+            (thin(0.12, 0.25), 52.66),
+            (thin(0.12, 0.15), 51.52),
+            (thin(0.12, 0.1), 49.51),
+            (thin(0.09, 0.25), 60.17),
+            (thin(0.2, 0.25), 39.82),
+            (thin(0.12, 0.8), 53.12),
+            (thick(0.3, 0.2), 51.64),
+            (thick(0.3, 0.1), 45.6),
+            (thick(0.3, 0.6), 55.47),
+            (thick(0.15, 0.2), 69.42),
+            (thick(1.0, 0.2), 25.0),
+        ] {
+            assert!((z / field - 1.0).abs() < 0.04, "{z} against {field}");
+        }
+    }
 
     #[test]
     fn width_ratio_tracks_the_field_solver_on_a_thin_core() {
@@ -252,9 +286,9 @@ mod tests {
 
     #[test]
     fn gcpw_matches_a_published_fifty_ohm_line() {
-        let z = gcpw_z0(1.6, 0.345, 1.6, 4.7);
+        let z = gcpw_z0(1.6, 0.345, 1.6, 4.7, 0.0);
         assert!((z - 50.0).abs() < 1.5, "{z}");
-        assert!(gcpw_z0(0.33, 0.1, 0.2104, 4.4) < gcpw_z0(0.33, 0.2, 0.2104, 4.4));
+        assert!(gcpw_z0(0.33, 0.1, 0.2104, 4.4, 0.035) < gcpw_z0(0.33, 0.2, 0.2104, 4.4, 0.035));
     }
 
     #[test]

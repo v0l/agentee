@@ -4,6 +4,7 @@ use agentee_core::layout::Layout;
 use agentee_core::place;
 
 const NECKDOWN: f64 = 0.5;
+const POUR_STRIP: f64 = 0.25;
 
 pub struct ViaOpt {
     pub name: String,
@@ -30,6 +31,7 @@ pub struct Need {
 pub struct NetRule {
     pub width: Vec<f64>,
     pub clearance: f64,
+    pub band: f64,
     pub track: Vec<bool>,
     pub vias: Vec<usize>,
     pub class_vias: usize,
@@ -39,6 +41,7 @@ pub struct NetRule {
     pub bucket: Vec<Option<usize>>,
     pub via_bucket: Vec<usize>,
     pub need: Vec<Need>,
+    pub band_need: Vec<Need>,
     pub via_need: Vec<Need>,
 }
 
@@ -149,7 +152,32 @@ impl Rules {
                 Some(c) if c.layers.len() == 1 => 0.8,
                 _ => 0.0,
             });
-            let clearance = net.clearance;
+            let clearance = class
+                .into_iter()
+                .flat_map(|c| {
+                    copper
+                        .iter()
+                        .zip(&track)
+                        .filter(|(_, on)| **on)
+                        .filter_map(|(l, _)| board.impedance_gap(c, l, Board::NECK_SHARE))
+                })
+                .fold(net.clearance, f64::max);
+            let strip = layout
+                .zones
+                .iter()
+                .filter(|z| copper.iter().zip(&track).any(|(l, on)| *on && *l == z.layer))
+                .map(|z| z.min_width)
+                .fold(None, |a: Option<f64>, w| Some(a.map_or(w, |a| a.max(w))))
+                .unwrap_or(POUR_STRIP);
+            let poured = class.filter(|c| {
+                copper
+                    .iter()
+                    .zip(&track)
+                    .any(|(l, on)| *on && board.needs_pour(c, l, Board::NECK_SHARE))
+            });
+            let band = poured.and_then(|c| c.coplanar_gap).map_or(clearance, |s| {
+                clearance.max(s.to_mm() + strip + net.clearance + opts.grid)
+            });
             let mut bucket = vec![None; nl];
             for l in 0..nl {
                 if !track[l] && !net_vias.iter().any(|&k| rules.vias[k].layers.contains(&l)) {
@@ -159,9 +187,9 @@ impl Rules {
                 let found = rules
                     .buckets
                     .iter()
-                    .position(|b| b.layer == l && um(b.h) == um(h) && um(b.c) == um(clearance));
+                    .position(|b| b.layer == l && um(b.h) == um(h) && um(b.c) == um(band));
                 bucket[l] = Some(found.unwrap_or_else(|| {
-                    rules.buckets.push(Bucket { layer: l, h, c: clearance });
+                    rules.buckets.push(Bucket { layer: l, h, c: band });
                     rules.buckets.len() - 1
                 }));
             }
@@ -171,27 +199,27 @@ impl Rules {
                 let found = rules.via_buckets.iter().position(|b| {
                     um(b.r) == um(o.r)
                         && um(b.dr) == um(o.dr)
-                        && um(b.c) == um(clearance)
+                        && um(b.c) == um(band)
                         && b.layers == o.layers
                 });
                 via_bucket.push(found.unwrap_or_else(|| {
                     rules.via_buckets.push(ViaBucket {
                         r: o.r,
                         dr: o.dr,
-                        c: clearance,
+                        c: band,
                         layers: o.layers.clone(),
                     });
                     rules.via_buckets.len() - 1
                 }));
             }
-            let need = width
-                .iter()
-                .map(|w| Need {
-                    d: um(w / 2.0 + clearance + slack),
-                    q: um(w / 2.0 + slack),
-                    hole: 0,
-                })
-                .collect();
+            let need_at = |c: f64| -> Vec<Need> {
+                width
+                    .iter()
+                    .map(|w| Need { d: um(w / 2.0 + c + slack), q: um(w / 2.0 + slack), hole: 0 })
+                    .collect()
+            };
+            let need = need_at(clearance);
+            let band_need = need_at(band);
             let via_need = net_vias
                 .iter()
                 .map(|&k| {
@@ -215,6 +243,7 @@ impl Rules {
             rules.nets[n] = Some(NetRule {
                 width,
                 clearance,
+                band,
                 track,
                 vias: net_vias,
                 class_vias,
@@ -224,11 +253,17 @@ impl Rules {
                 bucket,
                 via_bucket,
                 need,
+                band_need,
                 via_need,
             });
         }
         let floor = rules.edge.max(rules.npth).max(rules.pth_cu).max(rules.inner_pth_cu);
-        let max_c = layout.nets.iter().map(|n| n.clearance).fold(floor, f64::max);
+        let max_c = layout
+            .nets
+            .iter()
+            .map(|n| n.clearance)
+            .chain(rules.nets.iter().flatten().map(|r| r.band))
+            .fold(floor, f64::max);
         let widest = rules
             .nets
             .iter()

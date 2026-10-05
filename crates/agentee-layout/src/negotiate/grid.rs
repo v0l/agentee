@@ -389,7 +389,11 @@ impl Grid {
         }
         for t in &layout.tracks {
             let Some(l) = layer_of(&t.layer) else { continue };
-            let clr = layout.nets[t.net].clearance;
+            let clr = rules
+                .nets
+                .get(t.net)
+                .and_then(|r| r.as_ref())
+                .map_or(layout.nets[t.net].clearance, |r| r.band);
             for s in t.points.windows(2) {
                 grid.stamp(&Shape::Seg(s[0], s[1], t.width / 2.0), &[l], t.net as u16, clr, reach);
             }
