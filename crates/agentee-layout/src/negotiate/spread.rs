@@ -27,7 +27,7 @@ fn same_way(a: P, b: P, c: P, d: P) -> bool {
     }
 }
 
-pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> usize {
+pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> Vec<(usize, Vec<P>)> {
     let grid = &base.grid;
     let g = grid.g;
     let layer_of = |n: &str| layout.copper.iter().position(|c| c == n);
@@ -42,8 +42,9 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> usize
     for v in &layout.vias {
         anchors.push((v.net, v.at));
     }
-    let mut moved = 0;
-    for track in tracks.iter_mut() {
+    let mut undo = Vec::new();
+    for (ti, track) in tracks.iter_mut().enumerate() {
+        let old = track.points.clone();
         let (Some(l), Some(n)) = (layer_of(&track.layer), net_of(&track.net)) else {
             continue;
         };
@@ -98,7 +99,7 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> usize
                 }
             }
             let target = (room[1] - room[0]) / 2.0;
-            let target = (target / g).round() * g;
+            let target = (target / g).trunc() * g;
             if target.abs() < g {
                 continue;
             }
@@ -106,9 +107,39 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> usize
                 let pts = &mut track.points;
                 pts[k] = q1;
                 pts[k + 1] = q2;
-                moved += 1;
             }
         }
+        if track.points != old {
+            undo.push((ti, old));
+        }
     }
-    moved
+    undo
+}
+
+pub fn illegal(
+    layout: &Layout,
+    base: &Base,
+    tracks: &[RoutedTrack],
+    which: &[usize],
+) -> Vec<usize> {
+    let grid = &base.grid;
+    which
+        .iter()
+        .copied()
+        .filter(|&ti| {
+            let t = &tracks[ti];
+            let (Some(l), Some(n)) = (
+                layout.copper.iter().position(|c| *c == t.layer),
+                layout.nets.iter().position(|x| x.name == t.net),
+            ) else {
+                return false;
+            };
+            let Some(rule) = base.rules.nets.get(n).and_then(|r| r.as_ref()) else { return false };
+            t.points.windows(2).any(|w| {
+                seg_cells(grid, w[0], w[1])
+                    .into_iter()
+                    .any(|(x, y)| !grid.track_ok(grid.idx(l, x, y), n as u16, rule.need[l]))
+            })
+        })
+        .collect()
 }

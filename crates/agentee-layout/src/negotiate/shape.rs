@@ -57,6 +57,17 @@ impl Ctx<'_> {
                     .is_none_or(|b| self.soft.tracks[b][y * self.grid.w + x] == 0))
     }
 
+    fn unshared(&self, l: usize, p: P) -> bool {
+        let (x, y) = self.grid.cell(p);
+        if !self.grid.inside(x, y) {
+            return false;
+        }
+        let (x, y) = (x as usize, y as usize);
+        let i = self.grid.idx(l, x, y);
+        self.own.contains(&(i as u32))
+            || self.rule.bucket[l].is_none_or(|b| self.soft.tracks[b][y * self.grid.w + x] == 0)
+    }
+
     pub fn clear_line(&self, l: usize, p: P, q: P) -> bool {
         let g = self.grid;
         let n = (geom::dist(p, q) / (g.g * 0.25)).ceil().max(1.0) as usize;
@@ -119,7 +130,7 @@ impl Ctx<'_> {
                     continue;
                 }
                 half = half.min(r);
-                if half < min_half {
+                if half < min_half || !self.unshared(l, q) {
                     break;
                 }
                 if inside(q) && edge_dist(&pad.outline, q) > g.g {

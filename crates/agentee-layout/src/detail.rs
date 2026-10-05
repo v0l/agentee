@@ -18,6 +18,8 @@ pub struct DetailPlan {
     pub failed: Vec<route::Unrouted>,
     #[serde(skip)]
     pub overlap: Vec<(String, String, P)>,
+    #[serde(skip)]
+    pub undo: Vec<(usize, Vec<P>)>,
 }
 
 pub fn options(cfg: &EngineFile) -> Options {
@@ -76,6 +78,7 @@ impl Phase for Detail {
                 .iter()
                 .map(|&(n, ly, at)| (l.nets[n].name.clone(), l.copper[ly].clone(), at))
                 .collect(),
+            undo: Vec::new(),
         });
         report
     }

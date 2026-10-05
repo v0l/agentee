@@ -384,7 +384,7 @@ fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
 }
 
 fn legalise(model: &Model, bd: &mut Board, grow: &HashMap<usize, f64>) -> (String, Vec<String>) {
-    let edge = 0.3;
+    let edge = model.board.rules.min_copper_to_edge.to_mm().max(0.3);
     let keep: Vec<Bounds> = bd
         .keepouts
         .iter()
@@ -420,7 +420,10 @@ fn legalise(model: &Model, bd: &mut Board, grow: &HashMap<usize, f64>) -> (Strin
         let corners = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
         corners.iter().all(|q| geom::point_in_polygon(*q, &bd.outline))
             && bd.outline.windows(2).all(|w| {
-                corners.iter().all(|q| geom::point_segment_distance(*q, w[0], w[1]) >= edge)
+                (0..4).all(|k| {
+                    geom::segment_segment_distance(corners[k], corners[(k + 1) % 4], w[0], w[1])
+                        >= edge
+                })
             })
     };
     let mut failed = Vec::new();

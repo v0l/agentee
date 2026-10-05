@@ -293,6 +293,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     }
     let place_rounds = if has("place") { cfg.engine.place_rounds.unwrap_or(3).max(1) } else { 1 };
     let rounds = cfg.engine.rounds.unwrap_or(3).max(1);
+    let mut best_pass: Option<(usize, String, Option<detail::DetailPlan>)> = None;
     for pass in 0..place_rounds {
         if d.stopped() {
             d.skipped.push("stopped".into());
@@ -375,7 +376,11 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                     .detail
                     .as_ref()
                     .is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
-                if routed <= best && kept.is_some() {
+                let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
+                if routed < best + step && kept.is_some() {
+                    if routed > best {
+                        kept = model.detail.clone();
+                    }
                     break;
                 }
                 best = routed;
@@ -402,6 +407,22 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         if !has("place") {
             break;
         }
+        let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
+        let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
+        let gained = best_pass.as_ref().is_none_or(|b| routed >= b.0 + step);
+        if best_pass.as_ref().is_none_or(|b| routed > b.0) {
+            best_pass = Some((routed, d.text.clone(), model.detail.clone()));
+        }
+        if !gained {
+            break;
+        }
+    }
+    if let Some((_, text, plan)) = best_pass
+        && text != d.text
+    {
+        d.text = text;
+        d.reload(model)?;
+        model.detail = plan;
     }
     if has("detail") {
         d.write_route(model)?;
@@ -417,6 +438,9 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         let mut reload_ms = 0;
         if r.changed {
             reload_ms += d.write_route(model)?;
+            if finish::check_spread(model, &cfg.engine, &mut r) {
+                reload_ms += d.write_route(model)?;
+            }
         }
         let before = r.changed;
         r.changed = false;

@@ -240,28 +240,60 @@ sections first.
 
 ## Benchmarks
 
-`cargo test -p agentee-layout --release --test bench` runs each case on a copy and prints routed
-connections, vias, DRC errors, score and time. Only `lna` and `sdr` are in it.
+`cargo test -p agentee-layout --release --test bench -- --nocapture` runs the `lna` cases;
+`--include-ignored` adds the `sdr` ones, which take minutes. Each case strips the routing from a
+copy of the example and prints routed connections, vias, unrouted, the errors per rule next to the
+committed layout's, score and time. `AGENTEE_BENCH_OUT=dir` keeps the result files.
 
-| case | today | pass |
-|---|---|---|
-| `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
-| `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1 to J2 chain in a line, all routed, 0 DRC errors |
-| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 0 unrouted, under 60 s |
-| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 0 unrouted, decap term under 20, under 120 s |
+| case | before (`8917371`) | now | pass |
+|---|---|---|---|
+| `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.6 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
+| `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 1.1 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
+| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 382 of 498, 69 unrouted, 477 s | 0 unrouted, under 60 s |
+| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 410 of 499, 61 unrouted, 146 errors (121 silk), 1727 s | 0 unrouted, decap term under 20, under 120 s |
 
-## Order of work
+Connection counts went up because plane and ground pads are now routed connections. On `sdr` the
+route-only result has the same clearance and drill errors as the committed layout (both from its
+`[[fanouts]]`) plus one doubled same-net segment. Most of what stays unrouted is power and ground
+pads in dense regions, RF nets limited to F.Cu that cross each other, and BGA balls; detail stalls
+with 70 to 90 nets still overlapping and the hard pass drops them.
 
-1. `Db`, resolved rules, one write at the end. `sdr` loses its 20 s of reloads.
-2. Detail: distance fields, soft engine copper, negotiated rounds, trees, plane and ground
-   targets, entry layers. Run without global, bounded by each connection's box. Gate on the two
-   route-only benchmarks.
-3. Access: pin access candidates and escape as preferences; delete the `tie` and `escape`
-   commits.
-4. Global with boundary capacities, corridors on, the global and detail loop.
-5. Constraints and one placer, hot tiles back into placement. Gate on the full flow benchmarks.
-6. Retire `floorplan`, `layers`, `tie`, the old global and the class order in `route.rs`;
-   `agentee route` becomes `layout --only detail` on the named nets.
+## Status
+
+Built, in `crates/agentee-layout`:
+
+- **Stages and loops.** `run` drives `constraints`, then up to `place_rounds` passes of `place`,
+  `access` and up to `rounds` repetitions of `global` and `detail`, then `finish`. A repetition
+  stops when detail gains less than 1% of its connections; a placement pass stops the same way,
+  and the best pass is kept.
+- **Board model.** `negotiate::Base` holds the resolved rules, the distance fields, the zone
+  islands and the routed nets, built once per placement and shared by access, global, detail and
+  finish. The file is resolved again only after placement moves, after the rail regions are
+  written and after the route is written.
+- **Constraints.** Chains from every connector through two-pin series parts (RF included),
+  decaps bound to the nearest supply pin of a chip, crystals bound to their chip.
+- **Place.** Chains laid in a line from their connector with the chain pins on one line, the core
+  placer for the rest, then legalise. Later passes inflate parts under hot tiles and legalise
+  from where they are. Labels are settled after every pass.
+- **Access.** Rail regions (`# plan planes`), terminals from SMD rail pads as well as vias, the
+  escape flow for every BGA kept as a cost discount for detail, and a pin access report.
+- **Global.** PathFinder on 1 mm tiles over every layer, edge capacities from the distance fields,
+  via capacity from legal via sites, nets grown as trees by maze search, overflow history kept
+  between repetitions and raised where detail still overlapped. Edges next to a net's own pads do
+  not count as overflow for that net.
+- **Detail.** The negotiated router with corridors as a soft cost, escape preferences as a
+  discount, criticality from the board or `[engine.detail] criticality`, nets that do not touch
+  routed in parallel within a round, a stall stop, and a repair pass for pads cut off from their
+  pour once the zones refill around the new copper.
+- **Finish.** Spread, then length tuning on the tracks the engine made.
+
+Not built yet:
+
+- Coupled routing of pairs and interface via budgets as a cost.
+- Pattern (L and Z) routes in global, and plane nets in global.
+- Via removal and snapping in finish.
+- The viewer drawing `Db` snapshots, `--checkpoint`, and `agentee route` running the new detail
+  router.
 
 ## Sources
 

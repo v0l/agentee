@@ -20,13 +20,35 @@ impl Phase for Finish {
         }
         let base = model.base.as_ref().expect("base is built");
         let plan = model.detail.as_mut().expect("detail plan");
-        let moved = crate::negotiate::spread(&model.layout, base, &mut plan.tracks);
+        let undo = crate::negotiate::spread(&model.layout, base, &mut plan.tracks);
         report
             .notes
-            .push(format!("spread: {moved} segments moved to the middle of their free space"));
-        report.changed = moved > 0;
+            .push(format!("spread: {} tracks moved to the middle of their free space", undo.len()));
+        report.changed = !undo.is_empty();
+        plan.undo = undo;
         report
     }
+}
+
+pub fn check_spread(model: &mut Model, cfg: &EngineFile, report: &mut PhaseReport) -> bool {
+    if model.ensure_base(&crate::detail::options(cfg)).is_err() {
+        return false;
+    }
+    let base = model.base.as_ref().expect("base is built");
+    let Some(plan) = model.detail.as_mut() else { return false };
+    let which: Vec<usize> = plan.undo.iter().map(|u| u.0).collect();
+    let bad = crate::negotiate::illegal(&model.layout, base, &plan.tracks, &which);
+    for (ti, old) in std::mem::take(&mut plan.undo) {
+        if bad.contains(&ti) {
+            plan.tracks[ti].points = old;
+        }
+    }
+    if !bad.is_empty() {
+        report
+            .notes
+            .push(format!("spread: {} moves put back, they crowded a neighbour", bad.len()));
+    }
+    !bad.is_empty()
 }
 
 pub fn tune(model: &mut Model, report: &mut PhaseReport) {
@@ -44,6 +66,18 @@ pub fn tune(model: &mut Model, report: &mut PhaseReport) {
     for e in &r.edits {
         if e.track >= first
             && let Some(t) = plan.tracks.get_mut(e.track - first)
+            && !folds(
+                &e.points,
+                t.width.unwrap_or_else(|| {
+                    model
+                        .layout
+                        .nets
+                        .iter()
+                        .find(|n| n.name == t.net)
+                        .map(|n| n.width)
+                        .unwrap_or(0.1)
+                }),
+            )
         {
             t.points = e.points.clone();
             edited += 1;
@@ -60,4 +94,18 @@ pub fn tune(model: &mut Model, report: &mut PhaseReport) {
     if edited > 0 {
         report.changed = true;
     }
+}
+
+fn folds(points: &[agentee_core::geom::P], width: f64) -> bool {
+    let n = points.len();
+    (0..n.saturating_sub(1)).any(|i| {
+        (i + 2..n.saturating_sub(1)).any(|j| {
+            agentee_core::geom::segment_segment_distance(
+                points[i],
+                points[i + 1],
+                points[j],
+                points[j + 1],
+            ) < width
+        })
+    })
 }

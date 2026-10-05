@@ -15,7 +15,7 @@ pub use grid::{Fence, Grid, Shape};
 pub use rules::{Need, NetRule, Rules, um};
 use search::{Query, Source, Window, seg_cells};
 pub use shape::{Access, Ctx, PadRef};
-pub use spread::spread;
+pub use spread::{illegal, spread};
 
 const MAX_TARGETS: usize = 3_000_000;
 use soft::{Copper, Piece, Soft};
@@ -286,6 +286,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     });
     let plane = grid.plane();
     let mut pres = 0.5f32;
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(64);
     let mut todo = order.clone();
     let mut conflicted: Vec<usize> = Vec::new();
     let mut overlap_cells: Vec<(usize, usize, P)> = Vec::new();
@@ -294,20 +295,27 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     let mut rounds = 0;
     for round in 0..opts.rounds.max(1) {
         rounds = round + 1;
-        for &si in &todo {
-            if let Some(fp) = states[si].fp.take() {
-                soft.apply(&fp, false);
+        let plan = {
+            let env = Env { layout, grid, soft: &soft, rules, islands, opts, zone, guide };
+            batches(&states, &todo, threads, &env)
+        };
+        for batch in plan {
+            let batch = &batch[..];
+            for &si in batch {
+                if let Some(fp) = states[si].fp.take() {
+                    soft.apply(&fp, false);
+                }
             }
             let env = Env { layout, grid, soft: &soft, rules, islands, opts, zone, guide };
-            let (pieces, failed, joined) = route_net(&states[si], &env, pres, false);
-            let st = &mut states[si];
-            st.pieces = pieces;
-            st.failed = failed;
-            st.joined = joined;
-            let rule = rules.rule(st.net);
-            let fp = Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule.clearance));
-            soft.apply(&fp, true);
-            st.fp = Some(fp);
+            let done = route_batch(&states, batch, &env, pres);
+            for (si, (pieces, failed, joined), fp) in done {
+                let st = &mut states[si];
+                st.pieces = pieces;
+                st.failed = failed;
+                st.joined = joined;
+                soft.apply(&fp, true);
+                st.fp = Some(fp);
+            }
         }
         conflicted.clear();
         overlap_cells.clear();
@@ -457,6 +465,69 @@ pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAcc
         }
     }
     out
+}
+
+type Routed = (Vec<Piece>, Vec<Unrouted>, usize);
+
+fn base_margin(env: &Env, st: &NetState) -> f64 {
+    let guided = env.guide.corridors.get(&st.net).is_some_and(|c| !c.is_empty());
+    let m =
+        if guided { (2.0 * env.guide.tile).max(env.opts.margin * 0.5) } else { env.opts.margin };
+    m * st.reach
+}
+
+fn batches(states: &[NetState], todo: &[usize], threads: usize, env: &Env) -> Vec<Vec<usize>> {
+    let boxes: Vec<(P, P)> = todo
+        .iter()
+        .map(|&si| {
+            let st = &states[si];
+            let m = base_margin(env, st) * 3f64.powi(env.opts.escalate as i32) + env.rules.reach;
+            let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+            for p in &st.pads {
+                lo = [lo[0].min(p.centre[0] - m), lo[1].min(p.centre[1] - m)];
+                hi = [hi[0].max(p.centre[0] + m), hi[1].max(p.centre[1] + m)];
+            }
+            (lo, hi)
+        })
+        .collect();
+    let hit = |a: &(P, P), b: &(P, P)| {
+        a.0[0] < b.1[0] && b.0[0] < a.1[0] && a.0[1] < b.1[1] && b.0[1] < a.1[1]
+    };
+    let mut left: Vec<usize> = (0..todo.len()).collect();
+    let mut out = Vec::new();
+    while !left.is_empty() {
+        let mut batch: Vec<usize> = Vec::new();
+        for &k in &left {
+            if batch.len() < threads && batch.iter().all(|&j| !hit(&boxes[k], &boxes[j])) {
+                batch.push(k);
+            }
+        }
+        left.retain(|k| !batch.contains(k));
+        out.push(batch.iter().map(|&k| todo[k]).collect());
+    }
+    out
+}
+
+fn route_batch(
+    states: &[NetState],
+    batch: &[usize],
+    env: &Env,
+    pres: f32,
+) -> Vec<(usize, Routed, Footprint)> {
+    let one = |si: usize| {
+        let st = &states[si];
+        let r = route_net(st, env, pres, false);
+        let rule = env.rules.rule(st.net);
+        let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.0, rule.clearance));
+        (si, r, fp)
+    };
+    if batch.len() == 1 {
+        return vec![one(batch[0])];
+    }
+    std::thread::scope(|s| {
+        let handles: Vec<_> = batch.iter().map(|&si| s.spawn(move || one(si))).collect();
+        handles.into_iter().map(|h| h.join().expect("router thread")).collect()
+    })
 }
 
 fn lean_mask(env: &Env, net: usize, win: &Window) -> Option<Vec<i8>> {
@@ -678,12 +749,7 @@ fn connect(
     let nc = &st.copper;
     let lo = [a[0].min(b[0]), a[1].min(b[1])];
     let hi = [a[0].max(b[0]), a[1].max(b[1])];
-    let guided = env.guide.corridors.get(&st.net).is_some_and(|c| !c.is_empty());
-    let mut margin = if guided {
-        (2.0 * env.guide.tile).max(env.opts.margin * 0.5) * st.reach
-    } else {
-        env.opts.margin * st.reach
-    };
+    let mut margin = base_margin(env, st);
     let mut tries = 0;
     loop {
         let win = Window::around(grid, lo, hi, margin);

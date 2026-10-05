@@ -48,7 +48,16 @@ fn bench(example: &str, layout: &str, from: Option<&str>) -> Outcome {
     let i = p.layouts.iter().position(|l| l.item.name == layout).unwrap();
     let inputs = p.layout_inputs(i).unwrap();
     let text = std::fs::read_to_string(&p.layouts[i].path).unwrap();
-    let hand = inputs.resolve(&text).unwrap().item;
+    let hand_entry = inputs.resolve(&text).unwrap();
+    let errors = |diags: &[agentee_core::Diagnostic]| -> std::collections::BTreeMap<String, usize> {
+        let mut m = std::collections::BTreeMap::new();
+        for d in diags.iter().filter(|d| d.severity == Severity::Error) {
+            *m.entry(d.rule.clone().unwrap_or_default()).or_insert(0) += 1;
+        }
+        m
+    };
+    let hand_errors = errors(&hand_entry.diags);
+    let hand = hand_entry.item;
     let text = agentee_layout::start::reset(&text, &Reset { routing: true, ..Default::default() })
         .unwrap();
     let run = agentee_layout::Run {
@@ -94,7 +103,9 @@ fn bench(example: &str, layout: &str, from: Option<&str>) -> Outcome {
         drc.len(),
         r.score.total
     );
-    for d in drc.iter().take(10) {
+    eprintln!("errors by rule {:?}", errors(&e.diags));
+    eprintln!("hand layout     {hand_errors:?}");
+    for d in drc.iter().filter(|d| !d.starts_with("silk")).take(10) {
         eprintln!("    {d}");
     }
     if let Ok(out) = std::env::var("AGENTEE_BENCH_OUT") {
