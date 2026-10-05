@@ -394,14 +394,16 @@ fn assembled(layout: &Layout, sch: &Schematic, reference: &str) -> bool {
 
 fn bom(layout: &Layout, sch: &Schematic) -> (String, String, usize) {
     let mut groups: Vec<(BomKey, Vec<String>)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for p in &sch.parts {
-        if !assembled(layout, sch, &p.reference) {
+        if !assembled(layout, sch, &p.reference) || !seen.insert(p.reference.as_str()) {
             continue;
         }
-        let fp = p.footprint.clone().unwrap_or_default();
-        let mpn = p.fields.get("mpn").cloned().unwrap_or_default();
-        let lcsc = p.fields.get("lcsc").cloned().unwrap_or_default();
-        let key = (p.value.clone(), fp, mpn, lcsc);
+        let units: Vec<_> = sch.parts.iter().filter(|u| u.reference == p.reference).collect();
+        let field =
+            |name: &str| units.iter().find_map(|u| u.fields.get(name).cloned()).unwrap_or_default();
+        let fp = units.iter().find_map(|u| u.footprint.clone()).unwrap_or_default();
+        let key = (p.value.clone(), fp, field("mpn"), field("lcsc"));
         match groups.iter_mut().find(|g| g.0 == key) {
             Some(g) => g.1.push(p.reference.clone()),
             None => groups.push((key, vec![p.reference.clone()])),
