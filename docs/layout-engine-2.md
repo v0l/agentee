@@ -266,7 +266,7 @@ committed layout's, score and time. `AGENTEE_BENCH_OUT=dir` keeps the result fil
 | `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.5 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
 | `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 1.0 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
 | `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 407 of 498, 62 unrouted, 139 s | 0 unrouted, under 60 s |
-| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 435 of 501, 43 unrouted, 145 errors (116 silk), 645 s | 0 unrouted, decap term under 20, under 120 s |
+| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 438 of 510, 43 unrouted, 120 errors (89 silk), 456 s | 0 unrouted, decap term under 20, under 120 s |
 
 Connection counts went up because plane and ground pads are now routed connections. The
 committed `sdr` layout itself leaves 39 connections unrouted. On `sdr` the only clearance errors
@@ -275,7 +275,7 @@ are not routed coupled yet) and the silk the placer leaves. What stays unrouted 
 LVDS pairs on In2.Cu, whose pin order crosses between the FPGA and the FX5, RF nets limited to
 F.Cu that cross each other, power pads in the BGA fields, and eleven VBUS pads that detail finds
 no legal path out of. A cold detail run takes about 65 s and a repeat that starts
-from the previous routes about 50 s. On the full flow 530 of the 645 s go to placement passes and
+from the previous routes about 50 s. On the full flow 238 of the 456 s go to placement passes and
 routes that a later one beat, and three quarters of detail search time goes to pieces that are
 ripped up again, most of it on nets that still overlap when negotiation stops.
 
@@ -284,9 +284,10 @@ ripped up again, most of it on nets that still overlap when negotiation stops.
 Built, in `crates/agentee-layout`:
 
 - **Stages and loops.** `run` drives `constraints`, then up to `place_rounds` passes of `place`,
-  `access` and up to `rounds` repetitions of `global` and `detail`, then `finish`. A repetition
-  stops when detail gains less than 1% of its connections; a placement pass stops the same way,
-  and the best pass is kept.
+  `access`, `global` and one `detail` route each, keeps the pass that routed the most, and then
+  repeats `global` and `detail` on that placement up to `rounds` times in all, each repeat
+  starting from the routes and history of the one before. A pass or a repeat that gains less
+  than 1% of the connections ends its loop. Then `finish`.
 - **Board model.** `negotiate::Base` holds the resolved rules, the distance fields, the zone
   islands and the routed nets, built once per placement and shared by access, global, detail and
   finish. The file is resolved again only after placement moves, after the rail regions are
