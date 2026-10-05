@@ -77,6 +77,12 @@ pub struct Guide {
     pub prefer: HashMap<usize, Vec<(usize, P, P)>>,
     pub prefer_vias: HashMap<usize, Vec<P>>,
     pub hist: Option<Vec<f32>>,
+    pub warm: Option<Warm>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Warm {
+    nets: HashMap<usize, (Vec<Piece>, Vec<Unrouted>, HashSet<usize>)>,
 }
 
 impl Guide {
@@ -90,6 +96,7 @@ impl Guide {
 
 #[derive(Clone, Debug, Default)]
 pub struct Outcome {
+    pub warm: Warm,
     pub spend: Spend,
     pub hist: Vec<f32>,
     pub result: RouteResult,
@@ -347,6 +354,22 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     if let Some(h) = guide.hist.as_ref().filter(|h| h.len() == soft.hist.len()) {
         soft.hist.clone_from(h);
     }
+    let mut cold: Vec<bool> = vec![true; states.len()];
+    if let Some(w) = &guide.warm {
+        for (si, st) in states.iter_mut().enumerate() {
+            let Some((pieces, failed, dead)) = w.nets.get(&st.net) else { continue };
+            st.pieces = pieces.clone();
+            st.failed = failed.clone();
+            st.dead = dead.clone();
+            st.joined = st.needed.saturating_sub(st.failed.len());
+            let rule = rules.rule(st.net);
+            let fp =
+                Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule.clearance, &st.pads));
+            soft.apply(&fp, true);
+            st.fp = Some(fp);
+            cold[si] = !st.failed.is_empty();
+        }
+    }
     log(format!(
         "grid {}x{}x{}, {} nets, {} connections, {} track buckets, {} via buckets, {} corridors",
         grid.w,
@@ -368,7 +391,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     let tiles = Tiles::new(grid, guide);
     let mut seen: HashMap<usize, (u64, usize)> = HashMap::new();
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(64);
-    let mut todo = order.clone();
+    let mut todo: Vec<usize> = order.iter().copied().filter(|&si| cold[si]).collect();
     let mut conflicted: Vec<usize> = Vec::new();
     let mut overlap_cells: Vec<(usize, usize, P)> = Vec::new();
     let mut best = usize::MAX;
@@ -586,7 +609,21 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     for f in &out.failed {
         log(format!("  failed {} at {:?}: {}", f.net, f.from, f.reason));
     }
-    Outcome { spend, hist: soft.hist, result: out, overlap: overlap_cells, rounds, overlap_left }
+    let warm = Warm {
+        nets: states
+            .iter()
+            .map(|st| (st.net, (st.pieces.clone(), st.failed.clone(), st.dead.clone())))
+            .collect(),
+    };
+    Outcome {
+        warm,
+        spend,
+        hist: soft.hist,
+        result: out,
+        overlap: overlap_cells,
+        rounds,
+        overlap_left,
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]

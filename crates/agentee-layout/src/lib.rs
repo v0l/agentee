@@ -42,6 +42,7 @@ pub struct Model<'a> {
     pub hot: Vec<placement::Hot>,
     pub base: Option<negotiate::Base>,
     pub hist: Option<Vec<f32>>,
+    pub warm: Option<negotiate::Warm>,
     pub pass: usize,
     pub text: String,
 }
@@ -143,6 +144,7 @@ pub fn run_text(
         hot: Vec::new(),
         base: None,
         hist: None,
+        warm: None,
         pass: 0,
         text: String::new(),
     };
@@ -261,6 +263,7 @@ impl Driver<'_, '_> {
         (model.file, model.layout) = (self.cfg.resolve)(&self.text)?;
         model.base = None;
         model.hist = None;
+        model.warm = None;
         Ok(t.elapsed().as_millis())
     }
 
@@ -349,6 +352,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let mut best_pass_ms: Option<(u32, f64)> = None;
     for pass in 0..place_rounds {
         let tp = std::time::Instant::now();
+        let already = d.discarded.len();
         if d.stopped() {
             d.skipped.push("stopped".into());
             break;
@@ -481,11 +485,14 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
         let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
         let gained = best_pass.as_ref().is_none_or(|b| routed >= b.0 + step);
-        let pass_ms = ms_since(tp);
+        let pass_ms = ms_since(tp) - d.discarded[already..].iter().map(|x| x.1).sum::<f64>();
         if best_pass.as_ref().is_none_or(|b| routed > b.0) {
             best_pass = Some((routed, d.text.clone(), model.detail.clone()));
             if let Some((k, t)) = best_pass_ms.replace((pass, pass_ms)) {
-                d.discarded.push((format!("placement pass {}, beaten by a later pass", k + 1), t));
+                d.discarded.push((
+                    format!("placement pass {}, the rest, beaten by a later pass", k + 1),
+                    t,
+                ));
             }
         } else {
             d.discarded.push((
