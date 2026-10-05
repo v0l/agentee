@@ -1,0 +1,15 @@
+[package]
+name = "agentee-parts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Distributor stock, price and cheaper alternatives for agentee BOMs (Mouser, Farnell)"
+
+[dependencies]
+agentee-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+ureq = "3"

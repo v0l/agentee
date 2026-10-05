@@ -258,6 +258,18 @@ fn tools() -> Value {
             "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output folder, relative to the project" } }), &["name", "out"]),
         },
         {
+            "name": "parts",
+            "description": "Price a layout's or schematic's BOM at Mouser and Farnell and find cheaper equivalents: the same part at the other distributor, resistors and ceramic capacitors with the same value, package, tolerance, voltage and dielectric (never a downgrade), generic discretes (2N7002, S1D, SS14, SMAJ..) by name and package, indicator LEDs by colour and package, and the distributor's suggested replacement for parts going obsolete. Costs are at the needed quantity, buying up to a price break when that is cheaper. Keys come from ~/.config/agentee/distributors.toml ([mouser] api_key, [farnell] api_key and store).",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout or schematic" },
+                "boards": { "type": "integer", "default": 1 },
+                "alternatives": { "type": "boolean", "default": true },
+                "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell; default every one with a key" },
+                "farnell_store": { "type": "string", "description": "e.g. uk.farnell.com, ie.farnell.com, www.newark.com" },
+                "refs": { "type": "array", "items": { "type": "string" }, "description": "only the BOM lines holding these references" },
+            }), &["name"]),
+        },
+        {
             "name": "field_solve",
             "description": "Solve a trace cross-section with the GPU field solver: impedance, effective permittivity, C and L per metre, delay. Includes solder mask, thickness, coplanar grounds and differential pairs. Within 0.5% of exact references with fine = true.",
             "inputSchema": s(json!({
@@ -649,6 +661,24 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 arg(a, "name").ok_or("name is required")?,
                 &out,
             )?))]))
+        }
+        "parts" => {
+            let p = ops::load(root)?;
+            let distributors = strings(a, "distributors");
+            let refs = strings(a, "refs");
+            let r = ops::parts(
+                &p,
+                arg(a, "name").ok_or("name is required")?,
+                &ops::PartsQuery {
+                    boards: int(a, "boards", 1) as u32,
+                    alternatives: a.get("alternatives").and_then(Value::as_bool).unwrap_or(true),
+                    distributors: &distributors,
+                    farnell_store: arg(a, "farnell_store"),
+                    refs: &refs,
+                    config: None,
+                },
+            )?;
+            Ok(ok(vec![text(pretty(&serde_json::to_value(&r).map_err(|e| e.to_string())?))]))
         }
         "field_solve" => {
             let p = ops::load(root)?;

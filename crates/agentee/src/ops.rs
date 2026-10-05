@@ -1928,3 +1928,132 @@ pub fn pinswap(
     }
     Ok(v)
 }
+
+pub struct PartsQuery<'a> {
+    pub boards: u32,
+    pub alternatives: bool,
+    pub distributors: &'a [String],
+    pub farnell_store: Option<&'a str>,
+    pub refs: &'a [String],
+    pub config: Option<&'a Path>,
+}
+
+pub fn parts(p: &Project, name: &str, q: &PartsQuery) -> Result<agentee_parts::Report, String> {
+    use agentee_parts::{Distributor, farnell::Farnell, mouser::Mouser};
+    let r = find(p, &format!("pcb:{name}"))
+        .or_else(|_| find(p, &format!("sch:{name}")))
+        .or_else(|_| find(p, name))?;
+    let sch = match r {
+        ItemRef::Layout(i) => {
+            let s = &p.layouts[i].item.schematic;
+            &p.schematics
+                .iter()
+                .find(|e| &e.name == s)
+                .ok_or("the layout's schematic is missing")?
+                .item
+        }
+        ItemRef::Schematic(i) => &p.schematics[i].item,
+        _ => return Err(format!("`{name}` is not a layout or schematic")),
+    };
+    let cfg = agentee_parts::config::load(q.config)?;
+    let wants = |d: &str| {
+        q.distributors.is_empty() || q.distributors.iter().any(|w| w.eq_ignore_ascii_case(d))
+    };
+    let mouser = cfg.mouser_key().filter(|_| wants("mouser")).map(Mouser::new);
+    let store = q.farnell_store.unwrap_or(cfg.farnell_store()).to_string();
+    let currency = cfg.farnell.as_ref().and_then(|f| f.currency.as_deref());
+    let farnell =
+        cfg.farnell_key().filter(|_| wants("farnell")).map(|k| Farnell::new(k, &store, currency));
+    let mut sources: Vec<&dyn Distributor> = Vec::new();
+    if let Some(m) = &mouser {
+        sources.push(m);
+    }
+    if let Some(f) = &farnell {
+        sources.push(f);
+    }
+    if sources.is_empty() {
+        return Err(format!(
+            "no distributor API key for {} in {}",
+            if q.distributors.is_empty() {
+                "Mouser or Farnell".to_string()
+            } else {
+                q.distributors.join(", ")
+            },
+            agentee_parts::config::default_path()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        ));
+    }
+    let mut lines = agentee_parts::bom(sch);
+    if !q.refs.is_empty() {
+        lines.retain(|l| l.refs.iter().any(|r| q.refs.iter().any(|w| w == r)));
+    }
+    let opts = agentee_parts::Options {
+        boards: q.boards.max(1),
+        alternatives: q.alternatives,
+        ..Default::default()
+    };
+    Ok(agentee_parts::report(&lines, &sources, &opts))
+}
+
+pub fn parts_text(r: &agentee_parts::Report) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let refs = |v: &[String]| {
+        if v.len() > 4 {
+            format!("{} .. {} ({})", v[0], v[v.len() - 1], v.len())
+        } else {
+            v.join(" ")
+        }
+    };
+    for l in &r.lines {
+        let mpn = l.bom.mpn.as_deref().unwrap_or("no mpn");
+        let _ = writeln!(s, "{}  {}  {}  x{}", refs(&l.bom.refs), l.bom.value, mpn, l.need);
+        match &l.chosen {
+            Some(c) => {
+                let _ = writeln!(
+                    s,
+                    "  now      {:<8} {:<26} {:>6} @ {:.4} = {:.2} {}  ({} in stock)",
+                    c.distributor, c.sku, c.buy, c.unit, c.total, c.currency, c.stock
+                );
+            }
+            None => {
+                let _ = writeln!(s, "  now      no stocked offer");
+            }
+        }
+        for a in &l.alternatives {
+            let saves = a.saves.map(|v| format!(", saves {v:.2}")).unwrap_or_default();
+            let _ = writeln!(
+                s,
+                "  cheaper  {:<8} {:<26} {:>6} @ {:.4} = {:.2} {}{}  {} {}, {}",
+                a.part.distributor,
+                a.part.sku,
+                a.part.buy,
+                a.part.unit,
+                a.part.total,
+                a.part.currency,
+                saves,
+                a.part.manufacturer,
+                a.part.mpn,
+                a.why
+            );
+        }
+        for n in &l.notes {
+            let _ = writeln!(s, "  note     {n}");
+        }
+    }
+    let _ = writeln!(s);
+    for (cur, t) in &r.totals {
+        let _ = writeln!(
+            s,
+            "total {cur}: {:.2} as chosen, {:.2} with the cheaper picks ({} lines priced, {} boards)",
+            t.chosen, t.cheapest, t.lines_priced, r.boards
+        );
+    }
+    let calls: Vec<String> = r.calls.iter().map(|(k, v)| format!("{k} {v}")).collect();
+    let _ = writeln!(s, "API calls: {}", calls.join(", "));
+    for e in &r.errors {
+        let _ = writeln!(s, "error: {e}");
+    }
+    s
+}

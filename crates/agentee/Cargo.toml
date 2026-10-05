@@ -14,6 +14,7 @@ agentee-sim.workspace = true
 agentee-fab.workspace = true
 agentee-layout.workspace = true
 agentee-3d.workspace = true
+agentee-parts.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

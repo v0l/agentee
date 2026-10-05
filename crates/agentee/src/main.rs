@@ -199,6 +199,32 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
+    /// Stock, price and cheaper equivalents for a layout's or schematic's BOM from Mouser and Farnell, with keys in ~/.config/agentee/distributors.toml
+    Parts {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Boards to buy for
+        #[arg(long, default_value_t = 1)]
+        boards: u32,
+        /// Distributors to ask, comma separated (mouser, farnell), default every one with a key
+        #[arg(long, value_delimiter = ',')]
+        distributor: Vec<String>,
+        /// Farnell store, e.g. uk.farnell.com, ie.farnell.com, de.farnell.com, www.newark.com
+        #[arg(long)]
+        farnell_store: Option<String>,
+        /// Only these references, comma separated
+        #[arg(long, value_delimiter = ',')]
+        refs: Vec<String>,
+        /// Price what is on the BOM without searching for cheaper equivalents
+        #[arg(long)]
+        no_alternatives: bool,
+        /// Key file instead of ~/.config/agentee/distributors.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Fill the zones of a layout and store the copper in its file, so loads skip the fill
     Fill {
         name: String,
@@ -760,6 +786,37 @@ fn run(cli: Cli) -> Result<bool, String> {
             let p = ops::load_footprints(&path)?;
             print_json(&ops::fetch_models(&p)?);
             Ok(true)
+        }
+        Cmd::Parts {
+            name,
+            project,
+            boards,
+            distributor,
+            farnell_store,
+            refs,
+            no_alternatives,
+            config,
+            json,
+        } => {
+            let p = ops::load(&project)?;
+            let r = ops::parts(
+                &p,
+                &name,
+                &ops::PartsQuery {
+                    boards,
+                    alternatives: !no_alternatives,
+                    distributors: &distributor,
+                    farnell_store: farnell_store.as_deref(),
+                    refs: &refs,
+                    config: config.as_deref(),
+                },
+            )?;
+            if json {
+                print_json(&serde_json::to_value(&r).map_err(|e| e.to_string())?);
+            } else {
+                print!("{}", ops::parts_text(&r));
+            }
+            Ok(r.errors.is_empty())
         }
         Cmd::Fill { name, project } => {
             let p = ops::load(&project)?;

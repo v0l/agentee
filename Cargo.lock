@@ -36,6 +36,7 @@ dependencies = [
  "agentee-fab",
  "agentee-kicad",
  "agentee-layout",
+ "agentee-parts",
  "agentee-sim",
  "agentee-view",
  "anyhow",
@@ -104,6 +105,17 @@ dependencies = [
  "serde_json",
  "toml",
  "toml_edit 0.25.15+spec-1.1.0",
+]
+
+[[package]]
+name = "agentee-parts"
+version = "0.1.0"
+dependencies = [
+ "agentee-core",
+ "serde",
+ "serde_json",
+ "toml",
+ "ureq",
 ]
 
 [[package]]
