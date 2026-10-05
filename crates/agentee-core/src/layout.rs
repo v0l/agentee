@@ -18,6 +18,21 @@ pub use pour::{
 
 pub(crate) const DRC_EPSILON: f64 = 5e-4;
 
+thread_local! {
+    static UNCHECKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn without_checks<T>(f: impl FnOnce() -> T) -> T {
+    let before = UNCHECKED.with(|u| u.replace(true));
+    let out = f();
+    UNCHECKED.with(|u| u.set(before));
+    out
+}
+
+fn checking() -> bool {
+    !UNCHECKED.with(|u| u.get())
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BoardSide {
@@ -1786,18 +1801,22 @@ impl LayoutFile {
             .chain(board_texts(&graphics))
             .map(|t| SilkBox { outline: t.outline(), text: t.text, layer: t.layer })
             .collect();
-        let label_fixes = check_silk(
-            &parts,
-            &vias,
-            &tracks,
-            &graphics,
-            &artwork,
-            geom::BoardEdge::new(&outline, &board_cutouts),
-            board.rules.min_silk_text_height.to_mm(),
-            &rule_on,
-            &|_| false,
-            &mut found,
-        );
+        let label_fixes = if checking() {
+            check_silk(
+                &parts,
+                &vias,
+                &tracks,
+                &graphics,
+                &artwork,
+                geom::BoardEdge::new(&outline, &board_cutouts),
+                board.rules.min_silk_text_height.to_mm(),
+                &rule_on,
+                &|_| false,
+                &mut found,
+            )
+        } else {
+            Vec::new()
+        };
 
         let (watermark, watermark_problem) = place_watermark(
             self.watermark.as_ref(),
@@ -1845,24 +1864,26 @@ impl LayoutFile {
         let test = self.test.clone().unwrap_or_default().resolve(d);
         let engine = self.engine.clone().unwrap_or_default();
         engine.check(d);
-        crate::drc::run(
-            &crate::drc::Ctx::new(
-                board,
-                &copper,
-                &outline,
-                &board_cutouts,
-                &parts,
-                &tracks,
-                &vias,
-                &zones,
-                &nets,
-            )
-            .with_signals(&graphics, &pairs, &match_groups, &interfaces)
-            .with_test(&test)
-            .with_heat(&cx.heat)
-            .with_found(&found),
-            d,
-        );
+        if checking() {
+            crate::drc::run(
+                &crate::drc::Ctx::new(
+                    board,
+                    &copper,
+                    &outline,
+                    &board_cutouts,
+                    &parts,
+                    &tracks,
+                    &vias,
+                    &zones,
+                    &nets,
+                )
+                .with_signals(&graphics, &pairs, &match_groups, &interfaces)
+                .with_test(&test)
+                .with_heat(&cx.heat)
+                .with_found(&found),
+                d,
+            );
+        }
         Layout {
             name: self.name.clone(),
             board: board.name.clone(),

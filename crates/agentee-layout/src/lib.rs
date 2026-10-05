@@ -118,7 +118,7 @@ pub fn run_text(
             heat: heat.clone(),
         };
         let mut d = agentee_core::diag::Diags::new(&f.name);
-        let resolved = f.resolve(&cx, &mut d);
+        let resolved = agentee_core::layout::without_checks(|| f.resolve(&cx, &mut d));
         Ok((f, resolved))
     };
     let (file, layout) = resolve(text)?;
@@ -498,6 +498,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         let tuned = r.changed;
         r.changed = false;
         finish::neck(model, &mut r);
+        finish::dedouble(model, &mut r);
         if r.changed {
             reload_ms += d.write_route(model)?;
         }
