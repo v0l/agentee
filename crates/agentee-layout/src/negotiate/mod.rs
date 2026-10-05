@@ -897,7 +897,7 @@ fn route_many(
     threads: usize,
 ) -> Many {
     let n = todo.len();
-    let halo = (env.rules.reach / env.tiles.size).ceil() as i64 + 1;
+    let halo = (env.rules.reach / env.tiles.size).ceil() as i64;
     let mut bits: Vec<Vec<u64>> = Vec::with_capacity(n);
     for &si in todo {
         let fence = fence_of(env, &states[si]);
