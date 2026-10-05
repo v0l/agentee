@@ -42,6 +42,7 @@ impl Phase for Access {
         }
         plan.prefer_vias = esc.vias.iter().map(|v| (v.net, v.at)).collect();
         plan.escaped_balls = esc.per_part.iter().map(|p| p.balls).sum();
+
         for pe in &esc.per_part {
             report.notes.push(format!(
                 "{}: pitch {:.2}, {} balls, escape plan kept as a preference for detail",

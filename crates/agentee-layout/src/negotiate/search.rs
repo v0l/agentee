@@ -85,6 +85,8 @@ pub struct Query<'a> {
     pub bend_cost: f64,
     pub zone: &'a [u16],
     pub zone_cost: f64,
+    pub reserve: &'a [u16],
+    pub reserve_cost: f32,
     pub extra: Option<&'a [i8]>,
     pub outside: f32,
     pub gain: f32,
@@ -471,8 +473,10 @@ impl Query<'_> {
                     };
                     let hist = self.soft.hist[l * plane + c2];
                     let zn = self.zone[l * plane + c2];
+                    let rn = self.reserve.get(l * plane + c2).copied().unwrap_or(u16::MAX);
                     let zone =
-                        if zn != u16::MAX && zn != net { self.zone_cost as f32 } else { 0.0 };
+                        if zn != u16::MAX && zn != net { self.zone_cost as f32 } else { 0.0 }
+                            + if rn != u16::MAX && rn != net { self.reserve_cost } else { 0.0 };
                     let j = l * area + j2;
                     let lean = self.lean(j);
                     let step = len

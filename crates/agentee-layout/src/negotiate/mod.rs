@@ -20,6 +20,7 @@ pub use spread::{illegal, spread};
 const MAX_TARGETS: usize = 3_000_000;
 const DEFERRED: &str = "deferred";
 const MAX_PRES: f32 = 100.0;
+const RESERVE_COST: f32 = 2.0;
 const LOST_SHOWN: usize = 6;
 const HIST_STEP: f32 = 0.4;
 const SETTLED: usize = 2;
@@ -129,6 +130,7 @@ struct Env<'a> {
     islands: &'a Islands,
     opts: &'a Options,
     zone: &'a [u16],
+    reserve: &'a [u16],
     guide: &'a Guide,
     escalate: usize,
     tiles: &'a Tiles,
@@ -385,6 +387,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     let mut pres = 0.5f32;
     let hist_step = HIST_STEP;
     let tiles = Tiles::new(grid, guide);
+    let reserve = reserve_map(grid, rules, guide);
     let mut seen: HashMap<usize, (u64, usize)> = HashMap::new();
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(64);
     let mut todo: Vec<usize> = order.iter().copied().filter(|&si| cold[si]).collect();
@@ -406,6 +409,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             islands,
             opts,
             zone,
+            reserve: &reserve,
             guide,
             escalate: opts.escalate,
             tiles: &tiles,
@@ -549,6 +553,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             islands,
             opts,
             zone,
+            reserve: &reserve,
             guide,
             escalate: opts.escalate,
             tiles: &tiles,
@@ -1093,6 +1098,37 @@ fn lean_mask(env: &Env, net: usize, win: &Window, fence: Option<&[bool]>) -> Opt
         }
     }
     Some(out)
+}
+
+fn reserve_map(grid: &Grid, rules: &Rules, guide: &Guide) -> Vec<u16> {
+    if guide.prefer.is_empty() && guide.prefer_vias.is_empty() {
+        return Vec::new();
+    }
+    let plane = grid.plane();
+    let mut out = vec![u16::MAX; plane * grid.nl];
+    let mut claim = |net: usize, l: usize, shape: &Shape, reach: f64| {
+        grid.near(shape, reach, |x, y, _| {
+            let c = &mut out[l * plane + y * grid.w + x];
+            *c = if *c == u16::MAX || *c == net as u16 { net as u16 } else { u16::MAX - 1 };
+        });
+    };
+    for (&n, segs) in &guide.prefer {
+        let Some(rule) = rules.nets.get(n).and_then(|r| r.as_ref()) else { continue };
+        for &(l, a, b) in segs {
+            claim(n, l, &Shape::Seg(a, b, 0.0), rule.width[l] / 2.0 + rule.clearance);
+        }
+    }
+    for (&n, vias) in &guide.prefer_vias {
+        let Some(rule) = rules.nets.get(n).and_then(|r| r.as_ref()) else { continue };
+        let Some(&k) = rule.vias.first() else { continue };
+        let o = &rules.vias[k];
+        for &at in vias {
+            for &l in &o.layers {
+                claim(n, l, &Shape::Circle(at, 0.0), o.r + rule.clearance);
+            }
+        }
+    }
+    out
 }
 
 fn zone_map(layout: &Layout, grid: &Grid) -> Vec<u16> {
@@ -1645,6 +1681,8 @@ fn connect(
             via_cost: env.opts.via_cost,
             bend_cost: env.opts.bend_cost,
             zone: env.zone,
+            reserve: env.reserve,
+            reserve_cost: RESERVE_COST,
             zone_cost: env.opts.zone_cost,
             extra: lean.as_deref(),
             outside: env.opts.corridor_cost as f32,

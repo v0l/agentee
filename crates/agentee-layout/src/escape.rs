@@ -178,7 +178,7 @@ fn escape_part(
     };
     let all_cells: Vec<(i64, i64)> = balls.iter().map(|b| b.cell).collect();
     let pad_cells: Vec<(i64, i64)> = centres.iter().map(|c| cell_of(c.1)).collect();
-    let stub_room = half * (2.0f64).sqrt() / 2.0 - pad / 2.0;
+    let stub_room = pitch * (2.0f64).sqrt() / 2.0 - pad / 2.0;
     let via_room = pitch * (2.0f64).sqrt() / 2.0 - pad / 2.0 - via_d / 2.0;
     let dog_bone_fits = stub_room >= min_w / 2.0 + min_c && via_room >= min_c;
     let in_pad = in_pad || !dog_bone_fits;
