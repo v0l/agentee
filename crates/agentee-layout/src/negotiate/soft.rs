@@ -165,7 +165,13 @@ impl Soft {
             }
             for (vi, vb) in rules.via_buckets.iter().enumerate() {
                 let shares = vb.layers.iter().any(|l| o.layers.contains(l));
-                let copper = if shares { o.r + vb.r + c.clearance.max(vb.c) } else { 0.0 };
+                let copper = if shares {
+                    (o.r + vb.r + c.clearance.max(vb.c))
+                        .max(o.dr + rules.hole_cu + vb.r)
+                        .max(vb.dr + rules.hole_cu + o.r)
+                } else {
+                    0.0
+                };
                 reach.push((true, vi, copper.max(o.dr + vb.dr + rules.hole_gap) + slack));
             }
             stamp(&Shape::Circle(at, 0.0), &reach, &mut tracks, &mut vias);

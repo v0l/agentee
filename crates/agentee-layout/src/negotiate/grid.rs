@@ -75,6 +75,26 @@ impl Shape {
     }
 }
 
+fn ball_phase(layout: &Layout, g: f64) -> P {
+    let wrap = |v: f64| v.rem_euclid(g);
+    layout
+        .parts
+        .iter()
+        .filter(|p| crate::escape::is_bga(p))
+        .max_by(|a, b| {
+            let pa = crate::escape::pitch_of(a);
+            let pb = crate::escape::pitch_of(b);
+            pb.total_cmp(&pa).then(a.pads.len().cmp(&b.pads.len()))
+        })
+        .and_then(|p| {
+            let mut b = agentee_core::graphic::Bounds::EMPTY;
+            p.pads.first()?.outlines.iter().flatten().for_each(|q| b.add(*q));
+            let c = b.center();
+            Some([wrap(c[0]), wrap(c[1])])
+        })
+        .unwrap_or([g / 2.0, g / 2.0])
+}
+
 pub fn edge_dist(v: &[P], p: P) -> f64 {
     (0..v.len())
         .map(|i| geom::point_segment_distance(p, v[i], v[(i + 1) % v.len()]))
@@ -286,7 +306,8 @@ impl Grid {
         let nl = layout.copper.len();
         let b = layout.bounds();
         let snap = |v: f64| ((v / g).floor() - 2.0) * g;
-        let (x0, y0) = (snap(b.min[0]), snap(b.min[1]));
+        let phase = ball_phase(layout, g);
+        let (x0, y0) = (snap(b.min[0]) + phase[0] - g / 2.0, snap(b.min[1]) + phase[1] - g / 2.0);
         let w = ((b.max[0] - x0) / g).ceil() as usize + 3;
         let h = ((b.max[1] - y0) / g).ceil() as usize + 3;
         let mut grid = Grid {

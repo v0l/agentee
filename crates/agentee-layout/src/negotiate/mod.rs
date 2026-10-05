@@ -20,6 +20,7 @@ pub use spread::{illegal, spread};
 const MAX_TARGETS: usize = 3_000_000;
 const DEFERRED: &str = "deferred";
 const MAX_PRES: f32 = 100.0;
+const LOST_SHOWN: usize = 6;
 const HIST_STEP: f32 = 0.4;
 const SETTLED: usize = 2;
 const DEAD: &str = "no path within the rules in an earlier round";
@@ -411,7 +412,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             fenced: false,
         };
         let many = route_many(&mut states, &todo, &env, pres, false, threads);
-        spend.add(&many);
+        spend.add(&many, layout);
         conflicted.clear();
         overlap_cells.clear();
         let mut overlap = 0usize;
@@ -554,7 +555,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             fenced: false,
         };
         let many = route_many(&mut states, &conflicted, &env, pres, true, threads);
-        spend.add(&many);
+        spend.add(&many, layout);
         let (dropped, dropped_ms) = drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
         spend.dropped_ms = dropped_ms;
         if dropped > 0 {
@@ -576,6 +577,8 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     spend.hard_ms = ms(th);
     spend.final_ms = states.iter().flat_map(|s| &s.pieces).map(|p| p.ms).sum();
     spend.wall_ms = ms(t0);
+    spend.lost.sort_by(|a, b| b.1.total_cmp(&a.1));
+    spend.lost.truncate(LOST_SHOWN);
     log(spend.summary());
 
     let mut out = RouteResult::default();
@@ -698,6 +701,7 @@ pub struct Spend {
     pub dropped_ms: f64,
     pub stuck_ms: f64,
     pub rounds: Vec<RoundSpend>,
+    pub lost: Vec<(String, f64)>,
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -712,7 +716,14 @@ pub struct RoundSpend {
 }
 
 impl Spend {
-    fn add(&mut self, m: &Many) {
+    fn add(&mut self, m: &Many, layout: &Layout) {
+        for &(n, t) in &m.lost {
+            let name = &layout.nets[n].name;
+            match self.lost.iter_mut().find(|x| x.0 == *name) {
+                Some(x) => x.1 += t,
+                None => self.lost.push((name.clone(), t)),
+            }
+        }
         self.work_ms += m.work_ms;
         self.deferred_ms += m.deferred_ms;
         self.failed_ms += m.failed_ms;
@@ -733,6 +744,14 @@ impl Spend {
         self.dropped_ms += o.dropped_ms;
         self.stuck_ms += o.stuck_ms;
         self.rounds.extend(o.rounds.iter().cloned());
+        for (net, t) in &o.lost {
+            match self.lost.iter_mut().find(|x| x.0 == *net) {
+                Some(x) => x.1 += t,
+                None => self.lost.push((net.clone(), *t)),
+            }
+        }
+        self.lost.sort_by(|a, b| b.1.total_cmp(&a.1));
+        self.lost.truncate(LOST_SHOWN);
     }
 
     pub fn other_ms(&self) -> f64 {
@@ -759,7 +778,8 @@ impl Spend {
         format!(
             "time {:.1} s: setup {:.1} s, {} rounds {:.1} s ({:.1} s after the last round that cut the overlap), hard pass {:.1} s\n\
              search work {:.1} s on {} threads, {:.1} s on the longest chains: kept {:.1} s ({:.0}%), ripped up later {:.1} s ({:.0}%), found nothing {:.1} s ({:.0}%), redone outside the fence {:.1} s ({:.0}%), dropped as clashes {:.1} s ({:.0}%), bookkeeping {:.1} s ({:.0}%)\n\
-             {:.1} s went to nets that still overlapped when negotiation stopped",
+             {:.1} s went to nets that still overlapped when negotiation stopped\n\
+             searches that found nothing, by net: {}",
             s(self.wall_ms),
             s(self.setup_ms),
             self.rounds.len(),
@@ -782,6 +802,11 @@ impl Spend {
             s(self.other_ms()),
             pct(self.other_ms()),
             s(self.stuck_ms),
+            self.lost
+                .iter()
+                .map(|(n, t)| format!("{n} {:.1} s", t / 1000.0))
+                .collect::<Vec<_>>()
+                .join(", "),
         )
     }
 }
@@ -794,6 +819,7 @@ struct Many {
     failed_ms: f64,
     ripped_ms: f64,
     again: usize,
+    lost: Vec<(usize, f64)>,
 }
 
 fn ms(t: Instant) -> f64 {
@@ -975,6 +1001,9 @@ fn route_many(
             st.dead.extend(std::mem::take(&mut r.dead));
         }
         out.failed_ms += r.failed_ms;
+        if r.failed_ms > 0.0 {
+            out.lost.push((st.net, r.failed_ms));
+        }
         out.ripped_ms += r.ripped_ms;
         st.spent_ms += r.ms;
         st.pieces = r.pieces;
@@ -1230,7 +1259,10 @@ fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
                     let (a, b) = (&rules.vias[kv], &rules.vias[kw]);
                     let d = geom::dist(v, w);
                     let shared = a.layers.iter().any(|l| b.layers.contains(l));
-                    (shared && d - a.r - b.r < c) || d - a.dr - b.dr < rules.hole_gap - 1e-4
+                    let holes = d - a.dr - b.r < rules.hole_cu - 1e-4
+                        || d - b.dr - a.r < rules.hole_cu - 1e-4;
+                    (shared && (d - a.r - b.r < c || holes))
+                        || d - a.dr - b.dr < rules.hole_gap - 1e-4
                 })
             });
             tt || vv || via_seg(&p.vias, &theirs) || via_seg(&q.vias, &mine)
