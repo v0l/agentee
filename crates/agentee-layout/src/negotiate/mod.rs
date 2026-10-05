@@ -14,7 +14,7 @@ use conn::{Islands, Item, NetCopper};
 pub use grid::{Fence, Grid, Shape};
 pub use rules::{Need, NetRule, Rules, um};
 use search::{Query, Source, Window, seg_cells};
-pub use shape::{Access, Ctx, PadRef};
+pub use shape::{Access, Ctx, PadRef, Seg};
 pub use spread::{illegal, spread};
 
 const MAX_TARGETS: usize = 3_000_000;
@@ -489,6 +489,10 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             fenced: false,
         };
         route_many(&mut states, &conflicted, &env, pres, true, threads);
+        let dropped = drop_overlaps(&mut states, &order, grid, &soft, rules, layout);
+        if dropped > 0 {
+            log(format!("{dropped} pieces dropped, still overlapping after the hard pass"));
+        }
         let joined: usize = states.iter().map(|s| s.joined).sum();
         let lost: Vec<&str> = conflicted
             .iter()
@@ -508,7 +512,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         out.connections += st.needed;
         out.routed += st.joined;
         for p in &st.pieces {
-            for r in &p.tracks {
+            for r in p.trimmed.as_ref().unwrap_or(&p.tracks) {
                 if r.points.len() < 2 {
                     continue;
                 }
@@ -561,6 +565,7 @@ pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAcc
             entry: &entry,
             entry_r: opts.entry,
             own: &own,
+            holes: &[],
         };
         for p in &pads {
             let mut exits = 0;
@@ -643,22 +648,8 @@ fn route_one(
     }
     let mut r = match kept(st) {
         Some(keep) => {
-            let t = Instant::now();
             let nc = st.copper.with(env.layout, env.islands, piece_items(env.rules, &keep));
-            let tw = t.elapsed().as_millis();
             let mut r = route_net(st, &nc, env, pres, hard);
-            if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "6")
-                && t.elapsed().as_millis() > 100
-            {
-                eprintln!(
-                    "      {} with {} ms, route {} ms, {} items, {} groups",
-                    env.layout.nets[st.net].name,
-                    tw,
-                    t.elapsed().as_millis() - tw,
-                    nc.items.len(),
-                    nc.groups
-                );
-            }
             let mut all: Vec<Piece> = keep.into_iter().cloned().collect();
             all.append(&mut r.0);
             r.0 = all;
@@ -668,7 +659,7 @@ fn route_one(
     };
     r.2 = st.needed.saturating_sub(r.1.len());
     let rule = env.rules.rule(st.net);
-    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.0, rule.clearance));
+    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.0, rule.clearance, &st.pads));
     env.soft.apply(&fp, true);
     (r, fp)
 }
@@ -697,16 +688,6 @@ fn route_many(
     let hit = |a: &[u64], b: &[u64]| a.iter().zip(b).any(|(x, y)| x & y != 0);
     let deps: Vec<Vec<usize>> =
         (0..n).map(|i| (0..i).filter(|&j| hit(&bits[i], &bits[j])).collect()).collect();
-    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "4") {
-        for (i, b) in bits.iter().enumerate() {
-            eprintln!(
-                "    {} tiles {} deps {}",
-                env.layout.nets[states[todo[i]].net].name,
-                b.iter().map(|w| w.count_ones()).sum::<u32>(),
-                deps[i].len()
-            );
-        }
-    }
     let old: Vec<Option<Footprint>> = todo.iter().map(|&si| states[si].fp.take()).collect();
     let quick = Env { escalate: 0, fenced: true, ..*env };
     let results: Vec<std::sync::Mutex<Option<(Routed, Footprint)>>> =
@@ -719,9 +700,6 @@ fn route_many(
     let queue =
         std::sync::Mutex::new(Queue { started: vec![false; n], done: vec![false; n], next: 0 });
     let wake = std::sync::Condvar::new();
-    let t0 = Instant::now();
-    let took: Vec<std::sync::atomic::AtomicU64> =
-        (0..n).map(|_| std::sync::atomic::AtomicU64::new(0)).collect();
     let shared: &[NetState] = states;
     let work = || loop {
         let i = {
@@ -744,9 +722,7 @@ fn route_many(
             }
         };
         let Some(i) = i else { break };
-        let ts = Instant::now();
         let out = route_one(&shared[todo[i]], &quick, pres, hard, old[i].as_ref());
-        took[i].store(ts.elapsed().as_micros() as u64, std::sync::atomic::Ordering::Relaxed);
         *results[i].lock().expect("result") = Some(out);
         queue.lock().expect("queue").done[i] = true;
         wake.notify_all();
@@ -756,31 +732,6 @@ fn route_many(
             s.spawn(work);
         }
     });
-    let t1 = Instant::now();
-    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
-        let mut ef = vec![0u64; n];
-        for i in 0..n {
-            ef[i] = took[i].load(std::sync::atomic::Ordering::Relaxed)
-                + deps[i].iter().map(|&j| ef[j]).max().unwrap_or(0);
-        }
-        let sum: u64 = took.iter().map(|t| t.load(std::sync::atomic::Ordering::Relaxed)).sum();
-        let mut slow: Vec<(u64, &str)> = (0..n)
-            .map(|i| {
-                (
-                    took[i].load(std::sync::atomic::Ordering::Relaxed) / 1000,
-                    env.layout.nets[states[todo[i]].net].name.as_str(),
-                )
-            })
-            .collect();
-        slow.sort_unstable_by(|a, b| b.cmp(a));
-        slow.truncate(8);
-        eprintln!("    slowest {slow:?}");
-        eprintln!(
-            "    work {} ms, critical path {} ms",
-            sum / 1000,
-            ef.iter().max().unwrap_or(&0) / 1000
-        );
-    }
     let mut again = 0;
     for (i, slot) in results.into_iter().enumerate() {
         let ((pieces, failed, joined, dead), fp) =
@@ -806,13 +757,6 @@ fn route_many(
         st.failed = failed;
         st.joined = joined;
         st.fp = Some(fp);
-    }
-    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
-        eprintln!(
-            "    parallel {} ms, deferred {} ms",
-            (t1 - t0).as_millis(),
-            t1.elapsed().as_millis()
-        );
     }
     again
 }
@@ -960,6 +904,108 @@ fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflict
     (out, bad)
 }
 
+fn drop_overlaps(
+    states: &mut [NetState],
+    order: &[usize],
+    grid: &Grid,
+    soft: &Soft,
+    rules: &Rules,
+    layout: &Layout,
+) -> usize {
+    let mut dropped = 0;
+    for &si in order {
+        let (cells, bad) = conflicts(&states[si], grid, soft, rules);
+        if cells.is_empty() {
+            continue;
+        }
+        let real: Vec<bool> = states[si]
+            .pieces
+            .iter()
+            .zip(&bad)
+            .map(|(p, &b)| b && clashes(p, si, states, rules))
+            .collect();
+        if !real.iter().any(|b| *b) {
+            continue;
+        }
+        let st = &mut states[si];
+        if let Some(fp) = st.fp.take() {
+            soft.apply(&fp, false);
+        }
+        let name = layout.nets[st.net].name.clone();
+        let mut keep = Vec::new();
+        for (p, b) in std::mem::take(&mut st.pieces).into_iter().zip(real) {
+            if b {
+                let pts = piece_points(&p);
+                let from = pts.first().copied().unwrap_or_default();
+                let to = pts.last().copied().unwrap_or_default();
+                st.failed.push(Unrouted {
+                    net: name.clone(),
+                    from,
+                    to,
+                    reason: "overlapped another net".into(),
+                });
+                dropped += 1;
+            } else {
+                keep.push(p);
+            }
+        }
+        st.pieces = keep;
+        st.joined = st.needed.saturating_sub(st.failed.len());
+        let fp = Soft::footprint(
+            grid,
+            rules,
+            &Copper::of(&st.pieces, rules.rule(st.net).clearance, &st.pads),
+        );
+        soft.apply(&fp, true);
+        st.fp = Some(fp);
+    }
+    dropped
+}
+
+fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
+    let me = rules.rule(states[si].net);
+    let segs = |p: &Piece| -> Vec<(usize, P, P, f64)> {
+        let mut out = Vec::new();
+        for r in &p.tracks {
+            for w in r.points.windows(2) {
+                out.push((r.layer, w[0], w[1], r.width / 2.0));
+            }
+        }
+        out
+    };
+    let mine = segs(p);
+    states.iter().enumerate().filter(|(j, _)| *j != si).any(|(_, o)| {
+        let them = rules.rule(o.net);
+        let c = me.clearance.max(them.clearance) - 1e-4;
+        o.pieces.iter().any(|q| {
+            let theirs = segs(q);
+            let tt = mine.iter().any(|&(l, a, b, h)| {
+                theirs.iter().any(|&(m, x, y, k)| {
+                    l == m && geom::segment_segment_distance(a, b, x, y) - h - k < c
+                })
+            });
+            let via_seg = |vias: &[(P, usize)], segs: &[(usize, P, P, f64)]| {
+                vias.iter().any(|&(v, kv)| {
+                    let o = &rules.vias[kv];
+                    segs.iter().any(|&(l, a, b, h)| {
+                        let d = geom::point_segment_distance(v, a, b) - h;
+                        o.layers.contains(&l) && (d - o.r < c || d - o.dr < rules.hole_cu - 1e-4)
+                    })
+                })
+            };
+            let vv = p.vias.iter().any(|&(v, kv)| {
+                q.vias.iter().any(|&(w, kw)| {
+                    let (a, b) = (&rules.vias[kv], &rules.vias[kw]);
+                    let d = geom::dist(v, w);
+                    let shared = a.layers.iter().any(|l| b.layers.contains(l));
+                    (shared && d - a.r - b.r < c) || d - a.dr - b.dr < rules.hole_gap - 1e-4
+                })
+            });
+            tt || vv || via_seg(&p.vias, &theirs) || via_seg(&q.vias, &mine)
+        })
+    })
+}
+
 fn piece_items(rules: &Rules, pieces: &[&Piece]) -> Vec<Item> {
     let mut out = Vec::new();
     for p in pieces {
@@ -977,7 +1023,7 @@ fn piece_items(rules: &Rules, pieces: &[&Piece]) -> Vec<Item> {
         }
         for &(at, k) in &p.vias {
             let o = &rules.vias[k];
-            out.push(Item::Via { at, r: o.r, layers: o.layers.clone() });
+            out.push(Item::Via { at, r: o.r, drill: o.dr, layers: o.layers.clone() });
         }
     }
     out
@@ -993,7 +1039,29 @@ fn kept(st: &NetState) -> Option<Vec<&Piece>> {
 
 fn kept_footprint(st: &NetState, rules: &Rules, grid: &Grid) -> Option<Footprint> {
     let keep: Vec<Piece> = kept(st)?.into_iter().cloned().collect();
-    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net).clearance)))
+    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net).clearance, &st.pads)))
+}
+
+fn within_fence(env: &Env, st: &NetState, a: &Access) -> bool {
+    let Some(f) = st.fence.as_deref().filter(|_| env.fenced) else { return true };
+    let t = env.tiles;
+    let inside = |p: P| {
+        let (x, y) = t.of(p);
+        x >= 0
+            && y >= 0
+            && (x as usize) < t.w
+            && (y as usize) < t.h
+            && f[y as usize * t.w + x as usize]
+    };
+    a.neck.as_ref().is_none_or(|n| inside(n.from) && inside(n.to))
+        && a.via.is_none_or(|(at, _)| inside(at))
+}
+
+fn seg_of(it: &Item) -> Option<Seg> {
+    match it {
+        Item::Seg { layer, shape: Shape::Seg(a, b, h) } => Some((*layer, *a, *b, *h)),
+        _ => None,
+    }
 }
 
 fn piece_points(p: &Piece) -> Vec<P> {
@@ -1114,6 +1182,19 @@ fn connect(
                 grid.inside(x, y) && win.contains(x as usize, y as usize)
             })
             .collect();
+        let holes: Vec<(P, f64)> = nc
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Via { at, drill, .. } => Some((*at, *drill)),
+                _ => None,
+            })
+            .chain(
+                pieces
+                    .iter()
+                    .flat_map(|p| p.vias.iter().map(|&(at, k)| (at, env.rules.vias[k].dr))),
+            )
+            .collect();
         let ctx = Ctx {
             grid,
             soft: env.soft,
@@ -1123,6 +1204,7 @@ fn connect(
             entry: &entry,
             entry_r: env.opts.entry,
             own: &st.own,
+            holes: &holes,
         };
         let mut access: Vec<Access> = Vec::new();
         let mut sources: Vec<Source> = Vec::new();
@@ -1139,7 +1221,6 @@ fn connect(
                     || st.own.contains(&(i3 as u32))
                     || rule.bucket[l].is_none_or(|bk| env.soft.track(bk, c2) == 0))
         };
-        let tc = Instant::now();
         for (i, it) in nc.items.iter().enumerate() {
             let mine = nc.group[i] == g;
             let theirs = tree.contains(&nc.group[i]);
@@ -1147,6 +1228,7 @@ fn connect(
                 continue;
             }
             let cells = item_cells(env, it, &win);
+            let mut narrow: Vec<usize> = Vec::new();
             if let Item::Pad { shapes, layers, centre, pitch } = it {
                 let (x, y) = grid.cell(*centre);
                 let seen = grid.inside(x, y) && win.contains(x as usize, y as usize);
@@ -1155,6 +1237,9 @@ fn connect(
                     for s in shapes {
                         let Shape::Poly(v) = s else { continue };
                         let wide = rule.width[l] > geom::min_extent(v) + 1e-9;
+                        if wide && rule.track[l] {
+                            narrow.push(l);
+                        }
                         if any && !wide && pitch.is_none() && rule.track[l] {
                             continue;
                         }
@@ -1165,7 +1250,7 @@ fn connect(
                             pitch: *pitch,
                         };
                         let mut found: Vec<(Access, Vec<usize>)> = Vec::new();
-                        if !any && (rule.track[l] || !entry.is_empty()) {
+                        if (!any || wide) && (rule.track[l] || !entry.is_empty()) {
                             for nk in ctx.necks(&pad, l) {
                                 let (x, y) = grid.cell(nk.to);
                                 if !grid.inside(x, y) || !win.contains(x as usize, y as usize) {
@@ -1191,6 +1276,9 @@ fn connect(
                             found.push((a, cells));
                         }
                         for (a, cells) in found {
+                            if !within_fence(env, st, &a) {
+                                continue;
+                            }
                             let cost = a.cost;
                             let landed = a.via.is_some();
                             access.push(a);
@@ -1213,15 +1301,16 @@ fn connect(
                 }
             }
             for c in cells {
+                let necked = narrow.contains(&(c / grid.plane()));
                 if mine {
                     sources.push(Source {
                         at: c,
                         cost: 0.0,
                         tag: 0,
-                        via_only: !legal(c),
+                        via_only: necked || !legal(c),
                         landed: false,
                     });
-                } else {
+                } else if !necked {
                     targets.push((c, 0));
                 }
             }
@@ -1249,6 +1338,20 @@ fn connect(
         }
         let source_cells: std::collections::HashSet<usize> = sources.iter().map(|s| s.at).collect();
         targets.retain(|(c, tag)| *tag != 0 || !source_cells.contains(c));
+        let source_vias: Vec<(P, usize)> = sources
+            .iter()
+            .filter(|s| s.tag > 0)
+            .filter_map(|s| access[s.tag as usize - 1].via)
+            .collect();
+        targets.retain(|&(_, tag)| {
+            let Some((at, k)) = (tag > 0).then(|| access[tag as usize - 1].via).flatten() else {
+                return true;
+            };
+            source_vias.iter().all(|&(v, kv)| {
+                let d = geom::dist(v, at);
+                d < 1e-6 || d >= env.rules.vias[k].dr + env.rules.vias[kv].dr + env.rules.hole_gap
+            })
+        });
         if sources.is_empty() {
             if win.is_whole(grid) {
                 return Err("an end has no copper on the routing layers".into());
@@ -1257,7 +1360,6 @@ fn connect(
             continue;
         }
         let fence = st.fence.as_deref().filter(|_| env.fenced);
-        let tl = Instant::now();
         let lean = lean_mask(env, st.net, &win, fence);
         let q = Query {
             grid,
@@ -1280,18 +1382,9 @@ fn connect(
             outside: env.opts.corridor_cost as f32,
             gain: env.opts.prefer_gain as f32,
             own: &st.own,
+            holes: &holes,
         };
         tries += 1;
-        if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "6")
-            && tc.elapsed().as_millis() > 10
-        {
-            eprintln!(
-                "        connect {} items {} ms, lean {} ms",
-                env.layout.nets[st.net].name,
-                (tl - tc).as_millis(),
-                tl.elapsed().as_millis()
-            );
-        }
         if let Some(found) = q.run() {
             if found.cells.len() <= 1 {
                 margin *= 3.0;
@@ -1303,7 +1396,26 @@ fn connect(
                 }
                 continue;
             }
-            return Ok(ctx.piece(&found, &st.pads, &access));
+            let src: Vec<Seg> = nc
+                .items
+                .iter()
+                .zip(&nc.group)
+                .filter(|(_, k)| **k == g)
+                .filter_map(|(it, _)| seg_of(it))
+                .collect();
+            let dst: Vec<Seg> = nc
+                .items
+                .iter()
+                .zip(&nc.group)
+                .filter(|(_, k)| tree.contains(k))
+                .filter_map(|(it, _)| seg_of(it))
+                .chain(pieces.iter().flat_map(|p| {
+                    p.tracks.iter().flat_map(|r| {
+                        r.points.windows(2).map(move |w| (r.layer, w[0], w[1], r.width / 2.0))
+                    })
+                }))
+                .collect();
+            return Ok(ctx.piece(&found, &st.pads, &access, (&src, &dst)));
         }
         if env.fenced {
             return Err(DEFERRED.into());
@@ -1349,7 +1461,7 @@ fn item_cells(env: &Env, it: &Item, win: &Window) -> Vec<usize> {
             }
         }
         Item::Seg { layer, shape } => shape_cells(grid, shape, &[*layer], win, &mut out),
-        Item::Via { at, r, layers } => {
+        Item::Via { at, r, layers, .. } => {
             shape_cells(grid, &Shape::Circle(*at, *r), layers, win, &mut out)
         }
         Item::Island { zone, label, layer } => {
@@ -1359,17 +1471,6 @@ fn item_cells(env: &Env, it: &Item, win: &Window) -> Vec<usize> {
                         out.push(grid.idx(*layer, x, y));
                     }
                 }
-            }
-            let last = out.len().saturating_sub(1);
-            if out.len() > MAX_TARGETS / 8 {
-                let keep = (out.len() / (MAX_TARGETS / 8)).max(1);
-                let thin: Vec<usize> = out
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(i, _)| i % keep == 0 || *i == last)
-                    .map(|(_, c)| c)
-                    .collect();
-                return thin;
             }
         }
     }

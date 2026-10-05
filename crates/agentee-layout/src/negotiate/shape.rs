@@ -7,6 +7,8 @@ use agentee_core::geom::{self, P};
 const REACH_CENTRE: f64 = 0.6;
 const EXACT: f64 = 0.002;
 
+pub type Seg = (usize, P, P, f64);
+
 #[derive(Clone, Debug)]
 pub struct Neck {
     pub layer: usize,
@@ -39,9 +41,18 @@ pub struct Ctx<'a> {
     pub entry: &'a [P],
     pub entry_r: f64,
     pub own: &'a std::collections::HashSet<u32>,
+    pub holes: &'a [(P, f64)],
 }
 
 impl Ctx<'_> {
+    fn hole_free(&self, at: P, k: usize) -> bool {
+        let dr = self.rules.vias[k].dr;
+        self.holes.iter().all(|&(c, r)| {
+            let d = geom::dist(c, at);
+            d < 1e-6 || d >= dr + r + self.rules.hole_gap + EXACT
+        })
+    }
+
     fn planar(&self, l: usize, p: P) -> bool {
         self.rule.track[l] || self.entry.iter().any(|e| geom::dist(*e, p) <= self.entry_r)
     }
@@ -90,13 +101,17 @@ impl Ctx<'_> {
         self.grid.exact(l, at, self.net)
     }
 
-    fn safe_at(&self, l: usize, at: P) -> bool {
-        let w = self.rule.width[l] / 2.0;
+    fn safe_at_w(&self, l: usize, at: P, width: f64) -> bool {
+        let w = width / 2.0;
         let pass = |(d, q): (f64, f64)| d > w + self.rule.clearance + EXACT && q > w + EXACT;
         self.field_at(l, at).is_some_and(pass) || pass(self.exact_at(l, at))
     }
 
     pub fn clear_line(&self, l: usize, p: P, q: P) -> bool {
+        self.clear_line_w(l, p, q, self.rule.width[l])
+    }
+
+    pub fn clear_line_w(&self, l: usize, p: P, q: P, width: f64) -> bool {
         let g = self.grid;
         let n = (geom::dist(p, q) / (g.g * 0.25)).ceil().max(1.0) as usize;
         (0..=n).all(|k| {
@@ -108,7 +123,7 @@ impl Ctx<'_> {
             let (x, y) = g.cell(at);
             g.inside(x, y)
                 && g.fence_ok(y as usize * g.w + x as usize, self.net)
-                && self.safe_at(l, at)
+                && self.safe_at_w(l, at, width)
         })
     }
 
@@ -223,6 +238,12 @@ impl Ctx<'_> {
         if !g.inside(cx, cy) {
             return out;
         }
+        let inscribed =
+            if geom::point_in_polygon(c, &pad.outline) { edge_dist(&pad.outline, c) } else { 0.0 };
+        let reach = match pad.pitch {
+            Some(p) => p * 0.75,
+            None => inscribed + self.rule.neck,
+        };
         let cong = (1.0 - 0.9 * self.rule.crit as f32).max(0.05);
         let c2 = cy as usize * g.w + cx as usize;
         for (vi, &k) in self.rule.vias.iter().enumerate() {
@@ -230,7 +251,9 @@ impl Ctx<'_> {
             if !o.in_pad || !o.layers.contains(&l) {
                 continue;
             }
-            if !g.via_ok(c2, &o.layers, k, self.net, self.rule.via_need[vi]) {
+            if !g.via_ok(c2, &o.layers, k, self.net, self.rule.via_need[vi])
+                || !self.hole_free(c, k)
+            {
                 continue;
             }
             let load = self.via_load(vi, c2);
@@ -243,12 +266,6 @@ impl Ctx<'_> {
             out.push(Access { neck: None, via: Some((c, k)), cost });
             break;
         }
-        let inscribed =
-            if geom::point_in_polygon(c, &pad.outline) { edge_dist(&pad.outline, c) } else { 0.0 };
-        let reach = match pad.pitch {
-            Some(p) => p * 0.75,
-            None => inscribed + self.rule.neck,
-        };
         for d in [1, 3, 5, 7, 0, 2, 4, 6] {
             let (dx, dy) = DIRS[d];
             let norm = ((dx * dx + dy * dy) as f64).sqrt();
@@ -267,6 +284,7 @@ impl Ctx<'_> {
                     let o = &self.rules.vias[k];
                     if !o.layers.contains(&l)
                         || !g.via_ok(q2, &o.layers, k, self.net, self.rule.via_need[vi])
+                        || !self.hole_free(site, k)
                     {
                         continue;
                     }
@@ -309,20 +327,29 @@ impl Ctx<'_> {
             .map(|(_, k)| *k)
     }
 
-    pub fn piece(&self, found: &Found, pads: &[PadRef], access: &[Access]) -> Piece {
+    pub fn piece(
+        &self,
+        found: &Found,
+        pads: &[PadRef],
+        access: &[Access],
+        ends: (&[Seg], &[Seg]),
+    ) -> Piece {
         let g = self.grid;
         if found.cells.len() <= 1 {
             return Piece::default();
         }
         let mut runs: Vec<(usize, Vec<P>)> = Vec::new();
         let mut vias = Vec::new();
-        for &(l, x, y) in &found.cells {
+        for (ci, &(l, x, y)) in found.cells.iter().enumerate() {
             let p = g.center(x, y);
             match runs.last_mut() {
                 Some((rl, pts)) if *rl == l => pts.push(p),
                 Some((rl, pts)) => {
                     let from = *rl;
-                    let Some(o) = self.best_via((x, y), from, l) else { continue };
+                    let chosen = found.vias.get(ci).copied().flatten();
+                    let Some(o) = chosen.or_else(|| self.best_via((x, y), from, l)) else {
+                        continue;
+                    };
                     let centred = pads.iter().find(|pd| {
                         self.rules.vias[o].in_pad
                             && g.cell(pd.centre) == (x as i64, y as i64)
@@ -341,6 +368,23 @@ impl Ctx<'_> {
         let mut extra = Vec::new();
         let start = (found.tag > 0).then(|| access.get(found.tag as usize - 1)).flatten();
         let end = (found.end_tag > 0).then(|| access.get(found.end_tag as usize - 1)).flatten();
+        if let (Some(a), Some(b)) = (start, end)
+            && let (Some(va), Some(vb)) = (a.via, b.via)
+            && geom::dist(va.0, vb.0) < self.rules.vias[va.1].r.min(self.rules.vias[vb.1].r)
+        {
+            let tracks = a
+                .neck
+                .iter()
+                .chain(b.neck.iter())
+                .map(|n| Run {
+                    layer: n.layer,
+                    points: vec![n.from, n.to],
+                    width: n.width,
+                    neck: n.width < self.rule.width[n.layer] - 1e-6,
+                })
+                .collect();
+            return Piece { tracks, vias: vec![va], trimmed: None };
+        }
         match start {
             Some(a) => {
                 if let (Some(n), None, Some((l, pts))) = (&a.neck, &a.via, runs.first_mut())
@@ -389,6 +433,7 @@ impl Ctx<'_> {
             })
             .filter(|r| r.points.len() >= 2 || !vias.is_empty())
             .collect();
+        let extra_count = extra.len();
         for (n, link) in extra {
             let neck = n.width < self.rule.width[n.layer] - 1e-6;
             let mut points = vec![n.from, n.to];
@@ -397,7 +442,21 @@ impl Ctx<'_> {
             }
             tracks.push(Run { layer: n.layer, points, width: n.width, neck });
         }
-        Piece { tracks, vias }
+        let mut trimmed = tracks.clone();
+        let last = trimmed.len().saturating_sub(1 + extra_count);
+        if start.is_none()
+            && let Some(r) = trimmed.first_mut()
+        {
+            trim(&mut r.points, r.layer, r.width, ends.0, true);
+        }
+        if end.is_none()
+            && let Some(r) = trimmed.get_mut(last)
+        {
+            trim(&mut r.points, r.layer, r.width, ends.1, false);
+        }
+        let trimmed =
+            (trimmed.iter().zip(&tracks).any(|(a, b)| a.points != b.points)).then_some(trimmed);
+        Piece { tracks, vias, trimmed }
     }
 
     fn extend(&self, l: usize, pts: &mut Vec<P>, pads: &[PadRef], front: bool) {
@@ -517,6 +576,23 @@ impl Ctx<'_> {
         }
         out.push(*pts.last().unwrap());
         out
+    }
+}
+
+fn trim(pts: &mut Vec<P>, l: usize, width: f64, copper: &[Seg], front: bool) {
+    let near = |p: P| {
+        copper.iter().any(|&(cl, a, b, h)| {
+            cl == l && geom::point_segment_distance(p, a, b) < width / 2.0 + h
+        })
+    };
+    if front {
+        while pts.len() >= 3 && near(pts[1]) {
+            pts.remove(0);
+        }
+    } else {
+        while pts.len() >= 3 && near(pts[pts.len() - 2]) {
+            pts.pop();
+        }
     }
 }
 

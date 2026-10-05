@@ -89,6 +89,7 @@ pub struct Query<'a> {
     pub outside: f32,
     pub gain: f32,
     pub own: &'a std::collections::HashSet<u32>,
+    pub holes: &'a [(P, f64)],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -102,6 +103,7 @@ pub struct Source {
 
 pub struct Found {
     pub cells: Vec<(usize, usize, usize)>,
+    pub vias: Vec<Option<usize>>,
     pub tag: u32,
     pub end_tag: u32,
 }
@@ -160,31 +162,6 @@ impl Query<'_> {
     }
 
     pub fn run(&self) -> Option<Found> {
-        let t0 = std::time::Instant::now();
-        let mut pops = 0usize;
-        let mut t1 = t0;
-        let r = self.run_inner(&mut pops, &mut t1);
-        if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "5")
-            && t0.elapsed().as_millis() > 20
-        {
-            eprintln!(
-                "      query net {} src {} tgt {} hard {} {}x{} setup {} ms search {} ms pops {} found {}",
-                self.net,
-                self.sources.len(),
-                self.targets.len(),
-                self.hard,
-                self.window.ww(),
-                self.window.wh(),
-                (t1 - t0).as_millis(),
-                t1.elapsed().as_millis(),
-                pops,
-                r.is_some()
-            );
-        }
-        r
-    }
-
-    fn run_inner(&self, pops: &mut usize, t1: &mut std::time::Instant) -> Option<Found> {
         let grid = self.grid;
         let w = self.window;
         let (ww, wh) = (w.ww(), w.wh());
@@ -276,6 +253,14 @@ impl Query<'_> {
         let mut cost = vec![f32::INFINITY; n];
         let mut parent = vec![u32::MAX; n];
         let mut dir = vec![START; n];
+        let mut since = vec![u8::MAX; n];
+        let spacing = self
+            .rule
+            .vias
+            .iter()
+            .map(|&k| 2.0 * self.rules.vias[k].dr + self.rules.hole_gap)
+            .fold(0.0, f64::max);
+        let gap_cells = (spacing / grid.g).ceil().min(250.0) as u8;
         let mut tag = std::collections::HashMap::new();
         let mut heap = BinaryHeap::new();
         let cong = self.congestion();
@@ -303,6 +288,7 @@ impl Query<'_> {
             if s.cost < cost[k] {
                 cost[k] = s.cost;
                 parent[k] = u32::MAX;
+                since[k] = if s.landed { 0 } else { u8::MAX };
                 dir[k] = if s.landed {
                     LANDED
                 } else if s.via_only {
@@ -314,11 +300,28 @@ impl Query<'_> {
                 heap.push(Node { f: s.cost + heur[k % area], i: k as u32 });
             }
         }
+        let mut no_via = vec![false; if self.holes.is_empty() { 0 } else { area }];
+        let widest = rule.vias.iter().map(|&k| self.rules.vias[k].dr).fold(0.0, f64::max);
+        for &(c, r) in self.holes {
+            let reach = widest + r + self.rules.hole_gap + 0.002;
+            let (x0, y0, x1, y1) = grid.span(c, c, reach);
+            if x1 == usize::MAX || y1 == usize::MAX {
+                continue;
+            }
+            for y in y0.max(w.y0)..=y1.min(w.y1) {
+                for x in x0.max(w.x0)..=x1.min(w.x1) {
+                    let d = geom::dist(grid.center(x, y), c);
+                    if d > 1e-6 && d < reach {
+                        no_via[(y - w.y0) * ww + (x - w.x0)] = true;
+                    }
+                }
+            }
+        }
         let bend_cost = self.bend_cost;
+        let mut via_kind: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
         let mut hit = None;
-        *t1 = std::time::Instant::now();
         while let Some(Node { f, i }) = heap.pop() {
-            *pops += 1;
             let k = i as usize;
             let here = cost[k];
             if f > here + heur[k % area] + 1e-4 {
@@ -374,11 +377,12 @@ impl Query<'_> {
                         cost[j] = c;
                         parent[j] = k as u32;
                         dir[j] = d as u8;
+                        since[j] = since[k].saturating_add(1);
                         heap.push(Node { f: c + heur[j2], i: j as u32 });
                     }
                 }
             }
-            if d0 == LANDED {
+            if d0 == LANDED || since[k] < gap_cells || no_via.get(k2).copied().unwrap_or(false) {
                 continue;
             }
             let c2 = y * grid.w + x;
@@ -390,7 +394,7 @@ impl Query<'_> {
                 if !(planar(l2, k2) || target[j]) || self.blocked(j) {
                     continue;
                 }
-                let mut best: Option<f32> = None;
+                let mut best: Option<(f32, usize)> = None;
                 for (vi, &vk) in rule.vias.iter().enumerate().take(rule.class_vias) {
                     let o = &self.rules.vias[vk];
                     if !o.joins(l, l2) {
@@ -407,35 +411,45 @@ impl Query<'_> {
                     let hist = self.soft.hist[l * plane + c2];
                     let c = (self.via_cost * o.cost) as f32
                         * ((1.0 + self.lean(j)).max(0.4) + cong * (hist + self.pres * count));
-                    if best.is_none_or(|b| c < b) {
-                        best = Some(c);
+                    if best.is_none_or(|b| c < b.0) {
+                        best = Some((c, vk));
                     }
                 }
-                let Some(step) = best else { continue };
+                let Some((step, vk)) = best else { continue };
                 let c = here + step;
                 if c < cost[j] {
                     cost[j] = c;
                     parent[j] = k as u32;
                     dir[j] = LANDED;
+                    since[j] = 0;
+                    via_kind.insert(j, vk);
                     heap.push(Node { f: c + heur[k2], i: j as u32 });
                 }
             }
         }
         let end = hit?;
         let mut cells = Vec::new();
+        let mut vias = Vec::new();
         let mut c = end;
         loop {
             let l = c / area;
             let k2 = c % area;
             cells.push((l, k2 % ww + w.x0, k2 / ww + w.y0));
+            vias.push(if dir[c] == LANDED && parent[c] != u32::MAX {
+                via_kind.get(&c).copied()
+            } else {
+                None
+            });
             if parent[c] == u32::MAX {
                 break;
             }
             c = parent[c] as usize;
         }
         cells.reverse();
+        vias.reverse();
         Some(Found {
             cells,
+            vias,
             tag: tag.get(&c).copied().unwrap_or(0),
             end_tag: end_tags.get(&end).copied().unwrap_or(0),
         })

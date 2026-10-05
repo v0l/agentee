@@ -448,7 +448,13 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         if r.changed {
             reload_ms += d.write_route(model)?;
         }
-        r.changed |= before;
+        let tuned = r.changed;
+        r.changed = false;
+        finish::neck(model, &mut r);
+        if r.changed {
+            reload_ms += d.write_route(model)?;
+        }
+        r.changed |= before || tuned;
         d.done(model, r, t0, reload_ms);
     }
     let score = score_of(model);

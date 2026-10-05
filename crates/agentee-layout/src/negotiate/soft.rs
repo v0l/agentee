@@ -1,12 +1,14 @@
-use super::grid::{Grid, Shape};
+use super::grid::{Grid, Shape, edge_dist};
 use super::rules::Rules;
-use agentee_core::geom::P;
+use super::shape::PadRef;
+use agentee_core::geom::{self, P};
 use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
 
 #[derive(Clone, Debug, Default)]
 pub struct Piece {
     pub tracks: Vec<Run>,
     pub vias: Vec<(P, usize)>,
+    pub trimmed: Option<Vec<Run>>,
 }
 
 #[derive(Clone, Debug)]
@@ -30,13 +32,23 @@ pub struct Copper {
 }
 
 impl Copper {
-    pub fn of(pieces: &[Piece], clearance: f64) -> Copper {
+    pub fn of(pieces: &[Piece], clearance: f64, pads: &[PadRef]) -> Copper {
         let mut segs = Vec::new();
         let mut vias = Vec::new();
         for p in pieces {
             for r in &p.tracks {
+                let h = r.width / 2.0;
+                let covered = |q: P| {
+                    pads.iter().any(|pd| {
+                        pd.layers.contains(&r.layer)
+                            && geom::point_in_polygon(q, &pd.outline)
+                            && edge_dist(&pd.outline, q) >= h
+                    })
+                };
                 for w in r.points.windows(2) {
-                    segs.push((r.layer, w[0], w[1], r.width / 2.0));
+                    for (a, b) in exposed(w[0], w[1], h, &covered) {
+                        segs.push((r.layer, a, b, h));
+                    }
                 }
                 if r.points.len() == 1 {
                     segs.push((r.layer, r.points[0], r.points[0], r.width / 2.0));
@@ -46,6 +58,32 @@ impl Copper {
         }
         Copper { segs, vias, clearance }
     }
+}
+
+fn exposed(a: P, b: P, h: f64, covered: &impl Fn(P) -> bool) -> Vec<(P, P)> {
+    let len = geom::dist(a, b);
+    let n = ((len / (h.max(0.02) * 0.5)).ceil() as usize).max(1);
+    let at = |k: usize| {
+        let t = k as f64 / n as f64;
+        [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+    };
+    let mut out = Vec::new();
+    let mut start: Option<usize> = None;
+    for k in 0..=n {
+        let hidden = covered(at(k));
+        match (hidden, start) {
+            (false, None) => start = Some(k.saturating_sub(1)),
+            (true, Some(s)) => {
+                out.push((at(s), at(k)));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = start {
+        out.push((at(s), at(n)));
+    }
+    out
 }
 
 impl Soft {

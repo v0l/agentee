@@ -7,7 +7,7 @@ use std::collections::HashMap;
 pub enum Item {
     Pad { shapes: Vec<Shape>, layers: Vec<usize>, centre: P, pitch: Option<f64> },
     Seg { layer: usize, shape: Shape },
-    Via { at: P, r: f64, layers: Vec<usize> },
+    Via { at: P, r: f64, drill: f64, layers: Vec<usize> },
     Island { zone: usize, label: u32, layer: usize },
 }
 
@@ -174,7 +174,7 @@ pub fn net_copper(layout: &Layout, islands: &Islands, net: usize) -> NetCopper {
         layout.vias.iter().filter(|v| v.net == net && !matches!(v.source, ViaSource::Stitch(_)))
     {
         let layers: Vec<usize> = v.layers.iter().filter_map(|c| layer_of(c)).collect();
-        items.push(Item::Via { at: v.at, r: v.diameter / 2.0, layers });
+        items.push(Item::Via { at: v.at, r: v.diameter / 2.0, drill: v.drill / 2.0, layers });
         part_of.push(None);
     }
     let solid = items.len();
@@ -210,7 +210,7 @@ fn group_items(
                 layers.iter().flat_map(|&l| shapes.iter().map(move |s| (l, s.clone()))).collect()
             }
             Item::Seg { layer, shape } => vec![(*layer, shape.clone())],
-            Item::Via { at, r, layers } => {
+            Item::Via { at, r, layers, .. } => {
                 layers.iter().map(|&l| (l, Shape::Circle(*at, *r))).collect()
             }
             Item::Island { .. } => Vec::new(),

@@ -62,24 +62,30 @@ pub fn tune(model: &mut Model, report: &mut PhaseReport) {
         }
     };
     let first = model.file.tracks.len().saturating_sub(plan.tracks.len());
+    let width_of = |t: &agentee_core::route::RoutedTrack| {
+        t.width.unwrap_or_else(|| {
+            model.layout.nets.iter().find(|n| n.name == t.net).map(|n| n.width).unwrap_or(0.1)
+        })
+    };
     let mut edited = 0;
     for e in &r.edits {
-        if e.track >= first
-            && let Some(t) = plan.tracks.get_mut(e.track - first)
-            && !folds(
-                &e.points,
-                t.width.unwrap_or_else(|| {
-                    model
-                        .layout
-                        .nets
-                        .iter()
-                        .find(|n| n.name == t.net)
-                        .map(|n| n.width)
-                        .unwrap_or(0.1)
-                }),
-            )
-        {
-            t.points = e.points.clone();
+        let Some(k) = e.track.checked_sub(first).filter(|&k| k < plan.tracks.len()) else {
+            continue;
+        };
+        let w = width_of(&plan.tracks[k]);
+        let crowds = plan.tracks.iter().enumerate().any(|(j, o)| {
+            j != k
+                && o.net == plan.tracks[k].net
+                && o.layer == plan.tracks[k].layer
+                && e.points[1..e.points.len().saturating_sub(1)].iter().any(|p| {
+                    o.points.windows(2).any(|s| {
+                        agentee_core::geom::point_segment_distance(*p, s[0], s[1])
+                            < (w + width_of(o)) / 2.0
+                    })
+                })
+        });
+        if !crowds && !folds(&e.points, w) {
+            plan.tracks[k].points = e.points.clone();
             edited += 1;
         }
     }
@@ -92,6 +98,40 @@ pub fn tune(model: &mut Model, report: &mut PhaseReport) {
         report.failed.push(format!("{}: tune {}", f.net, f.why));
     }
     if edited > 0 {
+        report.changed = true;
+    }
+}
+
+pub fn neck(model: &mut Model, report: &mut PhaseReport) {
+    let Some(plan) = model.detail.as_mut() else { return };
+    let opts = agentee_core::neck::NeckOptions::default();
+    let r = match agentee_core::neck::neck(&model.layout, model.board, &opts) {
+        Ok(r) => r,
+        Err(e) => {
+            report.failed.push(format!("neck: {e}"));
+            return;
+        }
+    };
+    let first = model.file.tracks.len().saturating_sub(plan.tracks.len());
+    let mut edited = 0;
+    for e in &r.edits {
+        let Some(k) = e.track.checked_sub(first).filter(|&k| k < plan.tracks.len()) else {
+            continue;
+        };
+        plan.tracks[k].points = e.points.clone();
+        let (net, layer) = (plan.tracks[k].net.clone(), plan.tracks[k].layer.clone());
+        for n in &e.necks {
+            plan.tracks.push(agentee_core::route::RoutedTrack {
+                net: net.clone(),
+                layer: layer.clone(),
+                width: Some(n.width),
+                points: n.points.clone(),
+            });
+        }
+        edited += 1;
+    }
+    if edited > 0 {
+        report.notes.push(format!("neck: {edited} track ends narrowed at their pads"));
         report.changed = true;
     }
 }
