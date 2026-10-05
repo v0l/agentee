@@ -87,15 +87,6 @@ pub struct Warm {
     nets: HashMap<usize, WarmNet>,
 }
 
-impl Guide {
-    fn tile_of(&self, p: P) -> (i64, i64) {
-        (
-            ((p[0] - self.origin[0]) / self.tile).floor() as i64,
-            ((p[1] - self.origin[1]) / self.tile).floor() as i64,
-        )
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct Outcome {
     pub warm: Warm,
@@ -584,6 +575,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     spend.final_ms = states.iter().flat_map(|s| &s.pieces).map(|p| p.ms).sum();
     spend.wall_ms = ms(t0);
     log(spend.summary());
+
     let mut out = RouteResult::default();
     for st in &states {
         let name = layout.nets[st.net].name.clone();
@@ -1000,25 +992,29 @@ fn lean_mask(env: &Env, net: usize, win: &Window, fence: Option<&[bool]>) -> Opt
     let area = ww * wh;
     let mut out = vec![0i8; area * grid.nl];
     if let Some(cor) = corridor.filter(|_| g.tile > 0.0) {
-        let lo = g.tile_of(grid.center(win.x0, win.y0));
-        let hi = g.tile_of(grid.center(win.x1, win.y1));
-        let tw = (hi.0 - lo.0 + 1) as usize;
-        let th = (hi.1 - lo.1 + 1) as usize;
+        let t = env.tiles;
+        let (tx0, ty0) = (t.tx[win.x0], t.ty[win.y0]);
+        let tw = t.tx[win.x1] - tx0 + 1;
+        let th = t.ty[win.y1] - ty0 + 1;
+        let cols: Vec<usize> = (0..ww).map(|x| t.tx[x + win.x0] - tx0).collect();
         for l in 0..grid.nl {
             let mut near = vec![false; tw * th];
             for ty in 0..th {
                 for tx in 0..tw {
-                    let (x, y) = (lo.0 + tx as i64, lo.1 + ty as i64);
+                    let (x, y) = ((tx + tx0) as i64 + t.lo.0, (ty + ty0) as i64 + t.lo.1);
                     near[ty * tw + tx] =
                         (-1..=1).any(|dy| (-1..=1).any(|dx| cor.contains(&(l, x + dx, y + dy))));
                 }
             }
+            if near.iter().all(|v| *v) {
+                continue;
+            }
             for y in 0..wh {
+                let row = (t.ty[y + win.y0] - ty0) * tw;
+                let base = l * area + y * ww;
                 for x in 0..ww {
-                    let t = g.tile_of(grid.center(x + win.x0, y + win.y0));
-                    let k = (t.1 - lo.1) as usize * tw + (t.0 - lo.0) as usize;
-                    if !near[k] {
-                        out[l * area + y * ww + x] = 1;
+                    if !near[row + cols[x]] {
+                        out[base + x] = 1;
                     }
                 }
             }
@@ -1048,10 +1044,11 @@ fn lean_mask(env: &Env, net: usize, win: &Window, fence: Option<&[bool]>) -> Opt
     }
     if let Some(f) = fence {
         let t = env.tiles;
+        let cols: Vec<usize> = (0..ww).map(|x| t.tx[x + win.x0]).collect();
         for y in 0..wh {
-            let ty = t.ty[y + win.y0];
+            let row = t.ty[y + win.y0] * t.w;
             for x in 0..ww {
-                if !f[ty * t.w + t.tx[x + win.x0]] {
+                if !f[row + cols[x]] {
                     for l in 0..grid.nl {
                         out[l * area + y * ww + x] = search::BLOCKED;
                     }
