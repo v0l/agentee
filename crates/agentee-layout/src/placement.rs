@@ -455,9 +455,11 @@ fn legalise(
     let mut moved = 0.0;
     for &i in &order {
         let want = bd.cells[i].at;
-        let gap = gap_of(i) + spacing;
         let mut found = None;
-        'search: for ring in 0..400 {
+        'search: for (ring, gap) in (0..400)
+            .map(|r| (r, gap_of(i) + spacing))
+            .chain((0..400).map(|r| (r, spacing.min(SPACING))))
+        {
             let r = ring as f64 * 0.1;
             let steps = if ring == 0 { 1 } else { (ring * 8).min(160) };
             for k in 0..steps {

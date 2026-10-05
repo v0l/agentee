@@ -208,6 +208,9 @@ pub fn score_of(model: &Model) -> Score {
     )
 }
 
+type Snapshot =
+    (usize, String, Option<detail::DetailPlan>, Option<negotiate::Warm>, Option<Vec<f32>>, u32);
+
 struct Driver<'c, 'a> {
     cfg: &'c Config<'a>,
     text: String,
@@ -348,7 +351,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     }
     let place_rounds = if has("place") { cfg.engine.place_rounds.unwrap_or(3).max(1) } else { 1 };
     let rounds = cfg.engine.rounds.unwrap_or(3).max(1);
-    let mut best_pass: Option<(usize, String, Option<detail::DetailPlan>)> = None;
+    let mut best_pass: Option<Snapshot> = None;
     let mut best_pass_ms: Option<(u32, f64)> = None;
     for pass in 0..place_rounds {
         let tp = std::time::Instant::now();
@@ -408,65 +411,8 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             d.done(model, r, t0, reload_ms);
         }
         if routes {
-            let mut best = 0;
-            let mut kept: Option<detail::DetailPlan> = None;
-            let mut kept_rep: Option<(u32, f64)> = None;
-            for rep in 0..rounds {
-                let tr = std::time::Instant::now();
-                if d.stopped() {
-                    d.skipped.push("stopped".into());
-                    break;
-                }
-                if has("global") {
-                    let t0 = d.start("global");
-                    let r = match model.ensure_base(&dopts) {
-                        Ok(()) => global::Global.run(model, &cfg.engine),
-                        Err(e) => PhaseReport {
-                            phase: "global".into(),
-                            failed: vec![e],
-                            ..Default::default()
-                        },
-                    };
-                    d.done(model, r, t0, 0);
-                }
-                if has("detail") {
-                    d.step(model, &detail::Detail);
-                    if let Some(x) = &model.detail {
-                        d.search.absorb(&x.spend);
-                    }
-                }
-                let rep_ms = ms_since(tr);
-                let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
-                let clean = model
-                    .detail
-                    .as_ref()
-                    .is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
-                let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
-                let label = |k: u32, why: &str| format!("pass {} route {}, {why}", pass + 1, k + 1);
-                if routed < best + step && kept.is_some() {
-                    if routed > best {
-                        kept = model.detail.clone();
-                        if let Some((k, t)) = kept_rep.replace((rep, rep_ms)) {
-                            d.discarded.push((label(k, "beaten by the next route"), t));
-                        }
-                    } else {
-                        d.discarded
-                            .push((label(rep, "routed no more than the one before"), rep_ms));
-                    }
-                    break;
-                }
-                if let Some((k, t)) = kept_rep.replace((rep, rep_ms)) {
-                    d.discarded.push((label(k, "beaten by the next route"), t));
-                }
-                best = routed;
-                kept = model.detail.clone();
-                if clean || !has("global") || !has("detail") {
-                    break;
-                }
-            }
-            if kept.is_some() {
-                model.detail = kept;
-            }
+            let reps = if has("place") && place_rounds > 1 { 1 } else { rounds };
+            route_reps(&mut d, model, &has, &dopts, reps, pass, None);
         }
         model.hot = model.global.as_ref().map(|g| g.hot.clone()).unwrap_or_default();
         if let Some(x) = &model.detail {
@@ -487,7 +433,14 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         let gained = best_pass.as_ref().is_none_or(|b| routed >= b.0 + step);
         let pass_ms = ms_since(tp) - d.discarded[already..].iter().map(|x| x.1).sum::<f64>();
         if best_pass.as_ref().is_none_or(|b| routed > b.0) {
-            best_pass = Some((routed, d.text.clone(), model.detail.clone()));
+            best_pass = Some((
+                routed,
+                d.text.clone(),
+                model.detail.clone(),
+                model.warm.clone(),
+                model.hist.clone(),
+                pass,
+            ));
             if let Some((k, t)) = best_pass_ms.replace((pass, pass_ms)) {
                 d.discarded.push((
                     format!("placement pass {}, the rest, beaten by a later pass", k + 1),
@@ -504,12 +457,19 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             break;
         }
     }
-    if let Some((_, text, plan)) = best_pass
-        && text != d.text
-    {
-        d.text = text;
-        d.reload(model)?;
-        model.detail = plan;
+    if let Some((routed, text, plan, warm, hist, pass)) = best_pass {
+        if text != d.text {
+            d.text = text;
+            d.reload(model)?;
+            model.detail = plan.clone();
+            model.warm = warm;
+            model.hist = hist;
+        }
+        let clean = plan.as_ref().is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
+        if routes && place_rounds > 1 && rounds > 1 && !clean && !d.stopped() {
+            let start = plan.map(|p| (routed, p));
+            route_reps(&mut d, model, &has, &dopts, rounds - 1, pass, start);
+        }
     }
     if has("detail") {
         d.write_route(model)?;
@@ -572,6 +532,73 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         global: model.global.clone(),
         detail: model.detail.clone(),
     })
+}
+
+fn route_reps(
+    d: &mut Driver,
+    model: &mut Model,
+    has: &dyn Fn(&str) -> bool,
+    dopts: &negotiate::Options,
+    reps: u32,
+    pass: u32,
+    start: Option<(usize, detail::DetailPlan)>,
+) {
+    let cfg = d.cfg;
+    let mut best = start.as_ref().map(|s| s.0).unwrap_or(0);
+    let mut kept: Option<detail::DetailPlan> = start.map(|s| s.1);
+    let mut kept_rep: Option<(u32, f64)> = None;
+    let first = if kept.is_some() { 1 } else { 0 };
+    for rep in first..first + reps {
+        let tr = std::time::Instant::now();
+        if d.stopped() {
+            d.skipped.push("stopped".into());
+            break;
+        }
+        if has("global") {
+            let t0 = d.start("global");
+            let r = match model.ensure_base(dopts) {
+                Ok(()) => global::Global.run(model, &cfg.engine),
+                Err(e) => {
+                    PhaseReport { phase: "global".into(), failed: vec![e], ..Default::default() }
+                }
+            };
+            d.done(model, r, t0, 0);
+        }
+        if has("detail") {
+            d.step(model, &detail::Detail);
+            if let Some(x) = &model.detail {
+                d.search.absorb(&x.spend);
+            }
+        }
+        let rep_ms = ms_since(tr);
+        let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
+        let clean =
+            model.detail.as_ref().is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
+        let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
+        let label = |k: u32, why: &str| format!("pass {} route {}, {why}", pass + 1, k + 1);
+        if routed < best + step && kept.is_some() {
+            if routed > best {
+                kept = model.detail.clone();
+                if let Some((k, t)) = kept_rep.replace((rep, rep_ms)) {
+                    d.discarded.push((label(k, "beaten by the next route"), t));
+                }
+            } else {
+                d.discarded.push((label(rep, "routed no more than the one before"), rep_ms));
+            }
+            break;
+        }
+        if let Some((k, t)) = kept_rep.replace((rep, rep_ms)) {
+            d.discarded.push((label(k, "beaten by the next route"), t));
+        }
+        best = routed;
+        kept = model.detail.clone();
+        if clean || !has("global") || !has("detail") {
+            break;
+        }
+    }
+    if kept.is_some() {
+        model.detail = kept;
+    }
 }
 
 fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Result<bool, String> {

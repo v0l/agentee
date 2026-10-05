@@ -80,9 +80,11 @@ pub struct Guide {
     pub warm: Option<Warm>,
 }
 
+type WarmNet = (Vec<Piece>, Vec<Unrouted>, HashSet<usize>);
+
 #[derive(Clone, Debug, Default)]
 pub struct Warm {
-    nets: HashMap<usize, (Vec<Piece>, Vec<Unrouted>, HashSet<usize>)>,
+    nets: HashMap<usize, WarmNet>,
 }
 
 impl Guide {
