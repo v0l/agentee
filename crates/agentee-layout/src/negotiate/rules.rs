@@ -62,6 +62,8 @@ pub struct Rules {
     pub slack: f64,
     pub hole_gap: f64,
     pub hole_cu: f64,
+    pub pth_cu: f64,
+    pub inner_pth_cu: f64,
     pub hole_smd: f64,
     pub npth: f64,
     pub edge: f64,
@@ -110,6 +112,8 @@ impl Rules {
             slack,
             hole_gap: r.min_hole_to_hole.to_mm(),
             hole_cu: r.min_via_hole_to_copper.to_mm(),
+            pth_cu: r.min_pth_hole_to_copper.to_mm(),
+            inner_pth_cu: r.min_inner_pth_hole_to_copper.to_mm(),
             hole_smd: r.min_hole_to_smd_pad.to_mm(),
             npth: r.min_npth_to_copper.to_mm(),
             edge: r.min_copper_to_edge.to_mm(),
@@ -213,8 +217,8 @@ impl Rules {
                 via_need,
             });
         }
-        let max_c =
-            layout.nets.iter().map(|n| n.clearance).fold(rules.edge.max(rules.npth), f64::max);
+        let floor = rules.edge.max(rules.npth).max(rules.pth_cu).max(rules.inner_pth_cu);
+        let max_c = layout.nets.iter().map(|n| n.clearance).fold(floor, f64::max);
         let widest = rules
             .nets
             .iter()

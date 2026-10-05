@@ -20,6 +20,7 @@ pub use spread::{illegal, spread};
 const MAX_TARGETS: usize = 3_000_000;
 const DEFERRED: &str = "deferred";
 const MAX_PRES: f32 = 100.0;
+const HIST_STEP: f32 = 0.4;
 const SETTLED: usize = 2;
 const DEAD: &str = "no path within the rules in an earlier round";
 use soft::{Copper, Piece, Soft};
@@ -351,7 +352,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     if let Some(w) = &guide.warm {
         for (si, st) in states.iter_mut().enumerate() {
             let Some((pieces, failed, dead)) = w.nets.get(&st.net) else { continue };
-            st.pieces = pieces.clone();
+            st.pieces = pieces.iter().map(|p| Piece { ms: 0.0, ..p.clone() }).collect();
             st.failed = failed.clone();
             st.dead = dead.clone();
             st.joined = st.needed.saturating_sub(st.failed.len());
@@ -381,6 +382,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     });
     let plane = grid.plane();
     let mut pres = 0.5f32;
+    let hist_step = HIST_STEP;
     let tiles = Tiles::new(grid, guide);
     let mut seen: HashMap<usize, (u64, usize)> = HashMap::new();
     let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(64);
@@ -433,7 +435,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
                 overlap += cells.len();
                 conflicted.push(si);
                 for &(l, c) in &cells {
-                    soft.hist[l * plane + c] += 0.4;
+                    soft.hist[l * plane + c] += hist_step;
                     overlap_cells.push((states[si].net, l, grid.center(c % grid.w, c / grid.w)));
                 }
             }

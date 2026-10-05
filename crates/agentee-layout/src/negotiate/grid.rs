@@ -352,15 +352,15 @@ impl Grid {
                     }
                 }
                 if let Some((c, s, _)) = pad.drill {
+                    let hole = Shape::Circle(c, s[0].max(s[1]) / 2.0);
                     if pad.kind == PadKind::Npth || layers.is_empty() {
                         let all: Vec<usize> = (0..nl).collect();
-                        grid.stamp(
-                            &Shape::Circle(c, s[0].max(s[1]) / 2.0),
-                            &all,
-                            NONE,
-                            rules.npth,
-                            reach,
-                        );
+                        grid.stamp(&hole, &all, NONE, rules.npth, reach);
+                    } else {
+                        let outer = [0, nl - 1];
+                        let inner: Vec<usize> = (1..nl.saturating_sub(1)).collect();
+                        grid.stamp(&hole, &outer, net_id(pad.net), rules.pth_cu, reach);
+                        grid.stamp(&hole, &inner, net_id(pad.net), rules.inner_pth_cu, reach);
                     }
                     grid.stamp_hole(c, s[0].min(s[1]) / 2.0, hole_reach);
                 }

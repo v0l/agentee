@@ -189,3 +189,10 @@ fn sdr_full_flow() {
     let o = bench("sdr", "sdr", None);
     assert!(o.connections > 0);
 }
+
+#[test]
+#[ignore = "takes minutes, run with --include-ignored"]
+fn praline_route_only() {
+    let o = bench("hackrf-pro", "praline", Some("access"));
+    assert!(o.connections > 0);
+}
