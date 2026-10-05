@@ -428,13 +428,13 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         if !has("place") {
             break;
         }
-        let routed = model.detail.as_ref().map(|x| x.routed).unwrap_or(0);
+        let missing = model.detail.as_ref().map(|x| x.connections - x.routed).unwrap_or(usize::MAX);
         let step = (model.detail.as_ref().map(|x| x.connections).unwrap_or(0) / 100).max(1);
-        let gained = best_pass.as_ref().is_none_or(|b| routed >= b.0 + step);
+        let gained = best_pass.as_ref().is_none_or(|b| missing + step <= b.0);
         let pass_ms = ms_since(tp) - d.discarded[already..].iter().map(|x| x.1).sum::<f64>();
-        if best_pass.as_ref().is_none_or(|b| routed > b.0) {
+        if best_pass.as_ref().is_none_or(|b| missing < b.0) {
             best_pass = Some((
-                routed,
+                missing,
                 d.text.clone(),
                 model.detail.clone(),
                 model.warm.clone(),
@@ -457,7 +457,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             break;
         }
     }
-    if let Some((routed, text, plan, warm, hist, pass)) = best_pass {
+    if let Some((_, text, plan, warm, hist, pass)) = best_pass {
         if text != d.text {
             d.text = text;
             d.reload(model)?;
@@ -467,7 +467,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         }
         let clean = plan.as_ref().is_some_and(|x| x.overlap_left == 0 && x.failed.is_empty());
         if routes && place_rounds > 1 && rounds > 1 && !clean && !d.stopped() {
-            let start = plan.map(|p| (routed, p));
+            let start = plan.map(|p| (p.routed, p));
             route_reps(&mut d, model, &has, &dopts, rounds - 1, pass, start);
         }
     }

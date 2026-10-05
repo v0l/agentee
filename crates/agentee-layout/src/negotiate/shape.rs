@@ -433,17 +433,29 @@ impl Ctx<'_> {
             })
             .filter(|r| r.points.len() >= 2 || !vias.is_empty())
             .collect();
-        let extra_count = extra.len();
+        let runs = tracks.len();
         for (n, link) in extra {
             let neck = n.width < self.rule.width[n.layer] - 1e-6;
             let mut points = vec![n.from, n.to];
+            let mut tail = None;
             if let Some(c) = link.filter(|c| geom::dist(*c, n.to) > 1e-6) {
-                points.push(c);
+                let long = geom::dist(n.from, n.to) + geom::dist(n.to, c) > self.rule.neck;
+                if neck && long {
+                    tail = Some(Run {
+                        layer: n.layer,
+                        points: vec![n.to, c],
+                        width: self.rule.width[n.layer],
+                        neck: false,
+                    });
+                } else {
+                    points.push(c);
+                }
             }
             tracks.push(Run { layer: n.layer, points, width: n.width, neck });
+            tracks.extend(tail);
         }
         let mut trimmed = tracks.clone();
-        let last = trimmed.len().saturating_sub(1 + extra_count);
+        let last = runs.saturating_sub(1);
         if start.is_none()
             && let Some(r) = trimmed.first_mut()
         {

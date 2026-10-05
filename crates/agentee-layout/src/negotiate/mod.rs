@@ -828,10 +828,15 @@ fn fence_of(env: &Env, st: &NetState) -> Vec<bool> {
                     out[y as usize * t.w + x as usize] = true;
                 }
             }
+            let mut out = t.grow(&out, 1);
+            let mut ends = vec![false; t.w * t.h];
             for p in &pts {
-                t.mark(&mut out, *p, *p);
+                t.mark(&mut ends, *p, *p);
             }
-            t.grow(&out, 1)
+            for (o, e) in out.iter_mut().zip(t.grow(&ends, 1)) {
+                *o |= e;
+            }
+            out
         }
         None => {
             let m = base_margin(env, st);

@@ -214,6 +214,8 @@ fn hpwl(bd: &Board) -> f64 {
 const SPACING: f64 = 0.2;
 const STANDOFF: f64 = 0.6;
 const SPREAD: f64 = 1.5;
+const HOT_GROW: f64 = 0.25;
+const MAX_GROW: f64 = 0.5;
 
 pub struct Spread {
     pub spacing: f64,
@@ -557,7 +559,7 @@ impl Phase for Place {
                     .map(|h| h.overflow)
                     .sum();
                 if over > 0.0 && !c.fixed {
-                    grow.insert(i, over.min(2.0));
+                    grow.insert(i, (over * HOT_GROW).min(MAX_GROW));
                 }
             }
             report.notes.push(format!(
