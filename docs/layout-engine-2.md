@@ -268,7 +268,7 @@ time. `AGENTEE_BENCH_OUT=dir` keeps the result files.
 | `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 0.6 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
 | `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 402 of 498, 57 to 64 unrouted, 78 to 93 s | 0 unrouted, under 60 s |
 | `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 442 of 499, 37 to 50 unrouted, 138 errors (117 silk), 184 to 204 s | 0 unrouted, decap term under 20, under 120 s |
-| `praline` route only, hand placement | | 1250 of 1296, 46 unrouted, 28 DRC errors, 254 s | 0 unrouted |
+| `praline` route only, hand placement | | 1248 to 1250 of 1296, 46 to 48 unrouted, 28 DRC errors, 245 to 254 s | 0 unrouted |
 
 Connection counts went up because plane and ground pads are now routed connections. The
 committed `sdr` layout itself leaves 59 connections unrouted, 34 of them power and 12 LVDS, so
@@ -288,6 +288,13 @@ What stays unrouted on `sdr` is mostly power: the In3.Cu rail regions that could
 leave 1V0, 1V8, VSYS and 2V5 islands that only 0.9 mm and 0.4 mm tracks may join, and VBUS at
 J1 and at the charger, where the 0.9 mm class width does not fit between the pads. On `praline`
 it is the fanout of the 0.8 mm BGA U23, where about 100 nets still overlap when negotiation stops.
+
+Impedance nets are routed so the DRC's `impedance-trace` estimate stays in tolerance: a neck
+goes no narrower than the width that moves the impedance by half the tolerance, other copper
+keeps the class's gap floor, and where the line depends on its coplanar pour (on `lna`, losing
+it takes the RF class from 50 to 56 ohm; on `sdr`'s thin core it moves 1%) other nets keep far
+enough away for a strip of pour to survive between, except within the neck-down length of the
+net's own pads.
 
 Each round routes its nets in groups. Nets that clashed with each other in the last round go in
 different groups, the costliest nets (by search pops) go first, and a group sees the routes of
