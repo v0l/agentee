@@ -21,11 +21,13 @@ const MAX_TARGETS: usize = 3_000_000;
 const DEFERRED: &str = "deferred";
 const MAX_PRES: f32 = 100.0;
 const RESERVE_COST: f32 = 2.0;
+const BATCH: usize = 32;
+const CLASH_HALO: i64 = 0;
 const LOST_SHOWN: usize = 6;
 const HIST_STEP: f32 = 0.4;
 const SETTLED: usize = 2;
 const DEAD: &str = "no path within the rules in an earlier round";
-use soft::{Copper, Piece, Soft};
+use soft::{Copper, Footprint, Piece, Soft};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Instant;
 
@@ -101,7 +103,6 @@ pub struct Outcome {
     pub overlap_left: usize,
 }
 
-type Footprint = (Vec<Vec<u32>>, Vec<Vec<u32>>);
 type Conflicts = (Vec<(usize, usize)>, Vec<bool>);
 pub type Terminals = Vec<(P, Vec<usize>)>;
 
@@ -110,7 +111,11 @@ struct NetState {
     fence: Option<Vec<bool>>,
     dead: HashSet<usize>,
     bad: Option<Vec<bool>>,
+    clash: Vec<u64>,
+    wide: bool,
+    pops: u64,
     spent_ms: f64,
+    tries: usize,
     own: HashSet<u32>,
     copper: NetCopper,
     pads: Vec<PadRef>,
@@ -135,6 +140,7 @@ struct Env<'a> {
     escalate: usize,
     tiles: &'a Tiles,
     fenced: bool,
+    jacobi: bool,
 }
 
 struct Tiles {
@@ -335,7 +341,11 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             fence: None,
             dead: HashSet::new(),
             bad: None,
+            clash: Vec::new(),
+            wide: false,
+            pops: 0,
             spent_ms: 0.0,
+            tries: 0,
             own,
             copper,
             pads,
@@ -414,6 +424,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             escalate: opts.escalate,
             tiles: &tiles,
             fenced: false,
+            jacobi: false,
         };
         let many = route_many(&mut states, &todo, &env, pres, false, threads);
         spend.add(&many, layout);
@@ -421,9 +432,10 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         overlap_cells.clear();
         let mut overlap = 0usize;
         let mut settled = Vec::new();
-        for &si in &order {
-            let (cells, bad) = conflicts(&states[si], grid, &soft, rules);
+        let found = all_conflicts(&states, &order, grid, &soft, rules, threads);
+        for (&si, (cells, bad)) in order.iter().zip(found) {
             states[si].bad = Some(bad);
+            states[si].clash = clash_tiles(&tiles, grid, &cells);
             if !cells.is_empty() {
                 let sig = {
                     use std::hash::{Hash, Hasher};
@@ -448,12 +460,13 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         let joined: usize = states.iter().map(|s| s.joined).sum();
         let needed: usize = states.iter().map(|s| s.needed).sum();
         log(format!(
-            "round {round}: rerouted {}, {joined} of {needed} joined, {} nets overlap ({overlap} cells), pres {pres:.2}, {:.0} ms, {:.0} ms of work, {:.0} ms on the longest chain, {} redone outside their fence",
+            "round {round}: rerouted {}, {joined} of {needed} joined, {} nets overlap ({overlap} cells), pres {pres:.2}, {:.0} ms, {:.0} ms of work, {:.0} ms on the longest chain, {} groups, {} redone outside their fence",
             todo.len(),
             conflicted.len(),
             ms(tr),
             many.work_ms,
             many.critical_ms,
+            many.groups,
             many.again
         ));
         spend.rounds.push(RoundSpend {
@@ -491,6 +504,21 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
     for st in &states {
         for f in &st.failed {
             log(format!("  soft failure {} at {:?}: {}", f.net, f.from, f.reason));
+        }
+    }
+    if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "3") {
+        let mut top: Vec<&NetState> = states.iter().collect();
+        top.sort_by(|a, b| b.spent_ms.total_cmp(&a.spent_ms));
+        for st in top.iter().take(25) {
+            log(format!(
+                "  {}: {:.0} ms in {} routes, {} pops in the last, {} pads, fence {} tiles",
+                layout.nets[st.net].name,
+                st.spent_ms,
+                st.tries,
+                st.pops,
+                st.pads.len(),
+                st.fence.as_ref().map(|f| f.iter().filter(|v| **v).count()).unwrap_or(0)
+            ));
         }
     }
     if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok_and(|v| v == "2") {
@@ -558,6 +586,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             escalate: opts.escalate,
             tiles: &tiles,
             fenced: false,
+            jacobi: false,
         };
         let many = route_many(&mut states, &conflicted, &env, pres, true, threads);
         spend.add(&many, layout);
@@ -660,6 +689,7 @@ pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAcc
             entry_r: opts.entry,
             own: &own,
             holes: &[],
+            old: None,
         };
         for p in &pads {
             let mut exits = 0;
@@ -689,6 +719,7 @@ struct Routed {
     failed_ms: f64,
     ripped_ms: f64,
     ms: f64,
+    pops: u64,
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -824,6 +855,7 @@ struct Many {
     failed_ms: f64,
     ripped_ms: f64,
     again: usize,
+    groups: usize,
     lost: Vec<(usize, f64)>,
 }
 
@@ -892,6 +924,7 @@ fn route_one(
     old: Option<&Footprint>,
 ) -> (Routed, Footprint) {
     let t = Instant::now();
+    let pops = search::pops();
     if let Some(fp) = old {
         env.soft.apply(fp, false);
     }
@@ -915,8 +948,11 @@ fn route_one(
     r.joined = st.needed.saturating_sub(r.failed.len());
     let rule = env.rules.rule(st.net);
     let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.pieces, rule.clearance, &st.pads));
-    env.soft.apply(&fp, true);
+    if !env.jacobi {
+        env.soft.apply(&fp, true);
+    }
     r.ms = ms(t);
+    r.pops = search::pops() - pops;
     (r, fp)
 }
 
@@ -942,10 +978,42 @@ fn route_many(
         states[si].fence = Some(fence);
     }
     let hit = |a: &[u64], b: &[u64]| a.iter().zip(b).any(|(x, y)| x & y != 0);
-    let deps: Vec<Vec<usize>> =
-        (0..n).map(|i| (0..i).filter(|&j| hit(&bits[i], &bits[j])).collect()).collect();
-    let old: Vec<Option<Footprint>> = todo.iter().map(|&si| states[si].fp.take()).collect();
-    let quick = Env { escalate: 0, fenced: true, ..*env };
+    let jacobi = !hard;
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    if jacobi {
+        let mut seen: Vec<Vec<u64>> = Vec::new();
+        let mut by_cost: Vec<usize> = (0..n).collect();
+        by_cost.sort_by_key(|&i| std::cmp::Reverse(states[todo[i]].pops));
+        for i in by_cost {
+            let si = todo[i];
+            let c = &states[si].clash;
+            let free = (0..groups.len()).find(|&k| groups[k].len() < BATCH && !hit(&seen[k], c));
+            let k = free.unwrap_or_else(|| {
+                groups.push(Vec::new());
+                seen.push(Vec::new());
+                groups.len() - 1
+            });
+            groups[k].push(i);
+            if seen[k].len() < c.len() {
+                seen[k].resize(c.len(), 0);
+            }
+            for (a, b) in seen[k].iter_mut().zip(c) {
+                *a |= b;
+            }
+        }
+    }
+    for g in &mut groups {
+        g.sort_unstable();
+    }
+    let deps: Vec<Vec<usize>> = if jacobi {
+        vec![Vec::new(); n]
+    } else {
+        (0..n).map(|i| (0..i).filter(|&j| hit(&bits[i], &bits[j])).collect()).collect()
+    };
+    let old: Vec<Option<Footprint>> =
+        if jacobi { vec![None; n] } else { todo.iter().map(|&si| states[si].fp.take()).collect() };
+    let quick = Env { escalate: 0, fenced: true, jacobi, ..*env };
+    let whole = Env { jacobi, ..*env };
     let results: Vec<std::sync::Mutex<Option<(Routed, Footprint)>>> =
         (0..n).map(|_| std::sync::Mutex::new(None)).collect();
     struct Queue {
@@ -955,39 +1023,75 @@ fn route_many(
     }
     let queue =
         std::sync::Mutex::new(Queue { started: vec![false; n], done: vec![false; n], next: 0 });
-    let wake = std::sync::Condvar::new();
-    let shared: &[NetState] = states;
-    let work = || loop {
-        let i = {
-            let mut q = queue.lock().expect("queue");
-            loop {
-                if q.next >= n {
-                    break None;
-                }
-                let start = q.next;
-                let pick =
-                    (start..n).find(|&i| !q.started[i] && deps[i].iter().all(|&j| q.done[j]));
-                if let Some(i) = pick {
-                    q.started[i] = true;
-                    while q.next < n && q.started[q.next] {
-                        q.next += 1;
-                    }
-                    break Some(i);
-                }
-                q = wake.wait(q).expect("queue");
-            }
-        };
-        let Some(i) = i else { break };
-        let out = route_one(&shared[todo[i]], &quick, pres, hard, old[i].as_ref());
-        *results[i].lock().expect("result") = Some(out);
-        queue.lock().expect("queue").done[i] = true;
-        wake.notify_all();
-    };
-    std::thread::scope(|s| {
-        for _ in 0..threads.min(n).max(1) {
-            s.spawn(work);
+    if jacobi {
+        for (slot, r) in results.iter().zip(route_batches(
+            states,
+            todo,
+            &groups,
+            [&quick, &whole],
+            pres,
+            hard,
+            threads,
+        )) {
+            *slot.lock().expect("result") = Some(r);
         }
-    });
+    } else {
+        let wake = std::sync::Condvar::new();
+        let shared: &[NetState] = states;
+        let work = || loop {
+            let i = {
+                let mut q = queue.lock().expect("queue");
+                loop {
+                    if q.next >= n {
+                        break None;
+                    }
+                    let start = q.next;
+                    let pick =
+                        (start..n).find(|&i| !q.started[i] && deps[i].iter().all(|&j| q.done[j]));
+                    if let Some(i) = pick {
+                        q.started[i] = true;
+                        while q.next < n && q.started[q.next] {
+                            q.next += 1;
+                        }
+                        break Some(i);
+                    }
+                    q = wake.wait(q).expect("queue");
+                }
+            };
+            let Some(i) = i else { break };
+            let out = route_one(&shared[todo[i]], &quick, pres, hard, old[i].as_ref());
+            *results[i].lock().expect("result") = Some(out);
+            queue.lock().expect("queue").done[i] = true;
+            wake.notify_all();
+        };
+        std::thread::scope(|s| {
+            for _ in 0..threads.min(n).max(1) {
+                s.spawn(work);
+            }
+        });
+    }
+    let deferred = |r: &Routed| r.failed.iter().any(|f| f.reason == DEFERRED);
+    let mut redone: HashMap<usize, (Routed, Footprint)> = HashMap::new();
+    if jacobi {
+        let redo: Vec<usize> = (0..n)
+            .filter(|&i| {
+                results[i].lock().expect("result").as_ref().is_some_and(|x| deferred(&x.0))
+            })
+            .collect();
+        for &i in &redo {
+            states[todo[i]].fp = results[i].lock().expect("result").as_ref().map(|x| x.1.clone());
+        }
+        let picks: Vec<usize> = redo.iter().map(|&i| todo[i]).collect();
+        for &si in &picks {
+            states[si].wide = true;
+        }
+        let chunks: Vec<Vec<usize>> =
+            (0..picks.len()).collect::<Vec<_>>().chunks(BATCH).map(<[usize]>::to_vec).collect();
+        redone = redo
+            .into_iter()
+            .zip(route_batches(states, &picks, &chunks, [&whole, &whole], pres, hard, threads))
+            .collect();
+    }
     let mut out = Many::default();
     let mut ef = vec![0.0f64; n];
     for (i, slot) in results.into_iter().enumerate() {
@@ -995,10 +1099,15 @@ fn route_many(
         ef[i] = r.ms + deps[i].iter().map(|&j| ef[j]).fold(0.0, f64::max);
         out.work_ms += r.ms;
         let st = &mut states[todo[i]];
-        if r.failed.iter().any(|f| f.reason == DEFERRED) {
-            env.soft.apply(&fp, false);
+        if deferred(&r) {
             out.deferred_ms += r.ms;
-            (r, fp) = route_one(st, env, pres, hard, None);
+            (r, fp) = match redone.remove(&i) {
+                Some(x) => x,
+                None => {
+                    env.soft.apply(&fp, false);
+                    route_one(st, env, pres, hard, None)
+                }
+            };
             out.work_ms += r.ms;
             out.again += 1;
         }
@@ -1011,12 +1120,19 @@ fn route_many(
         }
         out.ripped_ms += r.ripped_ms;
         st.spent_ms += r.ms;
+        st.tries += 1;
+        st.pops = r.pops;
         st.pieces = r.pieces;
         st.failed = r.failed;
         st.joined = r.joined;
         st.fp = Some(fp);
     }
-    out.critical_ms = ef.iter().copied().fold(0.0, f64::max);
+    out.critical_ms = if jacobi {
+        groups.iter().map(|g| g.iter().map(|&i| ef[i]).fold(0.0, f64::max)).sum()
+    } else {
+        ef.iter().copied().fold(0.0, f64::max)
+    };
+    out.groups = groups.len();
     out
 }
 
@@ -1157,9 +1273,98 @@ fn zone_map(layout: &Layout, grid: &Grid) -> Vec<u16> {
     zone
 }
 
+fn clash_tiles(tiles: &Tiles, grid: &Grid, cells: &[(usize, usize)]) -> Vec<u64> {
+    if cells.is_empty() {
+        return Vec::new();
+    }
+    let mut v = vec![false; tiles.w * tiles.h];
+    for &(_, c) in cells {
+        v[tiles.ty[c / grid.w] * tiles.w + tiles.tx[c % grid.w]] = true;
+    }
+    let v = tiles.grow(&v, CLASH_HALO);
+    let mut b = vec![0u64; v.len().div_ceil(64)];
+    for (k, _) in v.iter().enumerate().filter(|(_, x)| **x) {
+        b[k / 64] |= 1 << (k % 64);
+    }
+    b
+}
+
+fn route_batches(
+    states: &mut [NetState],
+    picks: &[usize],
+    groups: &[Vec<usize>],
+    envs: [&Env; 2],
+    pres: f32,
+    hard: bool,
+    threads: usize,
+) -> Vec<(Routed, Footprint)> {
+    let results: Vec<std::sync::Mutex<Option<(Routed, Footprint)>>> =
+        picks.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    for group in groups {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let shared: &[NetState] = states;
+        std::thread::scope(|s| {
+            for _ in 0..threads.min(group.len()).max(1) {
+                s.spawn(|| {
+                    loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(&i) = group.get(k) else { break };
+                        let st = &shared[picks[i]];
+                        let out = route_one(st, envs[st.wide as usize], pres, hard, None);
+                        *results[i].lock().expect("result") = Some(out);
+                    }
+                });
+            }
+        });
+        let olds: Vec<Option<Footprint>> =
+            group.iter().map(|&i| states[picks[i]].fp.take()).collect();
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|s| {
+            for _ in 0..threads.min(group.len()).max(1) {
+                s.spawn(|| {
+                    loop {
+                        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(&i) = group.get(k) else { break };
+                        if let Some(o) = &olds[k] {
+                            envs[0].soft.apply(o, false);
+                        }
+                        let r = results[i].lock().expect("result");
+                        envs[0].soft.apply(&r.as_ref().expect("routed").1, true);
+                    }
+                });
+            }
+        });
+    }
+    results.into_iter().map(|m| m.into_inner().expect("result").expect("routed")).collect()
+}
+
+fn all_conflicts(
+    states: &[NetState],
+    order: &[usize],
+    grid: &Grid,
+    soft: &Soft,
+    rules: &Rules,
+    threads: usize,
+) -> Vec<Conflicts> {
+    let out: Vec<std::sync::Mutex<Conflicts>> =
+        order.iter().map(|_| std::sync::Mutex::new(Default::default())).collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        for _ in 0..threads.min(order.len()).max(1) {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(&si) = order.get(i) else { break };
+                    *out[i].lock().expect("conflicts") = conflicts(&states[si], grid, soft, rules);
+                }
+            });
+        }
+    });
+    out.into_iter().map(|m| m.into_inner().expect("conflicts")).collect()
+}
+
 fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflicts {
     let Some(fp) = st.fp.as_ref() else { return (Vec::new(), Vec::new()) };
-    soft.apply(fp, false);
     let rule = rules.rule(st.net);
     let mut out = Vec::new();
     let mut bad = vec![false; st.pieces.len()];
@@ -1170,7 +1375,7 @@ fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflict
             for w in r.points.windows(2) {
                 for (x, y) in seg_cells(grid, w[0], w[1]) {
                     let c = y * grid.w + x;
-                    if soft.track(b, c) > 0
+                    if soft.track_less(b, c, Some(fp)) > 0
                         && !st.own.contains(&((r.layer * grid.plane() + c) as u32))
                     {
                         out.push((r.layer, c));
@@ -1185,7 +1390,7 @@ fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflict
                 continue;
             }
             let c = y as usize * grid.w + x as usize;
-            if soft.via(rule.via_bucket[vi], c) > 0 {
+            if soft.via_less(rule.via_bucket[vi], c, Some(fp)) > 0 {
                 for &l in &rules.vias[k].layers {
                     out.push((l, c));
                 }
@@ -1193,7 +1398,6 @@ fn conflicts(st: &NetState, grid: &Grid, soft: &Soft, rules: &Rules) -> Conflict
         }
         bad[pi] = out.len() > before;
     }
-    soft.apply(fp, true);
     out.sort_unstable();
     out.dedup();
     (out, bad)
@@ -1509,6 +1713,7 @@ fn connect(
             entry_r: env.opts.entry,
             own: &st.own,
             holes: &holes,
+            old: env.jacobi.then_some(st.fp.as_ref()).flatten(),
         };
         let mut access: Vec<Access> = Vec::new();
         let mut sources: Vec<Source> = Vec::new();
@@ -1689,6 +1894,7 @@ fn connect(
             gain: env.opts.prefer_gain as f32,
             own: &st.own,
             holes: &holes,
+            old: env.jacobi.then_some(st.fp.as_ref()).flatten(),
         };
         tries += 1;
         if let Some(found) = q.run() {

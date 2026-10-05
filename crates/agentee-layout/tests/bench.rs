@@ -43,7 +43,24 @@ pub struct Outcome {
 }
 
 fn bench(example: &str, layout: &str, from: Option<&str>) -> Outcome {
+    bench_with(example, layout, from, &[])
+}
+
+fn bench_with(example: &str, layout: &str, from: Option<&str>, rules: &[(&str, f64)]) -> Outcome {
     let dir = fresh(example);
+    for e in std::fs::read_dir(&dir).unwrap() {
+        let path = e.unwrap().path();
+        if rules.is_empty() || !path.to_string_lossy().ends_with(".board.toml") {
+            continue;
+        }
+        let set: String = rules.iter().map(|(k, v)| format!("{k} = {v}\n")).collect();
+        let text = std::fs::read_to_string(&path).unwrap().replacen(
+            "[rules]\n",
+            &format!("[rules]\n{set}"),
+            1,
+        );
+        std::fs::write(&path, text).unwrap();
+    }
     let p = Project::load(&dir).unwrap();
     let i = p.layouts.iter().position(|l| l.item.name == layout).unwrap();
     let inputs = p.layout_inputs(i).unwrap();
@@ -193,6 +210,7 @@ fn sdr_full_flow() {
 #[test]
 #[ignore = "takes minutes, run with --include-ignored"]
 fn praline_route_only() {
-    let o = bench("hackrf-pro", "praline", Some("access"));
+    let o =
+        bench_with("hackrf-pro", "praline", Some("access"), &[("min_via_hole_to_copper", 0.18)]);
     assert!(o.connections > 0);
 }

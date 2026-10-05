@@ -20,6 +20,8 @@ pub struct Run {
     pub neck: bool,
 }
 
+pub type Footprint = (Vec<Vec<u32>>, Vec<Vec<u32>>);
+
 pub struct Soft {
     tracks: Vec<Vec<AtomicU8>>,
     vias: Vec<Vec<AtomicU8>>,
@@ -120,6 +122,22 @@ impl Soft {
     #[inline]
     pub fn via(&self, bucket: usize, c: usize) -> u8 {
         self.vias[bucket][c].load(Relaxed)
+    }
+
+    pub fn track_less(&self, bucket: usize, c: usize, old: Option<&Footprint>) -> u8 {
+        let n = self.track(bucket, c);
+        match old {
+            Some(fp) if n > 0 && fp.0[bucket].binary_search(&(c as u32)).is_ok() => n - 1,
+            _ => n,
+        }
+    }
+
+    pub fn via_less(&self, bucket: usize, c: usize, old: Option<&Footprint>) -> u8 {
+        let n = self.via(bucket, c);
+        match old {
+            Some(fp) if n > 0 && fp.1[bucket].binary_search(&(c as u32)).is_ok() => n - 1,
+            _ => n,
+        }
     }
 
     pub fn footprint(grid: &Grid, rules: &Rules, c: &Copper) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {

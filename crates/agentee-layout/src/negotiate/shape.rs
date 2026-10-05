@@ -42,6 +42,7 @@ pub struct Ctx<'a> {
     pub entry_r: f64,
     pub own: &'a std::collections::HashSet<u32>,
     pub holes: &'a [(P, f64)],
+    pub old: Option<&'a super::soft::Footprint>,
 }
 
 impl Ctx<'_> {
@@ -65,7 +66,8 @@ impl Ctx<'_> {
         let i = self.grid.idx(l, x, y);
         self.grid.track_ok(i, self.net, self.rule.need[l])
             && (self.own.contains(&(i as u32))
-                || self.rule.bucket[l].is_none_or(|b| self.soft.track(b, y * self.grid.w + x) == 0))
+                || self.rule.bucket[l]
+                    .is_none_or(|b| self.soft.track_less(b, y * self.grid.w + x, self.old) == 0))
     }
 
     fn unshared(&self, l: usize, p: P) -> bool {
@@ -76,7 +78,8 @@ impl Ctx<'_> {
         let (x, y) = (x as usize, y as usize);
         let i = self.grid.idx(l, x, y);
         self.own.contains(&(i as u32))
-            || self.rule.bucket[l].is_none_or(|b| self.soft.track(b, y * self.grid.w + x) == 0)
+            || self.rule.bucket[l]
+                .is_none_or(|b| self.soft.track_less(b, y * self.grid.w + x, self.old) == 0)
     }
 
     fn field_at(&self, l: usize, at: P) -> Option<(f64, f64)> {
@@ -197,7 +200,8 @@ impl Ctx<'_> {
             room = room.min((d - self.rule.clearance).min(q) - EXACT);
             if hard
                 && !self.own.contains(&(i as u32))
-                && self.rule.bucket[l].is_some_and(|bk| self.soft.track(bk, y * g.w + x) > 0)
+                && self.rule.bucket[l]
+                    .is_some_and(|bk| self.soft.track_less(bk, y * g.w + x, self.old) > 0)
             {
                 return None;
             }
@@ -215,12 +219,12 @@ impl Ctx<'_> {
         seg_cells(g, a, b)
             .into_iter()
             .filter(|&(x, y)| !self.own.contains(&(g.idx(l, x, y) as u32)))
-            .map(|(x, y)| self.soft.track(bk, y * g.w + x) as f32)
+            .map(|(x, y)| self.soft.track_less(bk, y * g.w + x, self.old) as f32)
             .sum()
     }
 
     fn via_load(&self, vi: usize, c2: usize) -> f32 {
-        self.soft.via(self.rule.via_bucket[vi], c2) as f32
+        self.soft.via_less(self.rule.via_bucket[vi], c2, self.old) as f32
     }
 
     pub fn stubs(

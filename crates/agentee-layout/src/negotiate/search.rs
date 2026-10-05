@@ -92,6 +92,7 @@ pub struct Query<'a> {
     pub gain: f32,
     pub own: &'a std::collections::HashSet<u32>,
     pub holes: &'a [(P, f64)],
+    pub old: Option<&'a super::soft::Footprint>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -117,6 +118,8 @@ const FRESH: Slot =
 const TARGET: u8 = 1;
 const BLOCK: usize = 4;
 const MINE: u8 = 2;
+const OLD: u8 = 4;
+const OLD_VIA: u8 = 8;
 
 #[derive(Default)]
 struct Scratch {
@@ -164,6 +167,11 @@ fn set_flag(v: &mut [(u32, u8)], epoch: u32, k: usize, bit: u8) {
 
 thread_local! {
     static SCRATCH: std::cell::RefCell<Scratch> = std::cell::RefCell::new(Scratch::default());
+    static POPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+pub fn pops() -> u64 {
+    POPS.with(|p| p.get())
 }
 
 fn reset<T: Copy>(v: &mut Vec<T>, n: usize, value: T) {
@@ -286,6 +294,23 @@ impl Query<'_> {
         }
         if !any_target {
             return None;
+        }
+        if let Some(fp) = self.old {
+            let at = |c: u32| {
+                let (x, y) = (c as usize % grid.w, c as usize / grid.w);
+                w.contains(x, y).then(|| (y - w.y0) * ww + (x - w.x0))
+            };
+            for l in 0..nl {
+                let Some(b) = self.rule.bucket[l] else { continue };
+                for k2 in fp.0[b].iter().filter_map(|&c| at(c)) {
+                    set_flag(flags, epoch, l * area + k2, OLD);
+                }
+            }
+            for (vi, &vb) in self.rule.via_bucket.iter().enumerate().take(4) {
+                for k2 in fp.1[vb].iter().filter_map(|&c| at(c)) {
+                    set_flag(flags, epoch, k2, OLD_VIA << vi);
+                }
+            }
         }
         let diag = g * std::f32::consts::SQRT_2;
         let (step, step_d) = (g * BLOCK as f32, diag * BLOCK as f32);
@@ -423,7 +448,9 @@ impl Query<'_> {
         let mut via_kind: std::collections::HashMap<usize, usize> =
             std::collections::HashMap::new();
         let mut hit = None;
+        let mut popped = 0u64;
         while let Some(Node { f, i }) = heap.pop() {
+            popped += 1;
             let k = i as usize;
             let me = slot(slots, epoch, k);
             let here = me.cost;
@@ -466,10 +493,12 @@ impl Query<'_> {
                     let (gx, gy) = (nx + w.x0, ny + w.y0);
                     let len = if diagonal { diag } else { g };
                     let c2 = gy * grid.w + gx;
-                    let count = if flag(flags, epoch, l * area + j2) & MINE != 0 {
+                    let fl = flag(flags, epoch, l * area + j2);
+                    let count = if fl & MINE != 0 {
                         0.0
                     } else {
                         rule.bucket[l].map(|b| self.soft.track(b, c2) as f32).unwrap_or(0.0)
+                            - if fl & OLD != 0 { 1.0 } else { 0.0 }
                     };
                     let hist = self.soft.hist[l * plane + c2];
                     let zn = self.zone[l * plane + c2];
@@ -518,7 +547,8 @@ impl Query<'_> {
                         continue;
                     }
                     let vb = rule.via_bucket[vi];
-                    let count = self.soft.via(vb, c2) as f32;
+                    let old = vi < 4 && flag(flags, epoch, k2) & (OLD_VIA << vi) != 0;
+                    let count = self.soft.via(vb, c2) as f32 - if old { 1.0 } else { 0.0 };
                     if hard && count > 0.0 {
                         continue;
                     }
@@ -539,6 +569,7 @@ impl Query<'_> {
                 }
             }
         }
+        POPS.with(|p| p.set(p.get() + popped));
         let end = hit?;
         let mut cells = Vec::new();
         let mut vias = Vec::new();
