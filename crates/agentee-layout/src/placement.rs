@@ -512,7 +512,7 @@ fn legalise(
         })
         .map(|p| p.reference.as_str())
         .collect();
-    let held = |c: &Cell| c.fixed || anchored.contains(&c.reference.as_str());
+    let held = |c: &Cell| c.fixed || c.chained || anchored.contains(&c.reference.as_str());
     let gap_of = |i: usize| grow.get(&i).copied().unwrap_or(0.0);
     let mut placed: Vec<[f64; 4]> = (0..bd.cells.len())
         .filter(|&i| held(&bd.cells[i]))
@@ -639,7 +639,7 @@ impl Phase for Place {
                     })
                     .map(|h| h.overflow)
                     .sum();
-                if over > 0.0 && !c.fixed {
+                if over > 0.0 && !c.fixed && !c.chained {
                     grow.insert(i, (over * HOT_GROW).min(MAX_GROW));
                 }
             }
