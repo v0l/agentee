@@ -2173,6 +2173,32 @@ fn connect(
             entering: entering.as_deref(),
         };
         tries += 1;
+        let traced: Vec<P> = std::env::var("AGENTEE_TRACE")
+            .ok()
+            .map(|v| {
+                v.split(';')
+                    .filter_map(|p| {
+                        let xy: Vec<f64> = p.split(',').filter_map(|t| t.parse().ok()).collect();
+                        (xy.len() == 2).then(|| [xy[0], xy[1]])
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let trace = traced.iter().any(|t| geom::dist(*t, a) < 0.05 || geom::dist(*t, b) < 0.05);
+        if trace {
+            let planar = q.sources.iter().filter(|s| !s.via_only).count();
+            eprintln!(
+                "trace {} {:?}->{:?} hard {hard} try {tries} margin {margin:.1} win {}x{} sources {} ({} planar) targets {}",
+                env.layout.nets[st.net].name,
+                a,
+                b,
+                win.ww(),
+                win.wh(),
+                q.sources.len(),
+                planar,
+                q.targets.len()
+            );
+        }
         if let Some(found) = q.run() {
             if found.cells.len() <= 1 {
                 margin *= 3.0;

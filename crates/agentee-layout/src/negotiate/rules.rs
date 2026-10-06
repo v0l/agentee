@@ -160,9 +160,20 @@ impl Rules {
                 l > 0 && l + 1 < nl && cover[l].iter().map(|e| e.1).sum::<f64>() >= PLANE_SHARE
             })
             .collect();
+        let ground: Vec<bool> = (0..nl)
+            .map(|l| {
+                plane[l]
+                    && cover[l]
+                        .iter()
+                        .filter(|e| place::is_ground(&layout.nets[e.0].name))
+                        .map(|e| e.1)
+                        .sum::<f64>()
+                        >= PLANE_SHARE
+            })
+            .collect();
         rules.cut = (0..nl)
             .map(|l| {
-                if !plane[l] {
+                if !ground[l] {
                     return Vec::new();
                 }
                 [l.wrapping_sub(1), l + 1].into_iter().filter(|&m| m < nl).collect()
@@ -170,7 +181,7 @@ impl Rules {
             .collect();
         rules.shadow = (0..nl)
             .map(|l| {
-                [l.wrapping_sub(1), l + 1].into_iter().filter(|&m| m < nl && plane[m]).collect()
+                [l.wrapping_sub(1), l + 1].into_iter().filter(|&m| m < nl && ground[m]).collect()
             })
             .collect();
         let referenced = |l: usize, refs: &[String]| {

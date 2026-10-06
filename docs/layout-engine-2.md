@@ -201,9 +201,12 @@ corridor grown by one tile.
   as a plane when its fills cover half the board. Two rules keep this from costing signal
   integrity. A lane of an interface with a `reference` routes only on layers next to a plane of
   that net, so it always has a return path. And the tracks of critical nets (impedance, pairs,
-  interface lanes) shadow the plane layers next to them: another net's track there overlaps the
-  shadow as it would overlap copper, so negotiation keeps plane cuts out from under them. Routing
-  through another net's fill pays `zone_cost` per mm.
+  interface lanes) shadow the ground plane layers next to them: another net's track there overlaps the
+  shadow as it would overlap copper, so negotiation keeps plane cuts out from under them. A supply
+  plane is not a return path for these lanes, so it carries no shadow and stays open to them.
+  Routing through another net's fill pays `zone_cost` per mm. `AGENTEE_TRACE=x,y;x,y` prints each
+  search that starts or ends at those points: its window, its sources and how many can leave the
+  pad on a track, and its targets.
 - **Search** is today's A*: backward Dijkstra for the heuristic, forward search with bend costs
   and via hops. It moves out of `agentee-core/src/route.rs` into a module both routers share.
 
