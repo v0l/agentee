@@ -42,6 +42,7 @@ pub struct NetRule {
     pub narrowest: Vec<f64>,
     pub crit: f64,
     pub shadows: bool,
+    pub domain: Option<usize>,
     pub bucket: Vec<Option<usize>>,
     pub via_bucket: Vec<usize>,
     pub need: Vec<Need>,
@@ -54,6 +55,7 @@ pub struct Bucket {
     pub h: f64,
     pub c: f64,
     pub crit: bool,
+    pub domain: Option<usize>,
 }
 
 pub struct ViaBucket {
@@ -61,6 +63,7 @@ pub struct ViaBucket {
     pub dr: f64,
     pub c: f64,
     pub layers: Vec<usize>,
+    pub domain: Option<usize>,
 }
 
 pub struct Rules {
@@ -81,6 +84,59 @@ pub struct Rules {
     pub shadow: Vec<Vec<usize>>,
     pub cut: Vec<Vec<usize>>,
     pub casts: Vec<bool>,
+    pub iso: Isolation,
+}
+
+#[derive(Clone, Default)]
+pub struct Isolation {
+    pub domain: Vec<Option<usize>>,
+    pub gap: Vec<Vec<[f64; 2]>>,
+    pub layers: usize,
+}
+
+impl Isolation {
+    pub fn new(layout: &Layout, board: &Board) -> Isolation {
+        let n = board.domains.len();
+        let mut gap = vec![vec![[0.0; 2]; n]; n];
+        for b in &board.barriers {
+            let inner = b.clearance.map_or(0.0, |c| c.to_mm());
+            let outer = inner.max(b.creepage.map_or(0.0, |c| c.to_mm()));
+            let [x, y] = b.between;
+            gap[x][y] = [inner, outer];
+            gap[y][x] = [inner, outer];
+        }
+        let barred: Vec<bool> = (0..n).map(|d| gap[d].iter().any(|g| g[1] > 0.0)).collect();
+        let domain = layout
+            .nets
+            .iter()
+            .map(|net| {
+                board.domain_of(&net.name, &net.class).first().copied().filter(|&d| barred[d])
+            })
+            .collect();
+        Isolation { domain, gap, layers: layout.copper.len() }
+    }
+
+    pub fn active(&self) -> bool {
+        self.domain.iter().any(Option::is_some)
+    }
+
+    pub fn of(&self, net: usize) -> Option<usize> {
+        self.domain.get(net).copied().flatten()
+    }
+
+    pub fn apart(&self, a: Option<usize>, b: Option<usize>, l: usize) -> f64 {
+        match (a, b) {
+            (Some(a), Some(b)) if a != b => {
+                let outer = l == 0 || l + 1 == self.layers;
+                self.gap[a][b][usize::from(outer)]
+            }
+            _ => 0.0,
+        }
+    }
+
+    pub fn widest(&self, a: Option<usize>) -> f64 {
+        a.map_or(0.0, |a| self.gap[a].iter().map(|g| g[0].max(g[1])).fold(0.0, f64::max))
+    }
 }
 
 fn plane_cover(layout: &Layout) -> Vec<Vec<(usize, f64)>> {
@@ -153,6 +209,7 @@ impl Rules {
             shadow: Vec::new(),
             cut: Vec::new(),
             casts: Vec::new(),
+            iso: Isolation::new(layout, board),
         };
         let cover = plane_cover(layout);
         let plane: Vec<bool> = (0..nl)
@@ -273,6 +330,7 @@ impl Rules {
             let band = poured.and_then(|c| c.coplanar_gap).map_or(clearance, |s| {
                 clearance.max(s.to_mm() + strip + net.clearance + opts.grid)
             });
+            let domain = rules.iso.of(n);
             let mut bucket = vec![None; nl];
             for l in 0..nl {
                 if !track[l] && !net_vias.iter().any(|&k| rules.vias[k].layers.contains(&l)) {
@@ -284,9 +342,16 @@ impl Rules {
                         && um(b.h) == um(h)
                         && um(b.c) == um(band)
                         && b.crit == rules.casts[n]
+                        && b.domain == domain
                 });
                 bucket[l] = Some(found.unwrap_or_else(|| {
-                    rules.buckets.push(Bucket { layer: l, h, c: band, crit: rules.casts[n] });
+                    rules.buckets.push(Bucket {
+                        layer: l,
+                        h,
+                        c: band,
+                        crit: rules.casts[n],
+                        domain,
+                    });
                     rules.buckets.len() - 1
                 }));
             }
@@ -298,6 +363,7 @@ impl Rules {
                         && um(b.dr) == um(o.dr)
                         && um(b.c) == um(band)
                         && b.layers == o.layers
+                        && b.domain == domain
                 });
                 via_bucket.push(found.unwrap_or_else(|| {
                     rules.via_buckets.push(ViaBucket {
@@ -305,6 +371,7 @@ impl Rules {
                         dr: o.dr,
                         c: band,
                         layers: o.layers.clone(),
+                        domain,
                     });
                     rules.via_buckets.len() - 1
                 }));
@@ -349,6 +416,7 @@ impl Rules {
                 narrowest,
                 crit,
                 shadows,
+                domain,
                 bucket,
                 via_bucket,
                 need,

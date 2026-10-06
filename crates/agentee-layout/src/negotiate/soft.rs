@@ -34,10 +34,12 @@ pub struct Copper {
     pub clearance: f64,
     pub shadow: bool,
     pub only_shadow: bool,
+    pub domain: Option<usize>,
 }
 
 impl Copper {
-    pub fn of(pieces: &[Piece], clearance: f64, pads: &[PadRef], shadow: bool) -> Copper {
+    pub fn of(pieces: &[Piece], rule: &super::rules::NetRule, pads: &[PadRef]) -> Copper {
+        let (clearance, shadow) = (rule.band, rule.shadows);
         let mut segs = Vec::new();
         let mut vias = Vec::new();
         for p in pieces {
@@ -76,7 +78,7 @@ impl Copper {
             }
             vias.extend(p.vias.iter().copied());
         }
-        Copper { segs, vias, clearance, shadow, only_shadow: false }
+        Copper { segs, vias, clearance, shadow, only_shadow: false, domain: rule.domain }
     }
 }
 
@@ -166,12 +168,14 @@ impl Soft {
             let own = !c.only_shadow;
             for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| own && bk.layer == l)
             {
-                reach.push((false, bi, h + bk.h + c.clearance.max(bk.c) + slack));
+                let gap = c.clearance.max(bk.c).max(rules.iso.apart(c.domain, bk.domain, l));
+                reach.push((false, bi, h + bk.h + gap + slack));
             }
             for (vi, vb) in
                 rules.via_buckets.iter().enumerate().filter(|(_, v)| own && v.layers.contains(&l))
             {
-                let r = (h + vb.r + c.clearance.max(vb.c)).max(h + vb.dr + rules.hole_cu) + slack;
+                let gap = c.clearance.max(vb.c).max(rules.iso.apart(c.domain, vb.domain, l));
+                let r = (h + vb.r + gap).max(h + vb.dr + rules.hole_cu) + slack;
                 reach.push((true, vi, r));
             }
             let (across, crit_only) =
@@ -194,13 +198,19 @@ impl Soft {
             for (bi, bk) in
                 rules.buckets.iter().enumerate().filter(|(_, bk)| o.layers.contains(&bk.layer))
             {
-                let r = (o.r + bk.h + c.clearance.max(bk.c)).max(o.dr + rules.hole_cu + bk.h);
+                let gap = c.clearance.max(bk.c).max(rules.iso.apart(c.domain, bk.domain, bk.layer));
+                let r = (o.r + bk.h + gap).max(o.dr + rules.hole_cu + bk.h);
                 reach.push((false, bi, r + slack));
             }
             for (vi, vb) in rules.via_buckets.iter().enumerate() {
-                let shares = vb.layers.iter().any(|l| o.layers.contains(l));
+                let shared = vb.layers.iter().filter(|l| o.layers.contains(l));
+                let apart = shared
+                    .clone()
+                    .map(|&l| rules.iso.apart(c.domain, vb.domain, l))
+                    .fold(0.0, f64::max);
+                let shares = shared.count() > 0;
                 let copper = if shares {
-                    (o.r + vb.r + c.clearance.max(vb.c))
+                    (o.r + vb.r + c.clearance.max(vb.c).max(apart))
                         .max(o.dr + rules.hole_cu + vb.r)
                         .max(vb.dr + rules.hole_cu + o.r)
                 } else {

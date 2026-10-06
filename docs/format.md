@@ -458,9 +458,9 @@ pollution_degree = 2               # 1, 2 or 3, default 2
 
 A net sits in one domain at most. Inside a domain, and for nets in none, the class clearances
 apply as before. Between two domains with a barrier, copper on one layer keeps the barrier's
-`clearance` (`isolation-clearance`), pads of one footprint and pours included. A pour keeps the
-barrier from the other domain's copper as it fills; on F.Cu and B.Cu it keeps the larger of
-`clearance` and `creepage`, since a fill does not measure paths around slots.
+`clearance` (`isolation-clearance`), pads of one footprint and pours included. Pours and the
+autorouter keep the barrier from the other domain's copper as they fill and route; on F.Cu and
+B.Cu they keep the larger of `clearance` and `creepage`, since neither measures paths around slots.
 
 Creepage is the shortest path between the two coppers along the outer surface they sit on
 (`creepage`). It stays on the board and goes around board cutouts and non-plated holes. A slot or

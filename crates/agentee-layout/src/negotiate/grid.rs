@@ -1,4 +1,4 @@
-use super::rules::{Need, Rules, um};
+use super::rules::{Isolation, Need, Rules, um};
 use agentee_core::footprint::PadKind;
 use agentee_core::geom::{self, P};
 use agentee_core::layout::{Layout, ViaSource};
@@ -160,6 +160,8 @@ pub struct Grid {
     bh: usize,
     bins: Vec<Vec<u32>>,
     obstacles: Vec<Obstacle>,
+    iso: Vec<Vec<u16>>,
+    isolation: Isolation,
 }
 
 struct Obstacle {
@@ -259,7 +261,8 @@ impl Grid {
                 continue;
             }
             let v = o.shape.dist(p);
-            q = q.min(v - o.clr);
+            let apart = self.isolation.apart(self.domain(net), self.domain(o.net), l);
+            q = q.min(v - o.clr.max(apart));
             if !o.edge {
                 d = d.min(v);
             }
@@ -267,9 +270,40 @@ impl Grid {
         (d, q.max(0.0))
     }
 
+    fn domain(&self, net: u16) -> Option<usize> {
+        self.isolation.domain.get(net as usize).copied().flatten()
+    }
+
+    fn stamp_iso(&mut self, shape: &Shape, layers: &[usize], net: u16, reach: f64) {
+        let own = self.domain(net);
+        let plane = self.plane();
+        let mut hits = Vec::new();
+        self.near(shape, reach, |x, y, d| hits.push((y * self.w + x, d)));
+        for d in 0..self.iso.len() {
+            if self.iso[d].is_empty() {
+                continue;
+            }
+            for &l in layers {
+                let apart = self.isolation.apart(Some(d), own, l);
+                if apart <= 0.0 {
+                    continue;
+                }
+                let map = &mut self.iso[d];
+                for &(c, dist) in &hits {
+                    let i = l * plane + c;
+                    map[i] = map[i].min(um((dist - apart).max(0.0)));
+                }
+            }
+        }
+    }
+
     fn stamp(&mut self, shape: &Shape, layers: &[usize], net: u16, clr: f64, reach: f64) {
         let mask = layers.iter().fold(0u64, |m, &l| m | 1 << l);
-        self.record(shape, mask, net, clr, false, reach);
+        let extra = self.isolation.widest(self.domain(net));
+        self.record(shape, mask, net, clr, false, reach + extra);
+        if extra > 0.0 && !self.iso.is_empty() {
+            self.stamp_iso(shape, layers, net, reach + extra);
+        }
         let plane = self.plane();
         let mut hits = Vec::new();
         self.near(shape, reach, |x, y, d| hits.push((y * self.w + x, d)));
@@ -328,8 +362,18 @@ impl Grid {
             bh: ((h as f64 * g) / rules.reach.max(0.5)).ceil() as usize + 1,
             bins: Vec::new(),
             obstacles: Vec::new(),
+            iso: Vec::new(),
+            isolation: rules.iso.clone(),
         };
         grid.bins = vec![Vec::new(); grid.bw * grid.bh];
+        if rules.iso.active() {
+            grid.iso = (0..rules.iso.gap.len())
+                .map(|d| {
+                    let used = rules.iso.domain.contains(&Some(d));
+                    if used { vec![u16::MAX; nl * w * h] } else { Vec::new() }
+                })
+                .collect();
+        }
         let layer_of = |n: &str| layout.copper.iter().position(|c| c == n);
         let reach = rules.reach;
         let board = layout.edge();
@@ -508,6 +552,18 @@ impl Grid {
         self.d[i].foreign(net) > need.d
             && self.q[i].foreign(net) > need.q
             && self.fence_ok(i % self.plane(), net)
+            && self.iso_ok(i, net, need.q)
+    }
+
+    #[inline]
+    fn iso_ok(&self, i: usize, net: u16, q: u16) -> bool {
+        if self.iso.is_empty() {
+            return true;
+        }
+        match self.domain(net) {
+            Some(d) => self.iso[d].is_empty() || self.iso[d][i] > q,
+            None => true,
+        }
     }
 
     #[inline]
@@ -521,7 +577,9 @@ impl Grid {
         let plane = self.plane();
         layers.iter().all(|&l| {
             let i = l * plane + c2;
-            self.d[i].foreign(net) > need.d && self.q[i].foreign(net) > need.q
+            self.d[i].foreign(net) > need.d
+                && self.q[i].foreign(net) > need.q
+                && self.iso_ok(i, net, need.q)
         })
     }
 

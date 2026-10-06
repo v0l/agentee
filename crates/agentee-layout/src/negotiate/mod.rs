@@ -375,7 +375,14 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             .filter(|s| shadow || !rules.cut[s.0].is_empty())
             .collect();
         if !segs.is_empty() {
-            let c = Copper { segs, vias: Vec::new(), clearance: 0.0, shadow, only_shadow: true };
+            let c = Copper {
+                segs,
+                vias: Vec::new(),
+                clearance: 0.0,
+                shadow,
+                only_shadow: true,
+                domain: None,
+            };
             soft.apply(&Soft::footprint(grid, rules, &c), true);
         }
     }
@@ -391,11 +398,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             st.dead = dead.clone();
             st.joined = st.needed.saturating_sub(st.failed.len());
             let rule = rules.rule(st.net);
-            let fp = Soft::footprint(
-                grid,
-                rules,
-                &Copper::of(&st.pieces, rule.band, &st.pads, rule.shadows),
-            );
+            let fp = Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule, &st.pads));
             soft.apply(&fp, true);
             st.fp = Some(fp);
             cold[si] = !st.failed.is_empty();
@@ -1004,11 +1007,7 @@ fn route_one(
     };
     r.joined = st.needed.saturating_sub(r.failed.len());
     let rule = env.rules.rule(st.net);
-    let fp = Soft::footprint(
-        env.grid,
-        env.rules,
-        &Copper::of(&r.pieces, rule.band, &st.pads, rule.shadows),
-    );
+    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.pieces, rule, &st.pads));
     if !env.jacobi {
         env.soft.apply(&fp, true);
     }
@@ -1629,7 +1628,7 @@ fn rip_and_retry(
             if let Some(fp) = st.fp.take() {
                 soft.apply(&fp, false);
             }
-            let clr = env.rules.rule(st.net).band;
+            let rule = env.rules.rule(st.net);
             let bad: Vec<bool> = st
                 .pieces
                 .iter()
@@ -1637,12 +1636,7 @@ fn rip_and_retry(
                     let fp = Soft::footprint(
                         env.grid,
                         env.rules,
-                        &Copper::of(
-                            std::slice::from_ref(p),
-                            clr,
-                            &st.pads,
-                            env.rules.rule(st.net).shadows,
-                        ),
+                        &Copper::of(std::slice::from_ref(p), rule, &st.pads),
                     );
                     path.iter().any(|&(b, c)| fp.0[b].binary_search(&c).is_ok())
                 })
@@ -1723,11 +1717,8 @@ fn drop_overlaps(
         }
         st.pieces = keep;
         st.joined = st.needed.saturating_sub(st.failed.len());
-        let fp = Soft::footprint(
-            grid,
-            rules,
-            &Copper::of(&st.pieces, rules.rule(st.net).band, &st.pads, rules.rule(st.net).shadows),
-        );
+        let fp =
+            Soft::footprint(grid, rules, &Copper::of(&st.pieces, rules.rule(st.net), &st.pads));
         soft.apply(&fp, true);
         st.fp = Some(fp);
     }
@@ -1748,12 +1739,13 @@ fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
     let mine = segs(p);
     states.iter().enumerate().filter(|(j, _)| *j != si).any(|(_, o)| {
         let them = rules.rule(o.net);
-        let c = me.clearance.max(them.clearance) - 1e-4;
+        let base = me.clearance.max(them.clearance);
+        let gap = |l: usize| base.max(rules.iso.apart(me.domain, them.domain, l)) - 1e-4;
         o.pieces.iter().any(|q| {
             let theirs = segs(q);
             let tt = mine.iter().any(|&(l, a, b, h)| {
                 theirs.iter().any(|&(m, x, y, k)| {
-                    l == m && geom::segment_segment_distance(a, b, x, y) - h - k < c
+                    l == m && geom::segment_segment_distance(a, b, x, y) - h - k < gap(l)
                 })
             });
             let via_seg = |vias: &[(P, usize)], segs: &[(usize, P, P, f64)]| {
@@ -1761,7 +1753,8 @@ fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
                     let o = &rules.vias[kv];
                     segs.iter().any(|&(l, a, b, h)| {
                         let d = geom::point_segment_distance(v, a, b) - h;
-                        o.layers.contains(&l) && (d - o.r < c || d - o.dr < rules.hole_cu - 1e-4)
+                        o.layers.contains(&l)
+                            && (d - o.r < gap(l) || d - o.dr < rules.hole_cu - 1e-4)
                     })
                 })
             };
@@ -1769,10 +1762,15 @@ fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
                 q.vias.iter().any(|&(w, kw)| {
                     let (a, b) = (&rules.vias[kv], &rules.vias[kw]);
                     let d = geom::dist(v, w);
-                    let shared = a.layers.iter().any(|l| b.layers.contains(l));
+                    let c = a
+                        .layers
+                        .iter()
+                        .filter(|l| b.layers.contains(l))
+                        .map(|&l| gap(l))
+                        .reduce(f64::max);
                     let holes = d - a.dr - b.r < rules.hole_cu - 1e-4
                         || d - b.dr - a.r < rules.hole_cu - 1e-4;
-                    (shared && (d - a.r - b.r < c || holes))
+                    c.is_some_and(|c| d - a.r - b.r < c || holes)
                         || d - a.dr - b.dr < rules.hole_gap - 1e-4
                 })
             });
@@ -1814,11 +1812,7 @@ fn kept(st: &NetState) -> Option<Vec<&Piece>> {
 
 fn kept_footprint(st: &NetState, rules: &Rules, grid: &Grid) -> Option<Footprint> {
     let keep: Vec<Piece> = kept(st)?.into_iter().cloned().collect();
-    Some(Soft::footprint(
-        grid,
-        rules,
-        &Copper::of(&keep, rules.rule(st.net).band, &st.pads, rules.rule(st.net).shadows),
-    ))
+    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net), &st.pads)))
 }
 
 fn within_fence(env: &Env, st: &NetState, a: &Access) -> bool {
