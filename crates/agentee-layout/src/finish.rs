@@ -897,3 +897,116 @@ pub fn widen(model: &mut Model, cfg: &EngineFile, report: &mut PhaseReport) -> b
     }
     widened > 0
 }
+
+const SINK_REACH: f64 = 1.0;
+const SINK_STEP: f64 = 0.025;
+const SINK_DEPTH: f64 = 0.1;
+
+pub fn sink_into_pours(model: &mut Model, cfg: &EngineFile, report: &mut PhaseReport) -> bool {
+    if model.ensure_base(&crate::detail::options(cfg)).is_err() {
+        return false;
+    }
+    let base = model.base.as_ref().expect("base is built");
+    let l = &model.layout;
+    let Some(plan) = model.detail.as_mut() else { return false };
+    let mut sunk = 0;
+    for a in 0..plan.tracks.len() {
+        let ta = plan.tracks[a].clone();
+        if ta.points.len() < 2 {
+            continue;
+        }
+        let Some(net) = l.nets.iter().position(|n| n.name == ta.net) else { continue };
+        let fills: Vec<&agentee_core::layout::ZoneFill> = l
+            .zones
+            .iter()
+            .filter(|z| z.net == net && z.layer == ta.layer && z.mask.len() >= z.width * z.height)
+            .collect();
+        if fills.is_empty() {
+            continue;
+        }
+        let h = ta.width.unwrap_or(l.nets[net].width) / 2.0;
+        let filled = |p: P| fills.iter().any(|z| z.filled(p));
+        let deep = |p: P| {
+            let r = h + SINK_DEPTH.max(h);
+            filled(p)
+                && (0..16).all(|k| {
+                    let t = k as f64 * std::f64::consts::TAU / 16.0;
+                    filled([p[0] + r * t.cos(), p[1] + r * t.sin()])
+                })
+        };
+        let n = ta.points.len();
+        for front in [true, false] {
+            let (e, prev) = if front {
+                (ta.points[0], ta.points[1])
+            } else {
+                (ta.points[n - 1], ta.points[n - 2])
+            };
+            let touches = (0..16).any(|k| {
+                let t = k as f64 * std::f64::consts::TAU / 16.0;
+                filled([e[0] + h * t.cos(), e[1] + h * t.sin()])
+            }) || filled(e);
+            if !touches || deep(e) {
+                continue;
+            }
+            let joined =
+                l.vias.iter().any(|v| v.net == net && geom::dist(v.at, e) <= h + v.diameter / 2.0)
+                    || l.parts.iter().flat_map(|p| &p.pads).any(|q| {
+                        q.net == Some(net)
+                            && q.copper.iter().any(|c| *c == ta.layer)
+                            && q.outlines.iter().any(|o| {
+                                geom::point_in_polygon(e, o)
+                                    || geom::polyline_polygon_distance(&[e, e], o) <= h
+                            })
+                    })
+                    || plan.tracks.iter().enumerate().any(|(j, o)| {
+                        j != a
+                            && o.net == ta.net
+                            && o.layer == ta.layer
+                            && o.points
+                                .windows(2)
+                                .any(|w| geom::point_segment_distance(e, w[0], w[1]) < 1e-3)
+                    });
+            if joined {
+                continue;
+            }
+            let len = geom::dist(e, prev);
+            if len < 1e-9 {
+                continue;
+            }
+            let u = [(e[0] - prev[0]) / len, (e[1] - prev[1]) / len];
+            let mut dirs: Vec<P> = vec![u];
+            for k in 0..16 {
+                let t = k as f64 * std::f64::consts::TAU / 16.0;
+                dirs.push([t.cos(), t.sin()]);
+            }
+            let mut best: Option<P> = None;
+            'search: for s in 1..=(SINK_REACH / SINK_STEP) as usize {
+                for d in &dirs {
+                    let q =
+                        [e[0] + d[0] * s as f64 * SINK_STEP, e[1] + d[1] * s as f64 * SINK_STEP];
+                    if !deep(q) {
+                        continue;
+                    }
+                    let mut trial = plan.tracks.clone();
+                    trial.push(RoutedTrack { points: vec![e, q], ..ta.clone() });
+                    let k = trial.len() - 1;
+                    if crate::negotiate::illegal(l, base, &trial, &[k]).is_empty() {
+                        best = Some(q);
+                        break 'search;
+                    }
+                }
+            }
+            let Some(q) = best else { continue };
+            if front {
+                plan.tracks[a].points.insert(0, q);
+            } else {
+                plan.tracks[a].points.push(q);
+            }
+            sunk += 1;
+        }
+    }
+    if sunk > 0 {
+        report.notes.push(format!("{sunk} track ends run into the pour they join"));
+    }
+    sunk > 0
+}

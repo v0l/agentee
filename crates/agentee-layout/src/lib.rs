@@ -543,6 +543,10 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             r.changed = true;
             reload_ms += d.write_route(model)?;
         }
+        if finish::sink_into_pours(model, &cfg.engine, &mut r) {
+            r.changed = true;
+            reload_ms += d.write_route(model)?;
+        }
         if finish::widen(model, &cfg.engine, &mut r) {
             r.changed = true;
             reload_ms += d.write_route(model)?;

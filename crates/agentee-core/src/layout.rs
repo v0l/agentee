@@ -852,6 +852,7 @@ fn edges(poly: &[P]) -> impl Iterator<Item = (P, P)> + '_ {
 }
 
 const FANOUT_SHARE: f64 = 4.0;
+const FANOUT_FIT: f64 = 0.005;
 
 impl LayoutFile {
     pub fn resolve(&self, cx: &Context, d: &mut Diags) -> Layout {
@@ -1135,6 +1136,18 @@ impl LayoutFile {
                         break;
                     };
                     let v = Via { source: ViaSource::Fanout(i), ..Via::of(spec, net, *c, &copper) };
+                    let inside = pad.outlines.iter().any(|o| {
+                        geom::point_in_polygon(*c, o)
+                            && (0..o.len())
+                                .map(|k| {
+                                    geom::point_segment_distance(*c, o[k], o[(k + 1) % o.len()])
+                                })
+                                .fold(f64::MAX, f64::min)
+                                >= v.diameter / 2.0 - FANOUT_FIT
+                    });
+                    if !inside {
+                        continue;
+                    }
                     let hole_cu = board.rules.min_via_hole_to_copper.to_mm();
                     let blocked = parts.iter().flat_map(|p| &p.pads).any(|q| {
                         let reach = match q.net {
