@@ -169,12 +169,31 @@ pub fn dedouble(model: &mut Model, report: &mut PhaseReport) {
 
 fn cut_doubled(tracks: &mut Vec<RoutedTrack>, width_of: &dyn Fn(&RoutedTrack) -> f64) -> usize {
     let mut cut = 0;
+    let mut skip: Vec<(usize, usize)> = Vec::new();
     for _ in 0..64 {
-        let Some((k, s, from, to)) = doubled(tracks, width_of) else { break };
+        let Some((k, s, from, to)) = doubled_except(tracks, width_of, &skip) else { break };
         let t = tracks[k].clone();
         let (a, b) = (t.points[s], t.points[s + 1]);
         let len = geom::dist(a, b);
         let at = |d: f64| [a[0] + (b[0] - a[0]) * d / len, a[1] + (b[1] - a[1]) * d / len];
+        let on_centre = |p: P| {
+            tracks.iter().enumerate().any(|(j, o)| {
+                j != k
+                    && o.net == t.net
+                    && o.layer == t.layer
+                    && o.points
+                        .windows(2)
+                        .any(|w| geom::point_segment_distance(p, w[0], w[1]) < 1e-3)
+            })
+        };
+        let whole = t.points.len() == 2 && from <= 1e-6 && to >= len - 1e-6;
+        let moves_end = !whole
+            && ((s == 0 && from <= 1e-6 && !on_centre(at(to)))
+                || (s + 2 == t.points.len() && to >= len - 1e-6 && !on_centre(at(from))));
+        if moves_end {
+            skip.push((k, s));
+            continue;
+        }
         let mut head: Vec<P> = t.points[..=s].to_vec();
         if from > 1e-6 {
             head.push(at(from));
@@ -194,12 +213,14 @@ fn cut_doubled(tracks: &mut Vec<RoutedTrack>, width_of: &dyn Fn(&RoutedTrack) ->
         }
         cut += 1;
     }
+    tracks.retain(|t| t.points.windows(2).any(|w| geom::dist(w[0], w[1]) > 1e-6));
     cut
 }
 
-fn doubled(
+fn doubled_except(
     tracks: &[RoutedTrack],
     width_of: &dyn Fn(&RoutedTrack) -> f64,
+    skip: &[(usize, usize)],
 ) -> Option<(usize, usize, f64, f64)> {
     let mut groups: std::collections::BTreeMap<(&str, &str), Vec<(usize, usize)>> =
         Default::default();
@@ -222,6 +243,9 @@ fn doubled(
                 let first = wa < wb - 1e-9 || ((wa - wb).abs() <= 1e-9 && la <= lb);
                 let ((t, k, p0, p1), (q0, q1)) =
                     if first { ((ta, ka, a0, a1), (b0, b1)) } else { ((tb, kb, b0, b1), (a0, a1)) };
+                if skip.contains(&(t, k)) {
+                    continue;
+                }
                 let Some((overlap, sep)) = parallel(p0, p1, q0, q1) else { continue };
                 if sep >= (wa + wb) / 2.0 - 1e-6 || overlap <= wa.max(wb) {
                     continue;
@@ -278,7 +302,7 @@ mod tests {
         assert_eq!(cut_doubled(&mut tracks, &width), 1);
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].points, vec![[0.0, 0.0], [10.0, 0.0]]);
-        assert!(doubled(&tracks, &width).is_none());
+        assert!(doubled_except(&tracks, &width, &[]).is_none());
     }
 
     #[test]
@@ -289,7 +313,7 @@ mod tests {
         ];
         let width = |t: &RoutedTrack| t.width.unwrap();
         assert_eq!(cut_doubled(&mut tracks, &width), 1);
-        assert!(doubled(&tracks, &width).is_none());
+        assert!(doubled_except(&tracks, &width, &[]).is_none());
         let ends: Vec<P> =
             tracks.iter().flat_map(|t| [t.points[0], *t.points.last().unwrap()]).collect();
         assert!(
@@ -464,6 +488,10 @@ enum Item {
 }
 
 fn touches(a: &Item, b: &Item) -> bool {
+    touches_how(a, b, false)
+}
+
+fn touches_how(a: &Item, b: &Item, loose: bool) -> bool {
     let poly_gap = |pts: &[P], outlines: &[Vec<P>]| {
         outlines
             .iter()
@@ -478,11 +506,24 @@ fn touches(a: &Item, b: &Item) -> bool {
     };
     match (a, b) {
         (Item::Seg(la, a0, a1, ha), Item::Seg(lb, b0, b1, hb)) => {
-            la == lb && geom::segment_segment_distance(*a0, *a1, *b0, *b1) <= ha + hb + 1e-6
+            la == lb
+                && if loose {
+                    geom::segment_segment_distance(*a0, *a1, *b0, *b1) <= ha + hb + 1e-6
+                } else {
+                    [*a0, *a1].iter().any(|p| geom::point_segment_distance(*p, *b0, *b1) < 1e-3)
+                        || [*b0, *b1]
+                            .iter()
+                            .any(|p| geom::point_segment_distance(*p, *a0, *a1) < 1e-3)
+                }
         }
         (Item::Seg(l, s0, s1, h), Item::Via(ls, c, r))
         | (Item::Via(ls, c, r), Item::Seg(l, s0, s1, h)) => {
-            ls.contains(l) && geom::point_segment_distance(*c, *s0, *s1) <= h + r + 1e-6
+            ls.contains(l)
+                && if loose {
+                    geom::point_segment_distance(*c, *s0, *s1) <= h + r + 1e-6
+                } else {
+                    geom::point_segment_distance(*c, *s0, *s1) < 1e-3
+                }
         }
         (Item::Seg(l, s0, s1, h), Item::Pad(ls, o))
         | (Item::Pad(ls, o), Item::Seg(l, s0, s1, h)) => {
@@ -560,8 +601,9 @@ pub fn drop_fragments(model: &mut Model, report: &mut PhaseReport) {
         }
         let mine: Vec<Item> =
             t.points.windows(2).map(|w| Item::Seg(layer, w[0], w[1], h)).collect();
-        let neighbours: Vec<usize> =
-            (0..items.len()).filter(|&i| mine.iter().any(|m| touches(m, &items[i]))).collect();
+        let neighbours: Vec<usize> = (0..items.len())
+            .filter(|&i| mine.iter().any(|m| touches_how(m, &items[i], true)))
+            .collect();
         let mut root: Vec<usize> = (0..items.len()).collect();
         fn find(r: &mut [usize], i: usize) -> usize {
             let mut x = i;
@@ -596,8 +638,6 @@ pub fn drop_fragments(model: &mut Model, report: &mut PhaseReport) {
     }
 }
 
-const JOINT_REACH: f64 = 1.0;
-
 fn closest_on(p: P, a: P, b: P) -> P {
     let d = [b[0] - a[0], b[1] - a[1]];
     let l2 = d[0] * d[0] + d[1] * d[1];
@@ -619,112 +659,241 @@ pub fn close_joints(model: &mut Model, cfg: &EngineFile, report: &mut PhaseRepor
         t.width.unwrap_or_else(|| l.nets.iter().find(|n| n.name == t.net).map_or(0.1, |n| n.width))
             / 2.0
     };
-    let length = |t: &RoutedTrack| t.points.windows(2).map(|w| geom::dist(w[0], w[1])).sum::<f64>();
-    let seg_gap = |a: &RoutedTrack, b: &RoutedTrack| {
-        a.points
-            .windows(2)
-            .flat_map(|w| {
-                b.points
-                    .windows(2)
-                    .map(move |v| geom::segment_segment_distance(w[0], w[1], v[0], v[1]))
-            })
-            .fold(f64::MAX, f64::min)
-    };
     let end_gap = |e: P, b: &RoutedTrack| {
         b.points
             .windows(2)
             .map(|w| geom::point_segment_distance(e, w[0], w[1]))
             .fold(f64::MAX, f64::min)
     };
-    let frag: Vec<bool> = plan.tracks.iter().map(|t| length(t) <= 2.0 * half_of(t)).collect();
+    let debug = std::env::var("AGENTEE_JOINT_DEBUG").is_ok();
     let mut closed = 0;
-    for a in 0..plan.tracks.len() {
-        let ta = plan.tracks[a].clone();
-        let ha = half_of(&ta);
-        if ta.points.len() < 2 || length(&ta) <= 2.0 * ha {
-            continue;
-        }
-        let Some(net) = l.nets.iter().position(|n| n.name == ta.net) else { continue };
-        let same: Vec<usize> = (0..plan.tracks.len())
-            .filter(|&j| j != a && plan.tracks[j].net == ta.net && plan.tracks[j].layer == ta.layer)
-            .collect();
-        let is_frag = |j: usize| frag[j];
-        for (front, e) in [(true, ta.points[0]), (false, *ta.points.last().unwrap())] {
-            let fixed = l
-                .vias
-                .iter()
-                .any(|v| v.net == net && geom::dist(v.at, e) <= ha + v.diameter / 2.0 + 1e-6)
-                || l.parts.iter().flat_map(|p| &p.pads).any(|q| {
+    for _ in 0..4 {
+        let before = closed;
+        for a in 0..plan.tracks.len() {
+            let ta = plan.tracks[a].clone();
+            let ha = half_of(&ta);
+            if ta.points.len() < 2 {
+                continue;
+            }
+            let Some(net) = l.nets.iter().position(|n| n.name == ta.net) else { continue };
+            let same: Vec<usize> = (0..plan.tracks.len())
+                .filter(|&j| {
+                    j != a && plan.tracks[j].net == ta.net && plan.tracks[j].layer == ta.layer
+                })
+                .collect();
+            for (front, e) in [(true, ta.points[0]), (false, *ta.points.last().unwrap())] {
+                let mut targets: Vec<P> = l
+                    .vias
+                    .iter()
+                    .filter(|v| {
+                        v.net == net
+                            && v.layers.iter().any(|c| *c == ta.layer)
+                            && geom::dist(v.at, e) <= ha + v.diameter / 2.0 + 1e-6
+                    })
+                    .map(|v| v.at)
+                    .collect();
+                targets.extend(
+                    l.parts
+                        .iter()
+                        .flat_map(|p| &p.pads)
+                        .filter(|q| {
+                            q.net == Some(net)
+                                && q.copper.iter().any(|c| *c == ta.layer)
+                                && q.outlines.iter().any(|o| {
+                                    geom::point_in_polygon(e, o)
+                                        || geom::polyline_polygon_distance(&[e, e], o) <= ha + 1e-6
+                                })
+                        })
+                        .filter_map(|q| {
+                            let mut b = agentee_core::graphic::Bounds::EMPTY;
+                            q.outlines.iter().flatten().for_each(|r| b.add(*r));
+                            if b.is_empty() {
+                                return None;
+                            }
+                            let c = b.center();
+                            let reach = |k: usize| ((b.max[k] - b.min[k]) / 2.0 - ha).max(0.0);
+                            Some([
+                                e[0].clamp(c[0] - reach(0), c[0] + reach(0)),
+                                e[1].clamp(c[1] - reach(1), c[1] + reach(1)),
+                            ])
+                        }),
+                );
+                let on_fixed = targets.iter().any(|c| geom::dist(*c, e) < 1e-3);
+                let in_pad = l.parts.iter().flat_map(|p| &p.pads).any(|q| {
                     q.net == Some(net)
                         && q.copper.iter().any(|c| *c == ta.layer)
                         && q.outlines.iter().any(|o| {
                             geom::point_in_polygon(e, o)
-                                || geom::polyline_polygon_distance(&[e, e], o) <= ha + 1e-6
+                                && (0..o.len())
+                                    .map(|k| {
+                                        geom::point_segment_distance(e, o[k], o[(k + 1) % o.len()])
+                                    })
+                                    .fold(f64::MAX, f64::min)
+                                    >= ha - 1e-6
                         })
-                })
-                || l.zones.iter().any(|z| z.net == net && z.layer == ta.layer && z.filled(e));
-            let real_touch = same.iter().any(|&j| {
-                !is_frag(j) && end_gap(e, &plan.tracks[j]) <= ha + half_of(&plan.tracks[j]) + 1e-6
-            });
-            if fixed || real_touch {
-                continue;
-            }
-            let mut cluster: Vec<usize> = same
-                .iter()
-                .copied()
-                .filter(|&j| is_frag(j))
-                .filter(|&j| end_gap(e, &plan.tracks[j]) <= ha + half_of(&plan.tracks[j]) + 1e-6)
-                .collect();
-            let mut k = 0;
-            while k < cluster.len() {
-                let c = &plan.tracks[cluster[k]];
-                let hc = half_of(c);
-                for &j in &same {
-                    if is_frag(j)
-                        && !cluster.contains(&j)
-                        && seg_gap(c, &plan.tracks[j]) <= hc + half_of(&plan.tracks[j]) + 1e-6
-                    {
-                        cluster.push(j);
-                    }
-                }
-                k += 1;
-            }
-            if cluster.is_empty() {
-                continue;
-            }
-            let mut best: Option<(f64, P)> = None;
-            for &b in same.iter().filter(|&&j| !is_frag(j)) {
-                let tb = &plan.tracks[b];
-                let hb = half_of(tb);
-                let reached = cluster
-                    .iter()
-                    .any(|&c| seg_gap(&plan.tracks[c], tb) <= hb + half_of(&plan.tracks[c]) + 1e-6);
-                if !reached {
+                });
+                if on_fixed || in_pad {
                     continue;
                 }
-                for w in tb.points.windows(2) {
-                    let q = closest_on(e, w[0], w[1]);
-                    let d = geom::dist(q, e);
-                    if d <= JOINT_REACH && best.is_none_or(|b| d < b.0) {
-                        best = Some((d, q));
+                let mut best: Option<(f64, P, f64)> = targets
+                    .iter()
+                    .map(|c| (geom::dist(*c, e), *c, ha))
+                    .min_by(|x, y| x.0.total_cmp(&y.0));
+                if best.is_none() {
+                    let mut on_centre = false;
+                    for &b in &same {
+                        let tb = &plan.tracks[b];
+                        let hb = half_of(tb);
+                        let gap = end_gap(e, tb);
+                        if gap < 1e-3 {
+                            on_centre = true;
+                            break;
+                        }
+                        if gap > ha + hb + 1e-6 {
+                            continue;
+                        }
+                        for w in tb.points.windows(2) {
+                            let q = closest_on(e, w[0], w[1]);
+                            let d = geom::dist(q, e);
+                            if best.is_none_or(|b| d < b.0) {
+                                best = Some((d, q, hb));
+                            }
+                        }
+                    }
+                    if on_centre {
+                        continue;
                     }
                 }
+                let Some((_, q, hq)) = best else { continue };
+                let own = ta
+                    .points
+                    .windows(2)
+                    .any(|w| geom::point_segment_distance(q, w[0], w[1]) < 1e-3);
+                if own {
+                    continue;
+                }
+                let probe = |w: f64| {
+                    let mut trial = plan.tracks.clone();
+                    trial.push(RoutedTrack { points: vec![e, q], width: Some(w), ..ta.clone() });
+                    let k = trial.len() - 1;
+                    crate::negotiate::illegal(l, base, &trial, &[k]).is_empty()
+                };
+                if probe(2.0 * ha) {
+                    if front {
+                        plan.tracks[a].points.insert(0, q);
+                    } else {
+                        plan.tracks[a].points.push(q);
+                    }
+                    closed += 1;
+                    continue;
+                }
+                if hq < ha - 1e-9 && probe(2.0 * hq) {
+                    plan.tracks.push(RoutedTrack {
+                        points: vec![e, q],
+                        width: Some(2.0 * hq),
+                        ..ta.clone()
+                    });
+                    closed += 1;
+                    continue;
+                }
+                if debug {
+                    eprintln!(
+                        "joint refused {} {} {:?} -> {:?} w {}",
+                        ta.net,
+                        ta.layer,
+                        e,
+                        q,
+                        2.0 * ha
+                    );
+                }
             }
-            let Some((_, q)) = best else { continue };
-            let mut trial = plan.tracks.clone();
-            if front {
-                trial[a].points.insert(0, q);
-            } else {
-                trial[a].points.push(q);
-            }
-            if crate::negotiate::illegal(l, base, &trial, &[a]).is_empty() {
-                plan.tracks = trial;
-                closed += 1;
-            }
+        }
+        if closed == before {
+            break;
         }
     }
     if closed > 0 {
-        report.notes.push(format!("{closed} joints closed onto the track they met"));
+        report.notes.push(format!("{closed} track ends extended onto the centre they met"));
     }
     closed > 0
+}
+
+pub fn widen(model: &mut Model, cfg: &EngineFile, report: &mut PhaseReport) -> bool {
+    if model.ensure_base(&crate::detail::options(cfg)).is_err() {
+        return false;
+    }
+    let base = model.base.as_ref().expect("base is built");
+    let grid = &base.grid;
+    let l = &model.layout;
+    let Some(plan) = model.detail.as_mut() else { return false };
+    let step = grid.g * 0.5;
+    let mut widened = 0;
+    let mut extra: Vec<RoutedTrack> = Vec::new();
+    for t in plan.tracks.iter_mut() {
+        let Some(w) = t.width else { continue };
+        let (Some(net), Some(layer)) = (
+            l.nets.iter().position(|n| n.name == t.net),
+            l.copper.iter().position(|c| *c == t.layer),
+        ) else {
+            continue;
+        };
+        let Some(rule) = base.rules.nets.get(net).and_then(|r| r.as_ref()) else { continue };
+        let full = rule.width[layer];
+        if w >= full - 1e-9 || t.points.len() < 2 {
+            continue;
+        }
+        let room = |p: P| {
+            let (d, q) = grid.exact(layer, p, net as u16);
+            (d - rule.clearance).min(q) - 0.002
+        };
+        let fits = |p: P| room(p) >= full / 2.0;
+        let pts = t.points.clone();
+        let samples = |a: P, b: P| {
+            let n = (geom::dist(a, b) / step).ceil().max(1.0) as usize;
+            (0..=n).map(move |k| {
+                let f = k as f64 / n as f64;
+                [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]
+            })
+        };
+        let last = pts.len() - 1;
+        if !fits(pts[last]) {
+            continue;
+        }
+        let mut cut: Option<(usize, P)> = None;
+        'scan: for s in 0..last {
+            for p in samples(pts[s], pts[s + 1]) {
+                if fits(p) && samples(p, pts[last]).all(fits) {
+                    let tail: Vec<P> =
+                        std::iter::once(p).chain(pts[s + 1..].iter().copied()).collect();
+                    let ok = tail.windows(2).all(|v| samples(v[0], v[1]).all(fits));
+                    if ok {
+                        cut = Some((s, p));
+                        break 'scan;
+                    }
+                }
+            }
+        }
+        let Some((s, p)) = cut else { continue };
+        if geom::dist(p, pts[last]) < grid.g {
+            continue;
+        }
+        let mut wide: Vec<P> = vec![p];
+        wide.extend(pts[s + 1..].iter().copied());
+        let mut narrow: Vec<P> = pts[..=s].to_vec();
+        narrow.push(p);
+        let narrow_len: f64 = narrow.windows(2).map(|v| geom::dist(v[0], v[1])).sum();
+        extra.push(RoutedTrack { points: wide, width: None, ..t.clone() });
+        if narrow_len < 1e-6 {
+            t.points.clear();
+        } else {
+            t.points = narrow;
+        }
+        widened += 1;
+    }
+    plan.tracks.retain(|t| t.points.len() >= 2);
+    plan.tracks.extend(extra);
+    if widened > 0 {
+        report.notes.push(format!("{widened} necks shortened to where the class width fits"));
+    }
+    widened > 0
 }
