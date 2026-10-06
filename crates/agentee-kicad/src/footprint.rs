@@ -435,6 +435,7 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
             .map(Length::mm),
         overhang: false,
         mlcc: None,
+        spark_gaps: Vec::new(),
         net_tie_pad_groups: root
             .find("net_tie_pad_groups")
             .map(|g| {

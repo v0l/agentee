@@ -146,9 +146,24 @@ pub struct FootprintFile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub net_tie_pad_groups: Vec<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spark_gaps: Vec<SparkGapFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pads: Vec<PadFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphics: Vec<GraphicFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SparkGapFile {
+    pub pads: Vec<String>,
+    pub gap: Length,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SparkGap {
+    pub pads: [String; 2],
+    pub gap: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -270,6 +285,7 @@ pub struct Footprint {
     pub overhang: bool,
     pub mlcc: Option<bool>,
     pub net_tie_pad_groups: Vec<Vec<String>>,
+    pub spark_gaps: Vec<SparkGap>,
     pub pads: Vec<Pad>,
     pub graphics: Vec<Graphic>,
 }
@@ -378,6 +394,27 @@ impl FootprintFile {
                 Mount::Other
             }
         });
+        let mut spark_gaps = Vec::new();
+        for (i, s) in self.spark_gaps.iter().enumerate() {
+            let at = format!("spark_gaps[{i}]");
+            let [a, b] = s.pads.as_slice() else {
+                d.error(&at, "a spark gap names its two electrode pads");
+                continue;
+            };
+            if a == b {
+                d.error(&at, "the two electrodes of a spark gap are different pads");
+                continue;
+            }
+            for n in [a, b] {
+                if !pads.iter().any(|p| &p.number == n) {
+                    d.error(&at, format!("spark gap pad `{n}` is not a pad of this footprint"));
+                }
+            }
+            if s.gap <= Length::ZERO {
+                d.error(&at, "a spark gap needs a positive `gap`");
+            }
+            spark_gaps.push(SparkGap { pads: [a.clone(), b.clone()], gap: s.gap.to_mm() });
+        }
         Footprint {
             name: self.name.clone(),
             description: self.description.clone(),
@@ -393,6 +430,7 @@ impl FootprintFile {
             overhang: self.overhang,
             mlcc: self.mlcc,
             net_tie_pad_groups: self.net_tie_pad_groups.clone(),
+            spark_gaps,
             pads,
             graphics,
         }
@@ -424,6 +462,12 @@ pub fn graphic_path(g: &Graphic) -> Vec<P> {
 }
 
 impl Footprint {
+    pub fn spark_gap(&self, a: &str, b: &str) -> Option<&SparkGap> {
+        self.spark_gaps
+            .iter()
+            .find(|s| (s.pads[0] == a && s.pads[1] == b) || (s.pads[0] == b && s.pads[1] == a))
+    }
+
     pub fn net_tie_group(&self, number: &str) -> Option<&[String]> {
         self.net_tie_pad_groups.iter().find(|g| g.iter().any(|n| n == number)).map(Vec::as_slice)
     }

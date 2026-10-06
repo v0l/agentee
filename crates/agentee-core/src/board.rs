@@ -20,8 +20,72 @@ pub struct BoardFile {
     pub vias: Vec<ViaFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub netclasses: Vec<NetclassFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub domains: Vec<DomainFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barriers: Vec<BarrierFile>,
     #[serde(default)]
     pub drc: DrcFile,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DomainFile {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub classes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nets: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BarrierFile {
+    pub between: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clearance: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub creepage: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pollution_degree: Option<u8>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Domain {
+    pub name: String,
+    pub description: String,
+    pub classes: Vec<String>,
+    pub nets: Vec<String>,
+}
+
+impl Domain {
+    pub fn holds(&self, net: &str, class: &str) -> bool {
+        self.classes.iter().any(|c| c == class)
+            || self.nets.iter().any(|g| crate::layout::glob(g, net))
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Barrier {
+    pub between: [usize; 2],
+    pub description: String,
+    pub clearance: Option<Length>,
+    pub creepage: Option<Length>,
+    pub pollution_degree: u8,
+}
+
+impl Barrier {
+    pub fn groove(&self) -> Length {
+        Length::mm(match self.pollution_degree {
+            1 => 0.25,
+            2 => 1.0,
+            _ => 1.5,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1099,7 +1163,23 @@ pub struct Board {
     pub rules: Rules,
     pub vias: Vec<Via>,
     pub netclasses: Vec<Netclass>,
+    pub domains: Vec<Domain>,
+    pub barriers: Vec<Barrier>,
     pub drc: DrcFile,
+}
+
+impl Board {
+    pub fn domain_of(&self, net: &str, class: &str) -> Vec<usize> {
+        (0..self.domains.len()).filter(|&i| self.domains[i].holds(net, class)).collect()
+    }
+
+    pub fn barrier(&self, a: Option<usize>, b: Option<usize>) -> Option<&Barrier> {
+        let (a, b) = (a?, b?);
+        if a == b {
+            return None;
+        }
+        self.barriers.iter().find(|x| x.between == [a, b] || x.between == [b, a])
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1235,6 +1315,7 @@ impl BoardFile {
             })
             .collect();
 
+        let (domains, barriers) = self.resolve_isolation(d);
         Board {
             name: self.name.clone(),
             description: self.description.clone(),
@@ -1245,8 +1326,94 @@ impl BoardFile {
             rules,
             vias,
             netclasses,
+            domains,
+            barriers,
             drc: self.drc.clone(),
         }
+    }
+
+    fn resolve_isolation(&self, d: &mut Diags) -> (Vec<Domain>, Vec<Barrier>) {
+        let mut domains: Vec<Domain> = Vec::new();
+        for (i, f) in self.domains.iter().enumerate() {
+            let at = format!("domains[{i}]");
+            if domains.iter().any(|x| x.name == f.name) {
+                d.error(&at, format!("domain `{}` is named twice", f.name));
+                continue;
+            }
+            if f.classes.is_empty() && f.nets.is_empty() {
+                d.error(&at, format!("domain `{}` needs `classes` or `nets`", f.name));
+            }
+            for c in &f.classes {
+                if !self.netclasses.iter().any(|n| &n.name == c) {
+                    d.error(
+                        &at,
+                        format!("domain `{}` names netclass `{c}`, which is not defined", f.name),
+                    );
+                }
+            }
+            domains.push(Domain {
+                name: f.name.clone(),
+                description: f.description.clone(),
+                classes: f.classes.clone(),
+                nets: f.nets.clone(),
+            });
+        }
+        let mut barriers: Vec<Barrier> = Vec::new();
+        for (i, f) in self.barriers.iter().enumerate() {
+            let at = format!("barriers[{i}]");
+            let ends: Vec<Option<usize>> =
+                f.between.iter().map(|n| domains.iter().position(|x| &x.name == n)).collect();
+            if f.between.len() != 2 {
+                d.error(&at, "`between` names two domains");
+                continue;
+            }
+            let (Some(a), Some(b)) = (ends[0], ends[1]) else {
+                for (n, e) in f.between.iter().zip(&ends) {
+                    if e.is_none() {
+                        d.error(&at, format!("`{n}` is not a domain"));
+                    }
+                }
+                continue;
+            };
+            if a == b {
+                d.error(
+                    &at,
+                    format!("a barrier joins two different domains, not `{}` twice", f.between[0]),
+                );
+                continue;
+            }
+            if barriers.iter().any(|x| x.between == [a, b] || x.between == [b, a]) {
+                d.error(
+                    &at,
+                    format!("`{}` and `{}` already have a barrier", f.between[0], f.between[1]),
+                );
+                continue;
+            }
+            if f.clearance.is_none() && f.creepage.is_none() {
+                d.error(&at, "a barrier needs `clearance`, `creepage` or both");
+                continue;
+            }
+            let pollution_degree = f.pollution_degree.unwrap_or(2);
+            if !(1..=3).contains(&pollution_degree) {
+                d.error(&at, "`pollution_degree` is 1, 2 or 3");
+            }
+            if let (Some(c), Some(clear)) = (f.creepage, f.clearance)
+                && c < clear
+            {
+                d.warn(
+                    &at,
+                    "`creepage` is under `clearance`, so the surface path is never the limit",
+                );
+            }
+            barriers.push(Barrier {
+                between: [a, b],
+                description: f.description.clone(),
+                clearance: f.clearance,
+                creepage: f.creepage,
+                pollution_degree,
+            });
+        }
+        (domains, barriers)
     }
 
     fn resolve_stackup(&self, d: &mut Diags) -> Stackup {

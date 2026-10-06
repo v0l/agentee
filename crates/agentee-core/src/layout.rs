@@ -1491,6 +1491,12 @@ impl LayoutFile {
             other.net.is_some()
                 && p.pads.iter().any(|q| q.net == other.net && group.contains(&q.number))
         };
+        let domain_of: Vec<Option<usize>> =
+            nets.iter().map(|n| board.domain_of(&n.name, &n.class).first().copied()).collect();
+        let isolated: Vec<bool> = domain_of.iter().map(Option::is_some).collect();
+        let same_part = |a: &Item, b: &Item| {
+            matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q)
+        };
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1505,14 +1511,15 @@ impl LayoutFile {
                     && p1 == p2
                 {
                     let number = |k: usize| parts[p1].pads[k].number.as_str();
-                    if a.net.is_some()
-                        && a.net == b.net
-                        && !number(k1).is_empty()
-                        && number(k1) == number(k2)
-                    {
-                        uf.union(i, j);
+                    if a.net.is_some() && a.net == b.net {
+                        if !number(k1).is_empty() && number(k1) == number(k2) {
+                            uf.union(i, j);
+                        }
+                        continue;
                     }
-                    continue;
+                    if parts[p1].footprint.spark_gap(number(k1), number(k2)).is_some() {
+                        continue;
+                    }
                 }
                 if !a.layers.iter().any(|l| b.layers.contains(l)) {
                     continue;
@@ -1544,6 +1551,12 @@ impl LayoutFile {
                     continue;
                 }
                 let need = match (footprint_clearance(a), footprint_clearance(b)) {
+                    (None, None) if same_part(a, b) => [a.net, b.net]
+                        .into_iter()
+                        .flatten()
+                        .filter(|&n| isolated[n])
+                        .map(|n| nets[n].clearance)
+                        .fold(min_clearance, f64::max),
                     (None, None) => clearance_of(a.net).max(clearance_of(b.net)),
                     (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
                 };
@@ -1721,7 +1734,16 @@ impl LayoutFile {
                     min_width: z.min_width.map(Length::to_mm).unwrap_or(0.25),
                     min_island_area: z.min_island_area.unwrap_or(2.0),
                 };
-                let hash = spec.hash(&items, &clearance_of, &blocker_hashes);
+                let outer = copper.first() == Some(layer) || copper.last() == Some(layer);
+                let zone_gap = |n: Option<usize>| {
+                    let barrier = n.and_then(|n| board.barrier(domain_of[net], domain_of[n]));
+                    let apart = barrier.map_or(0.0, |b| {
+                        let surface = if outer { b.creepage } else { None };
+                        b.clearance.max(surface).map_or(0.0, Length::to_mm)
+                    });
+                    clearance_of(n).max(apart)
+                };
+                let hash = spec.hash(&items, &zone_gap, &blocker_hashes);
                 let stored = self.fills.iter().find(|f| f.zone == zi && &f.layer == layer);
                 let fresh = stored.filter(|f| f.hash == format!("{hash:016x}"));
                 if pour::capturing() {
@@ -1762,7 +1784,7 @@ impl LayoutFile {
                         edge_clear,
                         clearance,
                         &items,
-                        &clearance_of,
+                        &zone_gap,
                         &layer_cutouts,
                         &blockers,
                         spec.min_width,

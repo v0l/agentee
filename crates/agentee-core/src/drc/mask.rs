@@ -41,6 +41,7 @@ fn mask_web(cx: &Ctx, r: &mut Report) {
                 let b = &parts[*pb].pads[*kb];
                 if (a.net.is_some() && a.net == b.net)
                     || (pa == pb && !parts[*pa].footprint.mask_web)
+                    || (pa == pb && parts[*pa].footprint.spark_gap(&a.number, &b.number).is_some())
                     || !(grown.overlaps(bb) || grown.contains(bb) || bb.contains(&grown))
                 {
                     continue;

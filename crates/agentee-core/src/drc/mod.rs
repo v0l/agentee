@@ -59,6 +59,10 @@ pub struct Setup {
     pub small_chips: bool,
     pub tall_parts: bool,
     pub test_points: bool,
+    pub domains: bool,
+    pub barrier_clearance: bool,
+    pub creepage: bool,
+    pub spark_gaps: bool,
 }
 
 impl Setup {
@@ -75,6 +79,9 @@ impl Setup {
             inner_oz: inner.split_last().and_then(|(_, v)| v.iter().copied().reduce(f64::max)),
             blind_buried: board.vias.iter().any(|v| v.kind != crate::board::ViaKind::Through),
             impedance: board.netclasses.iter().any(|n| n.impedance.is_some()),
+            domains: !board.domains.is_empty(),
+            barrier_clearance: board.barriers.iter().any(|b| b.clearance.is_some()),
+            creepage: board.barriers.iter().any(|b| b.creepage.is_some()),
             ..Setup::default()
         }
     }
@@ -97,6 +104,7 @@ impl Setup {
             small_chips: mechanical::has_small_chips(cx.parts),
             tall_parts: mechanical::has_tall_parts(cx.parts),
             test_points: cx.parts.iter().any(crate::testpoint::is_test_point),
+            spark_gaps: cx.parts.iter().any(|p| !p.footprint.spark_gaps.is_empty()),
             ..Setup::of_board(cx.board)
         }
     }
@@ -651,6 +659,7 @@ pub fn registry() -> impl Iterator<Item = &'static Rule> {
         .chain(signal::RULES)
         .chain(test::RULES)
         .chain(placement::RULES)
+        .chain(isolation::RULES)
 }
 
 pub fn find(id: &str) -> Option<&'static Rule> {
@@ -736,6 +745,7 @@ mod assembly;
 mod copper;
 mod courtyard;
 mod drill;
+mod isolation;
 mod mask;
 mod mechanical;
 mod placement;
