@@ -547,7 +547,14 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             r.changed = true;
             reload_ms += d.write_route(model)?;
         }
-        if finish::widen(model, &cfg.engine, &mut r) {
+        let mut last = finish::widen(model, &cfg.engine, &mut r);
+        last |= finish::tidy_tracks(model, &mut r);
+        let kept = r.changed;
+        r.changed = false;
+        finish::drop_fragments(model, &mut r);
+        last |= r.changed;
+        r.changed |= kept;
+        if last {
             r.changed = true;
             reload_ms += d.write_route(model)?;
         }

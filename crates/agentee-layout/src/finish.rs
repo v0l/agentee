@@ -1010,3 +1010,71 @@ pub fn sink_into_pours(model: &mut Model, cfg: &EngineFile, report: &mut PhaseRe
     }
     sunk > 0
 }
+
+fn tidy(points: &[P]) -> Vec<P> {
+    let mut out: Vec<P> = Vec::new();
+    for &q in points {
+        if out.last().is_some_and(|l| geom::dist(*l, q) < 1e-6) {
+            continue;
+        }
+        while out.len() >= 2 {
+            let (a, b) = (out[out.len() - 2], out[out.len() - 1]);
+            let cross = (b[0] - a[0]) * (q[1] - b[1]) - (b[1] - a[1]) * (q[0] - b[0]);
+            let dot = (b[0] - a[0]) * (q[0] - b[0]) + (b[1] - a[1]) * (q[1] - b[1]);
+            if cross.abs() > 1e-9 || dot < 0.0 {
+                break;
+            }
+            out.pop();
+        }
+        out.push(q);
+    }
+    let on = |p: P, run: &[P]| {
+        run.windows(2).any(|w| geom::point_segment_distance(p, w[0], w[1]) < 1e-6)
+    };
+    while out.len() > 2 && on(out[out.len() - 1], &out[..out.len() - 1]) {
+        out.pop();
+    }
+    while out.len() > 2 && on(out[0], &out[1..]) {
+        out.remove(0);
+    }
+    out
+}
+
+pub fn tidy_tracks(model: &mut Model, report: &mut PhaseReport) -> bool {
+    let Some(plan) = model.detail.as_mut() else { return false };
+    let mut changed = 0;
+    for t in plan.tracks.iter_mut() {
+        let new = tidy(&t.points);
+        if new != t.points {
+            t.points = new;
+            changed += 1;
+        }
+    }
+    plan.tracks.retain(|t| t.points.len() >= 2);
+    if changed > 0 {
+        report.notes.push(format!("{changed} tracks tidied: repeated points and fold-backs"));
+    }
+    changed > 0
+}
+
+#[cfg(test)]
+mod tidy_tests {
+    use super::tidy;
+
+    #[test]
+    fn fold_back_end_is_dropped() {
+        let t = tidy(&[[0.0, 35.85], [0.0, 35.75], [0.0, 35.7], [0.0, 35.85]]);
+        assert_eq!(t, vec![[0.0, 35.85], [0.0, 35.7]]);
+    }
+
+    #[test]
+    fn corner_is_kept() {
+        let pts = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        assert_eq!(tidy(&pts), pts);
+    }
+
+    #[test]
+    fn collinear_points_merge() {
+        assert_eq!(tidy(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]), vec![[0.0, 0.0], [2.0, 0.0]]);
+    }
+}
