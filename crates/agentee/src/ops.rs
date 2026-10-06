@@ -1938,62 +1938,143 @@ pub struct PartsQuery<'a> {
     pub config: Option<&'a Path>,
 }
 
-pub fn parts(p: &Project, name: &str, q: &PartsQuery) -> Result<agentee_parts::Report, String> {
-    use agentee_parts::{Distributor, farnell::Farnell, mouser::Mouser};
+fn parts_schematic<'a>(
+    p: &'a Project,
+    name: &str,
+) -> Result<&'a agentee_core::schematic::Schematic, String> {
     let r = find(p, &format!("pcb:{name}"))
         .or_else(|_| find(p, &format!("sch:{name}")))
         .or_else(|_| find(p, name))?;
-    let sch = match r {
+    match r {
         ItemRef::Layout(i) => {
             let s = &p.layouts[i].item.schematic;
-            &p.schematics
+            Ok(&p
+                .schematics
                 .iter()
                 .find(|e| &e.name == s)
                 .ok_or("the layout's schematic is missing")?
-                .item
+                .item)
         }
-        ItemRef::Schematic(i) => &p.schematics[i].item,
-        _ => return Err(format!("`{name}` is not a layout or schematic")),
-    };
-    let cfg = agentee_parts::config::load(q.config)?;
-    let wants = |d: &str| {
-        q.distributors.is_empty() || q.distributors.iter().any(|w| w.eq_ignore_ascii_case(d))
-    };
-    let mouser = cfg.mouser_key().filter(|_| wants("mouser")).map(Mouser::new);
-    let store = q.farnell_store.unwrap_or(cfg.farnell_store()).to_string();
-    let currency = cfg.farnell.as_ref().and_then(|f| f.currency.as_deref());
-    let farnell =
-        cfg.farnell_key().filter(|_| wants("farnell")).map(|k| Farnell::new(k, &store, currency));
-    let mut sources: Vec<&dyn Distributor> = Vec::new();
-    if let Some(m) = &mouser {
-        sources.push(m);
+        ItemRef::Schematic(i) => Ok(&p.schematics[i].item),
+        _ => Err(format!("`{name}` is not a layout or schematic")),
     }
-    if let Some(f) = &farnell {
-        sources.push(f);
+}
+
+struct Distributors {
+    mouser: Option<agentee_parts::mouser::Mouser>,
+    farnell: Option<agentee_parts::farnell::Farnell>,
+}
+
+impl Distributors {
+    fn open(q: &PartsQuery) -> Result<Self, String> {
+        use agentee_parts::{farnell::Farnell, mouser::Mouser};
+        let cfg = agentee_parts::config::load(q.config)?;
+        let wants = |d: &str| {
+            q.distributors.is_empty() || q.distributors.iter().any(|w| w.eq_ignore_ascii_case(d))
+        };
+        let store = q.farnell_store.unwrap_or(cfg.farnell_store()).to_string();
+        let currency = cfg.farnell.as_ref().and_then(|f| f.currency.as_deref());
+        let d = Distributors {
+            mouser: cfg.mouser_key().filter(|_| wants("mouser")).map(Mouser::new),
+            farnell: cfg
+                .farnell_key()
+                .filter(|_| wants("farnell"))
+                .map(|k| Farnell::new(k, &store, currency)),
+        };
+        if d.mouser.is_none() && d.farnell.is_none() {
+            return Err(format!(
+                "no distributor API key for {} in {}",
+                if q.distributors.is_empty() {
+                    "Mouser or Farnell".to_string()
+                } else {
+                    q.distributors.join(", ")
+                },
+                agentee_parts::config::default_path()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default()
+            ));
+        }
+        Ok(d)
     }
-    if sources.is_empty() {
-        return Err(format!(
-            "no distributor API key for {} in {}",
-            if q.distributors.is_empty() {
-                "Mouser or Farnell".to_string()
-            } else {
-                q.distributors.join(", ")
-            },
-            agentee_parts::config::default_path()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default()
-        ));
+
+    fn list(&self) -> Vec<&dyn agentee_parts::Distributor> {
+        let mut v: Vec<&dyn agentee_parts::Distributor> = Vec::new();
+        if let Some(m) = &self.mouser {
+            v.push(m);
+        }
+        if let Some(f) = &self.farnell {
+            v.push(f);
+        }
+        v
     }
-    let mut lines = agentee_parts::bom(sch);
+}
+
+fn bom_lines(
+    p: &Project,
+    name: &str,
+    q: &PartsQuery,
+) -> Result<Vec<agentee_parts::BomLine>, String> {
+    let mut lines = agentee_parts::bom(parts_schematic(p, name)?);
     if !q.refs.is_empty() {
         lines.retain(|l| l.refs.iter().any(|r| q.refs.iter().any(|w| w == r)));
     }
+    Ok(lines)
+}
+
+pub fn parts(p: &Project, name: &str, q: &PartsQuery) -> Result<agentee_parts::Report, String> {
+    let lines = bom_lines(p, name, q)?;
+    let d = Distributors::open(q)?;
     let opts = agentee_parts::Options {
         boards: q.boards.max(1),
         alternatives: q.alternatives,
         ..Default::default()
     };
-    Ok(agentee_parts::report(&lines, &sources, &opts))
+    Ok(agentee_parts::report(&lines, &d.list(), &opts))
+}
+
+pub fn order(
+    p: &Project,
+    name: &str,
+    q: &PartsQuery,
+    spares: bool,
+    dir: &Path,
+) -> Result<Value, String> {
+    use agentee_parts::order;
+    let lines = bom_lines(p, name, q)?;
+    let d = Distributors::open(q)?;
+    let sources = d.list();
+    let (rows, errors) = order::plan(order::items(&lines, q.boards, spares), &sources);
+    if !errors.is_empty() {
+        return Err(errors.join("; "));
+    }
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let stem = name.rsplit(':').next().unwrap_or(name);
+    let write = |file: String, text: String| -> Result<String, String> {
+        let path = dir.join(&file);
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+        Ok(path.display().to_string())
+    };
+    let mut files = vec![write(format!("{stem}-order.csv"), order::order_sheet(&rows))?];
+    let mut sites = serde_json::Map::new();
+    for s in &sources {
+        let site = s.name();
+        files.push(write(
+            format!("{stem}-{}.csv", site.to_lowercase()),
+            order::site_sheet(&rows, site),
+        )?);
+        let mine: Vec<_> = rows.iter().filter(|r| r.source.as_deref() == Some(site)).collect();
+        let total: f64 = mine.iter().filter_map(|r| r.picks.get(site)).map(|p| p.total).sum();
+        sites.insert(
+            site.to_string(),
+            json!({ "order_top_lines": mine.len(), "total": (total * 100.0).round() / 100.0 }),
+        );
+    }
+    let elsewhere: Vec<Value> = rows
+        .iter()
+        .filter(|r| r.source.is_none())
+        .map(|r| json!({ "refs": r.item.refs.join(" "), "mpn": r.item.mpn, "source": r.elsewhere() }))
+        .collect();
+    Ok(json!({ "boards": q.boards.max(1), "files": files, "sites": sites, "elsewhere": elsewhere }))
 }
 
 pub fn parts_text(r: &agentee_parts::Report) -> String {

@@ -2,10 +2,11 @@ pub mod config;
 pub mod farnell;
 pub mod mouser;
 pub mod offer;
+pub mod order;
 pub mod spec;
 
 use agentee_core::schematic::Schematic;
-use offer::{Cost, Offer};
+use offer::{Break, Cost, Offer};
 use serde::Serialize;
 use spec::Spec;
 use std::collections::{BTreeMap, HashMap};
@@ -19,13 +20,19 @@ pub trait Distributor {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct BomLine {
     pub refs: Vec<String>,
     pub value: String,
     pub footprint: String,
     pub manufacturer: Option<String>,
     pub mpn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lcsc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spares: Option<u32>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub buy_with: Vec<(String, u32)>,
 }
 
 pub fn bom(sch: &Schematic) -> Vec<BomLine> {
@@ -46,7 +53,14 @@ pub fn bom(sch: &Schematic) -> Vec<BomLine> {
         if skip {
             continue;
         }
-        let (manufacturer, mpn) = (field("mfr").or_else(|| field("manufacturer")), field("mpn"));
+        let (manufacturer, mpn) =
+            match (field("mfr").or_else(|| field("manufacturer")), field("mpn")) {
+                (None, Some(m)) => match split_maker(&m) {
+                    Some((maker, number)) => (Some(maker), Some(number)),
+                    None => (None, Some(m)),
+                },
+                other => other,
+            };
         let same = |l: &BomLine| match (&l.mpn, &mpn) {
             (Some(a), Some(b)) => a == b,
             (None, None) => l.value == p.value && l.footprint == footprint,
@@ -60,6 +74,9 @@ pub fn bom(sch: &Schematic) -> Vec<BomLine> {
                 footprint: footprint.clone(),
                 manufacturer,
                 mpn,
+                lcsc: field("lcsc"),
+                spares: field("spares").and_then(|s| s.trim().parse().ok()),
+                buy_with: field("buy_with").map(|s| buy_with(&s)).unwrap_or_default(),
             }),
         }
     }
@@ -70,7 +87,25 @@ pub fn bom(sch: &Schematic) -> Vec<BomLine> {
     lines
 }
 
-fn ref_key(r: &str) -> (String, u64, String) {
+fn buy_with(s: &str) -> Vec<(String, u32)> {
+    s.split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| match t.rsplit_once(" x").and_then(|(m, n)| Some((m, n.trim().parse().ok()?))) {
+            Some((m, n)) => (m.trim().to_string(), n),
+            None => (t.to_string(), 1),
+        })
+        .collect()
+}
+
+fn split_maker(mpn: &str) -> Option<(String, String)> {
+    let (maker, number) = mpn.trim().split_once(char::is_whitespace)?;
+    let number = number.trim();
+    (!number.contains(char::is_whitespace) && number.chars().any(|c| c.is_ascii_digit()))
+        .then(|| (maker.to_string(), number.to_string()))
+}
+
+pub(crate) fn ref_key(r: &str) -> (String, u64, String) {
     let prefix: String = r.chars().take_while(|c| !c.is_ascii_digit()).collect();
     let digits: String = r[prefix.len()..].chars().take_while(|c| c.is_ascii_digit()).collect();
     (prefix.clone(), digits.parse().unwrap_or(0), r[prefix.len() + digits.len()..].to_string())
@@ -90,6 +125,9 @@ pub struct Priced {
     pub unit: f64,
     pub total: f64,
     pub url: Option<String>,
+    pub breaks: Vec<Break>,
+    pub min: u32,
+    pub mult: u32,
 }
 
 impl Priced {
@@ -107,6 +145,9 @@ impl Priced {
             unit: c.unit,
             total: c.total,
             url: o.url.clone(),
+            breaks: o.breaks.clone(),
+            min: o.min,
+            mult: o.mult,
         }
     }
 }
@@ -159,7 +200,7 @@ impl Default for Options {
     }
 }
 
-fn same_mpn(a: &str, b: &str) -> bool {
+pub(crate) fn same_mpn(a: &str, b: &str) -> bool {
     let n = |s: &str| {
         s.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_uppercase()
     };
@@ -228,7 +269,11 @@ pub fn report(lines: &[BomLine], sources: &[&dyn Distributor], opts: &Options) -
             &l.refs[0],
             &l.value,
             &l.footprint,
-            chosen.as_ref().map(|c| c.0).or(offers.first()),
+            chosen
+                .as_ref()
+                .map(|c| c.0)
+                .filter(|o| !o.attributes.is_empty())
+                .or_else(|| offers.iter().max_by_key(|o| o.attributes.len())),
         );
         let mut alternatives = Vec::new();
         if opts.alternatives {

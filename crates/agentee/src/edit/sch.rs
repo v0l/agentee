@@ -413,6 +413,7 @@ fn set_part(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String>
             continue;
         };
         f.insert(&k, TValue::from(v.clone()));
+        f.fmt();
     }
     Ok(Report { log, facts: Vec::new() })
 }
@@ -563,7 +564,7 @@ fn connect(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> 
     let name = words.pop().ok_or("connect: give the net name last, `connect U1.3 VCC`")?;
     let mut log = Vec::new();
     for pin in words {
-        let one = net(s, path, Opts { pos: vec![name.clone(), pin], flags: BTreeMap::new() })?;
+        let one = net(s, path, Opts::positional(vec![name.clone(), pin]))?;
         log.extend(one.log);
     }
     Ok(Report { log, facts: Vec::new() })

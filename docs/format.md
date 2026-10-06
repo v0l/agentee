@@ -2147,3 +2147,28 @@ The report ends with the total per currency as chosen and with every cheaper pic
 number of API calls made: Mouser allows 30 a minute and 1000 a day, and the part lookups go ten
 part numbers to a call. A refused key is reported once and that distributor is not asked again in
 the run.
+
+### Order sheets
+
+```sh
+agentee parts buggy-guard --boards 2 --spares --order docs/
+```
+
+`--order DIR` (MCP `order`) writes sheets to buy from instead of the report: `NAME-order.csv`
+with every line and the distributor it is bought from, and one `NAME-<distributor>.csv` per
+distributor with a key, Mouser's in the column layout of its BOM import template. Each line goes to
+the distributor that is cheaper for the quantity bought, among those with enough stock and not
+obsolete. A distributor's sheet lists every line in three blocks: the lines to order there, then
+the lines bought at the other distributor, then the lines it does not list or has too few of, so
+the top block of each sheet is the order. A line no distributor stocks says so in
+`NAME-order.csv`, or names its `lcsc` part.
+
+`--spares` (MCP `spares`) adds the hand assembly allowance: 0402 and 0603 resistors and
+capacitors are bought at the next multiple of ten above the need plus five, and each `D`, `Q`,
+`U` and `F` line gets one spare. These part fields change it:
+
+| field | meaning |
+|---|---|
+| `spares = "0"` | spares for this part instead of the default, e.g. none for an expensive module |
+| `buy_with = "XHP-2, SXH-001T-P0.6 x2"` | parts bought with each one of this part but not placed on the board: mating housings, crimps, an antenna. ` xN` is the count per part; the line names the parts it is for and gets one spare with `--spares` |
+| `lcsc = "C165948"` | the LCSC part, named when neither distributor stocks the line |

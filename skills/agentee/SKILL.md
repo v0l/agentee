@@ -253,6 +253,7 @@ and OIP3. Change the board, rerun the FDTD; change a part, rerun only the cascad
 ```sh
 agentee parts NAME --boards 5          # stock, price and cheaper drop-ins per BOM line
 agentee parts NAME --refs C11 --json
+agentee parts NAME --boards 2 --spares --order docs/   # order sheets per distributor
 ```
 
 Give every part `mfr` and `mpn` fields first; lines without an `mpn` are not looked up. Keys
@@ -260,6 +261,9 @@ go in `~/.config/agentee/distributors.toml` (`[mouser] api_key`, `[farnell] api_
 `store`), never in the project. Alternatives keep value, package and ratings for resistors,
 ceramics, generic discretes and LEDs; ICs and connectors only get the same part elsewhere or the
 distributor's suggested replacement. Write the swap into the part's `mpn`, not the BOM.
+`--order` writes `NAME-order.csv` and a sheet per distributor with the lines to buy there on top
+and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas) in a
+`buy_with` field on the part that needs them, never in a separate list.
 
 ## MCP
 

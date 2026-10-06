@@ -137,10 +137,7 @@ pub fn classify(reference: &str, value: &str, footprint: &str, current: Option<&
         ("C", Some(size)) if footprint.starts_with("C_") => {
             let mut parts = value.split('/');
             if let Some(farads) = parts.next().and_then(si) {
-                let volts = parts
-                    .next()
-                    .and_then(si)
-                    .or_else(|| current.and_then(|o| o.attribute(&["voltage"])).and_then(si));
+                let volts = parts.next().and_then(si).or_else(|| current.and_then(dc_volts));
                 let dielectric =
                     current.and_then(|o| o.attribute(&["dielectric"])).and_then(dielectric);
                 let tolerance = current.and_then(|o| o.attribute(&["tolerance"])).and_then(percent);
@@ -221,6 +218,10 @@ fn kind_text(o: &Offer) -> String {
     t
 }
 
+fn dc_volts(o: &Offer) -> Option<f64> {
+    o.attribute(&["voltage", "dc"]).or_else(|| o.attribute(&["voltage"])).and_then(si)
+}
+
 fn close(a: f64, b: f64, rel: f64) -> bool {
     (a - b).abs() <= rel * b.abs().max(f64::MIN_POSITIVE)
 }
@@ -264,9 +265,7 @@ pub fn matches(spec: &Spec, o: &Offer) -> bool {
                 && o.attribute(&["capacitance"])
                     .and_then(si)
                     .is_some_and(|c| close(c, *farads, 0.01))
-                && volts.is_none_or(|v| {
-                    o.attribute(&["voltage"]).and_then(si).is_some_and(|g| g >= v - 1e-9)
-                })
+                && volts.is_none_or(|v| dc_volts(o).is_some_and(|g| g >= v - 1e-9))
                 && dielectric_ok
                 && o.attribute(&["tolerance"])
                     .and_then(percent)

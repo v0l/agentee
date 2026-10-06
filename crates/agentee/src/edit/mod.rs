@@ -258,13 +258,18 @@ pub fn tokens(line: &str) -> Result<Vec<String>, String> {
 
 pub struct Opts {
     pub pos: Vec<String>,
-    pub flags: BTreeMap<String, String>,
+    pub flags: Vec<(String, String)>,
+    taken: Vec<String>,
 }
 
 impl Opts {
+    pub fn positional(pos: Vec<String>) -> Self {
+        Opts { pos, flags: Vec::new(), taken: Vec::new() }
+    }
+
     pub fn split(words: &[String], bools: &'static [&'static str]) -> Result<Self, String> {
         let mut pos = Vec::new();
-        let mut flags = BTreeMap::new();
+        let mut flags = Vec::new();
         let mut i = 0;
         while i < words.len() {
             let w = &words[i];
@@ -273,12 +278,12 @@ impl Opts {
                     return Err("-- wants a name".into());
                 }
                 if let Some((k, v)) = name.split_once('=') {
-                    flags.insert(k.to_string(), v.to_string());
+                    flags.push((k.to_string(), v.to_string()));
                     i += 1;
                     continue;
                 }
                 if bools.contains(&name) {
-                    flags.insert(name.to_string(), String::new());
+                    flags.push((name.to_string(), String::new()));
                     i += 1;
                     continue;
                 }
@@ -286,14 +291,14 @@ impl Opts {
                     .get(i + 1)
                     .filter(|v| !v.starts_with("--"))
                     .ok_or(format!("--{name} wants a value"))?;
-                flags.insert(name.to_string(), v.clone());
+                flags.push((name.to_string(), v.clone()));
                 i += 2;
             } else {
                 pos.push(w.clone());
                 i += 1;
             }
         }
-        Ok(Opts { pos, flags })
+        Ok(Opts { pos, flags, taken: Vec::new() })
     }
 
     pub fn word(&mut self, what: &str) -> Result<String, String> {
@@ -308,33 +313,38 @@ impl Opts {
     }
 
     pub fn take(&mut self, key: &str) -> Option<String> {
-        self.flags.remove(key)
+        let i = self.flags.iter().position(|(k, _)| k == key)?;
+        self.taken.push(key.to_string());
+        Some(self.flags.remove(i).1)
     }
 
     pub fn flag(&mut self, key: &str) -> bool {
-        self.flags.remove(key).is_some()
+        self.take(key).is_some()
     }
 
     pub fn typed(&mut self, key: &str) -> Result<Option<TValue>, String> {
-        match self.flags.remove(key) {
+        match self.take(key) {
             Some(v) => Ok(Some(value(key, &v)?)),
             None => Ok(None),
         }
     }
 
     pub fn at(&mut self, key: &str) -> Result<Option<TValue>, String> {
-        match self.flags.remove(key) {
+        match self.take(key) {
             Some(v) => Ok(Some(point(&v, &format!("--{key} X,Y"))?)),
             None => Ok(None),
         }
     }
 
     pub fn words(&mut self, key: &str) -> Result<Vec<String>, String> {
-        Ok(self.flags.remove(key).map(comma).unwrap_or_default())
+        Ok(self.take(key).map(comma).unwrap_or_default())
     }
 
     pub fn done(&self, cmd: &str, positional: usize) -> Result<(), String> {
-        if let Some(k) = self.flags.keys().next() {
+        if let Some((k, _)) = self.flags.first() {
+            if self.taken.contains(k) {
+                return Err(format!("{cmd}: `--{k}` is given more than once"));
+            }
             return Err(format!("{cmd}: no `--{k}` here"));
         }
         if self.pos.len() > positional {

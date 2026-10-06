@@ -381,3 +381,41 @@ fn list_shows_the_item() {
     assert!(out.contains("\"A\""), "{out}");
     assert!(out.contains("\"R1.2\""), "{out}");
 }
+
+#[test]
+fn keeps_every_repeated_field() {
+    let d = dir("fields");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    edit(
+        &d,
+        &[
+            "sch",
+            "t",
+            "add",
+            "R1",
+            "R",
+            "1k",
+            "--field",
+            "mfr=Yageo",
+            "--field",
+            "mpn=RC0402FR-071KL",
+        ],
+    );
+    let s = sch(&d, "t.sch.toml");
+    assert!(s.contains("mfr = \"Yageo\"") && s.contains("mpn = \"RC0402FR-071KL\""), "{s}");
+    edit(
+        &d,
+        &["sch", "t", "set", "R1", "--field", "mfr=Vishay", "--field", "mpn=CRCW04021K00FKED"],
+    );
+    let s = sch(&d, "t.sch.toml");
+    assert!(s.contains("mfr = \"Vishay\"") && s.contains("mpn = \"CRCW04021K00FKED\""), "{s}");
+    edit(&d, &["sch", "t", "set", "R1", "--field", "spares=0"]);
+    let s = sch(&d, "t.sch.toml");
+    assert!(
+        s.contains("fields = { mfr = \"Vishay\", mpn = \"CRCW04021K00FKED\", spares = \"0\" }"),
+        "{s}"
+    );
+    let (_, err, ok) =
+        run(&d, &["edit", "sch", "t", "set", "R1", "--value", "2k", "--value", "3k"]);
+    assert!(!ok && err.contains("more than once"), "{err}");
+}

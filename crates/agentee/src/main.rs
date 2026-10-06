@@ -216,6 +216,12 @@ enum Cmd {
         /// Only these references, comma separated
         #[arg(long, value_delimiter = ',')]
         refs: Vec<String>,
+        /// Write order sheets to this directory instead: NAME-order.csv and one NAME-<distributor>.csv per distributor, each with the lines to buy there first, then the lines bought at the other one, then what it lacks
+        #[arg(long)]
+        order: Option<PathBuf>,
+        /// With --order, add the hand assembly allowance: 0402/0603 resistors and capacitors to the next 10 above need + 5, one spare per D, Q, U and F line, or the part's `spares` field
+        #[arg(long)]
+        spares: bool,
         /// Price what is on the BOM without searching for cheaper equivalents
         #[arg(long)]
         no_alternatives: bool,
@@ -794,23 +800,26 @@ fn run(cli: Cli) -> Result<bool, String> {
             distributor,
             farnell_store,
             refs,
+            order,
+            spares,
             no_alternatives,
             config,
             json,
         } => {
             let p = ops::load(&project)?;
-            let r = ops::parts(
-                &p,
-                &name,
-                &ops::PartsQuery {
-                    boards,
-                    alternatives: !no_alternatives,
-                    distributors: &distributor,
-                    farnell_store: farnell_store.as_deref(),
-                    refs: &refs,
-                    config: config.as_deref(),
-                },
-            )?;
+            let q = ops::PartsQuery {
+                boards,
+                alternatives: !no_alternatives,
+                distributors: &distributor,
+                farnell_store: farnell_store.as_deref(),
+                refs: &refs,
+                config: config.as_deref(),
+            };
+            if let Some(dir) = order {
+                print_json(&ops::order(&p, &name, &q, spares, &dir)?);
+                return Ok(true);
+            }
+            let r = ops::parts(&p, &name, &q)?;
             if json {
                 print_json(&serde_json::to_value(&r).map_err(|e| e.to_string())?);
             } else {

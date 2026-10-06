@@ -59,9 +59,10 @@ impl Offer {
     pub fn attribute(&self, name_contains: &[&str]) -> Option<&str> {
         self.attributes
             .iter()
-            .find(|(k, _)| {
+            .find(|(k, v)| {
                 let k = k.to_lowercase();
                 name_contains.iter().all(|n| k.contains(&n.to_lowercase()))
+                    && v.chars().any(|c| c.is_alphanumeric())
             })
             .map(|(_, v)| v.as_str())
     }

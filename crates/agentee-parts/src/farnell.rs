@@ -146,6 +146,17 @@ pub fn parse(v: &Value, store: &str, currency: &str) -> Vec<Offer> {
     products.iter().map(|p| product(p, store, currency)).collect()
 }
 
+fn unit_from_name(name: &str, val: &str) -> Option<String> {
+    if val.parse::<f64>().is_err() {
+        return None;
+    }
+    name.split(',').map(str::trim).find_map(|seg| {
+        let unit = seg.strip_prefix(val)?.strip_prefix(' ')?;
+        let base = unit.trim_start_matches(['p', 'n', 'u', 'µ', 'μ', 'm', 'k', 'M', 'G']);
+        matches!(base, "F" | "ohm" | "H").then(|| format!("{val}{unit}"))
+    })
+}
+
 fn product(p: &Value, store: &str, currency: &str) -> Offer {
     let mut breaks: Vec<Break> = p
         .get("prices")
@@ -174,6 +185,10 @@ fn product(p: &Value, store: &str, currency: &str) -> Offer {
         let unit = s(a, "attributeUnit");
         if !unit.is_empty() && !val.ends_with(unit) {
             val.push_str(unit);
+        } else if matches!(label, "Capacitance" | "Resistance" | "Inductance")
+            && let Some(with_unit) = unit_from_name(s(p, "displayName"), &val)
+        {
+            val = with_unit;
         }
         attributes.insert(label.to_string(), val);
     }

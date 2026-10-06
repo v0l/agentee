@@ -153,6 +153,35 @@ fn parses_a_farnell_search_and_prices_in_the_store_currency() {
 }
 
 #[test]
+fn takes_farnell_value_units_from_the_display_name() {
+    let product = |name: &str, label: &str, value: &str, volts: &str| {
+        json!({ "sku": "1", "displayName": name, "attributes": [
+            { "attributeLabel": label, "attributeValue": value },
+            { "attributeLabel": "Voltage(DC)", "attributeValue": volts }
+        ]})
+    };
+    let v = json!({ "premierFarnellPartNumberReturn": { "products": [
+        product("MURATA - GRM1885C1H331JA01D - SMD Multilayer Ceramic Capacitor, 330 pF, 50 V, 0603 [1608 Metric]", "Capacitance", "330", "50"),
+        product("KEMET - C1210C225K1RACTU - SMD Multilayer Ceramic Capacitor, 2.2 \u{b5}F, 100 V, 1210 [3225 Metric]", "Capacitance", "2.2", "100"),
+        product("YAGEO - RC0603FR-0710KL - SMD Chip Resistor, 10 kohm, \u{b1} 1%, 100 mW, 0603 [1608 Metric]", "Resistance", "10", ""),
+        product("YAGEO - RC0603FR-07100RL - SMD Chip Resistor, 100 ohm, \u{b1} 1%, 100 mW, 0603 [1608 Metric]", "Resistance", "100", ""),
+        product("MURATA - GRM188R61A106KE69D - SMD Multilayer Ceramic Capacitor, 10 \u{b5}F, 10 V, 0603 [1608 Metric]", "Capacitance", "10", "10"),
+    ]}});
+    let parts = agentee_parts::farnell::parse(&v, "ie.farnell.com", "EUR");
+    let value = |i: usize| {
+        let p: &agentee_parts::offer::Offer = &parts[i];
+        let a = p.attributes.get("Capacitance").or(p.attributes.get("Resistance")).unwrap();
+        agentee_parts::spec::si(a).unwrap()
+    };
+    assert!((value(0) - 330e-12).abs() < 1e-15);
+    assert!((value(1) - 2.2e-6).abs() < 1e-12);
+    assert!((value(2) - 10e3).abs() < 1e-6);
+    assert!((value(3) - 100.0).abs() < 1e-9);
+    assert!((value(4) - 10e-6).abs() < 1e-12);
+    assert_eq!(parts[4].attributes["Voltage(DC)"], "10");
+}
+
+#[test]
 fn a_ceramic_must_keep_its_value_package_voltage_and_dielectric() {
     let current = mlcc(
         "c",
@@ -375,6 +404,7 @@ fn reports_the_cheapest_stocked_offer_and_cheaper_equivalents() {
             footprint: "C_0603_1608Metric".into(),
             manufacturer: Some("Murata".into()),
             mpn: Some("GRM188R71H104KA93D".into()),
+            ..Default::default()
         },
         BomLine {
             refs: vec!["U1".into()],
@@ -382,6 +412,7 @@ fn reports_the_cheapest_stocked_offer_and_cheaper_equivalents() {
             footprint: "HSOP-8".into(),
             manufacturer: None,
             mpn: Some("LM5164DDAR".into()),
+            ..Default::default()
         },
     ];
     let r = report(
@@ -392,6 +423,9 @@ fn reports_the_cheapest_stocked_offer_and_cheaper_equivalents() {
     let caps = &r.lines[0];
     assert_eq!(caps.need, 2);
     assert_eq!(caps.chosen.as_ref().unwrap().distributor, "Farnell");
+    let chosen = caps.chosen.as_ref().unwrap();
+    assert_eq!(chosen.breaks.len(), 3);
+    assert_eq!((chosen.breaks[1].qty, chosen.min, chosen.mult), (10, 1, 1));
     let alt = &caps.alternatives[0];
     assert_eq!(alt.part.mpn, "CL10B104KB8NNNC");
     assert!((alt.saves.unwrap() - (0.16 - 0.08)).abs() < 1e-9);
@@ -426,6 +460,22 @@ fn the_bom_has_one_line_per_part_number_and_skips_what_is_not_fitted() {
     assert_eq!(lines[1].mpn, None);
 }
 
+#[test]
+fn a_maker_written_before_the_part_number_is_split_off() {
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    let p = agentee_core::Project::load(&lna).unwrap();
+    let lines = agentee_parts::bom(&p.schematics[0].item);
+    let c4 = lines.iter().find(|l| l.refs == ["C4"]).unwrap();
+    assert_eq!(c4.manufacturer.as_deref(), Some("Murata"));
+    assert_eq!(c4.mpn.as_deref(), Some("GRM155R61A105KE15D"));
+    let u1 = lines.iter().find(|l| l.refs == ["U1"]).unwrap();
+    assert_eq!(u1.manufacturer.as_deref(), Some("Qorvo"));
+    assert_eq!(u1.mpn.as_deref(), Some("SPF5189Z"));
+    let c6 = lines.iter().find(|l| l.refs == ["C6"]).unwrap();
+    assert_eq!(c6.manufacturer, None);
+    assert_eq!(c6.mpn.as_deref(), Some("10 uF X5R 10 V 0402"));
+}
+
 struct Broken;
 
 impl Distributor for Broken {
@@ -448,8 +498,150 @@ fn a_refused_key_is_reported_once_and_stops_the_searches() {
         footprint: "R_0603_1608Metric".into(),
         manufacturer: None,
         mpn: Some("RC0603FR-0710KL".into()),
+        ..Default::default()
     }];
     let r = report(&lines, &[&Broken], &Options::default());
     assert_eq!(r.errors, vec!["Mouser: Invalid unique identifier. (API Key)".to_string()]);
     assert_eq!(r.lines[0].notes, vec!["not looked up, every distributor call failed".to_string()]);
+}
+
+#[test]
+fn reads_the_dc_rating_past_an_empty_ac_one() {
+    let attrs = |v: &'static str| {
+        vec![
+            ("Capacitance", "0.1µF"),
+            ("Capacitance Tolerance", "± 10%"),
+            ("Capacitor Case / Package", "0603 [1608 Metric]"),
+            ("Dielectric Characteristic", "X7R"),
+            ("Voltage(AC)", "-"),
+            ("Voltage(DC)", v),
+        ]
+    };
+    let current = mlcc("a", "GRM188R71H104KA93D", 0.1, &attrs("50"));
+    let spec = agentee_parts::spec::classify("C1", "100n", "C_0603_1608Metric", Some(&current));
+    let agentee_parts::spec::Spec::Capacitor { volts, .. } = &spec else { panic!("{spec:?}") };
+    assert_eq!(*volts, Some(50.0));
+    let lower = mlcc("b", "0603B104K250CT", 0.05, &attrs("25"));
+    assert!(!agentee_parts::spec::matches(&spec, &lower));
+    assert!(agentee_parts::spec::matches(
+        &spec,
+        &mlcc("c", "C0603C104K5RACTU", 0.05, &attrs("50"))
+    ));
+}
+
+#[test]
+fn order_sheets_put_what_each_site_lacks_last() {
+    let lines = vec![
+        BomLine {
+            refs: vec!["C1".into()],
+            value: "100n".into(),
+            footprint: "C_0603_1608Metric".into(),
+            mpn: Some("CAP".into()),
+            ..Default::default()
+        },
+        BomLine {
+            refs: vec!["J1".into(), "J2".into()],
+            value: "XH".into(),
+            footprint: "JST_XH".into(),
+            mpn: Some("HEADER".into()),
+            buy_with: vec![("HOUSING".into(), 1), ("CRIMP".into(), 2)],
+            ..Default::default()
+        },
+        BomLine {
+            refs: vec!["U1".into()],
+            value: "MODULE".into(),
+            mpn: Some("MODULE".into()),
+            spares: Some(0),
+            ..Default::default()
+        },
+        BomLine {
+            refs: vec!["J3".into()],
+            value: "USB-C".into(),
+            mpn: Some("USBC".into()),
+            lcsc: Some("C165948".into()),
+            ..Default::default()
+        },
+    ];
+    let items = agentee_parts::order::items(&lines, 1, true);
+    let qty: Vec<(Option<&str>, u32)> = items.iter().map(|i| (i.mpn.as_deref(), i.qty)).collect();
+    assert_eq!(
+        qty,
+        vec![
+            (Some("CAP"), 10),
+            (Some("HEADER"), 2),
+            (Some("MODULE"), 1),
+            (Some("USBC"), 1),
+            (Some("HOUSING"), 3),
+            (Some("CRIMP"), 5),
+        ]
+    );
+    let mouser = Fake {
+        name: "Mouser",
+        parts: vec![
+            offer("Mouser", "m-cap", "CAP", 1000, &[(1, 0.10), (10, 0.02)], &[]),
+            offer("Mouser", "m-hdr", "HEADER", 0, &[(1, 0.20)], &[]),
+            offer("Mouser", "m-mod", "MODULE", 50, &[(1, 5.0)], &[]),
+            offer("Mouser", "m-hsg", "HOUSING", 500, &[(1, 0.05)], &[]),
+            offer("Mouser", "m-crimp", "CRIMP", 500, &[(1, 0.04)], &[]),
+        ],
+        search: vec![],
+    };
+    let farnell = Fake {
+        name: "Farnell",
+        parts: vec![
+            offer("Farnell", "f-cap", "CAP", 1000, &[(1, 0.05)], &[]),
+            offer("Farnell", "f-hdr", "HEADER", 100, &[(1, 0.25)], &[]),
+            offer("Farnell", "f-crimp", "CRIMP", 500, &[(1, 0.03)], &[]),
+        ],
+        search: vec![],
+    };
+    let (rows, errors) = agentee_parts::order::plan(items, &[&mouser, &farnell]);
+    assert!(errors.is_empty());
+    let source: Vec<Option<&str>> = rows.iter().map(|r| r.source.as_deref()).collect();
+    assert_eq!(
+        source,
+        vec![
+            Some("Mouser"),
+            Some("Farnell"),
+            Some("Mouser"),
+            None,
+            Some("Mouser"),
+            Some("Farnell")
+        ]
+    );
+    let order = |site: &str| -> Vec<(String, String)> {
+        agentee_parts::order::sorted_for(&rows, site)
+            .iter()
+            .map(|r| (r.item.mpn.clone().unwrap(), r.status(site)))
+            .collect()
+    };
+    let s = |a: &str, b: &str| (a.to_string(), b.to_string());
+    assert_eq!(
+        order("Mouser"),
+        vec![
+            s("CAP", "order"),
+            s("HOUSING", "order"),
+            s("MODULE", "order"),
+            s("CRIMP", "buying at Farnell"),
+            s("HEADER", "short, 0 in stock"),
+            s("USBC", "not listed"),
+        ]
+    );
+    assert_eq!(
+        order("Farnell"),
+        vec![
+            s("HEADER", "order"),
+            s("CRIMP", "order"),
+            s("CAP", "buying at Mouser"),
+            s("HOUSING", "not listed"),
+            s("USBC", "not listed"),
+            s("MODULE", "not listed"),
+        ]
+    );
+    assert_eq!(rows[3].elsewhere(), "LCSC C165948");
+    let sheet = agentee_parts::order::site_sheet(&rows, "Farnell");
+    assert!(sheet.contains(",order: for J1 J2,"), "{sheet}");
+    let sheet = agentee_parts::order::site_sheet(&rows, "Mouser");
+    let second = sheet.lines().nth(1).unwrap();
+    assert!(second.starts_with("CAP,CAP,m-cap,Maker,order: 100n C1,10,"), "{second}");
 }

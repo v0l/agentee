@@ -267,6 +267,8 @@ fn tools() -> Value {
                 "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell; default every one with a key" },
                 "farnell_store": { "type": "string", "description": "e.g. uk.farnell.com, ie.farnell.com, www.newark.com" },
                 "refs": { "type": "array", "items": { "type": "string" }, "description": "only the BOM lines holding these references" },
+                "order": { "type": "string", "description": "directory, relative to the project, to write order sheets to instead of returning the report: NAME-order.csv and NAME-<distributor>.csv, each with the lines to buy there first, then the lines bought at the other distributor, then what it lacks" },
+                "spares": { "type": "boolean", "default": false, "description": "with order: 0402/0603 resistors and capacitors to the next 10 above need + 5, one spare per D, Q, U and F line, or the part's `spares` field" },
             }), &["name"]),
         },
         {
@@ -666,18 +668,26 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let p = ops::load(root)?;
             let distributors = strings(a, "distributors");
             let refs = strings(a, "refs");
-            let r = ops::parts(
-                &p,
-                arg(a, "name").ok_or("name is required")?,
-                &ops::PartsQuery {
-                    boards: int(a, "boards", 1) as u32,
-                    alternatives: a.get("alternatives").and_then(Value::as_bool).unwrap_or(true),
-                    distributors: &distributors,
-                    farnell_store: arg(a, "farnell_store"),
-                    refs: &refs,
-                    config: None,
-                },
-            )?;
+            let name = arg(a, "name").ok_or("name is required")?;
+            let q = ops::PartsQuery {
+                boards: int(a, "boards", 1) as u32,
+                alternatives: a.get("alternatives").and_then(Value::as_bool).unwrap_or(true),
+                distributors: &distributors,
+                farnell_store: arg(a, "farnell_store"),
+                refs: &refs,
+                config: None,
+            };
+            if let Some(dir) = arg(a, "order") {
+                let spares = a.get("spares").and_then(Value::as_bool).unwrap_or(false);
+                return Ok(ok(vec![text(pretty(&ops::order(
+                    &p,
+                    name,
+                    &q,
+                    spares,
+                    &root.join(dir),
+                )?))]));
+            }
+            let r = ops::parts(&p, name, &q)?;
             Ok(ok(vec![text(pretty(&serde_json::to_value(&r).map_err(|e| e.to_string())?))]))
         }
         "field_solve" => {
