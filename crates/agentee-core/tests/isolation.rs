@@ -133,8 +133,11 @@ fn at(r: &str, x: f64, y: f64) -> String {
 #[test]
 fn pads_of_one_footprint_keep_the_clearance_of_an_isolated_class() {
     let fps = [("TRI", row("TRI", &[-2.0, 0.0, 2.0], ""))];
-    let nets: &[(&str, &str, &[&str])] =
-        &[("P_DRAIN", "HV", &["Q1.1"]), ("P_GATE", "HV", &["Q1.2"]), ("P_SRC", "Default", &["Q1.3"])];
+    let nets: &[(&str, &str, &[&str])] = &[
+        ("P_DRAIN", "HV", &["Q1.1"]),
+        ("P_GATE", "HV", &["Q1.2"]),
+        ("P_SRC", "Default", &["Q1.3"]),
+    ];
     let pcb = at("Q1", 10.0, 10.0);
     let mut b = Board {
         rules: "",
@@ -154,7 +157,8 @@ fn pads_of_one_footprint_keep_the_clearance_of_an_isolated_class() {
 #[test]
 fn a_net_in_two_domains_is_an_error_and_a_net_in_none_a_warning() {
     let fps = [("TWO", row("TWO", &[-2.0, 2.0], ""))];
-    let nets: &[(&str, &str, &[&str])] = &[("PS_A", "Default", &["R1.1"]), ("X", "Default", &["R1.2"])];
+    let nets: &[(&str, &str, &[&str])] =
+        &[("PS_A", "Default", &["R1.1"]), ("X", "Default", &["R1.2"])];
     let pcb = at("R1", 10.0, 10.0);
     let rules = DOMAINS.replace("nets = [\"S*\"]", "nets = [\"S*\", \"*_A\"]");
     let b = Board {
@@ -167,7 +171,10 @@ fn a_net_in_two_domains_is_an_error_and_a_net_in_none_a_warning() {
     };
     let p = load(&b);
     let e = hits(&p, "isolation-domain");
-    assert!(e.len() == 1 && e[0].contains("PS_A (class Default) is in domains primary and secondary"), "{e:?}");
+    assert!(
+        e.len() == 1 && e[0].contains("PS_A (class Default) is in domains primary and secondary"),
+        "{e:?}"
+    );
     let w = hits(&p, "isolation-unassigned");
     assert!(w.len() == 1 && w[0].contains("1 nets") && w[0].contains("X"), "{w:?}");
 }
@@ -178,7 +185,8 @@ fn across(gap: f64) -> (Vec<(&'static str, String)>, String) {
     (fps, pcb)
 }
 
-const ACROSS: &[(&str, &str, &[&str])] = &[("P_HOT", "Default", &["U1.1"]), ("S_COLD", "Default", &["U2.1"])];
+const ACROSS: &[(&str, &str, &[&str])] =
+    &[("P_HOT", "Default", &["U1.1"]), ("S_COLD", "Default", &["U2.1"])];
 
 #[test]
 fn a_barrier_holds_its_clearance_between_domains() {
@@ -194,7 +202,8 @@ fn a_barrier_holds_its_clearance_between_domains() {
     };
     let e = hits(&load(&b), "isolation-clearance");
     assert!(
-        e.len() == 1 && e[0].contains("U1.1 is 2mm from U2.1, the primary-secondary barrier needs 3mm"),
+        e.len() == 1
+            && e[0].contains("U1.1 is 2mm from U2.1, the primary-secondary barrier needs 3mm"),
         "{e:?}"
     );
     let (fps, pcb) = across(3.2);
@@ -207,7 +216,8 @@ fn creepage_goes_around_a_slot_and_bridges_a_narrow_groove() {
     let (fps, pcb) = across(4.0);
     let rules = barrier("", "6mm");
     let parts: &[(&str, &str, usize)] = &[("U1", "ONE", 1), ("U2", "ONE", 1)];
-    let plain = Board { rules: &rules, cutouts: "", footprints: &fps, parts, nets: ACROSS, pcb: &pcb };
+    let plain =
+        Board { rules: &rules, cutouts: "", footprints: &fps, parts, nets: ACROSS, pcb: &pcb };
     let e = hits(&load(&plain), "creepage");
     assert!(e.len() == 1 && e[0].contains("U1.1 is 4mm from U2.1 along the surface"), "{e:?}");
     let slot = "[[outline.cutouts]]\norigin = [12.5, 6.0]\nsize = [2.0, 8.0]\n";
@@ -259,7 +269,8 @@ fn spark(gap: f64, declared: &str, mask: bool) -> String {
 
 #[test]
 fn a_spark_gap_is_exempt_from_clearance_and_checked_as_drawn() {
-    let nets: &[(&str, &str, &[&str])] = &[("P_LINE", "HV", &["SG1.1"]), ("P_EARTH", "HV", &["SG1.2"])];
+    let nets: &[(&str, &str, &[&str])] =
+        &[("P_LINE", "HV", &["SG1.1"]), ("P_EARTH", "HV", &["SG1.2"])];
     let pcb = at("SG1", 10.0, 10.0);
     let check = |fp: String| {
         let fps = [("SPARK", fp)];
@@ -278,9 +289,49 @@ fn a_spark_gap_is_exempt_from_clearance_and_checked_as_drawn() {
     };
     assert!(check(spark(0.3, "0.3mm", true)).is_empty());
     let e = check(spark(0.3, "0.5mm", true));
-    assert!(e.len() == 1 && e[0].contains("0.3mm apart on F.Cu, the footprint declares 0.5mm"), "{e:?}");
+    assert!(
+        e.len() == 1 && e[0].contains("0.3mm apart on F.Cu, the footprint declares 0.5mm"),
+        "{e:?}"
+    );
     let e = check(spark(0.3, "0.3mm", false));
     assert!(e.len() == 1 && e[0].contains("solder mask covers the gap on F.Mask"), "{e:?}");
     let e = check(spark(0.05, "0.05mm", true));
     assert!(e.iter().any(|m| m.contains("under the")), "{e:?}");
+}
+
+fn under(r: &str, x: f64, y: f64) -> String {
+    format!("\n[[footprints]]\nref = \"{r}\"\nat = [{x}, {y}]\nside = \"bottom\"\n")
+}
+
+fn round_cutout(c: [f64; 2], r: f64) -> String {
+    let pts: Vec<String> = (0..24)
+        .map(|k| {
+            let a = k as f64 * std::f64::consts::TAU / 24.0;
+            format!("[{:.4}, {:.4}]", c[0] + r * a.cos(), c[1] + r * a.sin())
+        })
+        .collect();
+    format!("[[outline.cutouts]]\npoints = [{}]\n", pts.join(", "))
+}
+
+#[test]
+fn creepage_reaches_the_other_side_through_a_cutout_or_round_the_edge() {
+    let fps = vec![("ONE", row("ONE", &[0.0], ""))];
+    let rules = barrier("", "6mm");
+    let parts: &[(&str, &str, usize)] = &[("U1", "ONE", 1), ("U2", "ONE", 1)];
+    let apart = format!("{}{}", at("U1", 10.0, 10.0), under("U2", 14.0, 10.0));
+    let b =
+        Board { rules: &rules, cutouts: "", footprints: &fps, parts, nets: ACROSS, pcb: &apart };
+    assert!(hits(&load(&b), "creepage").is_empty(), "{:?}", hits(&load(&b), "creepage"));
+    let hole = round_cutout([12.0, 10.0], 0.5);
+    let b = Board { cutouts: &hole, ..b };
+    let e = hits(&load(&b), "creepage");
+    assert!(e.len() == 1 && e[0].contains("on B.Cu through a board cutout"), "{e:?}");
+    let edge = format!("{}{}", at("U1", 2.0, 10.0), under("U2", 2.0, 10.0));
+    let b = Board { cutouts: "", pcb: &edge, ..b };
+    let e = hits(&load(&b), "creepage");
+    assert!(e.len() == 1 && e[0].contains("on B.Cu round the board edge"), "{e:?}");
+    assert!(
+        e[0].contains("is 4.6104mm"),
+        "1.5 mm to the edge, the 1.6104 mm board, 1.5 mm back: {e:?}"
+    );
 }

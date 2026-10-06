@@ -465,9 +465,10 @@ B.Cu they keep the larger of `clearance` and `creepage`, since neither measures 
 Creepage is the shortest path between the two coppers along the outer surface they sit on
 (`creepage`). It stays on the board and goes around board cutouts and non-plated holes. A slot or
 hole narrower than the groove width X of the pollution degree (0.25 mm for 1, 1.0 mm for 2,
-1.5 mm for 3, as IEC 60664-1 gives it) is bridged and measured straight across. Solder mask does
-not count as insulation, and a path that wraps round the board edge or through a hole to the
-other side is not looked for.
+1.5 mm for 3, as IEC 60664-1 gives it) is bridged and measured straight across. Between copper on
+F.Cu and copper on B.Cu the path runs down the wall of a board cutout or non-plated hole of any
+width, or round the board edge, and counts the board's thickness. Solder mask does not count as
+insulation.
 
 The clearance of a class whose nets sit in a domain is taken as an electrical spacing, so it also
 holds between pads of one footprint: a TO-220 on a 1.5 mm HvBus class with pads 1.0 mm apart is a
@@ -536,7 +537,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `isolation-domain` | error | `[[domains]]` | a net whose class or name puts it in two domains |
 | `isolation-unassigned` | warning | `[[domains]]` | nets in no domain, which no barrier covers |
 | `isolation-clearance` | error | a barrier with `clearance` | copper of two domains on one layer closer than the clearance of the barrier between them, pads of one footprint and pours included; one line per net pair with the closest spot |
-| `creepage` | error | a barrier with `creepage` | copper of two domains closer along F.Cu or B.Cu than the barrier's creepage, the path going around board cutouts and non-plated holes at least the groove width of its `pollution_degree` wide |
+| `creepage` | error | a barrier with `creepage` | copper of two domains closer along the board surface than the barrier's creepage: on one outer layer around board cutouts and non-plated holes at least the groove width of its `pollution_degree` wide, and from F.Cu to B.Cu down a cutout or hole wall or round the board edge |
 | `spark-gap` | error | footprints with `spark_gaps` | a spark gap whose electrodes are not the declared `gap` apart (to 0.01 mm), sit under `min_clearance`, share a net or lack one, or have solder mask across the gap on an outer layer |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
 | `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |

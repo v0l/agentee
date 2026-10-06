@@ -307,6 +307,7 @@ fn note(found: &mut BTreeMap<(usize, usize), Hit>, key: (usize, usize), hit: Hit
 fn pairs(
     cx: &Ctx,
     layers: &[String],
+    across: bool,
     need: impl Fn(&Barrier) -> Option<f64>,
     mut each: impl FnMut(&Conductor, &Conductor, f64),
 ) {
@@ -327,27 +328,42 @@ fn pairs(
             }
         }
     }
+    let (top, bottom) = (cx.copper.first(), cx.copper.last());
     for (i, a) in all.iter().enumerate() {
+        let key = match (across, top, bottom) {
+            (false, ..) => &a.layer,
+            (true, Some(t), Some(b)) if &a.layer == t && t != b => b,
+            _ => continue,
+        };
         let g = grown(&a.bounds, reach);
         let mut near: Vec<usize> = Vec::new();
         for x in (g.min[0] / cell).floor() as i64..=(g.max[0] / cell).floor() as i64 {
             for y in (g.min[1] / cell).floor() as i64..=(g.max[1] / cell).floor() as i64 {
-                near.extend(grid.get(&(a.layer.clone(), x, y)).into_iter().flatten().copied());
+                near.extend(grid.get(&(key.clone(), x, y)).into_iter().flatten().copied());
             }
         }
         near.sort_unstable();
         near.dedup();
-        for j in near.into_iter().filter(|&j| j > i) {
+        for j in near.into_iter().filter(|&j| across || j > i) {
             let b = &all[j];
             let Some(c) = cx.board.barrier(Some(a.domain), Some(b.domain)).and_then(&need) else {
                 continue;
             };
-            if !overlaps(&grown(&a.bounds, c), &b.bounds) || exempt(cx, a, b) {
+            if !overlaps(&grown(&a.bounds, c), &b.bounds)
+                || exempt(cx, a, b)
+                || (across && (both_sides(cx, a) || both_sides(cx, b)))
+            {
                 continue;
             }
             each(a, b, c);
         }
     }
+}
+
+fn both_sides(cx: &Ctx, c: &Conductor) -> bool {
+    let Of::Item(i) = c.of else { return false };
+    let layers = &cx.copper_items()[i].layers;
+    [cx.copper.first(), cx.copper.last()].into_iter().flatten().all(|l| layers.contains(l))
 }
 
 fn region(a: &Conductor, b: &Conductor, c: f64) -> Bounds {
@@ -372,6 +388,7 @@ fn barrier_clearance(cx: &Ctx, r: &mut Report) {
     pairs(
         cx,
         cx.copper,
+        false,
         |b| b.clearance.map(Length::to_mm),
         |a, b, c| {
             let reg = region(a, b, c);
@@ -415,23 +432,184 @@ fn emit(cx: &Ctx, r: &mut Report, found: BTreeMap<(usize, usize), Hit>, what: &s
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Rim {
+    Edge,
+    Cutout,
+    Hole,
+}
+
 pub struct Surface {
     outline: Vec<P>,
     obstacles: Vec<Vec<P>>,
+    rims: Vec<(Rim, Vec<P>)>,
+}
+
+const RIM_STEP: f64 = 0.1;
+
+fn nearest(p: P, e: &[(P, P)]) -> P {
+    e.iter()
+        .map(|&(a, b)| closest_on(p, a, b))
+        .min_by(|x, y| geom::dist(p, *x).total_cmp(&geom::dist(p, *y)))
+        .unwrap_or(p)
+}
+
+fn gap(p: P, e: &[(P, P)]) -> f64 {
+    geom::dist(p, nearest(p, e))
+}
+
+fn samples(e: &[(P, P)], keep: impl Fn(P) -> bool) -> Vec<P> {
+    let mut out = Vec::new();
+    for &(a, b) in e {
+        let n = (geom::dist(a, b) / RIM_STEP).ceil().max(1.0) as usize;
+        for k in 0..n {
+            let t = k as f64 / n as f64;
+            let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+            if keep(p) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+fn ring_bounds(ring: &[P]) -> Bounds {
+    let mut b = Bounds::EMPTY;
+    ring.iter().for_each(|p| b.add(*p));
+    b
 }
 
 impl Surface {
     pub fn new(cx: &Ctx, groove: f64) -> Surface {
-        let mut obstacles: Vec<Vec<P>> = cx
-            .board_cutouts
-            .iter()
-            .filter(|c| c.len() >= 3 && geom::min_extent(c) + 1e-9 >= groove)
-            .cloned()
-            .collect();
-        for h in cx.holes().iter().filter(|h| !h.plated && 2.0 * h.r + 1e-9 >= groove) {
-            obstacles.push(capsule(h.a, h.b, h.r / (std::f64::consts::PI / 16.0).cos()));
+        let mut rims: Vec<(Rim, Vec<P>)> = Vec::new();
+        if cx.outline.len() >= 3 {
+            rims.push((Rim::Edge, cx.outline.to_vec()));
         }
-        Surface { outline: cx.outline.to_vec(), obstacles }
+        let mut obstacles = Vec::new();
+        for c in cx.board_cutouts.iter().filter(|c| c.len() >= 3) {
+            if geom::min_extent(c) + 1e-9 >= groove {
+                obstacles.push(c.clone());
+            }
+            rims.push((Rim::Cutout, c.clone()));
+        }
+        for h in cx.holes().iter().filter(|h| !h.plated) {
+            let ring = capsule(h.a, h.b, h.r / (std::f64::consts::PI / 16.0).cos());
+            if 2.0 * h.r + 1e-9 >= groove {
+                obstacles.push(ring.clone());
+            }
+            rims.push((Rim::Hole, ring));
+        }
+        Surface { outline: cx.outline.to_vec(), obstacles, rims }
+    }
+
+    pub fn local(&self, reg: &Bounds) -> Surface {
+        let keep = |r: &Vec<P>| overlaps(&ring_bounds(r), reg);
+        Surface {
+            outline: self.outline.clone(),
+            obstacles: self.obstacles.iter().filter(|o| keep(o)).cloned().collect(),
+            rims: self.rims.iter().filter(|(_, r)| keep(r)).cloned().collect(),
+        }
+    }
+
+    pub fn across(
+        &self,
+        ea: &[(P, P)],
+        eb: &[(P, P)],
+        limit: f64,
+        reg: &Bounds,
+        thickness: f64,
+    ) -> Option<(f64, Rim, P)> {
+        let budget = limit - thickness;
+        if budget <= 0.0 {
+            return None;
+        }
+        let starts = samples(ea, |p| gap(p, eb) < budget);
+        let ends = samples(eb, |p| gap(p, ea) < budget);
+        let mut rim: Vec<(usize, P)> = Vec::new();
+        for (ri, (_, ring)) in self.rims.iter().enumerate() {
+            let mut e = Vec::new();
+            ring_edges(ring, &mut e);
+            let keep = |p: P| super::near(reg, p, 0.0) && gap(p, ea) + gap(p, eb) < budget;
+            rim.extend(samples(&e, keep).into_iter().map(|p| (ri, p)));
+            for &(a, b) in &e {
+                for &s in starts.iter().chain(&ends) {
+                    let foot = closest_on(s, a, b);
+                    if keep(foot) {
+                        rim.push((ri, foot));
+                    }
+                }
+            }
+        }
+        if rim.is_empty() {
+            return None;
+        }
+        let corners: Vec<P> =
+            self.corners(*reg).into_iter().filter(|v| gap(*v, ea) + gap(*v, eb) < budget).collect();
+        let (ns, nc, nr) = (starts.len(), corners.len(), rim.len());
+        let low = ns + nc + nr;
+        let at = |k: usize| -> P {
+            match k {
+                k if k < ns => starts[k],
+                k if k < ns + nc => corners[k - ns],
+                k if k < low => rim[k - ns - nc].1,
+                k if k < low + nc => corners[k - low],
+                k if k < low + nc + nr => rim[k - low - nc].1,
+                k => ends[k - low - nc - nr],
+            }
+        };
+        let total = low + nc + nr + ends.len();
+        let mut best = vec![f64::MAX; total];
+        let mut prev = vec![usize::MAX; total];
+        let mut heap = BinaryHeap::new();
+        for (k, b) in best.iter_mut().enumerate().take(ns) {
+            *b = 0.0;
+            heap.push(Node(0.0, k));
+        }
+        while let Some(Node(d, k)) = heap.pop() {
+            if d > best[k] {
+                continue;
+            }
+            if k >= low + nc + nr {
+                let mut j = k;
+                while prev[j] != usize::MAX && prev[j] >= low {
+                    j = prev[j];
+                }
+                let (ri, q) = rim[j - low - nc];
+                return Some((d, self.rims[ri].0, q));
+            }
+            let p = at(k);
+            let mut steps: Vec<(usize, f64)> = Vec::new();
+            let side = if k < low { ns..low } else { low..total };
+            for m in side {
+                let q = at(m);
+                let step = geom::dist(p, q);
+                if d + step < best[m].min(limit) && self.visible(p, q) {
+                    steps.push((m, step));
+                }
+            }
+            if (ns + nc..low).contains(&k) {
+                let ri = rim[k - ns - nc].0;
+                let ring = &self.rims[ri].1;
+                for (j, &(rj, q)) in rim.iter().enumerate() {
+                    let mid = [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0];
+                    if rj == ri && on_edge(mid, ring) {
+                        steps.push((
+                            low + nc + j,
+                            (thickness.powi(2) + geom::dist(p, q).powi(2)).sqrt(),
+                        ));
+                    }
+                }
+            }
+            for (m, step) in steps {
+                let nd = d + step;
+                if nd < best[m] && nd < limit {
+                    best[m] = nd;
+                    prev[m] = k;
+                    heap.push(Node(nd, m));
+                }
+            }
+        }
+        None
     }
 
     fn crosses(p: P, q: P, ring: &[P]) -> bool {
@@ -572,6 +750,7 @@ fn creepage(cx: &Ctx, r: &mut Report) {
     pairs(
         cx,
         &outer,
+        false,
         |b| b.creepage.map(Length::to_mm),
         |a, b, c| {
             let Some(barrier) = cx.board.barrier(Some(a.domain), Some(b.domain)) else { return };
@@ -584,7 +763,8 @@ fn creepage(cx: &Ctx, r: &mut Report) {
             let groove = barrier.groove().to_mm();
             let surface = surfaces
                 .entry(barrier.pollution_degree)
-                .or_insert_with(|| Surface::new(cx, groove));
+                .or_insert_with(|| Surface::new(cx, groove))
+                .local(&reg);
             let length = if surface.visible(p, q) { d } else { surface.path(&ea, &eb, c, &reg) };
             if length + crate::layout::DRC_EPSILON >= c {
                 return;
@@ -607,6 +787,59 @@ fn creepage(cx: &Ctx, r: &mut Report) {
                 &mut found,
                 (a.net.min(b.net), a.net.max(b.net)),
                 Hit { length, at, what, layers: vec![a.layer.clone()], count: 1 },
+            );
+        },
+    );
+    let thickness = cx.board.stackup.thickness().to_mm();
+    pairs(
+        cx,
+        &outer,
+        true,
+        |b| b.creepage.map(Length::to_mm),
+        |a, b, c| {
+            let Some(barrier) = cx.board.barrier(Some(a.domain), Some(b.domain)) else { return };
+            let reg = region(a, b, c);
+            let (ea, eb) = (edges_in(cx, a, &reg), edges_in(cx, b, &reg));
+            let Some((d, ..)) = closest(&ea, &eb) else { return };
+            if d + thickness >= c {
+                return;
+            }
+            let groove = barrier.groove().to_mm();
+            let surface = surfaces
+                .entry(barrier.pollution_degree)
+                .or_insert_with(|| Surface::new(cx, groove))
+                .local(&reg);
+            let Some((length, rim, wall)) = surface.across(&ea, &eb, c, &reg, thickness) else {
+                return;
+            };
+            if length + crate::layout::DRC_EPSILON >= c {
+                return;
+            }
+            let way = match rim {
+                Rim::Edge => "round the board edge",
+                Rim::Cutout => "through a board cutout",
+                Rim::Hole => "through a non-plated hole",
+            };
+            let what = format!(
+                "{} on {} is {} from {} on {} {way}, the {} barrier needs {} creepage",
+                label(cx, a),
+                a.layer,
+                Length::mm(length),
+                label(cx, b),
+                b.layer,
+                barrier_name(cx, a, b),
+                Length::mm(c)
+            );
+            note(
+                &mut found,
+                (a.net.min(b.net), a.net.max(b.net)),
+                Hit {
+                    length,
+                    at: wall,
+                    what,
+                    layers: vec![a.layer.clone(), b.layer.clone()],
+                    count: 1,
+                },
             );
         },
     );
