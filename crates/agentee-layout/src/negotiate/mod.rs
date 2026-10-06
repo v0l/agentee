@@ -360,6 +360,23 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         });
     }
     let mut soft = Soft::new(grid, rules);
+    for shadow in [true, false] {
+        let segs: Vec<(usize, P, P, f64)> = layout
+            .tracks
+            .iter()
+            .filter(|t| rules.casts.get(t.net).copied().unwrap_or(false) == shadow)
+            .filter_map(|t| {
+                let l = layout.copper.iter().position(|c| *c == t.layer)?;
+                Some(t.points.windows(2).map(move |w| (l, w[0], w[1], t.width / 2.0)))
+            })
+            .flatten()
+            .filter(|s| shadow || !rules.cut[s.0].is_empty())
+            .collect();
+        if !segs.is_empty() {
+            let c = Copper { segs, vias: Vec::new(), clearance: 0.0, shadow, only_shadow: true };
+            soft.apply(&Soft::footprint(grid, rules, &c), true);
+        }
+    }
     if let Some(h) = guide.hist.as_ref().filter(|h| h.len() == soft.hist.len()) {
         soft.hist.clone_from(h);
     }

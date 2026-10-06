@@ -53,6 +53,7 @@ pub struct Bucket {
     pub layer: usize,
     pub h: f64,
     pub c: f64,
+    pub crit: bool,
 }
 
 pub struct ViaBucket {
@@ -78,6 +79,8 @@ pub struct Rules {
     pub min_width: f64,
     pub reach: f64,
     pub shadow: Vec<Vec<usize>>,
+    pub cut: Vec<Vec<usize>>,
+    pub casts: Vec<bool>,
 }
 
 fn plane_cover(layout: &Layout) -> Vec<Vec<(usize, f64)>> {
@@ -148,11 +151,21 @@ impl Rules {
             min_width: r.min_track_width.to_mm(),
             reach: 0.0,
             shadow: Vec::new(),
+            cut: Vec::new(),
+            casts: Vec::new(),
         };
         let cover = plane_cover(layout);
         let plane: Vec<bool> = (0..nl)
             .map(|l| {
                 l > 0 && l + 1 < nl && cover[l].iter().map(|e| e.1).sum::<f64>() >= PLANE_SHARE
+            })
+            .collect();
+        rules.cut = (0..nl)
+            .map(|l| {
+                if !plane[l] {
+                    return Vec::new();
+                }
+                [l.wrapping_sub(1), l + 1].into_iter().filter(|&m| m < nl).collect()
             })
             .collect();
         rules.shadow = (0..nl)
@@ -168,6 +181,31 @@ impl Rules {
             })
         };
         let paired: Vec<usize> = layout.pairs.iter().flat_map(|p| [p.p, p.n]).collect();
+        let refs_of = |name: &str| -> Vec<String> {
+            layout
+                .interfaces
+                .iter()
+                .filter(|i| i.lanes.iter().any(|ln| ln.nets.iter().any(|x| x == name)))
+                .flat_map(|i| i.spec.reference.clone())
+                .collect()
+        };
+        let crit_of = |n: usize| {
+            let net = &layout.nets[n];
+            let class = board.netclasses.iter().find(|c| c.name == net.class);
+            opts.criticality.get(&net.class).copied().unwrap_or_else(|| match class {
+                Some(c) if place::is_rf_class(board, &c.name) => 1.0,
+                Some(c) if c.impedance.is_some() || c.diff_gap.is_some() => 0.8,
+                Some(c) if c.layers.len() == 1 => 0.8,
+                _ => 0.0,
+            })
+        };
+        rules.casts = (0..layout.nets.len())
+            .map(|n| {
+                crit_of(n) >= SHADOW_CRIT
+                    || !refs_of(&layout.nets[n].name).is_empty()
+                    || paired.contains(&n)
+            })
+            .collect();
         for &n in routed {
             let net = &layout.nets[n];
             let class = board.netclasses.iter().find(|c| c.name == net.class);
@@ -179,12 +217,7 @@ impl Rules {
                 Some(c) => copper.iter().map(|l| c.layers.contains(l)).collect(),
                 None => vec![true; nl],
             };
-            let refs: Vec<String> = layout
-                .interfaces
-                .iter()
-                .filter(|i| i.lanes.iter().any(|ln| ln.nets.contains(&net.name)))
-                .flat_map(|i| i.spec.reference.clone())
-                .collect();
+            let refs = refs_of(&net.name);
             if !refs.is_empty() {
                 let kept: Vec<bool> = (0..nl).map(|l| track[l] && referenced(l, &refs)).collect();
                 if kept.iter().any(|k| *k) {
@@ -202,12 +235,7 @@ impl Rules {
                 (0..rules.vias.len()).filter(|k| !net_vias.contains(k)).collect();
             spare.sort_by(|&a, &b| rules.vias[a].r.total_cmp(&rules.vias[b].r));
             net_vias.extend(spare);
-            let crit = opts.criticality.get(&net.class).copied().unwrap_or_else(|| match class {
-                Some(c) if place::is_rf_class(board, &c.name) => 1.0,
-                Some(c) if c.impedance.is_some() || c.diff_gap.is_some() => 0.8,
-                Some(c) if c.layers.len() == 1 => 0.8,
-                _ => 0.0,
-            });
+            let crit = crit_of(n);
             let clearance = class
                 .into_iter()
                 .flat_map(|c| {
@@ -240,12 +268,14 @@ impl Rules {
                     continue;
                 }
                 let h = width[l] / 2.0;
-                let found = rules
-                    .buckets
-                    .iter()
-                    .position(|b| b.layer == l && um(b.h) == um(h) && um(b.c) == um(band));
+                let found = rules.buckets.iter().position(|b| {
+                    b.layer == l
+                        && um(b.h) == um(h)
+                        && um(b.c) == um(band)
+                        && b.crit == rules.casts[n]
+                });
                 bucket[l] = Some(found.unwrap_or_else(|| {
-                    rules.buckets.push(Bucket { layer: l, h, c: band });
+                    rules.buckets.push(Bucket { layer: l, h, c: band, crit: rules.casts[n] });
                     rules.buckets.len() - 1
                 }));
             }
@@ -296,7 +326,7 @@ impl Rules {
                         .map_or(rules.min_width, |(lo, _)| lo.max(rules.min_width))
                 })
                 .collect();
-            let shadows = crit >= SHADOW_CRIT || !refs.is_empty() || paired.contains(&n);
+            let shadows = rules.casts[n];
             rules.nets[n] = Some(NetRule {
                 width,
                 clearance,

@@ -53,12 +53,16 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> Vec<(
     for v in &layout.vias {
         anchors.push((v.net, v.at));
     }
+    let planes: Vec<usize> = base.rules.shadow.iter().flatten().copied().collect();
     let mut undo = Vec::new();
     for (ti, track) in tracks.iter_mut().enumerate() {
         let old = track.points.clone();
         let (Some(l), Some(n)) = (layer_of(&track.layer), net_of(&track.net)) else {
             continue;
         };
+        if planes.contains(&l) {
+            continue;
+        }
         let Some(rule) = base.rules.nets.get(n).and_then(|r| r.as_ref()) else { continue };
         if rule.band > rule.clearance + 1e-9 {
             continue;

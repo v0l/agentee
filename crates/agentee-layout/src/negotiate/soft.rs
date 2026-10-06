@@ -33,6 +33,7 @@ pub struct Copper {
     pub vias: Vec<(P, usize)>,
     pub clearance: f64,
     pub shadow: bool,
+    pub only_shadow: bool,
 }
 
 impl Copper {
@@ -75,7 +76,7 @@ impl Copper {
             }
             vias.extend(p.vias.iter().copied());
         }
-        Copper { segs, vias, clearance, shadow }
+        Copper { segs, vias, clearance, shadow, only_shadow: false }
     }
 }
 
@@ -162,21 +163,27 @@ impl Soft {
         };
         for &(l, a, b, h) in &c.segs {
             reach.clear();
-            for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| bk.layer == l) {
+            let own = !c.only_shadow;
+            for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| own && bk.layer == l)
+            {
                 reach.push((false, bi, h + bk.h + c.clearance.max(bk.c) + slack));
             }
             for (vi, vb) in
-                rules.via_buckets.iter().enumerate().filter(|(_, v)| v.layers.contains(&l))
+                rules.via_buckets.iter().enumerate().filter(|(_, v)| own && v.layers.contains(&l))
             {
                 let r = (h + vb.r + c.clearance.max(vb.c)).max(h + vb.dr + rules.hole_cu) + slack;
                 reach.push((true, vi, r));
             }
-            if c.shadow {
-                for &m in &rules.shadow[l] {
-                    for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| bk.layer == m)
-                    {
-                        reach.push((false, bi, h + bk.h + super::rules::SHADOW_GAP + slack));
-                    }
+            let (across, crit_only) =
+                if c.shadow { (&rules.shadow[l], false) } else { (&rules.cut[l], true) };
+            for &m in across {
+                for (bi, bk) in rules
+                    .buckets
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, bk)| bk.layer == m && (bk.crit || !crit_only))
+                {
+                    reach.push((false, bi, h + bk.h + super::rules::SHADOW_GAP + slack));
                 }
             }
             stamp(&Shape::Seg(a, b, 0.0), &reach, &mut tracks, &mut vias);
