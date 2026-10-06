@@ -514,6 +514,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `zone-tips` | warning | zones | fill tips sharper than 30 degrees; raise the zone's `min_width` |
 | `copper-neck` | warning | zones | necks in a fill narrower than 90% of the zone's `min_width`, which the fill should have opened; counted by place with the narrowest |
 | `zone-islands` | info | always | fill islands that reach nothing of the zone's net and were removed |
+| `zone-island-isolated` | error | always | a fill island that reaches its net only through pads, tracks or vias that are themselves cut off from the rest of the net, so the copper floats |
 | `courtyard-overlap` | error | parts | courtyards of two parts on one side overlap by their outline |
 | `courtyard-hole` | error | parts | a courtyard that covers a mounting hole or a non-plated hole of another part |
 | `mask-web` | error | always | pads of different nets whose mask openings leave less than `min_mask_web`, one line per pair of parts; pads of one footprint with `mask_web = false` are skipped among themselves |

@@ -560,6 +560,11 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         }
         r.changed |= before || tuned;
         d.done(model, r, t0, reload_ms);
+        for _ in 0..2 {
+            if d.stopped() || !repair(&mut d, model, &dopts)? {
+                break;
+            }
+        }
     }
     if d.unfilled {
         d.reload(model)?;
@@ -662,19 +667,16 @@ fn route_reps(
 }
 
 fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Result<bool, String> {
-    let Some(plan) = model.detail.as_ref() else { return Ok(false) };
-    let stray: Vec<String> = model
-        .layout
-        .nets
-        .iter()
-        .filter(|n| n.unrouted > 0 && !plan.failed.iter().any(|f| f.net == n.name))
-        .map(|n| n.name.clone())
-        .collect();
+    if model.detail.is_none() {
+        return Ok(false);
+    }
+    let stray: Vec<String> =
+        model.layout.nets.iter().filter(|n| n.unrouted > 0).map(|n| n.name.clone()).collect();
     if stray.is_empty() {
         return Ok(false);
     }
     let t0 = d.start("detail");
-    let o = negotiate::Options { nets: stray.clone(), ..opts.clone() };
+    let o = negotiate::Options { nets: stray.clone(), pour_joins: true, ..opts.clone() };
     let mut r = PhaseReport { phase: "detail".into(), ..Default::default() };
     let mut gained = false;
     match negotiate::Base::new(&model.layout, model.board, &o) {

@@ -51,6 +51,7 @@ pub struct Options {
     pub prefer_gain: f64,
     pub stall: usize,
     pub verbose: bool,
+    pub pour_joins: bool,
 }
 
 impl Default for Options {
@@ -72,6 +73,7 @@ impl Default for Options {
             prefer_gain: 0.5,
             stall: 3,
             verbose: false,
+            pour_joins: true,
         }
     }
 }
@@ -245,7 +247,7 @@ impl Base {
         if wanted.is_empty() {
             return Err("no net matches".into());
         }
-        let islands = Islands::new(layout, &wanted);
+        let islands = Islands::new(layout, &wanted, opts.pour_joins);
         let nets: Vec<usize> = wanted
             .iter()
             .copied()
@@ -2119,7 +2121,8 @@ fn connect(
                 .collect();
             targets = thin;
         }
-        let source_cells: std::collections::HashSet<usize> = sources.iter().map(|s| s.at).collect();
+        let source_cells: std::collections::HashSet<usize> =
+            sources.iter().filter(|s| s.tag == 0).map(|s| s.at).collect();
         targets.retain(|(c, tag)| *tag != 0 || !source_cells.contains(c));
         let source_vias: Vec<(P, usize)> = sources
             .iter()
@@ -2200,7 +2203,7 @@ fn connect(
             );
         }
         if let Some(found) = q.run() {
-            if found.cells.len() <= 1 {
+            if found.cells.len() <= 1 && found.tag == 0 {
                 margin *= 3.0;
                 if win.is_whole(grid) || tries > env.opts.escalate {
                     return Err("the groups already touch".into());

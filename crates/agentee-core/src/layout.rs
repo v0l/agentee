@@ -1499,10 +1499,15 @@ impl LayoutFile {
                 if matches!(a.owner, Owner::PadHole(..)) || matches!(b.owner, Owner::PadHole(..)) {
                     continue;
                 }
-                if let (Owner::Pad(p1, _), Owner::Pad(p2, _)) = (a.owner, b.owner)
+                if let (Owner::Pad(p1, k1), Owner::Pad(p2, k2)) = (a.owner, b.owner)
                     && p1 == p2
                 {
-                    if a.net.is_some() && a.net == b.net {
+                    let number = |k: usize| parts[p1].pads[k].number.as_str();
+                    if a.net.is_some()
+                        && a.net == b.net
+                        && !number(k1).is_empty()
+                        && number(k1) == number(k2)
+                    {
                         uf.union(i, j);
                     }
                     continue;
@@ -1794,6 +1799,39 @@ impl LayoutFile {
         for touched in &island_nodes {
             for group in touched.windows(2) {
                 uf.union(group[0], group[1]);
+            }
+        }
+        let mut main_of: HashMap<usize, usize> = HashMap::new();
+        for ni in 0..nets.len() {
+            let mut count: HashMap<usize, usize> = HashMap::new();
+            for (i, it) in items.iter().enumerate() {
+                if it.net == Some(ni) && matches!(it.owner, Owner::Pad(..)) {
+                    *count.entry(uf.find(i)).or_default() += 1;
+                }
+            }
+            if let Some((&root, _)) =
+                count.iter().max_by_key(|(r, c)| (**c, std::cmp::Reverse(**r)))
+            {
+                main_of.insert(ni, root);
+            }
+        }
+        for touched in &island_nodes {
+            let Some(&first) = touched.first() else { continue };
+            let Some(net) = items[first].net else { continue };
+            let Some(&main) = main_of.get(&net) else { continue };
+            if uf.find(first) != main {
+                let names: Vec<String> =
+                    touched.iter().take(3).map(|&i| name_of(&items[i])).collect();
+                found.add(
+                    "zone-island-isolated",
+                    format!("net {}", nets[net].name),
+                    format!(
+                        "a {} pour island joins only {} and is cut off from the rest of {}: route it to the net or remove the island",
+                        nets[net].name,
+                        names.join(", "),
+                        nets[net].name
+                    ),
+                );
             }
         }
         pour::capture_zones(|| pour::ZonesCase {

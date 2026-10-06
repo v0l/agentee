@@ -11,19 +11,30 @@ pub enum Item {
     Island { zone: usize, label: u32, layer: usize },
 }
 
+const POUR_SHARE: f64 = 0.1;
+
 pub struct Islands {
     pub labels: HashMap<usize, Vec<u32>>,
+    fragile: std::collections::HashSet<usize>,
 }
 
 impl Islands {
-    pub fn new(layout: &Layout, nets: &[usize]) -> Islands {
+    pub fn new(layout: &Layout, nets: &[usize], pours: bool) -> Islands {
+        let area = geom::signed_area(&layout.outline).abs().max(1e-9);
+        let outer = [layout.copper.first(), layout.copper.last()];
         let mut labels = HashMap::new();
+        let mut fragile = std::collections::HashSet::new();
         for (zi, z) in layout.zones.iter().enumerate() {
-            if nets.contains(&z.net) {
-                labels.insert(zi, label(z));
+            if !nets.contains(&z.net) {
+                continue;
             }
+            let filled = z.mask.iter().filter(|m| **m != 0).count() as f64 * z.cell * z.cell;
+            if !pours && outer.contains(&Some(&z.layer)) && filled > POUR_SHARE * area {
+                fragile.insert(zi);
+            }
+            labels.insert(zi, label(z));
         }
-        Islands { labels }
+        Islands { labels, fragile }
     }
 
     pub fn at(&self, layout: &Layout, zone: usize, p: P) -> Option<u32> {
@@ -260,6 +271,10 @@ fn group_items(
         }
         let reach = z.cell * 1.5;
         for (i, shapes) in all.iter().enumerate() {
+            if islands.fragile.contains(&zi) && matches!(items[i], Item::Pad { pitch: Some(_), .. })
+            {
+                continue;
+            }
             for (l, s) in shapes.iter().filter(|(l, _)| *l == layer) {
                 let _ = l;
                 let (lo, hi) = s.bounds();

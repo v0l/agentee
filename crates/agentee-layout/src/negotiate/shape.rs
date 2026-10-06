@@ -362,7 +362,19 @@ impl Ctx<'_> {
     ) -> Piece {
         let g = self.grid;
         if found.cells.len() <= 1 {
-            return Piece::default();
+            let start = (found.tag > 0).then(|| access.get(found.tag as usize - 1)).flatten();
+            let Some(a) = start.filter(|a| a.via.is_some()) else { return Piece::default() };
+            let tracks = a
+                .neck
+                .iter()
+                .map(|n| Run {
+                    layer: n.layer,
+                    points: vec![n.from, n.to],
+                    width: n.width,
+                    neck: n.width < self.rule.width[n.layer] - 1e-6,
+                })
+                .collect();
+            return Piece { tracks, vias: a.via.into_iter().collect(), trimmed: None, ms: 0.0 };
         }
         let mut runs: Vec<(usize, Vec<P>)> = Vec::new();
         let mut vias = Vec::new();

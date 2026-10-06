@@ -59,6 +59,15 @@ pub static RULES: &[Rule] = &[
         applies: every,
         check: recorded,
     },
+    Rule {
+        id: "zone-island-isolated",
+        category: Category::Zone,
+        severity: Severity::Error,
+        summary: "a fill island whose copper reaches the net only through items that are themselves cut off from the rest of the net",
+        when: "every board",
+        applies: every,
+        check: recorded,
+    },
 ];
 
 fn with_zones(s: &Setup) -> bool {

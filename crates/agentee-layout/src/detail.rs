@@ -34,6 +34,7 @@ pub fn options(cfg: &EngineFile) -> Options {
         via_in_pad: cfg.access.as_ref().and_then(|a| a.via_in_pad).unwrap_or(false),
         fences: dc.fences.unwrap_or(true),
         criticality: dc.criticality.clone(),
+        pour_joins: false,
         ..d
     }
 }
