@@ -120,6 +120,14 @@ passes: when global or detail report hot tiles, every part whose courtyard touch
 inflated by the overflow there (cell inflation, as RePlAce does it) and the placement is
 legalised again from where it was, not started over. At most `place_rounds` passes, default 3.
 
+Bypass caps bound to a BGA's supply balls go on the back, under the package. Each one bridges a
+supply ball and a ground ball next to it, with a pad on each ball's via: the ball's own via in
+pad where `via_in_pad` holds and the via fits inside the ball, or the dog-bone site on a shared
+diagonal otherwise. The via sits on the detail grid, fully inside the cap pad and legal against
+every ball, and placement writes it (with its dog-bone stub) in `# plan place`, so the cap needs
+no routing. A cap whose pads cannot reach two such sites (an 0201 at 1 mm pitch, a bulk cap)
+stays on the front. The cap's reference is hidden; there is no silk room among the vias.
+
 ### 3. Access
 
 Decides how each pad can be left, without committing anything.
@@ -136,6 +144,10 @@ Decides how each pad can be left, without committing anything.
   its rail's region on that layer", and ground pads likewise target any via site on a ground
   plane. Two neighbouring pads may share one via. Pieces the planes could not join are left as
   connections between pins, routed like any other net with the class width.
+- **Pin pours**: where two or more neighbouring pins in a row share a net whose class track is
+  wider than the pins (the SW and VIN pins of a switcher), one solid pour on the pad layer covers
+  them and the gaps between. It goes in `# plan planes` with the rail regions, so the pins are
+  joined before routing and the track only has to reach the pour.
 
 ### 4. Global route
 
@@ -185,6 +197,13 @@ corridor grown by one tile.
   a cost: a lane over budget pays more per via each round.
 - **Entry**: the via out of a pad is always allowed on the pad's layers; the class's track layers
   apply from the far side of it. This is what lets LVDS leave F.Cu for In2.
+- **Plane layers** carry signal segments where the class allows the layer. An inner layer counts
+  as a plane when its fills cover half the board. Two rules keep this from costing signal
+  integrity. A lane of an interface with a `reference` routes only on layers next to a plane of
+  that net, so it always has a return path. And the tracks of critical nets (impedance, pairs,
+  interface lanes) shadow the plane layers next to them: another net's track there overlaps the
+  shadow as it would overlap copper, so negotiation keeps plane cuts out from under them. Routing
+  through another net's fill pays `zone_cost` per mm.
 - **Search** is today's A*: backward Dijkstra for the heuristic, forward search with bend costs
   and via hops. It moves out of `agentee-core/src/route.rs` into a module both routers share.
 
@@ -192,7 +211,8 @@ corridor grown by one tile.
 
 Via removal and via snapping, octilinear cleanup and chamfers, then a spread pass that moves
 tracks to the middle of the free space they run through, then `neck`, `tune`, `fill` and `silk`.
-All of these exist; spread is new.
+All of these exist; spread is new. A track that runs into a pin pour is cut back to the pour's
+edge, so it does not lie over the pins as well.
 
 ## Score
 
@@ -215,7 +235,7 @@ seed = 1
 spacing = "0.2mm"              # gap kept between courtyards
 standoff = "0.6mm"             # decaps are not pulled closer than this to their pin
 spread = 1.5                   # spacing and standoff grow by this each placement pass
-sides = "top"                  # "both" also moves each bound decap under its pin on the back
+bga_decaps = "bottom"          # or "top" to keep BGA bypass caps beside the package
 
 [engine.access]
 via_in_pad = true

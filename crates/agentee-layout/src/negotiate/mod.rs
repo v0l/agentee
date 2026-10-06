@@ -11,7 +11,7 @@ use agentee_core::geom::{self, P};
 use agentee_core::layout::{Layout, glob};
 use agentee_core::route::{RouteResult, RoutedTrack, RoutedVia, Unrouted};
 use conn::{Islands, Item, NetCopper};
-pub use grid::{Fence, Grid, Shape};
+pub use grid::{Fence, Grid, Shape, ball_phase};
 pub use rules::{Need, NetRule, Rules, um};
 use search::{Query, Source, Window, seg_cells};
 pub use shape::{Access, Ctx, PadRef, Seg};
@@ -372,7 +372,11 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             st.dead = dead.clone();
             st.joined = st.needed.saturating_sub(st.failed.len());
             let rule = rules.rule(st.net);
-            let fp = Soft::footprint(grid, rules, &Copper::of(&st.pieces, rule.band, &st.pads));
+            let fp = Soft::footprint(
+                grid,
+                rules,
+                &Copper::of(&st.pieces, rule.band, &st.pads, rule.shadows),
+            );
             soft.apply(&fp, true);
             st.fp = Some(fp);
             cold[si] = !st.failed.is_empty();
@@ -981,7 +985,11 @@ fn route_one(
     };
     r.joined = st.needed.saturating_sub(r.failed.len());
     let rule = env.rules.rule(st.net);
-    let fp = Soft::footprint(env.grid, env.rules, &Copper::of(&r.pieces, rule.band, &st.pads));
+    let fp = Soft::footprint(
+        env.grid,
+        env.rules,
+        &Copper::of(&r.pieces, rule.band, &st.pads, rule.shadows),
+    );
     if !env.jacobi {
         env.soft.apply(&fp, true);
     }
@@ -1610,7 +1618,12 @@ fn rip_and_retry(
                     let fp = Soft::footprint(
                         env.grid,
                         env.rules,
-                        &Copper::of(std::slice::from_ref(p), clr, &st.pads),
+                        &Copper::of(
+                            std::slice::from_ref(p),
+                            clr,
+                            &st.pads,
+                            env.rules.rule(st.net).shadows,
+                        ),
                     );
                     path.iter().any(|&(b, c)| fp.0[b].binary_search(&c).is_ok())
                 })
@@ -1694,7 +1707,7 @@ fn drop_overlaps(
         let fp = Soft::footprint(
             grid,
             rules,
-            &Copper::of(&st.pieces, rules.rule(st.net).band, &st.pads),
+            &Copper::of(&st.pieces, rules.rule(st.net).band, &st.pads, rules.rule(st.net).shadows),
         );
         soft.apply(&fp, true);
         st.fp = Some(fp);
@@ -1782,7 +1795,11 @@ fn kept(st: &NetState) -> Option<Vec<&Piece>> {
 
 fn kept_footprint(st: &NetState, rules: &Rules, grid: &Grid) -> Option<Footprint> {
     let keep: Vec<Piece> = kept(st)?.into_iter().cloned().collect();
-    Some(Soft::footprint(grid, rules, &Copper::of(&keep, rules.rule(st.net).band, &st.pads)))
+    Some(Soft::footprint(
+        grid,
+        rules,
+        &Copper::of(&keep, rules.rule(st.net).band, &st.pads, rules.rule(st.net).shadows),
+    ))
 }
 
 fn within_fence(env: &Env, st: &NetState, a: &Access) -> bool {

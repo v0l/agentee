@@ -570,3 +570,113 @@ fn pad_centre(pad: &agentee_core::layout::PlacedPad) -> P {
     pad.outlines.iter().flatten().for_each(|q| b.add(*q));
     b.center()
 }
+
+pub const PIN_POUR_PRIORITY: i32 = 200;
+
+pub fn pin_pours(model: &Model) -> Vec<PlaneZone> {
+    let l = &model.layout;
+    let width_of = |net: usize, layer: &str| {
+        let n = &l.nets[net];
+        model
+            .board
+            .netclasses
+            .iter()
+            .find(|c| c.name == n.class)
+            .map_or(n.width, |c| c.width_on(layer).to_mm())
+    };
+    let mut out = Vec::new();
+    for p in &l.parts {
+        if crate::escape::is_bga(p) || p.rotation.rem_euclid(90.0) > 1e-6 {
+            continue;
+        }
+        let pads: Vec<(usize, &str, Bounds)> = p
+            .pads
+            .iter()
+            .filter(|q| q.kind == PadKind::Smd && q.copper.len() == 1)
+            .filter_map(|q| {
+                let mut b = Bounds::EMPTY;
+                q.outlines.iter().flatten().for_each(|r| b.add(*r));
+                let net = q.net.filter(|_| !b.is_empty())?;
+                Some((net, q.copper[0].as_str(), b))
+            })
+            .collect();
+        let mut group: Vec<usize> = (0..pads.len()).collect();
+        fn root(g: &mut [usize], i: usize) -> usize {
+            let mut r = i;
+            while g[r] != r {
+                r = g[r];
+            }
+            g[i] = r;
+            r
+        }
+        for i in 0..pads.len() {
+            for j in i + 1..pads.len() {
+                let ((ni, li, a), (nj, lj, c)) = (pads[i], pads[j]);
+                let ([aw, ah], [cw, ch]) = (a.size(), c.size());
+                if ni != nj || li != lj || (aw - cw).abs() > 0.02 || (ah - ch).abs() > 0.02 {
+                    continue;
+                }
+                let (ca, cc) = (a.center(), c.center());
+                let along = if aw < ah { 0 } else { 1 };
+                let across = 1 - along;
+                let narrow = aw.min(ah);
+                let gap = (ca[along] - cc[along]).abs() - narrow;
+                if (ca[across] - cc[across]).abs() > 0.02
+                    || gap > 2.0 * narrow
+                    || width_of(ni, li) <= narrow + 1e-9
+                {
+                    continue;
+                }
+                let (lo, hi) = (ca[along].min(cc[along]), ca[along].max(cc[along]));
+                let between = pads.iter().any(|&(_, lk, k)| {
+                    let ck = k.center();
+                    lk == li
+                        && (ck[across] - ca[across]).abs() < 0.02
+                        && ck[along] > lo + 1e-6
+                        && ck[along] < hi - 1e-6
+                });
+                if !between {
+                    let (ri, rj) = (root(&mut group, i), root(&mut group, j));
+                    group[ri] = rj;
+                }
+            }
+        }
+        let mut runs: HashMap<usize, Vec<usize>> = HashMap::new();
+        for i in 0..pads.len() {
+            let r = root(&mut group, i);
+            runs.entry(r).or_default().push(i);
+        }
+        let mut runs: Vec<Vec<usize>> = runs.into_values().filter(|v| v.len() >= 2).collect();
+        runs.sort();
+        for run in runs {
+            let (net, layer, _) = pads[run[0]];
+            let mut b = Bounds::EMPTY;
+            run.iter().for_each(|&i| b.union(&pads[i].2));
+            let inside = |k: &Bounds| {
+                k.min[0] < b.max[0] - 1e-6
+                    && k.max[0] > b.min[0] + 1e-6
+                    && k.min[1] < b.max[1] - 1e-6
+                    && k.max[1] > b.min[1] + 1e-6
+            };
+            let blocked = l.parts.iter().flat_map(|o| &o.pads).any(|q| {
+                q.net != Some(net) && q.copper.iter().any(|c| c == layer) && {
+                    let mut k = Bounds::EMPTY;
+                    q.outlines.iter().flatten().for_each(|r| k.add(*r));
+                    inside(&k)
+                }
+            });
+            if blocked {
+                continue;
+            }
+            let [w, h] = b.size();
+            out.push(PlaneZone {
+                net: l.nets[net].name.clone(),
+                layer: layer.to_string(),
+                priority: PIN_POUR_PRIORITY,
+                outline: vec![b.min, [b.max[0], b.min[1]], b.max, [b.min[0], b.max[1]]],
+                area: w * h,
+            });
+        }
+    }
+    out
+}

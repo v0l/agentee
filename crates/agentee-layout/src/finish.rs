@@ -297,3 +297,160 @@ mod tests {
         );
     }
 }
+
+pub fn trim_pours(model: &mut Model, report: &mut PhaseReport) {
+    let pours: Vec<(String, String, P, P)> = model
+        .file
+        .zones
+        .iter()
+        .filter(|z| z.priority == Some(crate::planes::PIN_POUR_PRIORITY))
+        .filter_map(|z| {
+            let o = z.outline.as_ref()?;
+            let mut lo = [f64::MAX; 2];
+            let mut hi = [f64::MIN; 2];
+            for q in o {
+                let q = q.to_mm();
+                lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+                hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+            }
+            Some(z.layers.iter().map(move |l| (z.net.clone(), l.clone(), lo, hi)))
+        })
+        .flatten()
+        .collect();
+    if pours.is_empty() {
+        return;
+    }
+    let Some(plan) = model.detail.as_mut() else { return };
+    let nets = &model.layout.nets;
+    let mut out: Vec<RoutedTrack> = Vec::new();
+    let mut trimmed = 0;
+    for t in plan.tracks.drain(..) {
+        let h = t.width.unwrap_or_else(|| {
+            nets.iter().find(|n| n.name == t.net).map(|n| n.width).unwrap_or(0.1)
+        }) / 2.0;
+        let mine: Vec<(P, P)> = pours
+            .iter()
+            .filter(|p| p.0 == t.net && p.1 == t.layer)
+            .map(|p| ([p.2[0] + h, p.2[1] + h], [p.3[0] - h, p.3[1] - h]))
+            .filter(|(lo, hi)| lo[0] <= hi[0] && lo[1] <= hi[1])
+            .collect();
+        if mine.is_empty() {
+            out.push(t);
+            continue;
+        }
+        let pieces = outside(&t.points, &mine);
+        if pieces.len() == 1 && pieces[0] == t.points {
+            out.push(t);
+            continue;
+        }
+        trimmed += 1;
+        out.extend(pieces.into_iter().map(|points| RoutedTrack { points, ..t.clone() }));
+    }
+    plan.tracks = out;
+    if trimmed > 0 {
+        report.notes.push(format!("{trimmed} tracks cut back to the pin pour they end on"));
+        report.changed = true;
+    }
+}
+
+fn clip(a: P, b: P, lo: P, hi: P) -> Option<(f64, f64)> {
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    let d = [b[0] - a[0], b[1] - a[1]];
+    for k in 0..2 {
+        if d[k].abs() < 1e-12 {
+            if a[k] < lo[k] || a[k] > hi[k] {
+                return None;
+            }
+            continue;
+        }
+        let (u, v) = ((lo[k] - a[k]) / d[k], (hi[k] - a[k]) / d[k]);
+        t0 = t0.max(u.min(v));
+        t1 = t1.min(u.max(v));
+    }
+    (t0 <= t1).then_some((t0, t1))
+}
+
+fn outside(points: &[P], rects: &[(P, P)]) -> Vec<Vec<P>> {
+    let mut pieces: Vec<Vec<P>> = Vec::new();
+    let mut cur: Vec<P> = Vec::new();
+    let at = |a: P, b: P, t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    for w in points.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let mut cover: Vec<(f64, f64)> =
+            rects.iter().filter_map(|r| clip(a, b, r.0, r.1)).collect();
+        cover.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let mut merged: Vec<(f64, f64)> = Vec::new();
+        for c in cover {
+            match merged.last_mut() {
+                Some(m) if c.0 <= m.1 + 1e-9 => m.1 = m.1.max(c.1),
+                _ => merged.push(c),
+            }
+        }
+        let mut t = 0.0;
+        for (s, e) in merged {
+            if s > t + 1e-9 {
+                if cur.is_empty() {
+                    cur.push(at(a, b, t));
+                }
+                cur.push(at(a, b, s));
+                pieces.push(std::mem::take(&mut cur));
+            } else if !cur.is_empty() {
+                cur.push(at(a, b, s.max(t)));
+                pieces.push(std::mem::take(&mut cur));
+            }
+            t = t.max(e);
+        }
+        if t < 1.0 - 1e-9 {
+            if cur.is_empty() {
+                cur.push(at(a, b, t));
+            }
+            cur.push(b);
+        }
+    }
+    if cur.len() >= 2 {
+        pieces.push(cur);
+    }
+    pieces
+        .into_iter()
+        .map(|p| {
+            let mut q: Vec<P> = Vec::new();
+            for x in p {
+                if q.last().is_none_or(|l| geom::dist(*l, x) > 1e-9) {
+                    q.push(x);
+                }
+            }
+            q
+        })
+        .filter(|p| {
+            p.len() >= 2 && p.windows(2).map(|w| geom::dist(w[0], w[1])).sum::<f64>() > 1e-6
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod pour_tests {
+    use super::outside;
+
+    #[test]
+    fn track_ending_in_a_pour_stops_at_its_edge() {
+        let pieces = outside(&[[0.0, 0.0], [0.0, 5.0]], &[([-1.0, 3.0], [1.0, 6.0])]);
+        assert_eq!(pieces, vec![vec![[0.0, 0.0], [0.0, 3.0]]]);
+    }
+
+    #[test]
+    fn track_inside_a_pour_goes() {
+        assert!(outside(&[[0.0, 3.5], [0.0, 5.0]], &[([-1.0, 3.0], [1.0, 6.0])]).is_empty());
+    }
+
+    #[test]
+    fn track_across_a_pour_splits_in_two() {
+        let pieces = outside(&[[-3.0, 4.0], [3.0, 4.0]], &[([-1.0, 3.0], [1.0, 6.0])]);
+        assert_eq!(pieces, vec![vec![[-3.0, 4.0], [-1.0, 4.0]], vec![[1.0, 4.0], [3.0, 4.0]]]);
+    }
+
+    #[test]
+    fn track_clear_of_pours_is_kept() {
+        let pts = vec![[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]];
+        assert_eq!(outside(&pts, &[([5.0, 5.0], [6.0, 6.0])]), vec![pts]);
+    }
+}

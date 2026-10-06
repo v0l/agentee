@@ -5,6 +5,9 @@ use agentee_core::place;
 
 const NECKDOWN: f64 = 0.5;
 const POUR_STRIP: f64 = 0.25;
+const PLANE_SHARE: f64 = 0.5;
+const SHADOW_CRIT: f64 = 0.8;
+pub const SHADOW_GAP: f64 = 0.3;
 
 pub struct ViaOpt {
     pub name: String,
@@ -38,6 +41,7 @@ pub struct NetRule {
     pub neck: f64,
     pub narrowest: Vec<f64>,
     pub crit: f64,
+    pub shadows: bool,
     pub bucket: Vec<Option<usize>>,
     pub via_bucket: Vec<usize>,
     pub need: Vec<Need>,
@@ -73,6 +77,26 @@ pub struct Rules {
     pub edge: f64,
     pub min_width: f64,
     pub reach: f64,
+    pub shadow: Vec<Vec<usize>>,
+}
+
+fn plane_cover(layout: &Layout) -> Vec<Vec<(usize, f64)>> {
+    let area = agentee_core::geom::signed_area(&layout.outline).abs().max(1e-9);
+    layout
+        .copper
+        .iter()
+        .map(|l| {
+            let mut by_net: Vec<(usize, f64)> = Vec::new();
+            for z in layout.zones.iter().filter(|z| &z.layer == l) {
+                let filled = z.mask.iter().filter(|m| **m != 0).count() as f64 * z.cell * z.cell;
+                match by_net.iter_mut().find(|e| e.0 == z.net) {
+                    Some(e) => e.1 += filled / area,
+                    None => by_net.push((z.net, filled / area)),
+                }
+            }
+            by_net
+        })
+        .collect()
 }
 
 pub fn um(v: f64) -> u16 {
@@ -123,7 +147,27 @@ impl Rules {
             edge: r.min_copper_to_edge.to_mm(),
             min_width: r.min_track_width.to_mm(),
             reach: 0.0,
+            shadow: Vec::new(),
         };
+        let cover = plane_cover(layout);
+        let plane: Vec<bool> = (0..nl)
+            .map(|l| {
+                l > 0 && l + 1 < nl && cover[l].iter().map(|e| e.1).sum::<f64>() >= PLANE_SHARE
+            })
+            .collect();
+        rules.shadow = (0..nl)
+            .map(|l| {
+                [l.wrapping_sub(1), l + 1].into_iter().filter(|&m| m < nl && plane[m]).collect()
+            })
+            .collect();
+        let referenced = |l: usize, refs: &[String]| {
+            [l.wrapping_sub(1), l + 1].into_iter().filter(|&m| m < nl && plane[m]).any(|m| {
+                cover[m].iter().any(|&(zn, share)| {
+                    share >= PLANE_SHARE && refs.iter().any(|r| r == &layout.nets[zn].name)
+                })
+            })
+        };
+        let paired: Vec<usize> = layout.pairs.iter().flat_map(|p| [p.p, p.n]).collect();
         for &n in routed {
             let net = &layout.nets[n];
             let class = board.netclasses.iter().find(|c| c.name == net.class);
@@ -131,10 +175,22 @@ impl Rules {
                 .iter()
                 .map(|l| class.map(|c| c.width_on(l).to_mm()).unwrap_or(net.width))
                 .collect();
-            let track: Vec<bool> = match class.filter(|c| !c.layers.is_empty()) {
+            let mut track: Vec<bool> = match class.filter(|c| !c.layers.is_empty()) {
                 Some(c) => copper.iter().map(|l| c.layers.contains(l)).collect(),
                 None => vec![true; nl],
             };
+            let refs: Vec<String> = layout
+                .interfaces
+                .iter()
+                .filter(|i| i.lanes.iter().any(|ln| ln.nets.contains(&net.name)))
+                .flat_map(|i| i.spec.reference.clone())
+                .collect();
+            if !refs.is_empty() {
+                let kept: Vec<bool> = (0..nl).map(|l| track[l] && referenced(l, &refs)).collect();
+                if kept.iter().any(|k| *k) {
+                    track = kept;
+                }
+            }
             let names: Vec<String> = class.map(|c| c.via.clone()).unwrap_or_default();
             let mut net_vias: Vec<usize> =
                 names.iter().filter_map(|v| rules.vias.iter().position(|o| &o.name == v)).collect();
@@ -240,6 +296,7 @@ impl Rules {
                         .map_or(rules.min_width, |(lo, _)| lo.max(rules.min_width))
                 })
                 .collect();
+            let shadows = crit >= SHADOW_CRIT || !refs.is_empty() || paired.contains(&n);
             rules.nets[n] = Some(NetRule {
                 width,
                 clearance,
@@ -250,6 +307,7 @@ impl Rules {
                 neck,
                 narrowest,
                 crit,
+                shadows,
                 bucket,
                 via_bucket,
                 need,

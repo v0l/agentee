@@ -41,6 +41,58 @@ pub struct PartEscape {
     pub failed: Vec<String>,
 }
 
+pub struct ViaFit {
+    pub name: String,
+    pub diameter: f64,
+    pub drill: f64,
+    pub in_pad: bool,
+    pub dog_bone: bool,
+}
+
+pub fn via_fit(model: &Model, p: &agentee_core::layout::Placed, in_pad: bool) -> ViaFit {
+    let pitch = pitch_of(p);
+    let pad = p
+        .pads
+        .iter()
+        .filter(|q| q.kind == PadKind::Smd)
+        .map(|q| {
+            let mut b = Bounds::EMPTY;
+            q.outlines.iter().flatten().for_each(|r| b.add(*r));
+            let [w, h] = b.size();
+            w.min(h)
+        })
+        .fold(0.0, f64::max);
+    let via = model
+        .board
+        .vias
+        .iter()
+        .min_by(|a, b| a.diameter.to_mm().partial_cmp(&b.diameter.to_mm()).unwrap());
+    let name = via.map(|v| v.name.clone()).unwrap_or_else(|| "std".into());
+    let diameter = via.map(|v| v.diameter.to_mm()).unwrap_or(0.35);
+    let drill = via.map(|v| v.drill.to_mm()).unwrap_or(0.2);
+    let min_w = model.board.rules.min_track_width.to_mm();
+    let min_c = model.board.rules.min_clearance.to_mm();
+    let stub_room = pitch * (2.0f64).sqrt() / 2.0 - pad / 2.0;
+    let via_room = stub_room - diameter / 2.0;
+    let dog_bone = stub_room >= min_w / 2.0 + min_c && via_room >= min_c;
+    let fits_ball = pad / 2.0 >= diameter / 2.0 + 1e-3
+        && drill <= model.board.rules.max_filled_via_drill.to_mm() + 1e-6;
+    ViaFit { name, diameter, drill, in_pad: (in_pad && fits_ball) || !dog_bone, dog_bone }
+}
+
+struct FarPad {
+    net: Option<usize>,
+    lo: P,
+    hi: P,
+    copper: Vec<String>,
+}
+
+fn rect_gap(q: P, lo: P, hi: P) -> f64 {
+    let dx = (lo[0] - q[0]).max(q[0] - hi[0]).max(0.0);
+    let dy = (lo[1] - q[1]).max(q[1] - hi[1]).max(0.0);
+    (dx * dx + dy * dy).sqrt()
+}
+
 struct Ball {
     pad: usize,
     net: usize,
@@ -146,20 +198,45 @@ fn escape_part(
     pe.plane = balls.iter().filter(|b| b.plane).count();
     pe.signals = balls.len() - pe.plane;
 
-    let via_name = model
-        .board
-        .vias
+    let fit = via_fit(model, p, in_pad);
+    let via_name = fit.name.clone();
+    let via_d = fit.diameter;
+    let far: Vec<FarPad> = l
+        .parts
         .iter()
-        .min_by(|a, b| a.diameter.to_mm().partial_cmp(&b.diameter.to_mm()).unwrap())
-        .map(|v| v.name.clone())
-        .unwrap_or_else(|| "std".into());
-    let via_d = model
-        .board
-        .vias
-        .iter()
-        .find(|v| v.name == via_name)
-        .map(|v| v.diameter.to_mm())
-        .unwrap_or(0.35);
+        .enumerate()
+        .filter(|(pi, _)| *pi != part)
+        .flat_map(|(_, o)| &o.pads)
+        .filter(|q| !q.copper.is_empty() && !q.copper.contains(&l.copper[0]))
+        .filter_map(|q| {
+            let mut b = Bounds::EMPTY;
+            q.outlines.iter().flatten().for_each(|r| b.add(*r));
+            let near = !b.is_empty()
+                && b.max[0] > gb.min[0] - pitch
+                && b.min[0] < gb.max[0] + pitch
+                && b.max[1] > gb.min[1] - pitch
+                && b.min[1] < gb.max[1] + pitch;
+            near.then(|| FarPad { net: q.net, lo: b.min, hi: b.max, copper: q.copper.clone() })
+        })
+        .collect();
+    let drill_r = fit.drill / 2.0;
+    let in_far_pad = |q: P, net: usize| {
+        far.iter().any(|f| {
+            f.net == Some(net)
+                && q[0] >= f.lo[0] + drill_r
+                && q[0] <= f.hi[0] - drill_r
+                && q[1] >= f.lo[1] + drill_r
+                && q[1] <= f.hi[1] - drill_r
+        })
+    };
+    let far_clash = |q: P, net: usize| {
+        far.iter().any(|f| {
+            f.net != Some(net) && {
+                let c = f.net.map_or(0.0, |n| l.nets[n].clearance).max(l.nets[net].clearance);
+                rect_gap(q, f.lo, f.hi) < via_d / 2.0 + c
+            }
+        })
+    };
 
     let min_w = model.board.rules.min_track_width.to_mm();
     let min_c = model.board.rules.min_clearance.to_mm();
@@ -180,8 +257,8 @@ fn escape_part(
     let pad_cells: Vec<(i64, i64)> = centres.iter().map(|c| cell_of(c.1)).collect();
     let stub_room = pitch * (2.0f64).sqrt() / 2.0 - pad / 2.0;
     let via_room = pitch * (2.0f64).sqrt() / 2.0 - pad / 2.0 - via_d / 2.0;
-    let dog_bone_fits = stub_room >= min_w / 2.0 + min_c && via_room >= min_c;
-    let in_pad = in_pad || !dog_bone_fits;
+    let dog_bone_fits = fit.dog_bone;
+    let in_pad = fit.in_pad;
     if !dog_bone_fits {
         pe.note = Some(format!(
             "dog-bone does not fit at {pitch:.2} mm pitch ({:.2} mm stub room, {:.2} mm via room), via in pad",
@@ -191,11 +268,12 @@ fn escape_part(
     let mut via_cells: Vec<(i64, i64)> = Vec::new();
     let mut stub_cells: Vec<(i64, i64)> = Vec::new();
     let site_of = |cell: (i64, i64),
+                   net: usize,
                    taken: &[&Vec<(i64, i64)>],
                    top_taken: &[&Vec<(i64, i64)>]|
      -> Option<(i64, i64)> {
         if in_pad {
-            return Some(cell);
+            return (!far_clash(at_of(cell), net)).then_some(cell);
         }
         [(1, 1), (-1, 1), (1, -1), (-1, -1)].iter().map(|(dx, dy)| (cell.0 + dx, cell.1 + dy)).find(
             |c| {
@@ -206,6 +284,7 @@ fn escape_part(
                     && c.1 < ny
                     && !taken.iter().any(|t| t.contains(c))
                     && !pad_cells.contains(c)
+                    && !far_clash(at_of(*c), net)
                     && !top_taken
                         .iter()
                         .any(|t| t.contains(c) || stub.iter().any(|q| t.contains(q)))
@@ -251,15 +330,48 @@ fn escape_part(
             .min(ny - 1 - margin - b.cell.1);
         std::cmp::Reverse(e)
     });
+    let corners = |c: (i64, i64)| {
+        [(1, 1), (-1, 1), (1, -1), (-1, -1)]
+            .map(|(dx, dy)| (c.0 + dx, c.1 + dy))
+            .into_iter()
+            .filter(|c| c.0 >= 0 && c.1 >= 0 && c.0 < nx && c.1 < ny && !pad_cells.contains(c))
+    };
+    let mut held: Vec<usize> = Vec::new();
+    for b in &plane_balls {
+        if l.vias.iter().any(|v| {
+            v.net == b.net && geom::dist(v.at, b.at) <= half * 1.5 && in_far_pad(v.at, b.net)
+        }) {
+            held.push(b.pad);
+            continue;
+        }
+        let own = in_pad.then_some(b.cell).into_iter();
+        let around = corners(b.cell).filter(|_| dog_bone_fits);
+        let Some(site) = own.chain(around).find(|&c| {
+            let shared = plane_vias.iter().any(|&(q, n)| q == c && n == b.net);
+            in_far_pad(at_of(c), b.net)
+                && (shared || !(via_cells.contains(&c) || stub_cells.contains(&c)))
+        }) else {
+            continue;
+        };
+        place_at(b, site, &mut via_cells, &mut stub_cells, plan);
+        plane_vias.push((site, b.net));
+        held.push(b.pad);
+    }
     for b in plane_balls {
-        if in_pad {
+        if held.contains(&b.pad) {
+            continue;
+        }
+        if in_pad && !far_clash(at_of(b.cell), b.net) {
             place_at(b, b.cell, &mut via_cells, &mut stub_cells, plan);
             continue;
         }
+        if !dog_bone_fits {
+            no_site.push(b.pad);
+            continue;
+        }
         let mut best: Option<((i64, i64), usize)> = None;
-        for (dx, dy) in [(1, 1), (-1, 1), (1, -1), (-1, -1)] {
-            let c = (b.cell.0 + dx, b.cell.1 + dy);
-            if c.0 < 0 || c.1 < 0 || c.0 >= nx || c.1 >= ny || pad_cells.contains(&c) {
+        for c in corners(b.cell) {
+            if far_clash(at_of(c), b.net) {
                 continue;
             }
             let shared = plane_vias.iter().any(|&(q, n)| q == c && n == b.net);
@@ -302,7 +414,7 @@ fn escape_part(
             if b.plane || (class_allows(b.net, &layers[0]) && !inner) {
                 continue;
             }
-            if let Some(c) = site_of(b.cell, &[&via_cells], &[&stub_cells]) {
+            if let Some(c) = site_of(b.cell, b.net, &[&via_cells], &[&stub_cells]) {
                 place_at(b, c, &mut via_cells, &mut stub_cells, plan);
                 pre_site.insert(bi, c);
             }
@@ -451,6 +563,7 @@ fn escape_part(
                                 }
                                 let s = site_of(
                                     balls[bi].cell,
+                                    balls[bi].net,
                                     &[&reserved, &used],
                                     &[&stub_cells, &top_used],
                                 );
@@ -468,6 +581,16 @@ fn escape_part(
                         blocked.extend(stub_cells.iter().copied());
                     } else {
                         blocked.extend(sites.iter().map(|(_, c)| *c));
+                        for y in 0..ny {
+                            for x in 0..nx {
+                                let q = at_of((x, y));
+                                if far.iter().any(|f| {
+                                    f.copper.contains(layer) && rect_gap(q, f.lo, f.hi) < widest
+                                }) {
+                                    blocked.push((x, y));
+                                }
+                            }
+                        }
                     }
                     if here.is_empty() {
                         continue;

@@ -209,7 +209,9 @@ fn decaps(model: &Model) -> Vec<Decap> {
     let mut taken: Vec<(usize, usize)> = Vec::new();
     let mut caps: Vec<(usize, usize, f64)> = Vec::new();
     for (ci, c) in l.parts.iter().enumerate() {
-        if !place::is_capacitor(&c.reference, &c.footprint_name) || c.pads.len() != 2 {
+        if !place::is_capacitor(&c.reference, &c.footprint_name)
+            || c.pads.iter().filter(|q| !q.copper.is_empty()).count() != 2
+        {
             continue;
         }
         let Some(rail) = c.pads.iter().filter_map(|q| q.net).find(|&n| {

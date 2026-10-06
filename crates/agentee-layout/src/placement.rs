@@ -12,12 +12,23 @@ pub struct Move {
     pub at: P,
     pub rotation: f64,
     pub bottom: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hide_label: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct UnderVia {
+    pub net: String,
+    pub at: P,
+    pub via: String,
+    pub stub: Option<(String, P, f64)>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct PlacePlan {
     pub chains: Vec<Vec<String>>,
     pub moves: Vec<Move>,
+    pub under: Vec<UnderVia>,
     #[serde(skip)]
     pub texts: Vec<place::TextMove>,
 }
@@ -27,6 +38,7 @@ struct Cell {
     reference: String,
     fixed: bool,
     chained: bool,
+    under: bool,
     at: P,
     rotation: f64,
     bottom: bool,
@@ -35,6 +47,7 @@ struct Cell {
     half: [f64; 2],
     area: f64,
     pins: Vec<(usize, P)>,
+    numbers: Vec<String>,
     pin_count: usize,
 }
 
@@ -84,21 +97,32 @@ fn flip_cell(c: &mut Cell, rotation: f64, bottom: bool) {
     c.bottom = bottom;
 }
 
-pub fn sides_of(cfg: &EngineFile) -> place::Sides {
-    match cfg
-        .place
+fn decaps_below(cfg: &EngineFile) -> bool {
+    cfg.place
         .as_ref()
-        .and_then(|p| p.sides.as_deref())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("both") => place::Sides::Both,
-        Some("bottom") | Some("b") => place::Sides::Bottom,
-        _ => place::Sides::Top,
-    }
+        .and_then(|p| p.bga_decaps.as_deref())
+        .is_none_or(|s| !s.eq_ignore_ascii_case("top"))
 }
 
-fn build(model: &Model, sides: place::Sides) -> Board {
+fn bga_decaps<'a>(model: &'a Model) -> Vec<&'a crate::constraints::Decap> {
+    let Some(g) = model.constraints.as_ref() else { return Vec::new() };
+    let l = &model.layout;
+    g.decaps
+        .iter()
+        .filter(|d| {
+            l.parts.iter().any(|p| {
+                p.reference == d.ic
+                    && !p.bottom
+                    && crate::escape::is_bga(p)
+                    && place::role_of(&p.reference, &p.footprint_name, &p.footprint)
+                        == place::Role::Chip
+            })
+        })
+        .collect()
+}
+
+fn build(model: &Model) -> Board {
+    let movable_bottom: Vec<String> = bga_decaps(model).iter().map(|d| d.cap.clone()).collect();
     let l = &model.layout;
     let b = model.board;
     let locked: Vec<&str> =
@@ -129,6 +153,7 @@ fn build(model: &Model, sides: place::Sides) -> Board {
         let half = [(bb.max[0] - bb.min[0]) / 2.0, (bb.max[1] - bb.min[1]) / 2.0];
         let c = bb.center();
         let mut pins = Vec::new();
+        let mut numbers = Vec::new();
         for pad in &p.pads {
             let Some(net) = pad.net else { continue };
             let mut pb = Bounds::EMPTY;
@@ -138,14 +163,15 @@ fn build(model: &Model, sides: place::Sides) -> Board {
             }
             let q = pb.center();
             pins.push((net, [q[0] - at[0], q[1] - at[1]]));
+            numbers.push(pad.number.clone());
         }
         let mounting = p.pads.iter().all(|q| q.net.is_none());
-        cells.push(Cell {
+        let flips = p.bottom && movable_bottom.contains(&p.reference);
+        let mut cell = Cell {
             reference: p.reference.clone(),
-            fixed: locked.contains(&p.reference.as_str())
-                || mounting
-                || (p.bottom && sides == place::Sides::Top),
+            fixed: locked.contains(&p.reference.as_str()) || mounting || (p.bottom && !flips),
             chained: false,
+            under: false,
             at,
             rotation: p.rotation,
             bottom: p.bottom,
@@ -155,7 +181,12 @@ fn build(model: &Model, sides: place::Sides) -> Board {
             area: 4.0 * half[0] * half[1],
             pin_count: p.pads.len(),
             pins,
-        });
+            numbers,
+        };
+        if flips {
+            flip_cell(&mut cell, p.rotation, false);
+        }
+        cells.push(cell);
     }
     let mut by_net: HashMap<usize, Vec<(usize, P)>> = HashMap::new();
     for (ci, c) in cells.iter().enumerate() {
@@ -226,6 +257,7 @@ fn moves_of(bd: &Board) -> Vec<Move> {
             at: [(c.at[0] * 1000.0).round() / 1000.0, (c.at[1] * 1000.0).round() / 1000.0],
             rotation: c.rotation,
             bottom: c.bottom,
+            hide_label: c.under,
         })
         .collect()
 }
@@ -393,8 +425,12 @@ fn global_place(
     texts: &mut Vec<place::TextMove>,
     spread: &Spread,
 ) -> Result<(String, Vec<String>), String> {
-    let free: Vec<String> =
-        bd.cells.iter().filter(|c| !c.fixed && !c.chained).map(|c| c.reference.clone()).collect();
+    let free: Vec<String> = bd
+        .cells
+        .iter()
+        .filter(|c| !c.fixed && !c.chained && !c.under)
+        .map(|c| c.reference.clone())
+        .collect();
     let l = &model.layout;
     let footprints: HashMap<&str, &agentee_core::footprint::Footprint> =
         l.parts.iter().map(|p| (p.footprint_name.as_str(), &p.footprint)).collect();
@@ -404,11 +440,14 @@ fn global_place(
         fast.push(pr.n.clone());
     }
     let mut placements = model.file.footprints.clone();
-    for c in bd.cells.iter().filter(|c| c.chained) {
+    for c in bd.cells.iter().filter(|c| !c.fixed) {
         if let Some(f) = placements.iter_mut().find(|f| f.reference == c.reference) {
-            f.at = agentee_core::units::Point::mm(c.at[0], c.at[1]);
-            f.rotation = Some(c.rotation);
-            f.locked = true;
+            f.side = c.bottom.then_some(agentee_core::layout::BoardSide::Bottom);
+            if c.chained || c.under {
+                f.at = agentee_core::units::Point::mm(c.at[0], c.at[1]);
+                f.rotation = Some(c.rotation);
+                f.locked = true;
+            }
         }
     }
     let spec = model.file.place.clone().unwrap_or_default();
@@ -442,9 +481,10 @@ fn global_place(
         }
     }
     let note = format!(
-        "{} parts placed around {} chained, hpwl {before:.0} -> {:.0} mm, {} crossings",
+        "{} parts placed around {} chained and {} under BGAs, hpwl {before:.0} -> {:.0} mm, {} crossings",
         free.len(),
         bd.cells.iter().filter(|c| c.chained).count(),
+        bd.cells.iter().filter(|c| c.under).count(),
         hpwl(bd),
         result.after.crossings
     );
@@ -488,47 +528,348 @@ fn facing_cost(bd: &Board, ci: usize, c: &Cell, on_net: &HashMap<usize, Vec<usiz
     cost
 }
 
-fn decaps_under(model: &Model, bd: &mut Board) -> usize {
-    let Some(groups) = model.constraints.as_ref() else { return 0 };
+fn rect_gap(q: P, c: P, h: [f64; 2]) -> f64 {
+    let dx = ((q[0] - c[0]).abs() - h[0]).max(0.0);
+    let dy = ((q[1] - c[1]).abs() - h[1]).max(0.0);
+    (dx * dx + dy * dy).sqrt()
+}
+
+struct BackPad {
+    at: P,
+    half: [f64; 2],
+    net: usize,
+}
+
+fn under_bgas(
+    model: &Model,
+    cfg: &EngineFile,
+    bd: &mut Board,
+    out: &mut Vec<UnderVia>,
+) -> (usize, usize) {
+    out.clear();
     let l = &model.layout;
-    let mut moved = 0;
-    for dc in &groups.decaps {
-        let Some(ci) = bd.cells.iter().position(|c| c.reference == dc.cap) else { continue };
-        let Some(ic) = bd.cells.iter().position(|c| c.reference == dc.ic) else { continue };
-        let c = &bd.cells[ci];
-        if c.fixed || c.chained || c.through || bd.cells[ic].bottom {
+    let decaps = bga_decaps(model);
+    let in_pad_cfg = cfg.access.as_ref().and_then(|a| a.via_in_pad).unwrap_or(false);
+    let ground = |n: usize| place::is_ground(&l.nets[n].name);
+    let clear = |a: usize, b: usize| l.nets[a].clearance.max(l.nets[b].clearance);
+    let g = cfg
+        .detail
+        .as_ref()
+        .and_then(|d| d.grid)
+        .map(|g| g.to_mm())
+        .unwrap_or(crate::negotiate::Options::default().grid);
+    let slack = g * 0.1;
+    let phase = crate::negotiate::ball_phase(l, g);
+    let snaps = |s: P| -> Vec<P> {
+        let t = [(s[0] - phase[0]) / g, (s[1] - phase[1]) / g];
+        let near = |v: f64| {
+            let mut k = vec![v.round(), (v - 0.5).round(), (v + 0.5).round()];
+            k.sort_by(f64::total_cmp);
+            k.dedup();
+            k
+        };
+        let mut out: Vec<P> = near(t[0])
+            .into_iter()
+            .flat_map(|x| near(t[1]).into_iter().map(move |y| [x, y]))
+            .map(|[x, y]| [phase[0] + x * g, phase[1] + y * g])
+            .filter(|q| geom::dist(*q, s) <= 0.75 * g + 1e-9)
+            .collect();
+        out.sort_by(|a, b| geom::dist(*a, s).total_cmp(&geom::dist(*b, s)));
+        out
+    };
+    let hole_smd = model.board.rules.min_hole_to_smd_pad.to_mm();
+    let hole_to_hole = model.board.rules.min_hole_to_hole.to_mm();
+    let mut taken: Vec<[f64; 4]> = bd
+        .cells
+        .iter()
+        .filter(|c| (c.bottom || c.through) && !c.under)
+        .map(|c| rect_of(c, c.at, 0.0))
+        .collect();
+    let mut ics: Vec<&str> = decaps.iter().map(|d| d.ic.as_str()).collect();
+    ics.dedup();
+    ics.sort();
+    ics.dedup();
+    let (mut placed, mut wanted) = (0, 0);
+    for ic in ics {
+        let Some(part) = l.parts.iter().find(|p| p.reference == ic) else { continue };
+        let Some(ic_i) = bd.cells.iter().position(|c| c.reference == ic) else { continue };
+        let pitch = crate::escape::pitch_of(part);
+        let half = pitch / 2.0;
+        let fit = crate::escape::via_fit(model, part, in_pad_cfg);
+        let via_r = fit.diameter / 2.0;
+        let drill_r = fit.drill / 2.0;
+        let same_reach = via_r.max(drill_r + hole_smd) + 1e-3 + slack;
+        let cell = bd.cells[ic_i].clone();
+        let balls: Vec<(usize, P, String)> = cell
+            .pins
+            .iter()
+            .zip(&cell.numbers)
+            .map(|(&(n, o), num)| (n, [cell.at[0] + o[0], cell.at[1] + o[1]], num.clone()))
+            .collect();
+        if balls.is_empty() {
             continue;
         }
-        let Some(net) = l.nets.iter().position(|n| n.name == dc.net) else { continue };
-        let Some(part) = l.parts.iter().find(|p| p.reference == dc.ic) else { continue };
-        let Some(pad) = part.pads.iter().find(|q| q.number == dc.pin) else { continue };
-        let mut pb = Bounds::EMPTY;
-        pad.outlines.iter().flatten().for_each(|q| pb.add(*q));
-        if pb.is_empty() {
-            continue;
+        let origin = balls[0].1;
+        let key = |q: P| {
+            (((q[0] - origin[0]) / half).round() as i64, ((q[1] - origin[1]) / half).round() as i64)
+        };
+        let corners = |q: P| {
+            [[-half, -half], [half, -half], [-half, half], [half, half]]
+                .map(|d| [q[0] + d[0], q[1] + d[1]])
+        };
+        let sites: Vec<(usize, P)> = if fit.in_pad {
+            balls.iter().enumerate().map(|(i, b)| (i, b.1)).collect()
+        } else {
+            balls.iter().enumerate().flat_map(|(i, b)| corners(b.1).map(|c| (i, c))).collect()
+        };
+        let mut at_key: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (k, s) in sites.iter().enumerate() {
+            at_key.entry(key(s.1)).or_default().push(k);
         }
-        let pin = pb.center();
-        let shift = [pin[0] - part.at.to_mm()[0], pin[1] - part.at.to_mm()[1]];
-        let target = [bd.cells[ic].at[0] + shift[0], bd.cells[ic].at[1] + shift[1]];
-        let mut best: Option<(f64, Cell)> = None;
-        for rot in [0.0, 90.0, 180.0, 270.0] {
-            let mut t = bd.cells[ci].clone();
-            flip_cell(&mut t, rot, true);
-            let Some(&(_, off)) = t.pins.iter().find(|p| p.0 == net) else { continue };
-            let toward = [bd.cells[ic].at[0] - target[0], bd.cells[ic].at[1] - target[1]];
-            t.at = [target[0] - off[0], target[1] - off[1]];
-            let centre = [t.at[0] + t.box_off[0], t.at[1] + t.box_off[1]];
-            let outward = (centre[0] - target[0]) * toward[0] + (centre[1] - target[1]) * toward[1];
-            if best.as_ref().is_none_or(|b| outward > b.0) {
-                best = Some((outward, t));
+        let mut used_balls: Vec<usize> = Vec::new();
+        let mut sites_used: Vec<P> = Vec::new();
+        let mut vias: Vec<(P, usize)> = Vec::new();
+        let ball_shape: Vec<Vec<Vec<P>>> = part
+            .pads
+            .iter()
+            .filter(|q| q.net.is_some())
+            .filter_map(|q| {
+                let mut b = Bounds::EMPTY;
+                q.outlines.iter().flatten().for_each(|r| b.add(*r));
+                let c = (!b.is_empty()).then(|| b.center())?;
+                Some(
+                    q.outlines
+                        .iter()
+                        .map(|o| o.iter().map(|r| [r[0] - c[0], r[1] - c[1]]).collect())
+                        .collect(),
+                )
+            })
+            .collect();
+        let front_ok = |v: P, n: usize, own: usize| {
+            balls.iter().zip(&ball_shape).enumerate().all(|(k, (b, shape))| {
+                if geom::dist(v, b.1) > pitch * 2.0 {
+                    return true;
+                }
+                let q = [v[0] - b.1[0], v[1] - b.1[1]];
+                let gap = shape
+                    .iter()
+                    .map(|o| {
+                        let edge = (0..o.len())
+                            .map(|i| geom::point_segment_distance(q, o[i], o[(i + 1) % o.len()]))
+                            .fold(f64::MAX, f64::min);
+                        if geom::point_in_polygon(q, o) { -edge } else { edge }
+                    })
+                    .fold(f64::MAX, f64::min);
+                if b.0 != n {
+                    gap >= via_r + clear(b.0, n) + slack && gap >= same_reach
+                } else if k == own && fit.in_pad {
+                    gap <= -(via_r + 1e-3)
+                } else {
+                    gap >= same_reach
+                }
+            })
+        };
+        let holes_ok = |a: P, na: usize, b: P, nb: usize| {
+            let d = geom::dist(a, b);
+            if na == nb && d < 1e-6 {
+                return true;
+            }
+            d >= fit.drill + hole_to_hole && (na == nb || d >= 2.0 * via_r + clear(na, nb))
+        };
+        let mut back: Vec<BackPad> = Vec::new();
+        let mut caps: Vec<&&crate::constraints::Decap> =
+            decaps.iter().filter(|d| d.ic == ic).collect();
+        caps.sort_by(|a, b| a.farads.total_cmp(&b.farads));
+        for d in caps {
+            let Some(ci) = bd.cells.iter().position(|c| c.reference == d.cap) else { continue };
+            let c = &bd.cells[ci];
+            if c.fixed || c.chained || c.through || c.pins.len() != 2 {
+                continue;
+            }
+            let Some(rail) = l.nets.iter().position(|n| n.name == d.net) else { continue };
+            let Some(cp) = l.parts.iter().find(|p| p.reference == d.cap) else { continue };
+            let turned = |r: f64| (r.rem_euclid(180.0) - 90.0).abs() < 1e-6;
+            let local: Vec<(usize, [f64; 2])> = cp
+                .pads
+                .iter()
+                .filter(|q| !q.copper.is_empty())
+                .filter_map(|q| {
+                    let mut b = Bounds::EMPTY;
+                    q.outlines.iter().flatten().for_each(|r| b.add(*r));
+                    let [w, h] = b.size();
+                    let half =
+                        if turned(cp.rotation) { [h / 2.0, w / 2.0] } else { [w / 2.0, h / 2.0] };
+                    Some((q.net?, half))
+                })
+                .collect();
+            let (Some(&(_, rail_half)), Some(&(gnd, gnd_half))) = (
+                local.iter().find(|p| p.0 == rail),
+                local.iter().find(|p| p.0 != rail && ground(p.0)),
+            ) else {
+                continue;
+            };
+            let span = geom::dist(c.pins[0].1, c.pins[1].1);
+            if span > 1.5 * pitch {
+                continue;
+            }
+            wanted += 1;
+            let bound = balls.iter().find(|b| b.2 == d.pin).map(|b| b.1).unwrap_or(cell.at);
+            let free_site = |s: P| !sites_used.iter().any(|v| geom::dist(*v, s) < 1e-3);
+            let mut pairs: Vec<(f64, usize, usize, P, P)> = Vec::new();
+            for &(b1, s1) in &sites {
+                if balls[b1].0 != rail || used_balls.contains(&b1) || !free_site(s1) {
+                    continue;
+                }
+                let k = key(s1);
+                for (dx, dy) in [(2, 0), (-2, 0), (0, 2), (0, -2)] {
+                    for &j in at_key.get(&(k.0 + dx, k.1 + dy)).into_iter().flatten() {
+                        let (b2, s2) = sites[j];
+                        if balls[b2].0 != gnd || used_balls.contains(&b2) || !free_site(s2) {
+                            continue;
+                        }
+                        let cost = geom::dist(balls[b1].1, bound) + 0.1 * geom::dist(s2, bound);
+                        pairs.push((cost, b1, b2, s1, s2));
+                    }
+                }
+            }
+            pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
+            'pairs: for &(_, b1, b2, s1, s2) in &pairs {
+                for v1 in snaps(s1) {
+                    if !front_ok(v1, rail, b1) {
+                        continue;
+                    }
+                    for v2 in snaps(s2) {
+                        let run = [v2[0] - v1[0], v2[1] - v1[1]];
+                        let want = [s2[0] - s1[0], s2[1] - s1[1]];
+                        if (run[0] * want[1] - run[1] * want[0]).abs() > 1e-6
+                            || run[0] * want[0] + run[1] * want[1] <= 0.0
+                            || !front_ok(v2, gnd, b2)
+                            || !holes_ok(v1, rail, v2, gnd)
+                            || vias.iter().any(|&(q, n)| {
+                                !holes_ok(q, n, v1, rail) || !holes_ok(q, n, v2, gnd)
+                            })
+                        {
+                            continue;
+                        }
+                        for rot in [0.0, 90.0, 180.0, 270.0] {
+                            let mut t = bd.cells[ci].clone();
+                            flip_cell(&mut t, rot, true);
+                            let (Some(o1), Some(o2)) = (
+                                t.pins.iter().find(|p| p.0 == rail).map(|p| p.1),
+                                t.pins.iter().find(|p| p.0 == gnd).map(|p| p.1),
+                            ) else {
+                                continue;
+                            };
+                            let along = [o2[0] - o1[0], o2[1] - o1[1]];
+                            if (along[0] * run[1] - along[1] * run[0]).abs() > 1e-6
+                                || along[0] * run[0] + along[1] * run[1] <= 0.0
+                            {
+                                continue;
+                            }
+                            let mid = [(v1[0] + v2[0]) / 2.0, (v1[1] + v2[1]) / 2.0];
+                            t.at = [mid[0] - (o1[0] + o2[0]) / 2.0, mid[1] - (o1[1] + o2[1]) / 2.0];
+                            let size = |h: [f64; 2]| if turned(rot) { [h[1], h[0]] } else { h };
+                            let pads = [
+                                BackPad {
+                                    at: [t.at[0] + o1[0], t.at[1] + o1[1]],
+                                    half: size(rail_half),
+                                    net: rail,
+                                },
+                                BackPad {
+                                    at: [t.at[0] + o2[0], t.at[1] + o2[1]],
+                                    half: size(gnd_half),
+                                    net: gnd,
+                                },
+                            ];
+                            let holds = |p: &BackPad, v: P| {
+                                (0..2).all(|k| (v[k] - p.at[k]).abs() + via_r + 1e-3 <= p.half[k])
+                            };
+                            if !holds(&pads[0], v1) || !holds(&pads[1], v2) {
+                                continue;
+                            }
+                            let r = rect_of(&t, t.at, 0.0);
+                            if taken.iter().any(|q| overlaps(r, *q)) {
+                                continue;
+                            }
+                            let mut spots: Vec<(P, usize)> = vias.clone();
+                            spots.push((v1, rail));
+                            spots.push((v2, gnd));
+                            if fit.in_pad {
+                                spots.extend(
+                                    balls
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(i, _)| *i != b1 && *i != b2)
+                                        .map(|(_, b)| (b.1, b.0)),
+                                );
+                            }
+                            let pad_ok = |q: P, n: usize, p: &BackPad| {
+                                if p.net == n {
+                                    holds(p, q) || rect_gap(q, p.at, p.half) >= same_reach
+                                } else {
+                                    rect_gap(q, p.at, p.half) >= via_r + clear(p.net, n) + slack
+                                }
+                            };
+                            if !spots.iter().all(|&(q, n)| pads.iter().all(|p| pad_ok(q, n, p))) {
+                                continue;
+                            }
+                            if !back.iter().all(|p| pad_ok(v1, rail, p) && pad_ok(v2, gnd, p)) {
+                                continue;
+                            }
+                            if !fit.in_pad {
+                                let mut all: Vec<&BackPad> = back.iter().collect();
+                                all.extend(pads.iter());
+                                let reach = 2.0 * pitch;
+                                let stranded = balls.iter().enumerate().any(|(i, b)| {
+                                    i != b1
+                                        && i != b2
+                                        && !used_balls.contains(&i)
+                                        && geom::dist(b.1, mid) < reach
+                                        && corners(b.1).iter().all(|&q| {
+                                            !free_site(q)
+                                                || geom::dist(q, v1) < pitch / 2.0
+                                                || geom::dist(q, v2) < pitch / 2.0
+                                                || all.iter().any(|p| !pad_ok(q, b.0, p))
+                                        })
+                                });
+                                if stranded {
+                                    continue;
+                                }
+                            }
+                            for (v, n, b) in [(v1, rail, b1), (v2, gnd, b2)] {
+                                let ball = balls[b].1;
+                                let off = geom::dist(v, ball) > 1e-6 && !fit.in_pad;
+                                let width = l.nets[n].width.min(
+                                    ball_shape[b]
+                                        .iter()
+                                        .flatten()
+                                        .map(|q| geom::dist(*q, [0.0, 0.0]))
+                                        .fold(f64::MAX, f64::min)
+                                        * 2.0,
+                                );
+                                out.push(UnderVia {
+                                    net: l.nets[n].name.clone(),
+                                    at: v,
+                                    via: fit.name.clone(),
+                                    stub: off.then(|| (l.copper[0].clone(), ball, width)),
+                                });
+                            }
+                            t.under = true;
+                            bd.cells[ci] = t;
+                            taken.push(r);
+                            used_balls.extend([b1, b2]);
+                            sites_used.extend([s1, s2]);
+                            vias.extend([(v1, rail), (v2, gnd)]);
+                            back.extend(pads);
+                            placed += 1;
+                            break 'pairs;
+                        }
+                    }
+                }
             }
         }
-        if let Some((_, t)) = best {
-            bd.cells[ci] = t;
-            moved += 1;
-        }
     }
-    moved
+    (placed, wanted)
 }
 
 fn face(bd: &mut Board) -> usize {
@@ -544,7 +885,7 @@ fn face(bd: &mut Board) -> usize {
     let mut turned = 0;
     for ci in 0..bd.cells.len() {
         let c = &bd.cells[ci];
-        if c.fixed || c.chained || c.pin_count > FACE_PINS || c.pins.len() < 2 {
+        if c.fixed || c.chained || c.under || c.pin_count > FACE_PINS || c.pins.len() < 2 {
             continue;
         }
         let here = facing_cost(bd, ci, c, &on_net);
@@ -592,7 +933,8 @@ fn legalise(
         })
         .map(|p| p.reference.as_str())
         .collect();
-    let held = |c: &Cell| c.fixed || c.chained || anchored.contains(&c.reference.as_str());
+    let held =
+        |c: &Cell| c.fixed || c.chained || c.under || anchored.contains(&c.reference.as_str());
     let gap_of = |i: usize| grow.get(&i).copied().unwrap_or(0.0);
     let side = |c: &Cell| {
         if c.through {
@@ -684,7 +1026,7 @@ impl Phase for Place {
 
     fn run(&self, model: &mut Model, cfg: &EngineFile) -> PhaseReport {
         let mut report = PhaseReport { phase: "place".into(), ..Default::default() };
-        let mut bd = build(model, sides_of(cfg));
+        let mut bd = build(model);
         let mut plan = model.placement.clone().unwrap_or_default();
         apply_plan(&mut bd, &plan);
         let mut grow: HashMap<usize, f64> = HashMap::new();
@@ -709,6 +1051,19 @@ impl Phase for Place {
         for ch in &plan.chains {
             report.notes.push(format!("chain in a line: {}", ch.join(" > ")));
         }
+        let below = decaps_below(cfg);
+        let bgas_held =
+            bd.cells.iter().all(|c| {
+                c.fixed
+                    || c.chained
+                    || !model.layout.parts.iter().any(|p| {
+                        p.reference == c.reference && crate::escape::is_bga(p) && !p.bottom
+                    })
+            });
+        let mut under = (0, 0);
+        if below && bgas_held {
+            under = under_bgas(model, cfg, &mut bd, &mut plan.under);
+        }
         match global_place(model, cfg, &mut bd, &mut plan.texts, &spread) {
             Ok((note, failed)) => {
                 report.notes.push(note);
@@ -728,7 +1083,7 @@ impl Phase for Place {
                     })
                     .map(|h| h.overflow)
                     .sum();
-                if over > 0.0 && !c.fixed && !c.chained {
+                if over > 0.0 && !c.fixed && !c.chained && !c.under {
                     grow.insert(i, (over * HOT_GROW).min(MAX_GROW));
                 }
             }
@@ -738,11 +1093,16 @@ impl Phase for Place {
                 grow.len()
             ));
         }
-        let turned = face(&mut bd);
-        if sides_of(cfg) != place::Sides::Top {
-            let flipped = decaps_under(model, &mut bd);
-            report.notes.push(format!("{flipped} decaps moved under their pin on the back"));
+        if below && !bgas_held {
+            under = under_bgas(model, cfg, &mut bd, &mut plan.under);
         }
+        if below {
+            report.notes.push(format!(
+                "{} of {} BGA decaps on the back, each pad on a ball's via",
+                under.0, under.1
+            ));
+        }
+        let turned = face(&mut bd);
         if turned > 0 {
             report.notes.push(format!("{turned} parts turned to face what they connect to"));
         }

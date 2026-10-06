@@ -113,7 +113,7 @@ pub struct PlacePhaseFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spread: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sides: Option<String>,
+    pub bga_decaps: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

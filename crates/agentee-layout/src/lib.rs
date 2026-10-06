@@ -24,6 +24,7 @@ use serde::Serialize;
 
 pub const ROUTE: &str = "route";
 pub const PLANES: &str = "planes";
+pub const PLACE: &str = "place";
 pub const RETIRED_PLANS: &[&str] = &["detail", "escape", "tie", "global"];
 
 pub struct Model<'a> {
@@ -387,6 +388,18 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                 && !plan.moves.is_empty()
             {
                 d.text = write_moves(&d.text, &plan.moves)?;
+                d.text = if plan.under.is_empty() {
+                    strip_plan(&d.text, PLACE)
+                } else {
+                    let mut t = String::new();
+                    for u in &plan.under {
+                        if let Some((layer, from, width)) = &u.stub {
+                            t += &track_toml(&u.net, layer, Some(*width), &[*from, u.at]);
+                        }
+                        t += &via_toml(&u.net, u.at, &u.via);
+                    }
+                    write_plan(&d.text, PLACE, &t)
+                };
                 if !plan.texts.is_empty() {
                     let mut doc: toml_edit::DocumentMut =
                         d.text.parse().map_err(|e| format!("{e}"))?;
@@ -518,6 +531,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         r.changed = false;
         finish::neck(model, &mut r);
         finish::dedouble(model, &mut r);
+        finish::trim_pours(model, &mut r);
         if r.changed {
             reload_ms += d.write_route(model)?;
         }
@@ -845,6 +859,12 @@ pub fn write_moves(text: &str, moves: &[placement::Move]) -> Result<String, Stri
             t["side"] = toml_edit::value("bottom");
         } else {
             t.remove("side");
+        }
+        if m.hide_label {
+            let mut hidden = toml_edit::InlineTable::new();
+            hidden.insert("hide", true.into());
+            t["label"] = toml_edit::value(hidden);
+            continue;
         }
         let label = t.get_mut("label").and_then(|l| l.as_table_like_mut());
         if let (Some(label), Some(from)) = (label, old_at)

@@ -75,7 +75,7 @@ impl Shape {
     }
 }
 
-fn ball_phase(layout: &Layout, g: f64) -> P {
+pub fn ball_phase(layout: &Layout, g: f64) -> P {
     let wrap = |v: f64| v.rem_euclid(g);
     layout
         .parts

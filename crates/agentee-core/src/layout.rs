@@ -1097,7 +1097,11 @@ impl LayoutFile {
                     if !f.nets.is_empty() && !f.nets.iter().any(|g| glob(g, &nets[net].name)) {
                         continue;
                     }
-                    if vias.iter().any(|v: &Via| geom::dist(v.at, *c) < 1e-6) {
+                    if vias.iter().any(|v: &Via| {
+                        geom::dist(v.at, *c) < 1e-6
+                            || v.net == net
+                                && pad.outlines.iter().any(|o| geom::point_in_polygon(v.at, o))
+                    }) {
                         continue;
                     }
                     let edge = (c[0] - grid.min[0])
@@ -1118,8 +1122,16 @@ impl LayoutFile {
                         break;
                     };
                     let v = Via { source: ViaSource::Fanout(i), ..Via::of(spec, net, *c, &copper) };
-                    let reach = v.diameter / 2.0 + nets[net].clearance;
+                    let hole_cu = board.rules.min_via_hole_to_copper.to_mm();
                     let blocked = parts.iter().flat_map(|p| &p.pads).any(|q| {
+                        let reach = match q.net {
+                            Some(n) if n == net => v.diameter / 2.0,
+                            other => (v.diameter / 2.0
+                                + other
+                                    .map_or(0.0, |n| nets[n].clearance)
+                                    .max(nets[net].clearance))
+                            .max(v.drill / 2.0 + hole_cu),
+                        };
                         !std::ptr::eq(q, *pad)
                             && q.copper.iter().any(|l| v.layers.contains(l))
                             && q.outlines.iter().any(|o| {

@@ -32,10 +32,11 @@ pub struct Copper {
     pub segs: Vec<(usize, P, P, f64)>,
     pub vias: Vec<(P, usize)>,
     pub clearance: f64,
+    pub shadow: bool,
 }
 
 impl Copper {
-    pub fn of(pieces: &[Piece], clearance: f64, pads: &[PadRef]) -> Copper {
+    pub fn of(pieces: &[Piece], clearance: f64, pads: &[PadRef], shadow: bool) -> Copper {
         let mut segs = Vec::new();
         let mut vias = Vec::new();
         for p in pieces {
@@ -74,7 +75,7 @@ impl Copper {
             }
             vias.extend(p.vias.iter().copied());
         }
-        Copper { segs, vias, clearance }
+        Copper { segs, vias, clearance, shadow }
     }
 }
 
@@ -169,6 +170,14 @@ impl Soft {
             {
                 let r = (h + vb.r + c.clearance.max(vb.c)).max(h + vb.dr + rules.hole_cu) + slack;
                 reach.push((true, vi, r));
+            }
+            if c.shadow {
+                for &m in &rules.shadow[l] {
+                    for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| bk.layer == m)
+                    {
+                        reach.push((false, bi, h + bk.h + super::rules::SHADOW_GAP + slack));
+                    }
+                }
             }
             stamp(&Shape::Seg(a, b, 0.0), &reach, &mut tracks, &mut vias);
         }

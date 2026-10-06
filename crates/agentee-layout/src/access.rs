@@ -24,8 +24,16 @@ impl Phase for Access {
     fn run(&self, model: &mut Model, cfg: &EngineFile) -> PhaseReport {
         let mut report = PhaseReport { phase: "access".into(), ..Default::default() };
         let pc = cfg.planes.clone().unwrap_or_default();
-        let (planes, notes, failed) = crate::planes::plan(model, &pc);
+        let (mut planes, notes, failed) = crate::planes::plan(model, &pc);
         report.notes.extend(notes);
+        let pins = crate::planes::pin_pours(model);
+        if !pins.is_empty() {
+            report.notes.push(format!(
+                "{} runs of same-net pins narrower than their track joined by a pour",
+                pins.len()
+            ));
+        }
+        planes.zones.extend(pins);
         report.failed.extend(failed);
         model.planes = Some(planes);
         let ac = cfg.access.clone().unwrap_or_default();
