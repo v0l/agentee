@@ -1249,7 +1249,13 @@ widest that keeps clearance, rounded down to 0.01 mm (or exactly `min_track_widt
 would drop under it and the unrounded width does not); the wide track starts at the first spot out
 from the pad where its full width keeps clearance (and, for a pad narrower than the track, outside
 the pad). Pads of one net that touch, like a thermal pad built from several pad entries, count as
-one wide pad. Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. Once everything is in,
+one wide pad. Pairs routed with `--pairs` do not neck down. A connection of a net that already has fresh copper starts from that copper. A connection
+that finds no path even through the nets it could rip up waits for the other connections of its
+net and tries once more from the copper they add. Classes route one after another, the tightest
+first (fewest allowed layers, then the widest track plus clearance), each held fixed for the
+next. Once a class is in, every net of it with vias is ripped up and routed again with vias four
+times dearer and the rest held fixed, and the new route stays when it has fewer vias (or joins
+more), pass after pass while one saves a via. Then
 each routed connection that uses vias is tried again on one layer at a time with the rest held
 fixed, and the one-layer route replaces it when it is at most 25% plus 1 mm longer. Then the
 vias of neighbouring parallel connections that change layer near each other are slid along their
@@ -1259,7 +1265,10 @@ interface with `max_vias` keeps the trace (every net of the lane, through series
 it: a route with too many vias is tried again with dearer vias, then on one layer, and fails with
 the reason if neither fits. The second net of a pair is drawn toward its
 partner at the pair gap; `--pairs` tries to route both halves together as one coupled track
-first. When a few connections fail, route them again together with the nets around them and
+first. When connections fail, the whole route runs again, up to four times in all, with the
+failed nets first in their class and their class first, and a cost on the path they would take
+through the copper of earlier classes so those classes leave it free; the run with the fewest
+failures, then the fewest vias, then the least track is written. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
 first, then let the router fill in the rest, a class at a time.
 

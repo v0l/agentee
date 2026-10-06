@@ -182,6 +182,13 @@ fn via_clears_smd(at: P, ctx: &Ctx, via: &ViaOption) -> bool {
 const FREE: u16 = 0;
 const BLOCK: u16 = u16::MAX;
 
+struct Marks {
+    value: u16,
+    rt: Vec<usize>,
+    vias: Vec<Vec<usize>>,
+    holes: Vec<Vec<(usize, u32)>>,
+}
+
 struct ViaMap {
     fixed: Vec<u16>,
     routed: Vec<u16>,
@@ -268,6 +275,17 @@ impl Grid {
         }
     }
 
+    fn shun(&mut self, avoid: &[Avoid], halves: &[f64], clearance: f64) {
+        let cost = (SHUN * self.g) as f32;
+        for v in avoid {
+            let Some(&half) = halves.get(v.layer) else { continue };
+            for (x, y) in self.cells_near(&Shape::Seg(v.a, v.b, v.r), half + clearance) {
+                let i = self.idx(v.layer, x, y);
+                self.hist[i] = self.hist[i].max(cost);
+            }
+        }
+    }
+
     fn clear_routed(&mut self) {
         self.rt.iter_mut().for_each(|v| *v = FREE);
         for m in &mut self.vias {
@@ -277,7 +295,31 @@ impl Grid {
     }
 
     fn mark_routed(&mut self, c: &Conn, ctx: &Ctx) {
-        let value = c.net as u16 + 1;
+        let m = self.marks(c, ctx);
+        self.apply(&m);
+    }
+
+    fn apply(&mut self, m: &Marks) {
+        for &i in &m.rt {
+            Self::mark(&mut self.rt, i, m.value);
+        }
+        for (map, (cells, holes)) in self.vias.iter_mut().zip(m.vias.iter().zip(&m.holes)) {
+            for &i in cells {
+                Self::mark(&mut map.routed, i, m.value);
+            }
+            for &(i, d) in holes {
+                map.routed_holes[i] |= d;
+            }
+        }
+    }
+
+    fn marks(&self, c: &Conn, ctx: &Ctx) -> Marks {
+        let mut m = Marks {
+            value: c.net as u16 + 1,
+            rt: Vec::new(),
+            vias: vec![Vec::new(); self.vias.len()],
+            holes: vec![Vec::new(); self.vias.len()],
+        };
         let slack = self.g * 0.6;
         let mut shapes: Vec<(Vec<usize>, Shape, Option<&ViaOption>)> = Vec::new();
         for (l, pts) in &c.tracks {
@@ -298,7 +340,7 @@ impl Grid {
                 }
                 let reach = placed.drill_r + other.drill_r + ctx.hole_gap + self.g * 0.6;
                 for (x, y) in self.cells_near(&shape, reach) {
-                    self.vias[f].routed_holes[y * self.w + x] |= placed.dielectrics;
+                    m.holes[f].push((y * self.w + x, placed.dielectrics));
                 }
             }
         }
@@ -309,20 +351,19 @@ impl Grid {
             for (x, y) in self.cells_near(&shape, widest / 2.0 + c + slack) {
                 let d = shape.dist(self.center(x, y));
                 for &l in layers.iter().filter(|&&l| d <= reach(l)) {
-                    let i = self.idx(l, x, y);
-                    Self::mark(&mut self.rt, i, value);
+                    m.rt.push(self.idx(l, x, y));
                 }
             }
             for (f, other) in ctx.vias.iter().enumerate() {
                 let keep = placed.map(|p| ctx.keep(p)).unwrap_or(0.0).max(ctx.keep(other));
                 for (x, y) in self.cells_near(&shape, other.via_r + keep + slack) {
                     for &l in &layers {
-                        let i = self.idx(l, x, y);
-                        Self::mark(&mut self.vias[f].routed, i, value);
+                        m.vias[f].push(self.idx(l, x, y));
                     }
                 }
             }
         }
+        m
     }
 
     fn crowd(&self, net: usize, p: P, routing: &[usize]) -> usize {
@@ -516,7 +557,63 @@ impl PartialOrd for Node {
 const DIRS: [(i64, i64); 8] =
     [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
 
+const ATTEMPTS: usize = 4;
+const SHUN: f64 = 4.0;
+
 pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<RouteResult, String> {
+    let (mut best, mut avoid) = route_once(layout, board, opts, &[], &[], false)?;
+    let mut last = best.failed.clone();
+    let mut first: Vec<String> = Vec::new();
+    let mut redo = (!last.is_empty()).then(|| (Vec::new(), Vec::new()));
+    for _ in 1..ATTEMPTS {
+        if last.is_empty() {
+            break;
+        }
+        for f in &last {
+            if !first.contains(&f.net) {
+                first.push(f.net.clone());
+            }
+        }
+        let held = avoid.clone();
+        let (next, more) = route_once(layout, board, opts, &first, &held, false)?;
+        if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
+            eprintln!("attempt with {} first: {:?}", first.join(" "), quality(&next));
+        }
+        last = next.failed.clone();
+        avoid.extend(more);
+        if quality(&next) < quality(&best) {
+            redo = (!next.failed.is_empty()).then(|| (first.clone(), held));
+            best = next;
+        }
+    }
+    if let Some((first, avoid)) = redo {
+        best = route_once(layout, board, opts, &first, &avoid, true)?.0;
+    }
+    Ok(best)
+}
+
+#[derive(Clone)]
+struct Avoid {
+    layer: usize,
+    a: P,
+    b: P,
+    r: f64,
+}
+
+fn quality(r: &RouteResult) -> (usize, usize, i64) {
+    let length: f64 =
+        r.tracks.iter().flat_map(|t| t.points.windows(2)).map(|w| geom::dist(w[0], w[1])).sum();
+    (r.failed.len(), r.vias.len(), (length * 1e3) as i64)
+}
+
+fn route_once(
+    layout: &Layout,
+    board: &Board,
+    opts: &RouteOptions,
+    first: &[String],
+    avoid: &[Avoid],
+    polish: bool,
+) -> Result<(RouteResult, Vec<Avoid>), String> {
     let copper = &layout.copper;
     let layer_of = |name: &str| copper.iter().position(|c| c == name);
     let mut routing = Vec::new();
@@ -646,11 +743,24 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         }
     }
 
-    if !opts.class_order.is_empty() {
-        let rank = |c: &str| opts.class_order.iter().position(|k| k == c).unwrap_or(usize::MAX);
-        by_class.sort_by_key(|(c, _)| rank(c));
-    }
+    let urgent = |n: usize| first.iter().position(|f| f == &layout.nets[n].name);
+    let rank = |c: &str, nets: &[usize]| {
+        let promoted = nets.iter().filter_map(|&n| urgent(n)).min().unwrap_or(usize::MAX);
+        let listed = opts.class_order.iter().position(|k| k == c).unwrap_or(usize::MAX);
+        let nc = board.netclasses.iter().find(|k| k.name == c);
+        let layers = nc.map(|k| k.layers.len()).filter(|&n| n > 0).unwrap_or(copper.len());
+        let widest = copper
+            .iter()
+            .map(|l| nc.map(|k| k.width_on(l).to_mm()).unwrap_or(0.0))
+            .fold(0.0, f64::max);
+        let clearance = nc.map(|k| k.clearance.to_mm()).unwrap_or(0.0);
+        let span = std::cmp::Reverse(((widest + 2.0 * clearance) * 1e3) as i64);
+        (promoted, listed, layers, span)
+    };
+    by_class.sort_by_cached_key(|(c, nets)| rank(c, nets));
     let mut out = RouteResult::default();
+    let mut blocked: Vec<Avoid> = Vec::new();
+    let (file_obstacles, file_drills) = (obstacles.len(), drills.len());
     let edge = board.rules.min_copper_to_edge.to_mm();
     for (class, nets) in by_class {
         let nc = board.netclasses.iter().find(|c| c.name == class);
@@ -755,6 +865,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
         }
         grid.block_smd(&ctx);
         grid.block_silk(&layout.silk, &options);
+        grid.shun(avoid, &halves, clearance);
 
         let picked = |a: P, b: P| {
             opts.connection.is_none_or(|(x, y)| {
@@ -773,10 +884,12 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             .map(|c| grid.crowd(c.2, c.0, routing) + grid.crowd(c.2, c.1, routing))
             .collect();
         let tier = |n: usize| {
-            opts.tiers
+            let listed = opts
+                .tiers
                 .iter()
                 .position(|t| t.iter().any(|g| glob(g, &layout.nets[n].name)))
-                .unwrap_or(opts.tiers.len())
+                .unwrap_or(opts.tiers.len());
+            (urgent(n).unwrap_or(usize::MAX), listed)
         };
         let mut order: Vec<usize> = (0..conns.len()).collect();
         order.sort_by(|&i, &j| {
@@ -851,6 +964,16 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             (0..conns.len()).filter(|&i| routed[i].is_none()).collect();
         let mut failed: Vec<(usize, String)> = Vec::new();
         let mut budget = conns.len() * 40 + 100;
+        let mut waited = vec![false; conns.len()];
+        let wait =
+            |queue: &mut std::collections::VecDeque<usize>, waited: &mut [bool], ci: usize| {
+                let again = !waited[ci] && queue.iter().any(|&k| conns[k].2 == conns[ci].2);
+                if again {
+                    waited[ci] = true;
+                    queue.push_back(ci);
+                }
+                again
+            };
         while let Some(ci) = queue.pop_front() {
             let (a, b, net) = conns[ci];
             let corridor = opts.corridors.iter().find(|c| c.net == layout.nets[net].name);
@@ -946,6 +1069,9 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
                             if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
                                 eprintln!("{} soft failed: {e}", layout.nets[net].name);
                             }
+                            if wait(&mut queue, &mut waited, ci) {
+                                continue;
+                            }
                             failed.push((ci, reason));
                             continue;
                         }
@@ -972,6 +1098,29 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             }
             grid.mark_routed(&conn, &ctx);
             routed[ci] = Some(conn);
+        }
+
+        let plain = |net: usize| {
+            partner(net).is_none() && !opts.corridors.iter().any(|c| c.net == layout.nets[net].name)
+        };
+        let mut nets_in: Vec<usize> = conns.iter().map(|c| c.2).collect();
+        nets_in.sort_unstable();
+        nets_in.dedup();
+        nets_in.retain(|&n| plain(n));
+        let clean = out.failed.is_empty() && failed.iter().all(|f| routed[f.0].is_some());
+        let passes = if polish || clean { VIA_PASSES } else { 0 };
+        if passes > 0 {
+            grid.hist.iter_mut().for_each(|h| *h = 0.0);
+        }
+        for _ in 0..passes {
+            let saved =
+                fewer_net_vias(&mut grid, &obstacles, &conns, &mut routed, &locked, &ctx, &nets_in);
+            if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
+                eprintln!("class {class}: {saved} vias saved");
+            }
+            if saved == 0 {
+                break;
+            }
         }
 
         for ci in 0..conns.len() {
@@ -1004,6 +1153,38 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
 
         grid.clear_routed();
         snap_vias(&grid, &obstacles, &mut routed, &locked, &ctx);
+
+        let lost: Vec<usize> =
+            failed.iter().map(|f| f.0).filter(|&ci| routed[ci].is_none()).collect();
+        if !lost.is_empty() {
+            let mut open = build_grid(layout, opts.grid, &halves, &options, edge, &opts.fences);
+            for o in &obstacles[..file_obstacles] {
+                open.add(o, &halves, clearance, &options, hole_cu);
+            }
+            for &(c, r, span) in &drills[..file_drills] {
+                open.add_drill(c, r, span, &options, ctx.hole_gap);
+            }
+            open.block_smd(&ctx);
+            open.block_silk(&layout.silk, &options);
+            for &ci in &lost {
+                let (a, b, net) = conns[ci];
+                let fresh: Vec<Obstacle> = routed
+                    .iter()
+                    .flatten()
+                    .filter(|c| c.net == net)
+                    .flat_map(|c| copper_of(c, &ctx))
+                    .collect();
+                let fixed = &obstacles[..file_obstacles];
+                if let Ok(p) = search(&open, fixed, &fresh, net, a, b, &ctx, true, None) {
+                    for (l, pts) in conn_found(&open, &p, net, &ctx).tracks {
+                        for w in pts.windows(2) {
+                            let r = halves[l] + clearance;
+                            blocked.push(Avoid { layer: l, a: w[0], b: w[1], r });
+                        }
+                    }
+                }
+            }
+        }
 
         for (ci, reason) in failed {
             if routed[ci].is_none() {
@@ -1074,7 +1255,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
             }
         }
     }
-    Ok(out)
+    Ok((out, blocked))
 }
 
 struct ViaOption {
@@ -1342,6 +1523,86 @@ fn fewer_vias(
         }
     }
     one_layer(grid, obstacles, fresh, net, a, b, ctx)
+}
+
+const VIA_PASSES: usize = 3;
+const VIA_DEARER: f64 = 4.0;
+
+fn via_count(routed: &[Option<Conn>], idx: &[usize]) -> (usize, usize) {
+    let missing = idx.iter().filter(|&&k| routed[k].is_none()).count();
+    let vias = idx.iter().filter_map(|&k| routed[k].as_ref()).map(|c| c.vias.len()).sum();
+    (missing, vias)
+}
+
+fn fewer_net_vias(
+    grid: &mut Grid,
+    obstacles: &[Obstacle],
+    conns: &[(P, P, usize)],
+    routed: &mut [Option<Conn>],
+    locked: &[bool],
+    ctx: &Ctx,
+    nets: &[usize],
+) -> usize {
+    let dear = RouteOptions {
+        nets: Vec::new(),
+        layers: Vec::new(),
+        via: Vec::new(),
+        via_cost: ctx.opts.via_cost * VIA_DEARER,
+        corridors: Vec::new(),
+        fences: Vec::new(),
+        tiers: Vec::new(),
+        class_order: Vec::new(),
+        ..*ctx.opts
+    };
+    let wary = Ctx { widths: ctx.widths.clone(), opts: &dear, ..*ctx };
+    let mut marks: Vec<Option<Marks>> =
+        routed.iter().map(|r| r.as_ref().map(|c| grid.marks(c, ctx))).collect();
+    let mut saved = 0;
+    for &net in nets {
+        let idx: Vec<usize> = (0..conns.len()).filter(|&k| conns[k].2 == net).collect();
+        let before = via_count(routed, &idx);
+        if before.1 == 0 || idx.iter().any(|&k| locked[k]) {
+            continue;
+        }
+        let kept: Vec<Option<Conn>> = idx.iter().map(|&k| routed[k].take()).collect();
+        let held: Vec<Option<Marks>> = idx.iter().map(|&k| marks[k].take()).collect();
+        grid.clear_routed();
+        for m in marks.iter().flatten() {
+            grid.apply(m);
+        }
+        let mut order = idx.clone();
+        order.sort_by_key(|&k| kept[idx.iter().position(|&j| j == k).unwrap()].is_none());
+        for &ci in &order {
+            let (a, b, _) = conns[ci];
+            let fresh: Vec<Obstacle> = routed
+                .iter()
+                .flatten()
+                .filter(|c| c.net == net)
+                .flat_map(|c| copper_of(c, ctx))
+                .collect();
+            if let Ok(p) = search(grid, obstacles, &fresh, net, a, b, &wary, false, None) {
+                let c = conn_found(grid, &p, net, ctx);
+                let m = grid.marks(&c, ctx);
+                grid.apply(&m);
+                marks[ci] = Some(m);
+                routed[ci] = Some(c);
+            }
+        }
+        let after = via_count(routed, &idx);
+        if after < before {
+            saved += before.1.saturating_sub(after.1).max(1);
+        } else {
+            for ((&k, c), m) in idx.iter().zip(kept).zip(held) {
+                routed[k] = c;
+                marks[k] = m;
+            }
+        }
+    }
+    grid.clear_routed();
+    for m in marks.iter().flatten() {
+        grid.apply(m);
+    }
+    saved
 }
 
 struct Slide {
@@ -2061,7 +2322,7 @@ fn stubs(
             let free = (0..=steps).all(|s| {
                 let t = s as f64 / steps as f64;
                 cell([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t])
-                    .is_some_and(|j| Grid::free(&grid.rt, j, net))
+                    .is_some_and(|j| soft || Grid::free(&grid.rt, j, net))
             });
             if free {
                 out.push((i, Neck { layer: l, from: p, to: q, width }));
@@ -2184,7 +2445,7 @@ fn search_between(
         let mut bound = f64::MAX;
         while let Some(Node { i, f }) = heap.pop() {
             let k = local(i).unwrap();
-            if f > rest[k] as f64 + 1e-6 {
+            if f as f32 > rest[k] {
                 continue;
             }
             if f > stop {
@@ -3246,6 +3507,33 @@ mod tests {
             necks: Vec::new(),
         };
         assert_eq!(placed_vias(&grid, &stack, &[&hole], &ctx), [(at, 0), (at, 1)]);
+    }
+
+    #[test]
+    fn a_long_open_run_changes_layer_once() {
+        let grid = open_grid(900, 30, 4);
+        let vias = [test_via(&[0, 1, 2, 3], false)];
+        let opts = RouteOptions::default();
+        let ctx = Ctx {
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            smd: &[],
+            widths: vec![0.2; 4],
+            clearance: 0.1,
+            via_layers: &[0, 1, 2, 3],
+            vias: &vias,
+            stack_vias: true,
+            routing: &[0, 1, 2, 3],
+            opts: &opts,
+            necking: None,
+        };
+        let (a, b) = ([0.55, 0.55], [89.45, 2.45]);
+        let from = [grid.idx(0, 5, 5)];
+        let to = [grid.idx(3, 894, 24)];
+        let path =
+            search_between(&grid, 0, a, b, &from, &to, &ctx, false, None, None).expect("a path");
+        assert_eq!(hops_of(&grid, &path).len(), 1);
     }
 
     #[test]
