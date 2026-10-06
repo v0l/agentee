@@ -45,7 +45,6 @@ description = "Control and low speed logic: SPI, JTAG, SWD, resets, enables, pow
 track_width = "0.1mm"
 clearance = "0.1mm"
 via = "bga"
-layers = ["F.Cu", "In2.Cu", "In3.Cu", "B.Cu"]
 
 [[netclasses]]
 name = "Data"
@@ -53,7 +52,6 @@ description = "Source synchronous CMOS buses: the AD9364 P0/P1 ports at 61.44 MH
 track_width = "0.1mm"
 clearance = "0.1mm"
 via = "bga"
-layers = ["F.Cu", "In2.Cu", "In3.Cu", "B.Cu"]
 
 [[netclasses]]
 name = "Clock"
@@ -77,7 +75,6 @@ description = "GND, carried by the In1 and In4 planes and the outer pours; track
 track_width = "0.25mm"
 clearance = "0.1mm"
 via = "bga"
-layers = ["F.Cu", "B.Cu"]
 
 [[netclasses]]
 name = "Power"
