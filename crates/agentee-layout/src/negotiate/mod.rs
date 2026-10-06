@@ -28,6 +28,8 @@ const CLASH_HALO: i64 = 0;
 const LOST_SHOWN: usize = 6;
 const HIST_STEP: f32 = 0.4;
 const SETTLED: usize = 2;
+const VIA_PASSES: usize = 2;
+const VIA_DEARER: f64 = 4.0;
 const DEAD: &str = "no path within the rules in an earlier round";
 use soft::{Copper, Footprint, Piece, Soft};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -59,7 +61,7 @@ impl Default for Options {
         Options {
             nets: Vec::new(),
             grid: 0.05,
-            via_cost: 1.0,
+            via_cost: 3.0,
             bend_cost: 0.1,
             margin: 3.0,
             rounds: 30,
@@ -657,6 +659,38 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         ));
     }
     spend.hard_ms = ms(th);
+    if std::env::var("AGENTEE_ROUTE_SOFT").is_err() {
+        let tv = Instant::now();
+        let dear = Options {
+            via_cost: opts.via_cost * VIA_DEARER,
+            zone_cost: opts.zone_cost * VIA_DEARER,
+            ..opts.clone()
+        };
+        let env = Env {
+            layout,
+            grid,
+            soft: &soft,
+            rules,
+            islands,
+            opts: &dear,
+            zone,
+            reserve: &reserve,
+            guide,
+            escalate: opts.escalate,
+            tiles: &tiles,
+            fenced: false,
+            jacobi: false,
+        };
+        let mut saved = 0;
+        for _ in 0..VIA_PASSES {
+            let won = fewer_vias(&mut states, &order, &env);
+            saved += won;
+            if won == 0 {
+                break;
+            }
+        }
+        log(format!("{saved} vias saved by rerouting with dearer vias, {:.0} ms", ms(tv)));
+    }
     spend.final_ms = states.iter().flat_map(|s| &s.pieces).map(|p| p.ms).sum();
     spend.wall_ms = ms(t0);
     spend.lost.sort_by(|a, b| b.1.total_cmp(&a.1));
@@ -1666,6 +1700,31 @@ fn rip_and_retry(
         }
     }
     (tried, won)
+}
+
+fn via_total(st: &NetState) -> usize {
+    st.pieces.iter().map(|p| p.vias.len()).sum()
+}
+
+fn fewer_vias(states: &mut [NetState], order: &[usize], env: &Env) -> usize {
+    let planes = agentee_core::tie::plane_nets(env.layout);
+    let mut saved = 0;
+    for &si in order {
+        let before = (states[si].joined, via_total(&states[si]));
+        if before.1 == 0 || states[si].fp.is_none() || planes.contains(&states[si].net) {
+            continue;
+        }
+        let held = save(&states[si]);
+        states[si].bad = None;
+        reroute(&mut states[si], env, MAX_PRES, true);
+        let after = (states[si].joined, via_total(&states[si]));
+        if after.0 >= before.0 && after.1 < before.1 {
+            saved += before.1 - after.1;
+        } else {
+            restore(&mut states[si], held, env.soft);
+        }
+    }
+    saved
 }
 
 fn drop_overlaps(

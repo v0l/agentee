@@ -209,6 +209,9 @@ corridor grown by one tile.
   pad on a track, and its targets.
 - **Search** is today's A*: backward Dijkstra for the heuristic, forward search with bend costs
   and via hops. It moves out of `agentee-core/src/route.rs` into a module both routers share.
+- **Fewer vias**: after the hard pass every net without a zone that has vias is ripped up and
+  routed again, the rest held fixed, with vias and foreign fills both four times dearer. The new
+  route stays when it joins as much with fewer vias, for up to two passes.
 
 ### 6. Finish
 
@@ -253,7 +256,7 @@ direction = { "In2.Cu" = "H" }
 [engine.detail]
 grid = "0.05mm"
 rounds = 30
-via_cost = "1mm"
+via_cost = "3mm"
 bend_cost = "0.1mm"
 fences = true
 criticality = { RF = 1.0, LVDS = 0.8, USB_SS = 0.8, Clock = 0.5 }

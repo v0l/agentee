@@ -86,7 +86,7 @@ const KNOBS: &[(&str, &str, Knob, &str)] = &[
     ("global", "via_cost", Knob::Mm(1.0), "track length a layer change costs in the global route"),
     ("detail", "grid", Knob::Mm(0.05), "routing grid"),
     ("detail", "rounds", Knob::Int(30), "negotiation rounds of the detail route"),
-    ("detail", "via_cost", Knob::Mm(1.0), "track length a via costs"),
+    ("detail", "via_cost", Knob::Mm(3.0), "track length a via costs"),
     ("detail", "bend_cost", Knob::Mm(0.1), "track length a 45 degree bend costs"),
     ("detail", "fences", Knob::Flag(true), "keep foreign nets out of BGA fields"),
 ];
