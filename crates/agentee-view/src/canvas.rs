@@ -9,18 +9,20 @@ pub struct View {
     pub scale: f32,
     pub fitted: bool,
     pub max_fit: f32,
+    pub flip: bool,
 }
 
 impl Default for View {
     fn default() -> Self {
-        View { center: [0.0, 0.0], scale: 20.0, fitted: false, max_fit: 2000.0 }
+        View { center: [0.0, 0.0], scale: 20.0, fitted: false, max_fit: 2000.0, flip: false }
     }
 }
 
 impl View {
     pub fn fit(&mut self, rect: Rect, b: &Bounds, margin: f32) {
         if b.is_empty() {
-            *self = View { fitted: true, max_fit: self.max_fit, ..Default::default() };
+            *self =
+                View { fitted: true, max_fit: self.max_fit, flip: self.flip, ..Default::default() };
             return;
         }
         let [w, h] = b.size();
@@ -39,6 +41,7 @@ impl View {
             scale: self.scale,
             max_stroke: f32::MAX,
             local: agentee_core::geom::Transform::IDENTITY,
+            flip: self.flip,
         }
     }
 
@@ -47,7 +50,8 @@ impl View {
     }
 
     pub fn pan(&mut self, d: Vec2) {
-        self.center[0] -= (d.x / self.scale) as f64;
+        let sx = if self.flip { -self.scale } else { self.scale };
+        self.center[0] -= (d.x / sx) as f64;
         self.center[1] -= (d.y / self.scale) as f64;
     }
 

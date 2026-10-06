@@ -941,8 +941,15 @@ fn layout_view(
                 if toggle(ui, "parts", st.show_parts).clicked() {
                     st.show_parts = !st.show_parts;
                 }
-            } else if let Some(ed) = ed.as_deref_mut() {
-                crate::tools::toolbar(ui, project, i, ed);
+            } else {
+                ui.add_space(12.0);
+                if toggle(ui, "back", st.view.flip).clicked() {
+                    st.view.flip = !st.view.flip;
+                    st.pcb_layers.mirror();
+                }
+                if let Some(ed) = ed.as_deref_mut() {
+                    crate::tools::toolbar(ui, project, i, ed);
+                }
             }
         });
         if let Some(ed) = ed.as_deref_mut() {

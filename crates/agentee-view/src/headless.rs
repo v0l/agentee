@@ -56,6 +56,10 @@ pub fn render_rgba(
     };
     st.select(item);
     st.unit = opts.unit.max(1);
+    if opts.show.iter().any(|x| x == "back") {
+        st.view.flip = true;
+        st.pcb_layers.mirror();
+    }
     for layers in [&mut st.layers, &mut st.pcb_layers] {
         layers.hidden.retain(|h| !opts.show.contains(h));
         layers.hidden.extend(opts.hide.iter().cloned());

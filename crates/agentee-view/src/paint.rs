@@ -52,6 +52,7 @@ pub struct Xf {
     pub scale: f32,
     pub max_stroke: f32,
     pub local: Transform,
+    pub flip: bool,
 }
 
 impl Xf {
@@ -61,6 +62,7 @@ impl Xf {
 
     pub fn text_angle(&self, deg: f64) -> f32 {
         let a = (deg + self.local.rotation).rem_euclid(360.0);
+        let a = if self.flip { (180.0 - a).rem_euclid(360.0) } else { a };
         let a = if a > 90.0 && a <= 270.0 { a - 180.0 } else { a };
         -(a.to_radians() as f32)
     }
@@ -69,17 +71,21 @@ impl Xf {
         self.world(self.local.apply(p))
     }
 
+    fn sx(&self) -> f32 {
+        if self.flip { -self.scale } else { self.scale }
+    }
+
     pub fn world(&self, p: [f64; 2]) -> Pos2 {
         self.rect.center()
             + Vec2::new(
-                ((p[0] - self.center[0]) as f32) * self.scale,
+                ((p[0] - self.center[0]) as f32) * self.sx(),
                 ((p[1] - self.center[1]) as f32) * self.scale,
             )
     }
 
     pub fn mm(&self, s: Pos2) -> [f64; 2] {
         let d = s - self.rect.center();
-        [self.center[0] + (d.x / self.scale) as f64, self.center[1] + (d.y / self.scale) as f64]
+        [self.center[0] + (d.x / self.sx()) as f64, self.center[1] + (d.y / self.scale) as f64]
     }
 
     pub fn len(&self, mm: f64) -> f32 {
@@ -141,8 +147,9 @@ pub fn grid(p: &Painter, xf: &Xf, pitch_mm: f64) {
         pitch *= 5.0;
     }
     let r = xf.rect;
-    let a = xf.mm(r.left_top());
-    let b = xf.mm(r.right_bottom());
+    let (lt, rb) = (xf.mm(r.left_top()), xf.mm(r.right_bottom()));
+    let a = [lt[0].min(rb[0]), lt[1].min(rb[1])];
+    let b = [lt[0].max(rb[0]), lt[1].max(rb[1])];
     let (x0, x1) = ((a[0] / pitch).floor() as i64, (b[0] / pitch).ceil() as i64);
     let (y0, y1) = ((a[1] / pitch).floor() as i64, (b[1] / pitch).ceil() as i64);
     if (x1 - x0) * (y1 - y0) > 40_000 {
@@ -494,6 +501,19 @@ impl Default for Layers {
 impl Layers {
     pub fn shows(&self, l: &str) -> bool {
         !self.hidden.iter().any(|h| h == l)
+    }
+
+    pub fn mirror(&mut self) {
+        for h in self.hidden.iter_mut() {
+            let other = if let Some(rest) = h.strip_prefix("F.") {
+                format!("B.{rest}")
+            } else if let Some(rest) = h.strip_prefix("B.") {
+                format!("F.{rest}")
+            } else {
+                continue;
+            };
+            *h = other;
+        }
     }
 
     pub fn toggle(&mut self, l: &str) {

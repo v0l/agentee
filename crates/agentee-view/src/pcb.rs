@@ -138,7 +138,9 @@ pub fn layout(
         }
     }
 
-    for layer in l.copper.iter().rev() {
+    let copper: Vec<&String> =
+        if xf.flip { l.copper.iter().collect() } else { l.copper.iter().rev().collect() };
+    for layer in copper {
         if !layers.shows(layer) {
             continue;
         }
@@ -312,7 +314,10 @@ pub fn layout(
                 silk_text(p, xf, &t);
             }
         }
-        let shown = part.pads.iter().filter(|q| !q.number.is_empty());
+        let shown = part
+            .pads
+            .iter()
+            .filter(|q| !q.number.is_empty() && q.copper.iter().any(|c| layers.shows(c)));
         for pad in shown {
             let mut b = agentee_core::graphic::Bounds::EMPTY;
             pad.outlines.iter().flatten().for_each(|q| b.add(*q));
