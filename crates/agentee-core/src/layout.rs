@@ -1117,10 +1117,20 @@ impl LayoutFile {
                         d.error(&at, "the board defines no [[vias]]");
                         break;
                     };
-                    vias.push(Via {
-                        source: ViaSource::Fanout(i),
-                        ..Via::of(spec, net, *c, &copper)
+                    let v = Via { source: ViaSource::Fanout(i), ..Via::of(spec, net, *c, &copper) };
+                    let reach = v.diameter / 2.0 + nets[net].clearance;
+                    let blocked = parts.iter().flat_map(|p| &p.pads).any(|q| {
+                        !std::ptr::eq(q, *pad)
+                            && q.copper.iter().any(|l| v.layers.contains(l))
+                            && q.outlines.iter().any(|o| {
+                                geom::point_in_polygon(*c, o)
+                                    || geom::polyline_polygon_distance(&[*c, *c], o) < reach
+                            })
                     });
+                    if blocked {
+                        continue;
+                    }
+                    vias.push(v);
                     placed += 1;
                 }
             }

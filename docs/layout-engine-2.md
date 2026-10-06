@@ -215,6 +215,7 @@ seed = 1
 spacing = "0.2mm"              # gap kept between courtyards
 standoff = "0.6mm"             # decaps are not pulled closer than this to their pin
 spread = 1.5                   # spacing and standoff grow by this each placement pass
+sides = "top"                  # "both" also moves each bound decap under its pin on the back
 
 [engine.access]
 via_in_pad = true

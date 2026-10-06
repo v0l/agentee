@@ -841,6 +841,11 @@ pub fn write_moves(text: &str, moves: &[placement::Move]) -> Result<String, Stri
         } else {
             t["rotation"] = toml_edit::value(rot);
         }
+        if m.bottom {
+            t["side"] = toml_edit::value("bottom");
+        } else {
+            t.remove("side");
+        }
         let label = t.get_mut("label").and_then(|l| l.as_table_like_mut());
         if let (Some(label), Some(from)) = (label, old_at)
             && let Some(la) = point_of(label.get("at"))

@@ -11,6 +11,7 @@ pub struct Move {
     pub reference: String,
     pub at: P,
     pub rotation: f64,
+    pub bottom: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -28,6 +29,8 @@ struct Cell {
     chained: bool,
     at: P,
     rotation: f64,
+    bottom: bool,
+    through: bool,
     box_off: P,
     half: [f64; 2],
     area: f64,
@@ -63,7 +66,39 @@ fn rotate_cell(c: &mut Cell, delta: f64) {
     }
 }
 
-fn build(model: &Model) -> Board {
+fn flip_cell(c: &mut Cell, rotation: f64, bottom: bool) {
+    let back = |w: P| {
+        let l = geom::rotate(w, -c.rotation);
+        if c.bottom { [-l[0], l[1]] } else { l }
+    };
+    let ahead = |l: P| geom::rotate(if bottom { [-l[0], l[1]] } else { l }, rotation);
+    let turn = (rotation - c.rotation).rem_euclid(180.0);
+    c.box_off = ahead(back(c.box_off));
+    for p in c.pins.iter_mut() {
+        p.1 = ahead(back(p.1));
+    }
+    if (turn - 90.0).abs() < 1e-9 {
+        c.half = [c.half[1], c.half[0]];
+    }
+    c.rotation = rotation.rem_euclid(360.0);
+    c.bottom = bottom;
+}
+
+pub fn sides_of(cfg: &EngineFile) -> place::Sides {
+    match cfg
+        .place
+        .as_ref()
+        .and_then(|p| p.sides.as_deref())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("both") => place::Sides::Both,
+        Some("bottom") | Some("b") => place::Sides::Bottom,
+        _ => place::Sides::Top,
+    }
+}
+
+fn build(model: &Model, sides: place::Sides) -> Board {
     let l = &model.layout;
     let b = model.board;
     let locked: Vec<&str> =
@@ -71,7 +106,6 @@ fn build(model: &Model) -> Board {
     let mut cells = Vec::new();
     for p in &l.parts {
         let at = p.at.to_mm();
-        let layer = if p.bottom { "B.CrtYd" } else { "F.CrtYd" };
         let mut bb = Bounds::EMPTY;
         let t = p.transform();
         for lp in place::courtyard_loops(&p.footprint, "F.CrtYd") {
@@ -79,7 +113,6 @@ fn build(model: &Model) -> Board {
                 bb.add(t.apply(q));
             }
         }
-        let _ = layer;
         if bb.is_empty() {
             for pad in &p.pads {
                 pad.outlines.iter().flatten().for_each(|q| bb.add(*q));
@@ -109,10 +142,14 @@ fn build(model: &Model) -> Board {
         let mounting = p.pads.iter().all(|q| q.net.is_none());
         cells.push(Cell {
             reference: p.reference.clone(),
-            fixed: locked.contains(&p.reference.as_str()) || p.bottom || mounting,
+            fixed: locked.contains(&p.reference.as_str())
+                || mounting
+                || (p.bottom && sides == place::Sides::Top),
             chained: false,
             at,
             rotation: p.rotation,
+            bottom: p.bottom,
+            through: p.pads.iter().any(|q| q.drill.is_some()),
             box_off: [c[0] - at[0], c[1] - at[1]],
             half,
             area: 4.0 * half[0] * half[1],
@@ -188,6 +225,7 @@ fn moves_of(bd: &Board) -> Vec<Move> {
             reference: c.reference.clone(),
             at: [(c.at[0] * 1000.0).round() / 1000.0, (c.at[1] * 1000.0).round() / 1000.0],
             rotation: c.rotation,
+            bottom: c.bottom,
         })
         .collect()
 }
@@ -399,8 +437,7 @@ fn global_place(
     let result = place::place(&input, &opts)?;
     for pm in &result.placements {
         if let Some(c) = bd.cells.iter_mut().find(|c| c.reference == pm.reference) {
-            let delta = pm.rotation - c.rotation;
-            rotate_cell(c, delta);
+            flip_cell(c, pm.rotation, pm.bottom);
             c.at = pm.at;
         }
     }
@@ -449,6 +486,49 @@ fn facing_cost(bd: &Board, ci: usize, c: &Cell, on_net: &HashMap<usize, Vec<usiz
         }
     }
     cost
+}
+
+fn decaps_under(model: &Model, bd: &mut Board) -> usize {
+    let Some(groups) = model.constraints.as_ref() else { return 0 };
+    let l = &model.layout;
+    let mut moved = 0;
+    for dc in &groups.decaps {
+        let Some(ci) = bd.cells.iter().position(|c| c.reference == dc.cap) else { continue };
+        let Some(ic) = bd.cells.iter().position(|c| c.reference == dc.ic) else { continue };
+        let c = &bd.cells[ci];
+        if c.fixed || c.chained || c.through || bd.cells[ic].bottom {
+            continue;
+        }
+        let Some(net) = l.nets.iter().position(|n| n.name == dc.net) else { continue };
+        let Some(part) = l.parts.iter().find(|p| p.reference == dc.ic) else { continue };
+        let Some(pad) = part.pads.iter().find(|q| q.number == dc.pin) else { continue };
+        let mut pb = Bounds::EMPTY;
+        pad.outlines.iter().flatten().for_each(|q| pb.add(*q));
+        if pb.is_empty() {
+            continue;
+        }
+        let pin = pb.center();
+        let shift = [pin[0] - part.at.to_mm()[0], pin[1] - part.at.to_mm()[1]];
+        let target = [bd.cells[ic].at[0] + shift[0], bd.cells[ic].at[1] + shift[1]];
+        let mut best: Option<(f64, Cell)> = None;
+        for rot in [0.0, 90.0, 180.0, 270.0] {
+            let mut t = bd.cells[ci].clone();
+            flip_cell(&mut t, rot, true);
+            let Some(&(_, off)) = t.pins.iter().find(|p| p.0 == net) else { continue };
+            let toward = [bd.cells[ic].at[0] - target[0], bd.cells[ic].at[1] - target[1]];
+            t.at = [target[0] - off[0], target[1] - off[1]];
+            let centre = [t.at[0] + t.box_off[0], t.at[1] + t.box_off[1]];
+            let outward = (centre[0] - target[0]) * toward[0] + (centre[1] - target[1]) * toward[1];
+            if best.as_ref().is_none_or(|b| outward > b.0) {
+                best = Some((outward, t));
+            }
+        }
+        if let Some((_, t)) = best {
+            bd.cells[ci] = t;
+            moved += 1;
+        }
+    }
+    moved
 }
 
 fn face(bd: &mut Board) -> usize {
@@ -514,9 +594,18 @@ fn legalise(
         .collect();
     let held = |c: &Cell| c.fixed || c.chained || anchored.contains(&c.reference.as_str());
     let gap_of = |i: usize| grow.get(&i).copied().unwrap_or(0.0);
-    let mut placed: Vec<[f64; 4]> = (0..bd.cells.len())
+    let side = |c: &Cell| {
+        if c.through {
+            3u8
+        } else if c.bottom {
+            2
+        } else {
+            1
+        }
+    };
+    let mut placed: Vec<([f64; 4], u8)> = (0..bd.cells.len())
         .filter(|&i| held(&bd.cells[i]))
-        .map(|i| rect_of(&bd.cells[i], bd.cells[i].at, gap_of(i)))
+        .map(|i| (rect_of(&bd.cells[i], bd.cells[i].at, gap_of(i)), side(&bd.cells[i])))
         .collect();
     let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !held(&bd.cells[i])).collect();
     order.sort_by(|&a, &b| {
@@ -555,7 +644,7 @@ fn legalise(
                     let rc = rect_of(&c, at, gap);
                     let bare = rect_of(&c, at, 0.0);
                     if !inside(bare)
-                        || placed.iter().any(|p| overlaps(rc, *p))
+                        || placed.iter().any(|p| p.1 & side(&c) != 0 && overlaps(rc, p.0))
                         || keep
                             .iter()
                             .any(|k| overlaps(bare, [k.min[0], k.min[1], k.max[0], k.max[1]]))
@@ -572,7 +661,7 @@ fn legalise(
                 moved += geom::dist(at, want);
                 rotate_cell(&mut bd.cells[i], rot);
                 bd.cells[i].at = at;
-                placed.push(rc);
+                placed.push((rc, side(&bd.cells[i])));
             }
             None => failed.push(format!("{}: no free spot", bd.cells[i].reference)),
         }
@@ -595,7 +684,7 @@ impl Phase for Place {
 
     fn run(&self, model: &mut Model, cfg: &EngineFile) -> PhaseReport {
         let mut report = PhaseReport { phase: "place".into(), ..Default::default() };
-        let mut bd = build(model);
+        let mut bd = build(model, sides_of(cfg));
         let mut plan = model.placement.clone().unwrap_or_default();
         apply_plan(&mut bd, &plan);
         let mut grow: HashMap<usize, f64> = HashMap::new();
@@ -650,6 +739,10 @@ impl Phase for Place {
             ));
         }
         let turned = face(&mut bd);
+        if sides_of(cfg) != place::Sides::Top {
+            let flipped = decaps_under(model, &mut bd);
+            report.notes.push(format!("{flipped} decaps moved under their pin on the back"));
+        }
         if turned > 0 {
             report.notes.push(format!("{turned} parts turned to face what they connect to"));
         }
