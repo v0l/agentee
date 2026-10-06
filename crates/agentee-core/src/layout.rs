@@ -12,8 +12,8 @@ mod index;
 mod pour;
 
 pub use pour::{
-    FillCase, FillFile, FillKey, ZonesCase, capture_fill_cases, take_fill_cases, take_zones_cases,
-    to_file as fill_file, without_fills,
+    FillCase, FillFile, FillKey, ZonesCase, capture_fill_cases, drop_floating, keeping_floating,
+    take_fill_cases, take_zones_cases, to_file as fill_file, without_fills,
 };
 
 pub(crate) const DRC_EPSILON: f64 = 5e-4;
@@ -533,6 +533,8 @@ pub struct ZoneFill {
     pub rings: Vec<Vec<P>>,
     #[serde(skip)]
     pub triangles: Vec<[P; 3]>,
+    #[serde(skip)]
+    pub floating: Vec<Vec<P>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1641,6 +1643,7 @@ impl LayoutFile {
         let mut zones = Vec::new();
         let mut fill_keys: Vec<FillKey> = Vec::new();
         let mut island_nodes: Vec<Vec<usize>> = Vec::new();
+        let mut island_of: Vec<(usize, usize)> = Vec::new();
         let zone_area = |z: &ZoneFile| {
             let pts: Vec<P> = match &z.outline {
                 Some(p) => p.iter().map(|q| q.to_mm()).collect(),
@@ -1792,47 +1795,47 @@ impl LayoutFile {
                         ),
                     );
                 }
+                for (k, t) in touched.into_iter().enumerate() {
+                    island_nodes.push(t);
+                    island_of.push((zones.len(), k));
+                }
                 zones.push(fill);
-                island_nodes.extend(touched);
             }
         }
-        for touched in &island_nodes {
+        let floating = floating_islands(&items, &island_nodes, &mut uf);
+        let drop_floating = !pour::keep_floating();
+        let mut cut: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (n, touched) in island_nodes.iter().enumerate() {
+            if drop_floating && floating[n] {
+                let (zi, k) = island_of[n];
+                cut.entry(zi).or_default().push(k);
+                continue;
+            }
             for group in touched.windows(2) {
                 uf.union(group[0], group[1]);
             }
         }
-        let mut main_of: HashMap<usize, usize> = HashMap::new();
-        for ni in 0..nets.len() {
-            let mut count: HashMap<usize, usize> = HashMap::new();
-            for (i, it) in items.iter().enumerate() {
-                if it.net == Some(ni) && matches!(it.owner, Owner::Pad(..)) {
-                    *count.entry(uf.find(i)).or_default() += 1;
-                }
-            }
-            if let Some((&root, _)) =
-                count.iter().max_by_key(|(r, c)| (**c, std::cmp::Reverse(**r)))
-            {
-                main_of.insert(ni, root);
-            }
-        }
-        for touched in &island_nodes {
-            let Some(&first) = touched.first() else { continue };
-            let Some(net) = items[first].net else { continue };
-            let Some(&main) = main_of.get(&net) else { continue };
-            if uf.find(first) != main {
-                let names: Vec<String> =
-                    touched.iter().take(3).map(|&i| name_of(&items[i])).collect();
-                found.add(
-                    "zone-island-isolated",
-                    format!("net {}", nets[net].name),
-                    format!(
-                        "a {} pour island joins only {} and is cut off from the rest of {}: route it to the net or remove the island",
-                        nets[net].name,
-                        names.join(", "),
-                        nets[net].name
-                    ),
-                );
-            }
+        for (zi, shapes) in cut {
+            let z = &mut zones[zi];
+            let (gone, kept): (Vec<_>, Vec<_>) = shape_ranges(&z.rings)
+                .into_iter()
+                .enumerate()
+                .partition(|(k, _)| shapes.contains(k));
+            z.floating = gone.into_iter().flat_map(|(_, r)| z.rings[r].to_vec()).collect();
+            z.rings = kept.into_iter().flat_map(|(_, r)| z.rings[r].to_vec()).collect();
+            z.islands_removed += shapes.len();
+            rasterize(z);
+            z.triangles = crate::contour::triangles(&z.rings);
+            found.add(
+                "zone-islands",
+                format!("net {}", nets[z.net].name),
+                format!(
+                    "{} copper islands on {} reach only copper that is cut off from the rest of {} and were removed",
+                    shapes.len(),
+                    z.layer,
+                    nets[z.net].name
+                ),
+            );
         }
         pour::capture_zones(|| pour::ZonesCase {
             zones: zones.clone(),
@@ -3058,6 +3061,10 @@ fn place_watermark(
 }
 
 impl ZoneFill {
+    pub fn floating_islands(&self) -> usize {
+        shape_ranges(&self.floating).len()
+    }
+
     pub fn filled(&self, p: P) -> bool {
         let x = ((p[0] - self.origin[0]) / self.cell).floor();
         let y = ((p[1] - self.origin[1]) / self.cell).floor();
@@ -3280,6 +3287,7 @@ fn fill_zone(
         min_width,
         rings: Vec::new(),
         triangles: Vec::new(),
+        floating: Vec::new(),
     };
     fill.rings = vector_fill(
         &fill,
@@ -3303,6 +3311,76 @@ fn fill_zone(
     (fill, touched)
 }
 
+fn anchors(items: &[Item], hits: &[usize]) -> usize {
+    let ends = |i: usize| match items[i].shape {
+        Shape::Seg(a, b, _) if matches!(items[i].owner, Owner::Seg(_)) => Some([a, b]),
+        _ => None,
+    };
+    let mut root: Vec<usize> = (0..hits.len()).collect();
+    fn find(root: &mut [usize], mut i: usize) -> usize {
+        while root[i] != i {
+            i = root[i];
+        }
+        i
+    }
+    for x in 0..hits.len() {
+        let Some(ex) = ends(hits[x]) else { continue };
+        for y in x + 1..hits.len() {
+            let Some(ey) = ends(hits[y]) else { continue };
+            let meet = ex.iter().any(|p| ey.iter().any(|q| geom::dist(*p, *q) <= 1e-6));
+            if meet && items[hits[x]].net == items[hits[y]].net {
+                let (a, b) = (find(&mut root, x), find(&mut root, y));
+                root[a] = b;
+            }
+        }
+    }
+    (0..hits.len()).filter(|&i| find(&mut root, i) == i).count()
+}
+
+fn floating_islands(items: &[Item], islands: &[Vec<usize>], uf: &mut UnionFind) -> Vec<bool> {
+    let base: Vec<usize> = (0..items.len()).map(|i| uf.find(i)).collect();
+    let mut joined = UnionFind::new(items.len());
+    for touched in islands {
+        for group in touched.windows(2) {
+            joined.union(base[group[0]], base[group[1]]);
+        }
+    }
+    let mut pads: HashMap<(usize, usize), usize> = HashMap::new();
+    for (i, it) in items.iter().enumerate() {
+        if let (Some(net), Owner::Pad(..)) = (it.net, it.owner) {
+            *pads.entry((net, joined.find(base[i]))).or_default() += 1;
+        }
+    }
+    let mut main: HashMap<usize, (usize, usize)> = HashMap::new();
+    for (&(net, root), &count) in &pads {
+        let best = main.entry(net).or_insert((root, count));
+        if count > best.1 || (count == best.1 && root < best.0) {
+            *best = (root, count);
+        }
+    }
+    islands
+        .iter()
+        .map(|touched| {
+            let Some(&first) = touched.first() else { return false };
+            let Some(net) = items[first].net else { return false };
+            let root = joined.find(base[first]);
+            let joins = pads.get(&(net, root)).copied().unwrap_or(0);
+            main.get(&net).is_some_and(|m| root != m.0 && joins < 2)
+        })
+        .collect()
+}
+
+fn shape_ranges(rings: &[Vec<P>]) -> Vec<std::ops::Range<usize>> {
+    let mut out: Vec<std::ops::Range<usize>> = Vec::new();
+    for (i, r) in rings.iter().enumerate() {
+        match out.last_mut() {
+            Some(last) if geom::signed_area(r) <= 0.0 => last.end = i + 1,
+            _ => out.push(i..i + 1),
+        }
+    }
+    out
+}
+
 fn keep_connected(
     rings: &[Vec<P>],
     net: usize,
@@ -3310,14 +3388,8 @@ fn keep_connected(
     items: &[Item],
     min_island_area: f64,
 ) -> (Vec<Vec<P>>, Vec<Vec<usize>>, usize) {
-    let mut shapes: Vec<Vec<&Vec<P>>> = Vec::new();
-    for r in rings {
-        if geom::signed_area(r) > 0.0 || shapes.is_empty() {
-            shapes.push(vec![r]);
-        } else {
-            shapes.last_mut().unwrap().push(r);
-        }
-    }
+    let shapes: Vec<Vec<&Vec<P>>> =
+        shape_ranges(rings).into_iter().map(|r| rings[r].iter().collect()).collect();
     let own: Vec<usize> = (0..items.len())
         .filter(|&i| {
             items[i].net == Some(net)
@@ -3371,7 +3443,8 @@ fn keep_connected(
             })
             .collect();
         let area: f64 = shape.iter().map(|r| geom::signed_area(r)).sum();
-        if hits.len() >= 2 || (hits.len() == 1 && area >= min_island_area) {
+        let anchors = anchors(items, &hits);
+        if anchors >= 2 || (anchors == 1 && area >= min_island_area) {
             kept.extend(shape.into_iter().cloned());
             touched.push(hits);
         } else {
@@ -4488,6 +4561,7 @@ mod pair_tests {
             min_width: 0.25,
             rings: vec![vec![[-2.0, 1.8], [2.0, 1.8], [2.0, 2.0], [-2.0, 2.0]]],
             triangles: Vec::new(),
+            floating: Vec::new(),
         };
         let (fill, _) = fill_zone(
             0,

@@ -102,6 +102,14 @@ pub fn run_text(
     text: &str,
     a: &Run,
 ) -> Result<RunReport, String> {
+    agentee_core::layout::keeping_floating(|| run_loaded(inputs, text, a))
+}
+
+fn run_loaded(
+    inputs: &agentee_core::project::LayoutInputs,
+    text: &str,
+    a: &Run,
+) -> Result<RunReport, String> {
     let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
         inputs.footprints.iter().map(|(n, f)| (n.as_str(), f)).collect();
     let dir = inputs.path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
@@ -333,6 +341,10 @@ fn selected(cfg: &Config) -> Result<Vec<String>, String> {
 }
 
 pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
+    agentee_core::layout::keeping_floating(|| run_phases(model, cfg))
+}
+
+fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let chosen = selected(cfg)?;
     let has = |s: &str| chosen.iter().any(|x| x == s);
     let routes = has("global") || has("detail");
@@ -512,9 +524,10 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         }
     }
     if has("finish") && !d.stopped() {
+        agentee_core::layout::drop_floating();
         let t0 = d.start("finish");
+        let mut reload_ms = d.reload(model)?;
         let mut r = finish::Finish.run(model, &cfg.engine);
-        let mut reload_ms = 0;
         if r.changed {
             reload_ms += d.write_route(model)?;
             if finish::check_spread(model, &cfg.engine, &mut r) {

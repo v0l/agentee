@@ -1048,8 +1048,9 @@ fn ceramic_caps_near_a_board_cutout_are_in_the_flex_zone() {
 #[test]
 fn a_pour_clears_a_board_cutout_and_its_stored_fill_goes_stale() {
     let zone = format!(
-        "{}\n[[zones]]\nnet = \"A\"\nlayers = [\"B.Cu\"]\nmin_island_area = 0.0\n",
-        via("A", [5.0, 15.0])
+        "{}{}\n[[zones]]\nnet = \"A\"\nlayers = [\"B.Cu\"]\nmin_island_area = 0.0\n",
+        via("A", [5.0, 15.0]),
+        track("A", "F.Cu", "[[4.0, 5.0], [4.0, 15.0], [5.0, 15.0]]")
     );
     let pour = |board: &str| {
         let p = load(&Fixture { board, pcb: &zone, ..Default::default() });
@@ -1315,7 +1316,11 @@ fn a_pour_on_a_layer_the_via_misses_keeps_no_antipad() {
     let zone = "\n[[zones]]\nnet = \"B\"\nlayers = [\"In2.Cu\", \"In1.Cu\"]\n\
                 outline = [[8.0, 10.0], [12.0, 10.0], [12.0, 14.0], [8.0, 14.0]]\n\
                 min_island_area = 0.0\n";
-    let anchor = typed_via("B", [9.0, 11.0], "std");
+    let anchor = format!(
+        "{}{}",
+        typed_via("B", [9.0, 11.0], "std"),
+        track("B", "F.Cu", "[[6.0, 5.0], [9.0, 5.0], [9.0, 11.0]]")
+    );
     let p = hdi(&format!("{}{anchor}{zone}", typed_via("A", [10.0, 12.0], "uv")), "");
     let l = &p.layouts[0].item;
     let on = |layer: &str| l.zones.iter().find(|z| z.layer == layer).unwrap().filled([10.0, 12.0]);

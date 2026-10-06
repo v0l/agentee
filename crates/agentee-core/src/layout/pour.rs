@@ -7,7 +7,7 @@ use crate::graphic::Bounds;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 
-const FILL_VERSION: u64 = 4;
+const FILL_VERSION: u64 = 6;
 const STORE_GRID: f64 = 1e4;
 pub(super) const SNAP_MARGIN: f64 = 1.0 / STORE_GRID;
 
@@ -46,8 +46,8 @@ pub fn to_file(key: &FillKey, fill: &ZoneFill) -> FillFile {
         zone: key.zone,
         layer: key.layer.clone(),
         hash: key.hex(),
-        islands_removed: fill.islands_removed,
-        rings: fill.rings.clone(),
+        islands_removed: fill.islands_removed - fill.floating_islands(),
+        rings: fill.rings.iter().chain(&fill.floating).cloned().collect(),
     }
 }
 
@@ -169,9 +169,11 @@ impl FillSpec<'_> {
             min_width: self.min_width,
             rings: file.rings.clone(),
             triangles: Vec::new(),
+            floating: Vec::new(),
         };
-        let (_, touched, _) =
+        let (rings, touched, _) =
             keep_connected(&fill.rings, self.net, self.layer, items, self.min_island_area);
+        fill.rings = rings;
         rasterize(&mut fill);
         fill.triangles = crate::contour::triangles(&fill.rings);
         (fill, touched)
@@ -237,6 +239,22 @@ thread_local! {
     static CAPTURE: RefCell<Option<Vec<FillCase>>> = const { RefCell::new(None) };
     static ZONES: RefCell<Vec<ZonesCase>> = const { RefCell::new(Vec::new()) };
     static UNFILLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FLOATING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+pub fn drop_floating() {
+    FLOATING.with(|u| u.set(false));
+}
+
+pub fn keeping_floating<T>(f: impl FnOnce() -> T) -> T {
+    let before = FLOATING.with(|u| u.replace(true));
+    let out = f();
+    FLOATING.with(|u| u.set(before));
+    out
+}
+
+pub(super) fn keep_floating() -> bool {
+    FLOATING.with(|u| u.get())
 }
 
 pub fn without_fills<T>(f: impl FnOnce() -> T) -> T {

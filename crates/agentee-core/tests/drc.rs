@@ -413,7 +413,7 @@ fn pours_keep_the_plated_hole_margin_from_pad_holes_of_other_nets() {
     let pcb = "[[footprints]]\nref = \"TH1\"\nat = [15, 10]\n\n[[footprints]]\nref = \"R1\"\n\
                at = [5, 5]\n\n[[zones]]\nnet = \"A\"\nlayers = [\"In1.Cu\", \"B.Cu\"]\n\n\
                [[vias]]\nnet = \"A\"\nat = [25, 15]\n";
-    let p = project_with(&files, &[], sch, pcb);
+    let p = agentee_core::layout::keeping_floating(|| project_with(&files, &[], sch, pcb));
     let e = errors(&p);
     assert!(!e.iter().any(|t| t.contains("holes closer")), "{e:?}");
     let layout = &p.layouts[0].item;
