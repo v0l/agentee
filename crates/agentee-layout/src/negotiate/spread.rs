@@ -43,15 +43,16 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> Vec<(
     let g = grid.g;
     let layer_of = |n: &str| layout.copper.iter().position(|c| c == n);
     let net_of = |n: &str| layout.nets.iter().position(|x| x.name == n);
-    let mut anchors: Vec<(usize, P)> = Vec::new();
+    let mut anchors: Vec<(usize, P, f64)> = Vec::new();
     for t in tracks.iter() {
         if let (Some(n), Some(a), Some(b)) = (net_of(&t.net), t.points.first(), t.points.last()) {
-            anchors.push((n, *a));
-            anchors.push((n, *b));
+            let h = t.width.unwrap_or(layout.nets[n].width) / 2.0;
+            anchors.push((n, *a, h));
+            anchors.push((n, *b, h));
         }
     }
     for v in &layout.vias {
-        anchors.push((v.net, v.at));
+        anchors.push((v.net, v.at, v.diameter / 2.0));
     }
     let planes: Vec<usize> = base.rules.shadow.iter().flatten().copied().collect();
     let mut undo = Vec::new();
@@ -85,13 +86,13 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> Vec<(
             let (p0, p1, p2, p3) = (pts[k - 1], pts[k], pts[k + 1], pts[k + 2]);
             let Some(u) = dir(p1, p2) else { continue };
             let normal = [-u[1], u[0]];
-            let tied = anchors.iter().any(|&(an, q)| {
+            let tied = anchors.iter().any(|&(an, q, r)| {
                 an == n
                     && q != pts[0]
                     && q != pts[len - 1]
                     && [(p0, p1), (p1, p2), (p2, p3)]
                         .iter()
-                        .any(|&(a, b)| geom::point_segment_distance(q, a, b) < g)
+                        .any(|&(a, b)| geom::point_segment_distance(q, a, b) < half + r + g)
             });
             if tied {
                 continue;

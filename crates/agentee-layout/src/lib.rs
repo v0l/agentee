@@ -532,7 +532,13 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         finish::neck(model, &mut r);
         finish::dedouble(model, &mut r);
         finish::trim_pours(model, &mut r);
+        finish::drop_fragments(model, &mut r);
         if r.changed {
+            reload_ms += d.write_route(model)?;
+        }
+        if finish::close_joints(model, &cfg.engine, &mut r) {
+            finish::drop_fragments(model, &mut r);
+            r.changed = true;
             reload_ms += d.write_route(model)?;
         }
         r.changed |= before || tuned;
