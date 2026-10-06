@@ -851,6 +851,8 @@ fn edges(poly: &[P]) -> impl Iterator<Item = (P, P)> + '_ {
     (0..poly.len()).map(move |i| (poly[i], poly[(i + 1) % poly.len()]))
 }
 
+const FANOUT_SHARE: f64 = 4.0;
+
 impl LayoutFile {
     pub fn resolve(&self, cx: &Context, d: &mut Diags) -> Layout {
         let board = cx.board;
@@ -1089,9 +1091,20 @@ impl LayoutFile {
                     .filter(|d| *d > 1e-3)
                     .fold(f64::MAX, f64::min);
                 let rings = f.skip_rings.unwrap_or(0) as f64;
+                let area_of = |p: &PlacedPad| {
+                    p.outlines.iter().map(|o| geom::signed_area(o).abs()).sum::<f64>()
+                };
                 for (pad, c) in &pads {
                     let Some(net) = pad.net else { continue };
                     if f.skip.contains(&pad.number) || skipped(&f.skip_at, *c) {
+                        continue;
+                    }
+                    let own = area_of(pad);
+                    if pads.iter().any(|(q, _)| {
+                        q.net == Some(net)
+                            && area_of(q) >= FANOUT_SHARE * own
+                            && !std::ptr::eq(*q, *pad)
+                    }) {
                         continue;
                     }
                     if !f.nets.is_empty() && !f.nets.iter().any(|g| glob(g, &nets[net].name)) {
@@ -1371,7 +1384,8 @@ impl LayoutFile {
                     continue;
                 }
                 let under_silk = silk_boxes.iter().any(|bx| {
-                    geom::point_in_polygon(c, bx) || geom::polyline_polygon_distance(&[c, c], bx) < r
+                    geom::point_in_polygon(c, bx)
+                        || geom::polyline_polygon_distance(&[c, c], bx) < r
                 });
                 if under_silk {
                     continue;
