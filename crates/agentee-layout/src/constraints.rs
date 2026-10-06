@@ -15,6 +15,9 @@ pub struct Groups {
     pub clocks: Vec<Clock>,
 }
 
+const RF_DEPTH: usize = 16;
+const RF_BRANCHES: usize = 3;
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Chain {
     pub from: String,
@@ -101,6 +104,19 @@ fn chains(v: &View, model: &Model) -> Vec<Chain> {
         }
         for start in v.signal_nets(ci) {
             let rf = place::is_rf_class(model.board, &l.nets[start].class);
+            if rf {
+                let (parts, to) = rf_path(v, model, ci, start, &used);
+                if !parts.is_empty() {
+                    used.extend(&parts);
+                    out.push(Chain {
+                        from: c.reference.clone(),
+                        parts: parts.iter().map(|&k| l.parts[k].reference.clone()).collect(),
+                        to: to.map(|k| l.parts[k].reference.clone()),
+                        rf,
+                    });
+                }
+                continue;
+            }
             let mut parts = Vec::new();
             let mut net = start;
             let mut to = None;
@@ -139,6 +155,51 @@ fn chains(v: &View, model: &Model) -> Vec<Chain> {
         }
     }
     out
+}
+
+fn rf_nets(v: &View, model: &Model, part: usize) -> Vec<usize> {
+    let nets = &v.layout.nets;
+    v.signal_nets(part)
+        .into_iter()
+        .filter(|&n| place::is_rf_class(model.board, &nets[n].class))
+        .collect()
+}
+
+fn rf_path(
+    v: &View,
+    model: &Model,
+    from: usize,
+    net: usize,
+    seen: &[usize],
+) -> (Vec<usize>, Option<usize>) {
+    if seen.len() > RF_DEPTH {
+        return (Vec::new(), None);
+    }
+    let next: Vec<usize> = v.on_net[net]
+        .iter()
+        .copied()
+        .filter(|&k| k != from && !seen.contains(&k))
+        .filter(|&k| rf_nets(v, model, k).len() >= 2)
+        .collect();
+    let [k] = next[..] else { return (Vec::new(), None) };
+    let nets = rf_nets(v, model, k);
+    if role(&v.layout.parts[k]) == Role::Connector || nets.len() > RF_BRANCHES {
+        return (Vec::new(), Some(k));
+    }
+    let mut inside = seen.to_vec();
+    inside.extend([from, k]);
+    let mut ways: Vec<(Vec<usize>, Option<usize>)> =
+        nets.iter().filter(|&&n| n != net).map(|&n| rf_path(v, model, k, n, &inside)).collect();
+    ways.sort_by_key(|w| std::cmp::Reverse(w.0.len()));
+    let mut out = vec![k];
+    match ways.as_slice() {
+        [best, second, ..] if best.0.len() == second.0.len() => (out, None),
+        [best, ..] => {
+            out.extend(&best.0);
+            (out, best.1)
+        }
+        [] => (out, None),
+    }
 }
 
 fn decaps(model: &Model) -> Vec<Decap> {

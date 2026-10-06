@@ -866,7 +866,7 @@ ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans
 # exclude = ["C2?", "J1"]      # refs to leave out when ref is a glob; a glob never
                                # matches test points, a probe pad keeps no via
 
-[[stitching]]                  # ground vias wherever they clear every other net
+[[stitching]]                  # ground vias wherever they clear every other net and silk text
 net = "GND"
 # via = "std"                  # default the net's first class via
 # pitch = "2.5mm"              # grid pitch, or the spacing along a fence (default 1mm)

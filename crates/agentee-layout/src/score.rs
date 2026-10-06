@@ -53,6 +53,20 @@ pub struct Context<'a> {
     pub tangle: &'a BTreeMap<String, f64>,
 }
 
+pub const FACE_PINS: usize = 8;
+
+pub fn behind(centre: P, half: [f64; 2], pin: P, partner: P) -> f64 {
+    let d = [pin[0] - centre[0], pin[1] - centre[1]];
+    let len = (d[0] * d[0] + d[1] * d[1]).sqrt();
+    if len < 1e-6 {
+        return 0.0;
+    }
+    let u = [d[0] / len, d[1] / len];
+    let depth = -(u[0] * (partner[0] - pin[0]) + u[1] * (partner[1] - pin[1]));
+    let extent = u[0].abs() * half[0] + u[1].abs() * half[1];
+    depth.clamp(0.0, 2.0 * extent)
+}
+
 impl Score {
     pub fn measure(cx: &Context, weights: &Weights) -> Score {
         let mut s = Score::default();
@@ -313,12 +327,58 @@ impl Score {
             Some(n) => put("copper_overlap", n as f64, true, Vec::new()),
             None => put("copper_overlap", 0.0, false, Vec::new()),
         }
+        let mut on_net: Vec<Vec<(usize, P)>> = vec![Vec::new(); l.nets.len()];
+        for (pi, p) in l.parts.iter().enumerate() {
+            for pad in &p.pads {
+                let Some(n) = pad.net else { continue };
+                let mut bb = Bounds::EMPTY;
+                pad.outlines.iter().flatten().for_each(|q| bb.add(*q));
+                if !bb.is_empty() {
+                    on_net[n].push((pi, bb.center()));
+                }
+            }
+        }
+        let mut facing = 0.0;
+        let mut facing_worst = Vec::new();
+        for (pi, p) in l.parts.iter().enumerate().filter(|(_, p)| p.pads.len() <= FACE_PINS) {
+            let mut body = Bounds::EMPTY;
+            p.pads.iter().flat_map(|q| q.outlines.iter().flatten()).for_each(|q| body.add(*q));
+            if body.is_empty() {
+                continue;
+            }
+            let half = [(body.max[0] - body.min[0]) / 2.0, (body.max[1] - body.min[1]) / 2.0];
+            let mut part = 0.0;
+            for &(n, pin) in on_net
+                .iter()
+                .enumerate()
+                .flat_map(|(n, v)| v.iter().filter(move |e| e.0 == pi).map(move |e| (n, e.1)))
+                .collect::<Vec<_>>()
+                .iter()
+            {
+                let net = &l.nets[n];
+                if place::is_power_net(b, &net.name, &net.class) || cx.planes.contains(&net.name) {
+                    continue;
+                }
+                let partner = on_net[n]
+                    .iter()
+                    .filter(|e| e.0 != pi)
+                    .map(|e| e.1)
+                    .min_by(|a, c| geom::dist(*a, pin).total_cmp(&geom::dist(*c, pin)));
+                if let Some(t) = partner {
+                    part += class_weight(&net.class) * behind(body.center(), half, pin, t);
+                }
+            }
+            if part > 0.0 {
+                facing += part;
+                facing_worst.push((p.reference.clone(), part));
+            }
+        }
+        put("pin_access", facing, true, facing_worst);
         for t in [
             "chain_order",
             "chain_layer",
             "return_path",
             "pair_coupling",
-            "pin_access",
             "via_site",
             "switcher",
             "plane_reach",

@@ -670,10 +670,40 @@ fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Resul
     Ok(gained)
 }
 
+fn stitching_toml(model: &Model) -> String {
+    if !model.file.stitching.is_empty() {
+        return String::new();
+    }
+    let b = model.board;
+    let outer = [model.layout.copper.first(), model.layout.copper.last()];
+    let Some(ground) = model
+        .file
+        .zones
+        .iter()
+        .filter(|z| z.layers.iter().any(|l| outer.contains(&Some(l))))
+        .map(|z| z.net.as_str())
+        .find(|n| agentee_core::place::is_ground(n))
+    else {
+        return String::new();
+    };
+    let rf: Vec<String> = model
+        .layout
+        .nets
+        .iter()
+        .filter(|n| agentee_core::place::is_rf_class(b, &n.class))
+        .filter(|n| b.netclasses.iter().any(|c| c.name == n.class && c.coplanar_gap.is_some()))
+        .map(|n| format!("\"{}\"", n.name))
+        .collect();
+    if rf.is_empty() {
+        return String::new();
+    }
+    format!("\n[[stitching]]\nnet = \"{ground}\"\nfence = [{}]\n", rf.join(", "))
+}
+
 fn planes_toml(model: &Model) -> Option<String> {
-    let plan = model.planes.as_ref().filter(|p| !p.zones.is_empty())?;
-    let mut t = String::new();
-    for z in &plan.zones {
+    let zones = model.planes.as_ref().map(|p| p.zones.as_slice()).unwrap_or_default();
+    let mut t = stitching_toml(model);
+    for z in zones {
         let pts: Vec<String> = z.outline.iter().map(|q| pt(*q)).collect();
         t += &format!(
             "\n[[zones]]\nnet = \"{}\"\nlayers = [\"{}\"]\npriority = {}\noutline = [{}]\n",
@@ -683,7 +713,7 @@ fn planes_toml(model: &Model) -> Option<String> {
             pts.join(", ")
         );
     }
-    Some(t)
+    (!t.is_empty()).then_some(t)
 }
 
 pub fn route_toml(tracks: &[RoutedTrack], vias: &[RoutedVia]) -> String {

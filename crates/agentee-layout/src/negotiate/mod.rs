@@ -655,7 +655,18 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
                 });
             }
             for &(at, k) in &p.vias {
-                out.vias.push(RoutedVia { net: name.clone(), at, via: rules.vias[k].name.clone() });
+                let stacked = out.vias.iter().any(|v| {
+                    v.net == name
+                        && geom::dist(v.at, at) < rules.vias[k].r
+                        && v.via == rules.vias[k].name
+                });
+                if !stacked {
+                    out.vias.push(RoutedVia {
+                        net: name.clone(),
+                        at,
+                        via: rules.vias[k].name.clone(),
+                    });
+                }
             }
         }
         out.failed.extend(st.failed.iter().cloned());
@@ -712,6 +723,7 @@ pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAcc
             own: &own,
             holes: &[],
             old: None,
+            pads: &pads,
         };
         for p in &pads {
             let mut exits = 0;
@@ -1941,6 +1953,7 @@ fn connect(
             own: &st.own,
             holes: &holes,
             old: env.jacobi.then_some(st.fp.as_ref()).flatten(),
+            pads: &st.pads,
         };
         let mut access: Vec<Access> = Vec::new();
         let mut sources: Vec<Source> = Vec::new();

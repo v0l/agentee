@@ -289,6 +289,11 @@ leave 1V0, 1V8, VSYS and 2V5 islands that only 0.9 mm and 0.4 mm tracks may join
 J1 and at the charger, where the 0.9 mm class width does not fit between the pads. On `praline`
 it is the fanout of the 0.8 mm BGA U23, where about 100 nets still overlap when negotiation stops.
 
+The `pin_access` score term adds, for every signal pin of a part with up to eight pads, how far
+its nearest connected pin lies behind it (the route has to go around the part), up to twice the
+part's depth, times 3 for impedance classes. The committed `sdr` placement scores 98 with C96 and
+C97 turned the wrong way round; the full flow scores 56.
+
 Impedance nets are routed so the DRC's `impedance-trace` estimate stays in tolerance: a neck
 goes no narrower than the width that moves the impedance by half the tolerance, other copper
 keeps the class's gap floor, and where the line depends on its coplanar pour (on `lna`, losing
@@ -317,12 +322,18 @@ Built, in `crates/agentee-layout`:
   islands and the routed nets, built once per placement and shared by access, global, detail and
   finish. The file is resolved again only after placement moves, after the rail regions are
   written and after the route is written.
-- **Constraints.** Chains from every connector through two-pin series parts (RF included),
-  decaps bound to the nearest supply pin of a chip, crystals bound to their chip.
-- **Place.** Chains laid in a line from their connector with the chain pins on one line, the core
-  placer for the rest, then legalise. Later passes inflate parts under hot tiles and legalise
+- **Constraints.** Chains from every connector through two-pin series parts. An RF chain follows
+  RF class nets only, so it runs through switches and amplifiers; where a part offers two onward
+  RF nets it takes the one leading to the longer chain, and a tie (a balun's two legs) ends it.
+  Decaps bound to the nearest supply pin of a chip, crystals bound to their chip.
+- **Place.** Chains laid in a line from their connector with the chain pins on one line, each
+  part turned so the pin from the previous part and the pin to the next sit on the edges that
+  face them, the core placer for the rest, then every unlocked part of up to eight pads is turned
+  to the rotation that keeps its signal pins from pointing away from what they connect to, then
+  legalise. Later passes inflate parts under hot tiles and legalise
   from where they are. Labels are settled after every pass.
-- **Access.** Rail regions (`# plan planes`), terminals from SMD rail pads as well as vias, the
+- **Access.** Rail regions (`# plan planes`), a `[[stitching]]` fence along the coplanar RF
+  nets when the layout has no stitching of its own (stitching never lands under silk text), terminals from SMD rail pads as well as vias, the
   escape flow for every BGA kept as a cost discount for detail, and a pin access report.
 - **Global.** PathFinder on 1 mm tiles over every layer, edge capacities from the distance fields,
   via capacity from legal via sites, nets grown as trees by maze search, overflow history kept

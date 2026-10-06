@@ -1232,6 +1232,14 @@ impl LayoutFile {
             });
         }
 
+        let (graphics, artwork) = self.artwork_of(&cx.dir, d);
+        let silk_boxes: Vec<Vec<P>> = parts
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.silk_texts(i))
+            .chain(board_texts(&graphics))
+            .map(|t| t.outline())
+            .collect();
         for (i, st) in self.stitching.iter().enumerate() {
             let at = format!("stitching[{i}] {}", st.net);
             let Some(net) = net_index(&st.net) else {
@@ -1338,6 +1346,12 @@ impl LayoutFile {
                             && geom::dist(c, *q) - dr - drill / 2.0 < hole_gap - 1e-9
                     })
                 {
+                    continue;
+                }
+                let under_silk = silk_boxes.iter().any(|bx| {
+                    geom::point_in_polygon(c, bx) || geom::polyline_polygon_distance(&[c, c], bx) < r
+                });
+                if under_silk {
                     continue;
                 }
                 let probe = Shape::Circle(c, r);
@@ -1798,7 +1812,6 @@ impl LayoutFile {
             stats.push((unrouted, length));
         }
 
-        let (graphics, artwork) = self.artwork_of(&cx.dir, d);
         let silk: Vec<SilkBox> = parts
             .iter()
             .enumerate()

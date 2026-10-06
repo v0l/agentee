@@ -43,6 +43,7 @@ struct Net {
 struct Board {
     cells: Vec<Cell>,
     nets: Vec<Net>,
+    weight: HashMap<usize, f64>,
     outline: Vec<P>,
     bounds: Bounds,
     keepouts: Vec<Vec<P>>,
@@ -126,6 +127,7 @@ fn build(model: &Model) -> Board {
         }
     }
     let mut nets = Vec::new();
+    let mut weights = HashMap::new();
     for (n, pins) in by_net {
         let net = &l.nets[n];
         if pins.len() < 2 || place::is_power_net(b, &net.name, &net.class) {
@@ -136,6 +138,7 @@ fn build(model: &Model) -> Board {
         } else {
             1.0
         };
+        weights.insert(n, weight);
         nets.push(Net { weight, pins });
     }
     for (ci, c) in cells.iter().enumerate() {
@@ -167,7 +170,14 @@ fn build(model: &Model) -> Board {
     }
     let mut bounds = Bounds::EMPTY;
     l.outline.iter().for_each(|q| bounds.add(*q));
-    Board { cells, nets, outline: l.outline.clone(), bounds, keepouts: model.keepouts.clone() }
+    Board {
+        cells,
+        nets,
+        weight: weights,
+        outline: l.outline.clone(),
+        bounds,
+        keepouts: model.keepouts.clone(),
+    }
 }
 
 fn moves_of(bd: &Board) -> Vec<Move> {
@@ -212,6 +222,9 @@ fn hpwl(bd: &Board) -> f64 {
 }
 
 const SPACING: f64 = 0.2;
+const FACING: f64 = 0.05;
+const FACING_WEIGHT: f64 = 100.0;
+use crate::score::FACE_PINS;
 const STANDOFF: f64 = 0.6;
 const SPREAD: f64 = 1.5;
 const HOT_GROW: f64 = 0.25;
@@ -295,11 +308,19 @@ fn template_chains(
             for rot in [0.0, 90.0, 180.0, 270.0] {
                 let mut c = bd.cells[ci].clone();
                 rotate_cell(&mut c, rot);
-                let (Some(a), Some(b)) = (chain_pins(&c, &prev_nets), chain_pins(&c, &next_nets))
-                else {
-                    continue;
-                };
-                let v = along(b) - along(a);
+                let Some(a) = chain_pins(&c, &prev_nets) else { continue };
+                let ends = c
+                    .pins
+                    .iter()
+                    .map(|p| along(p.1))
+                    .fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+                let b = chain_pins(&c, &next_nets);
+                let facing = [Some(along(a) - ends.0), b.map(|b| ends.1 - along(b))]
+                    .into_iter()
+                    .flatten()
+                    .filter(|&d| d < FACING)
+                    .count();
+                let v = facing as f64 * FACING_WEIGHT + b.map_or(ends.1, along) - along(a);
                 if v > best + 1e-6 {
                     best = v;
                     best_rot = rot;
@@ -402,6 +423,66 @@ fn rect_of(c: &Cell, at: P, gap: f64) -> [f64; 4] {
 
 fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+}
+
+fn facing_cost(bd: &Board, ci: usize, c: &Cell, on_net: &HashMap<usize, Vec<usize>>) -> f64 {
+    let centre = [c.at[0] + c.box_off[0], c.at[1] + c.box_off[1]];
+    let mut cost = 0.0;
+    for &(n, off) in &c.pins {
+        let Some(&w) = bd.weight.get(&n) else { continue };
+        let pin = [c.at[0] + off[0], c.at[1] + off[1]];
+        let partner = on_net[&n]
+            .iter()
+            .filter(|&&cj| cj != ci)
+            .flat_map(|&cj| {
+                let d = &bd.cells[cj];
+                d.pins
+                    .iter()
+                    .filter(move |p| p.0 == n)
+                    .map(move |p| [d.at[0] + p.1[0], d.at[1] + p.1[1]])
+            })
+            .min_by(|a, b| geom::dist(*a, pin).total_cmp(&geom::dist(*b, pin)));
+        if let Some(t) = partner {
+            cost += w
+                * (crate::score::behind(centre, c.half, pin, t) * FACING_WEIGHT
+                    + geom::dist(pin, t));
+        }
+    }
+    cost
+}
+
+fn face(bd: &mut Board) -> usize {
+    let mut on_net: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (ci, c) in bd.cells.iter().enumerate() {
+        for &(n, _) in &c.pins {
+            let v = on_net.entry(n).or_default();
+            if v.last() != Some(&ci) {
+                v.push(ci);
+            }
+        }
+    }
+    let mut turned = 0;
+    for ci in 0..bd.cells.len() {
+        let c = &bd.cells[ci];
+        if c.fixed || c.chained || c.pin_count > FACE_PINS || c.pins.len() < 2 {
+            continue;
+        }
+        let here = facing_cost(bd, ci, c, &on_net);
+        let mut best = (here, 0.0);
+        for rot in [90.0, 180.0, 270.0] {
+            let mut t = bd.cells[ci].clone();
+            rotate_cell(&mut t, rot);
+            let cost = facing_cost(bd, ci, &t, &on_net);
+            if cost < best.0 - 1e-6 {
+                best = (cost, rot);
+            }
+        }
+        if best.1 != 0.0 {
+            rotate_cell(&mut bd.cells[ci], best.1);
+            turned += 1;
+        }
+    }
+    turned
 }
 
 fn legalise(
@@ -567,6 +648,10 @@ impl Phase for Place {
                 model.hot.len(),
                 grow.len()
             ));
+        }
+        let turned = face(&mut bd);
+        if turned > 0 {
+            report.notes.push(format!("{turned} parts turned to face what they connect to"));
         }
         let (note, failed) = legalise(model, &mut bd, &grow, spread.spacing);
         report.notes.push(note);

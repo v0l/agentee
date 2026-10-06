@@ -43,9 +43,17 @@ pub struct Ctx<'a> {
     pub own: &'a std::collections::HashSet<u32>,
     pub holes: &'a [(P, f64)],
     pub old: Option<&'a super::soft::Footprint>,
+    pub pads: &'a [PadRef],
 }
 
 impl Ctx<'_> {
+    fn gap_at(&self, at: P) -> f64 {
+        let entering = self.pads.iter().any(|p| {
+            geom::point_in_polygon(at, &p.outline) || edge_dist(&p.outline, at) <= self.rule.neck
+        });
+        if entering { self.rule.clearance } else { self.rule.band }
+    }
+
     fn hole_free(&self, at: P, k: usize) -> bool {
         let dr = self.rules.vias[k].dr;
         self.holes.iter().all(|&(c, r)| {
@@ -106,7 +114,8 @@ impl Ctx<'_> {
 
     fn safe_at_w(&self, l: usize, at: P, width: f64) -> bool {
         let w = width / 2.0;
-        let pass = |(d, q): (f64, f64)| d > w + self.rule.clearance + EXACT && q > w + EXACT;
+        let c = self.gap_at(at);
+        let pass = |(d, q): (f64, f64)| d > w + c + EXACT && q > w + EXACT;
         self.field_at(l, at).is_some_and(pass) || pass(self.exact_at(l, at))
     }
 
