@@ -15,6 +15,7 @@ pub const COMMANDS: &[&str] = &[
     "fanout",
     "stitch",
     "watermark",
+    "title",
     "test",
     "board",
     "schematic",
@@ -35,6 +36,7 @@ pub fn command(name: &str) -> Option<Cmd> {
         "fanout" => fanout,
         "stitch" => stitch,
         "watermark" => watermark,
+        "title" => title,
         "test" => test,
         "board" => board_ref,
         "schematic" => schematic_ref,
@@ -48,6 +50,7 @@ pub fn bool_flags(name: &str) -> &'static [&'static str] {
         "track" => &[],
         "zone" => &["relief", "no-relief", "relief-tht-only"],
         "watermark" => &["hide"],
+        "title" => &["clear"],
         "test" => &["through-holes", "no-vias"],
         _ => &[],
     }
@@ -76,6 +79,9 @@ pub fn usage(name: &str) -> &'static str {
             "stitch NET [--via std] [--pitch 2.5mm] [--fence RF_*] [--offset 0.5mm] [--margin 0.6mm] [--outline X,Y ...]"
         }
         "watermark" => "watermark [--at X,Y] [--layer B.SilkS] [--rotation 90] [--hide]",
+        "title" => {
+            "title TEXT [--at X,Y] [--layer F.SilkS] [--rotation 90] [--size 1.5mm] | title --clear"
+        }
         "test" => {
             "test [--nets 3V3,*RST*] [--exclude LED_*] [--side B] [--through-holes] [--no-vias] [--min-test-pad 1.0mm]"
         }
@@ -762,6 +768,45 @@ fn watermark(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String
     }
     s.doc(path)?["watermark"] = Item::Table(t);
     Ok(Report::log("watermark spot set"))
+}
+
+fn title(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    if o.flag("clear") {
+        o.done("title", 0)?;
+        s.doc(path)?.remove("title");
+        return Ok(Report::log("title removed"));
+    }
+    let body = o.word("the title text")?;
+    let at = o.at("at")?;
+    let layer = o.take("layer");
+    let rotation = o.typed("rotation")?;
+    let size = match o.take("size") {
+        Some(v) => Some(length(&v, "--size")?),
+        None => None,
+    };
+    o.done("title", 0)?;
+    if let Some(l) = &layer
+        && !matches!(l.as_str(), "F.SilkS" | "B.SilkS")
+    {
+        return Err(format!("the title goes on silk, F.SilkS or B.SilkS, not `{l}`"));
+    }
+    let plain = at.is_none() && layer.is_none() && rotation.is_none() && size.is_none();
+    let doc = s.doc(path)?;
+    if plain {
+        doc["title"] = toml_edit::value(body.clone());
+    } else {
+        let mut t = toml_edit::InlineTable::new();
+        t.insert("text", body.clone().into());
+        for (k, v) in
+            [("at", at), ("layer", layer.map(Into::into)), ("rotation", rotation), ("size", size)]
+        {
+            if let Some(v) = v {
+                t.insert(k, v);
+            }
+        }
+        doc["title"] = Item::Value(TValue::InlineTable(t));
+    }
+    Ok(Report { log: vec![format!("title `{body}`")], facts: vec![json!({ "title": body })] })
 }
 
 fn test(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {

@@ -572,6 +572,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `silk-text-height` | warning | always | silk text under `min_silk_text_height` |
 | `silk-artwork` | error | always | silk artwork on pads, over silk text or off the board |
 | `watermark` | error | always | the `agentee vX.Y.Z-HASH` watermark has no clear spot on the silk, or the `[watermark]` spot is not clear; fab refuses without a spot, and disabling the rule does not remove the watermark |
+| `board-title` | error | layouts with a `title` | the layout's `title` has no clear spot on the silk, or its `at` spot is not clear |
 | `silk-width` | warning | always | board silk lines (the layout's `[[graphics]]`, not text) thinner than `min_silk_width`, counted with the thinnest; footprint silk is checked with the footprint |
 | `pair-skew` | error | pairs | a pair skewed over its `max_skew` or the class `max_skew`, with the net to lengthen |
 | `pair-skew-info` | info | pairs | the skew of each pair within its limit |
@@ -934,6 +935,7 @@ Places the schematic's footprints on the board and routes them.
 name = "lna"
 board = "lna"
 schematic = "lna"
+title = "LNA v1.0"             # optional: board name and version in the silk, placed for you
 
 [[footprints]]
 ref = "U1"
@@ -1051,6 +1053,16 @@ check reports a `watermark` error with the size to clear and the least crowded s
 refuses; clear room there or set `[watermark] at` (plus `layer`, `rotation`) yourself. A
 `[watermark]` spot that is not clear is a `watermark` error naming what it hits, and a stackup
 with no `kind = "silk"` layer is a `watermark` error asking for one.
+
+`title = "LNA v1.0"` prints the board's name and version in the silk, found a spot the same way
+as the watermark: on `F.SilkS` first (then `B.SilkS`), at 1.5 times `min_silk_text_height` (then
+the minimum if nothing that size fits), at the clear spot nearest the top left corner, rotated 90
+degrees if only a tall gap fits. The watermark keeps clear of it. Pin it with a table on the same
+line, `title = { text = "LNA v1.0", at = [26, 14.5], layer = "F.SilkS", rotation = 90, size =
+"2mm" }`; every key but `text` is optional. Keep the key above the first `[[footprints]]` table,
+or TOML reads it as part of that table. When no spot is clear, check reports a `board-title`
+error with the least crowded spot as a line to paste, and fab refuses. `agentee edit pcb NAME
+title "LNA v1.0" [--at X,Y] [--layer B.SilkS] [--size 2mm]` writes it, `title --clear` removes it.
 
 Test access: by default the nets that need a probe are power nets (a class with `current`, or a
 name like `3V3`, `1V8`, `+5V`, `VCC*`, `VDD*`, `VBUS*`, `VBAT*`, `VIN*`, `VSYS*`), ground (`GND`,

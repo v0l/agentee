@@ -240,6 +240,20 @@ fn board_and_layout_edits_write_the_keys() {
     ] {
         assert!(pcb.contains(want), "missing {want} in\n{pcb}");
     }
+
+    run(&d, &["edit", "pcb", "t", "title", "Buggy Guard v1.0"]);
+    let pcb = std::fs::read_to_string(d.join("t.pcb.toml")).unwrap();
+    assert!(pcb.contains("title = \"Buggy Guard v1.0\""), "{pcb}");
+    let first_table = pcb.find('[').unwrap();
+    assert!(pcb.find("title =").unwrap() < first_table, "title must stay a top level key\n{pcb}");
+    run(&d, &["edit", "pcb", "t", "title", "Buggy Guard v1.1", "--at", "20,4", "--size", "2mm"]);
+    let pcb = std::fs::read_to_string(d.join("t.pcb.toml")).unwrap();
+    assert!(
+        pcb.contains("title = { text = \"Buggy Guard v1.1\", at = [20.0, 4.0], size = \"2mm\" }"),
+        "{pcb}"
+    );
+    run(&d, &["edit", "pcb", "t", "title", "--clear"]);
+    assert!(!std::fs::read_to_string(d.join("t.pcb.toml")).unwrap().contains("title"));
 }
 
 #[test]
@@ -394,7 +408,8 @@ fn help_lists_the_commands() {
         assert!(out.contains(want), "sch help misses {want}: {out}");
     }
     let (out, _, _) = run(&d, &["edit", "pcb", "help"]);
-    for want in ["place", "track", "via", "zone", "pair", "stitch", "fanout", "watermark"] {
+    for want in ["place", "track", "via", "zone", "pair", "stitch", "fanout", "watermark", "title"]
+    {
         assert!(out.contains(want), "pcb help misses {want}: {out}");
     }
     let (out, _, _) = run(&d, &["edit", "board", "help"]);

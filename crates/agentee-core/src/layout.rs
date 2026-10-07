@@ -235,6 +235,8 @@ pub struct LayoutFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watermark: Option<WatermarkFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<Title>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test: Option<crate::testpoint::TestFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<crate::place::PlaceFile>,
@@ -251,6 +253,45 @@ pub struct WatermarkFile {
     pub layer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TitleFile {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<Point>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Length>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(transparent)]
+pub struct Title(pub TitleFile);
+
+impl<'de> Deserialize<'de> for Title {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = Title;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str(
+                    "the title text, or a table with `text` and optional `at`, `layer`, `rotation`, `size`",
+                )
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Title, E> {
+                Ok(Title(TitleFile { text: v.to_string(), ..Default::default() }))
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(self, m: M) -> Result<Title, M::Error> {
+                TitleFile::deserialize(serde::de::value::MapAccessDeserializer::new(m)).map(Title)
+            }
+        }
+        d.deserialize_any(V)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -574,6 +615,8 @@ pub struct Layout {
     pub fill_keys: Vec<FillKey>,
     pub watermark: Option<SilkText>,
     pub watermark_problem: Option<String>,
+    pub title: Option<SilkText>,
+    pub title_problem: Option<String>,
     pub test: crate::testpoint::TestSpec,
     pub engine: crate::engine::EngineFile,
 }
@@ -595,6 +638,7 @@ pub struct SilkBox {
 impl Layout {
     pub fn board_texts(&self) -> Vec<SilkText> {
         let mut out = board_texts(&self.graphics);
+        out.extend(self.title.clone());
         out.extend(self.watermark.clone());
         out
     }
@@ -1494,9 +1538,7 @@ impl LayoutFile {
         let domain_of: Vec<Option<usize>> =
             nets.iter().map(|n| board.domain_of(&n.name, &n.class).first().copied()).collect();
         let isolated: Vec<bool> = domain_of.iter().map(Option::is_some).collect();
-        let same_part = |a: &Item, b: &Item| {
-            matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q)
-        };
+        let same_part = |a: &Item, b: &Item| matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q);
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1948,14 +1990,30 @@ impl LayoutFile {
             Vec::new()
         };
 
-        let (watermark, watermark_problem) = place_watermark(
-            self.watermark.as_ref(),
+        let edge = geom::BoardEdge::new(&outline, &board_cutouts);
+        let (title, title_problem) = match &self.title {
+            Some(Title(spec)) => place_mark(
+                &Mark::title(spec, board),
+                board,
+                &parts,
+                &vias,
+                &graphics,
+                &artwork,
+                &[],
+                edge,
+                &mut found,
+            ),
+            None => (None, None),
+        };
+        let (watermark, watermark_problem) = place_mark(
+            &Mark::watermark(self.watermark.as_ref(), board),
             board,
             &parts,
             &vias,
             &graphics,
             &artwork,
-            geom::BoardEdge::new(&outline, &board_cutouts),
+            title.as_slice(),
+            edge,
             &mut found,
         );
 
@@ -2010,6 +2068,7 @@ impl LayoutFile {
                 .with_signals(&graphics, &pairs, &match_groups, &interfaces)
                 .with_test(&test)
                 .with_heat(&cx.heat)
+                .with_title(title.is_some() || title_problem.is_some())
                 .with_found(&found),
                 d,
             );
@@ -2038,6 +2097,8 @@ impl LayoutFile {
             fill_keys,
             watermark,
             watermark_problem,
+            title,
+            title_problem,
             test,
             engine,
         }
@@ -2900,19 +2961,93 @@ fn watermark_occupancy(
     occ
 }
 
+struct Mark {
+    rule: &'static str,
+    owner: &'static str,
+    what: &'static str,
+    text: String,
+    sizes: Vec<f64>,
+    layers: [&'static str; 2],
+    at: Option<P>,
+    layer: Option<String>,
+    rotation: Option<f64>,
+    corner: fn(&Bounds) -> P,
+    spot: fn(&Mark, Option<P>, &str, f64) -> String,
+}
+
+impl Mark {
+    fn watermark(spec: Option<&WatermarkFile>, board: &Board) -> Mark {
+        let spec = spec.cloned().unwrap_or_default();
+        Mark {
+            rule: "watermark",
+            owner: "watermark",
+            what: "watermark",
+            text: crate::version::watermark(),
+            sizes: vec![board.rules.min_silk_text_height.to_mm()],
+            layers: ["B.SilkS", "F.SilkS"],
+            at: spec.at.map(|p| p.to_mm()),
+            layer: spec.layer,
+            rotation: spec.rotation,
+            corner: |b| [b.min[0], b.max[1]],
+            spot: |_, at, layer, rot| {
+                format!("[watermark] at = {}, layer = \"{layer}\"{}", xy(at), turn(rot))
+            },
+        }
+    }
+
+    fn title(spec: &TitleFile, board: &Board) -> Mark {
+        let min = board.rules.min_silk_text_height.to_mm();
+        let sizes = match spec.size {
+            Some(s) => vec![s.to_mm()],
+            None => vec![(min * TITLE_SCALE).max(min), min],
+        };
+        Mark {
+            rule: "board-title",
+            owner: "title",
+            what: "title",
+            text: spec.text.clone(),
+            sizes,
+            layers: ["F.SilkS", "B.SilkS"],
+            at: spec.at.map(|p| p.to_mm()),
+            layer: spec.layer.clone(),
+            rotation: spec.rotation,
+            corner: |b| b.min,
+            spot: |m, at, layer, rot| {
+                format!(
+                    "title = {{ text = {:?}, at = {}, layer = \"{layer}\"{} }}",
+                    m.text,
+                    xy(at),
+                    turn(rot)
+                )
+            },
+        }
+    }
+}
+
+const TITLE_SCALE: f64 = 1.5;
+
+fn xy(at: Option<P>) -> String {
+    at.map(|p| format!("[{:.2}, {:.2}]", p[0], p[1])).unwrap_or_else(|| "[x, y]".into())
+}
+
+fn turn(rot: f64) -> String {
+    if rot != 0.0 { format!(", rotation = {rot}") } else { String::new() }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn place_watermark(
-    spec: Option<&WatermarkFile>,
+fn place_mark(
+    mark: &Mark,
     board: &Board,
     parts: &[Placed],
     vias: &[Via],
     graphics: &[crate::graphic::Graphic],
     artwork: &[Artwork],
+    avoid: &[SilkText],
     board_edge: geom::BoardEdge,
     found: &mut crate::drc::Findings,
 ) -> (Option<SilkText>, Option<String>) {
-    let text = crate::version::watermark();
-    let size = board.rules.min_silk_text_height.to_mm();
+    let (rule, what) = (mark.rule, mark.what);
+    let text = mark.text.clone();
     let margin = board.rules.min_copper_to_edge.to_mm();
     let silk_layers: Vec<String> = board
         .stackup
@@ -2921,38 +3056,41 @@ fn place_watermark(
         .filter(|l| l.kind == crate::board::LayerKind::Silk)
         .map(|l| l.name.clone())
         .collect();
-    let spec = spec.cloned().unwrap_or_default();
-    let layers: Vec<String> = match &spec.layer {
+    let layers: Vec<String> = match &mark.layer {
         Some(l) if silk_layers.contains(l) => vec![l.clone()],
         Some(l) => {
             found.add(
-                "watermark",
-                "watermark",
+                rule,
+                what,
                 format!(
                     "layer `{l}` is not a silk layer of the board, use {}",
                     silk_layers.join(" or ")
                 ),
             );
-            return (None, Some(format!("[watermark] layer `{l}` is not a silk layer")));
+            return (None, Some(format!("the {what} layer `{l}` is not a silk layer")));
         }
-        None => ["B.SilkS", "F.SilkS"]
+        None => mark
+            .layers
             .into_iter()
             .filter(|l| silk_layers.iter().any(|s| s == l))
             .map(String::from)
             .collect(),
     };
     let Some(first) = layers.first() else {
-        let msg = "the board has no silk layer for the watermark: add a `[[stackup.layers]]` with `kind = \"silk\"` outside the mask at the top and bottom of the board's stackup".to_string();
-        found.add("watermark", "watermark", &msg);
+        let msg = format!(
+            "the board has no silk layer for the {what}: add a `[[stackup.layers]]` with `kind = \"silk\"` outside the mask at the top and bottom of the board's stackup"
+        );
+        found.add(rule, what, &msg);
         return (None, Some(msg));
     };
     let mut texts: Vec<SilkText> =
         parts.iter().enumerate().flat_map(|(i, p)| p.silk_texts(i)).collect();
     texts.extend(board_texts(graphics));
+    texts.extend(avoid.iter().cloned());
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
     let spans = part_spans(parts);
-    let make = |at: P, rotation: f64, layer: &str| SilkText {
-        owner: "watermark".into(),
+    let make = |at: P, rotation: f64, layer: &str, size: f64| SilkText {
+        owner: mark.owner.into(),
         part: usize::MAX,
         text: text.clone(),
         at,
@@ -2993,13 +3131,13 @@ fn place_watermark(
         }
         out
     };
-    if let Some(at) = spec.at {
-        let t = make(at.to_mm(), spec.rotation.unwrap_or(0.0), first);
+    if let Some(at) = mark.at {
+        let t = make(at, mark.rotation.unwrap_or(0.0), first, mark.sizes[0]);
         let p = problems(&t);
         if !p.is_empty() {
             found.add(
-                "watermark",
-                "watermark",
+                rule,
+                what,
                 format!(
                     "`{text}` at [{:.2}, {:.2}] on {} {}",
                     t.at[0],
@@ -3011,74 +3149,82 @@ fn place_watermark(
         }
         return (Some(t), None);
     }
-    let pen = crate::font::default_thickness(size);
-    let (w, h) = (crate::font::ink_width(&text, size) + pen, size + pen);
-    let rotations: Vec<f64> = match spec.rotation {
+    let rotations: Vec<f64> = match mark.rotation {
         Some(r) => vec![r],
         None => vec![0.0, 90.0],
     };
     let mut ob = Bounds::EMPTY;
     board_edge.outline.iter().for_each(|p| ob.add(*p));
-    let corner = [ob.min[0], ob.max[1]];
+    let corner = (mark.corner)(&ob);
     let round = |v: f64| (v * 100.0).round() / 100.0;
     let mut least: Option<(u32, SilkText)> = None;
-    for layer in &layers {
-        let occ = watermark_occupancy(
-            layer, parts, vias, &texts, &boxes, graphics, artwork, board_edge, margin,
-        );
-        for &rot in &rotations {
-            let (sin, cos) = rot.to_radians().sin_cos();
-            let bw = w * cos.abs() + h * sin.abs();
-            let bh = w * sin.abs() + h * cos.abs();
-            let nw = (bw / WATERMARK_CELL).ceil() as usize + 1;
-            let nh = (bh / WATERMARK_CELL).ceil() as usize + 1;
-            if nw > occ.w || nh > occ.h {
-                continue;
-            }
-            let at_of = |i: usize, j: usize| {
-                [
-                    round(occ.origin[0] + (i as f64 + nw as f64 / 2.0) * WATERMARK_CELL),
-                    round(occ.origin[1] + (j as f64 + nh as f64 / 2.0) * WATERMARK_CELL),
-                ]
-            };
-            let mut spots: Vec<(u32, f64, P)> = Vec::new();
-            for j in 0..=occ.h - nh {
-                for i in 0..=occ.w - nw {
-                    let at = at_of(i, j);
-                    spots.push((occ.count(i, j, nw, nh), geom::dist(at, corner), at));
+    let occupancy: Vec<Occupancy> = layers
+        .iter()
+        .map(|layer| {
+            watermark_occupancy(
+                layer, parts, vias, &texts, &boxes, graphics, artwork, board_edge, margin,
+            )
+        })
+        .collect();
+    for &size in &mark.sizes {
+        let pen = crate::font::default_thickness(size);
+        let (w, h) = (crate::font::ink_width(&text, size) + pen, size + pen);
+        for (layer, occ) in layers.iter().zip(&occupancy) {
+            for &rot in &rotations {
+                let (sin, cos) = rot.to_radians().sin_cos();
+                let bw = w * cos.abs() + h * sin.abs();
+                let bh = w * sin.abs() + h * cos.abs();
+                let nw = (bw / WATERMARK_CELL).ceil() as usize + 1;
+                let nh = (bh / WATERMARK_CELL).ceil() as usize + 1;
+                if nw > occ.w || nh > occ.h {
+                    continue;
                 }
-            }
-            spots.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
-            for &(n, _, at) in spots.iter().take(256) {
-                let t = make(at, rot, layer);
-                if problems(&t).is_empty() {
-                    return (Some(t), None);
+                let at_of = |i: usize, j: usize| {
+                    [
+                        round(occ.origin[0] + (i as f64 + nw as f64 / 2.0) * WATERMARK_CELL),
+                        round(occ.origin[1] + (j as f64 + nh as f64 / 2.0) * WATERMARK_CELL),
+                    ]
+                };
+                let mut spots: Vec<(u32, f64, P)> = Vec::new();
+                for j in 0..=occ.h - nh {
+                    for i in 0..=occ.w - nw {
+                        let at = at_of(i, j);
+                        spots.push((occ.count(i, j, nw, nh), geom::dist(at, corner), at));
+                    }
                 }
-                if least.as_ref().is_none_or(|l| n < l.0) {
-                    least = Some((n, t));
+                spots.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+                for &(n, _, at) in spots.iter().take(256) {
+                    let t = make(at, rot, layer, size);
+                    if problems(&t).is_empty() {
+                        return (Some(t), None);
+                    }
+                    if least.as_ref().is_none_or(|l| n < l.0) {
+                        least = Some((n, t));
+                    }
                 }
             }
         }
     }
     let hint = least
         .map(|(_, t)| {
-            let r = if t.rotation != 0.0 { format!(", rotation = {}", t.rotation) } else { String::new() };
             format!(
-                "; the least crowded spot is [watermark] at = [{:.2}, {:.2}], layer = \"{}\"{r}, where it {}",
-                t.at[0],
-                t.at[1],
-                t.layer,
+                "; the least crowded spot is {}, where it {}",
+                (mark.spot)(mark, Some(t.at), &t.layer, t.rotation),
                 problems(&t).join(", ")
             )
         })
         .unwrap_or_default();
+    let size = *mark.sizes.last().unwrap();
+    let pen = crate::font::default_thickness(size);
+    let (w, h) = (crate::font::ink_width(&text, size) + pen, size + pen);
     let msg = format!(
-        "no clear spot for the `{text}` watermark ({w:.2} x {h:.2} mm at the {} minimum silk text height) on {}: clear an area that size off pads, vias, silk and part bodies, {} inside the board edge, and set [watermark] at = [x, y] there{hint}",
+        "no clear spot for the `{text}` {what} ({w:.2} x {h:.2} mm at {}) on {}: clear an area that size off pads, vias, silk and part bodies, {} inside the board edge, and set {} there{hint}",
         Length::mm(size),
         layers.join(" or "),
         Length::mm(margin),
+        (mark.spot)(mark, None, first, 0.0),
     );
-    found.add("watermark", "watermark", &msg);
+    found.add(rule, what, &msg);
     (None, Some(msg))
 }
 

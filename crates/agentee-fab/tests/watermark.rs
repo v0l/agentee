@@ -32,10 +32,11 @@ fn project_with(size: [f64; 2], stackup: &str, pcb: &str) -> (Project, PathBuf) 
         "name = \"t\"\nboard = \"t\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n[[nets]]\nname = \"B\"\npins = [\"R1.2\"]\n",
     )
     .unwrap();
+    let (top, tables) = if pcb.starts_with('[') { ("", pcb) } else { (pcb, "") };
     std::fs::write(
         dir.join("t.pcb.toml"),
         format!(
-            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[footprints]]\nref = \"R1\"\nat = [3, 3]\n{pcb}"
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n{top}[[footprints]]\nref = \"R1\"\nat = [3, 3]\n{tables}"
         ),
     )
     .unwrap();
@@ -125,4 +126,72 @@ fn a_stackup_with_no_silk_fails_fab_naming_the_layer_to_add() {
     assert!(p.layouts[0].item.watermark.is_none());
     let e = package(&p, &dir.join("fab")).err().unwrap();
     assert!(e.contains("no silk layer") && e.contains("kind = \"silk\""), "{e}");
+}
+
+fn overlap(a: &[[f64; 2]], b: &[[f64; 2]]) -> bool {
+    agentee_core::geom::polygon_distance(a, b) <= 0.0
+}
+
+#[test]
+fn a_one_line_title_lands_on_the_front_silk_beside_the_watermark() {
+    let (p, dir) = project([40.0, 20.0], "title = \"Buggy Guard v1.0\"\n");
+    let l = &p.layouts[0].item;
+    let t = l.title.clone().expect("a clear spot for the title");
+    let w = l.watermark.clone().expect("a clear spot for the watermark");
+    assert_eq!((t.text.as_str(), t.layer.as_str(), t.size), ("Buggy Guard v1.0", "F.SilkS", 1.5));
+    assert!(t.layer != w.layer || !overlap(&t.outline(), &w.outline()), "title on the watermark");
+    assert!(l.board_texts().iter().any(|x| x.owner == "title" && x.text == t.text));
+    assert!(!p.layouts[0].diags.iter().any(|d| d.rule.as_deref() == Some("board-title")));
+    let out = dir.join("fab");
+    package(&p, &out).unwrap();
+    let silk = std::fs::read_to_string(out.join("F_SilkS.gbr")).unwrap();
+    let first = &font::strokes(&t.text, t.at, t.size, t.rotation, t.anchor, false)[0];
+    assert!(silk.contains(&format!("{}D02*", gerber_xy(first[0]))), "title not plotted");
+}
+
+#[test]
+fn a_title_table_places_it_where_it_says() {
+    let (p, _) = project(
+        [40.0, 20.0],
+        "title = { text = \"T rev B\", at = [25, 4], layer = \"B.SilkS\", size = \"2mm\" }\n",
+    );
+    let t = p.layouts[0].item.title.clone().unwrap();
+    assert_eq!((t.at, t.layer.as_str(), t.size), ([25.0, 4.0], "B.SilkS", 2.0));
+}
+
+#[test]
+fn a_title_with_no_room_is_a_board_title_error_with_a_spot_to_paste() {
+    let (p, _) = project([8.0, 6.0], "title = \"A very long board name v1.0\"\n");
+    assert!(p.layouts[0].item.title.is_none());
+    let d: Vec<_> =
+        p.layouts[0].diags.iter().filter(|d| d.rule.as_deref() == Some("board-title")).collect();
+    assert!(
+        d.iter()
+            .any(|d| d.message.contains("no clear spot") && d.message.contains("title = { text =")),
+        "{d:?}"
+    );
+}
+
+#[test]
+fn a_title_table_with_a_typo_does_not_load() {
+    let (p, _) = project([40.0, 20.0], "title = { text = \"T\", sise = 2 }\n");
+    assert!(p.layouts.is_empty());
+    assert!(p.failures.iter().any(|f| f.message.contains("sise")), "{:?}", p.failures);
+}
+
+#[test]
+fn the_title_rule_only_applies_to_a_layout_with_a_title() {
+    let applies = |pcb: &str| {
+        let (p, _) = project([40.0, 20.0], pcb);
+        let l = &p.layouts[0].item;
+        let b = &p.boards[0].item;
+        let setup = agentee_core::drc::Setup::of(&agentee_core::drc::Ctx::of_layout(b, l));
+        agentee_core::drc::status(b, &setup)
+            .into_iter()
+            .find(|r| r.id == "board-title")
+            .unwrap()
+            .applies
+    };
+    assert!(!applies(""));
+    assert!(applies("title = \"T\"\n"));
 }

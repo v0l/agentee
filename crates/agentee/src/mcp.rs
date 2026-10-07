@@ -64,7 +64,7 @@ fn tools() -> Value {
         },
         {
             "name": "edit",
-            "description": "Edit a schematic (sch), layout (pcb) or board spec (board) with commands, one per line, in one load and one check at the end. It keeps the file's comments and layout and returns the check report of what it touched. A command that names a missing pin, part or net fails before anything is written. Send `help` alone for the commands of that target. Commands: sch add/remove/move/set/net/connect/disconnect/nc/unnc/note; pcb place/unplace/track/untrack/via/unvia/zone/unzone/pair/text/fanout/stitch/watermark/test; board class/unclass/via/unvia/outline/cutout/stackup.",
+            "description": "Edit a schematic (sch), layout (pcb) or board spec (board) with commands, one per line, in one load and one check at the end. It keeps the file's comments and layout and returns the check report of what it touched. A command that names a missing pin, part or net fails before anything is written. Send `help` alone for the commands of that target. Commands: sch add/remove/move/set/net/connect/disconnect/nc/unnc/note; pcb place/unplace/track/untrack/via/unvia/zone/unzone/pair/text/fanout/stitch/watermark/title/test; board class/unclass/via/unvia/outline/cutout/stackup.",
             "inputSchema": s(json!({
                 "target": { "type": "string", "enum": ["sch", "pcb", "board"] },
                 "item": { "type": "string", "description": "item name, optional when the project has one of that kind" },

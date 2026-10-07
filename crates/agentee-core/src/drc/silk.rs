@@ -2,6 +2,10 @@ use super::{Category, Ctx, Report, Rule, every, recorded};
 use crate::diag::Severity;
 use crate::graphic::{Fill, Shape};
 
+fn titled(s: &super::Setup) -> bool {
+    s.title
+}
+
 pub static RULES: &[Rule] = &[
     Rule {
         id: "silk-text",
@@ -46,6 +50,15 @@ pub static RULES: &[Rule] = &[
         summary: "the agentee version watermark has no clear spot on the silk, or the [watermark] spot is not clear; fab refuses without it",
         when: "every board",
         applies: every,
+        check: recorded,
+    },
+    Rule {
+        id: "board-title",
+        category: Category::Silk,
+        severity: Severity::Error,
+        summary: "the layout's `title` has no clear spot on the silk, or its `at` is not clear",
+        when: "layouts with a `title`",
+        applies: titled,
         check: recorded,
     },
     Rule {

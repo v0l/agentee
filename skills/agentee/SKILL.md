@@ -143,7 +143,8 @@ Order of work, each stage passing check before the next:
    Check reports the ratsnest for every unrouted connection, so route until `unrouted` is 0 on
    every net in `show pcb:NAME`.
 5. **Simulate** what the design depends on (see below).
-6. **Fab.** `agentee fab pcb:NAME -o fab/` once check has no errors.
+6. **Fab.** Put `title = "NAME v1.0"` at the top of the layout so the silk names the board and
+   its version, then `agentee fab pcb:NAME -o fab/` once check has no errors.
 7. **Enclosure.** `agentee export pcb:NAME -o NAME.step` writes the board solid and every part
    model as one STEP assembly to design a case around.
 

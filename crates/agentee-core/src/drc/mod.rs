@@ -63,6 +63,7 @@ pub struct Setup {
     pub barrier_clearance: bool,
     pub creepage: bool,
     pub spark_gaps: bool,
+    pub title: bool,
 }
 
 impl Setup {
@@ -105,6 +106,7 @@ impl Setup {
             tall_parts: mechanical::has_tall_parts(cx.parts),
             test_points: cx.parts.iter().any(crate::testpoint::is_test_point),
             spark_gaps: cx.parts.iter().any(|p| !p.footprint.spark_gaps.is_empty()),
+            title: cx.title,
             ..Setup::of_board(cx.board)
         }
     }
@@ -126,6 +128,7 @@ pub struct Ctx<'a> {
     pub interfaces: &'a [Interface],
     pub test: Option<&'a crate::testpoint::TestSpec>,
     pub heat: &'a [(String, f64)],
+    pub title: bool,
     found: &'a [Finding],
     items: OnceCell<Vec<Cu>>,
     grid: OnceCell<HashMap<(i64, i64), Vec<usize>>>,
@@ -219,6 +222,7 @@ impl<'a> Ctx<'a> {
             interfaces: &[],
             test: None,
             heat: &[],
+            title: false,
             found: &[],
             items: OnceCell::new(),
             grid: OnceCell::new(),
@@ -240,6 +244,12 @@ impl<'a> Ctx<'a> {
         )
         .with_signals(&l.graphics, &l.pairs, &l.match_groups, &l.interfaces)
         .with_test(&l.test)
+        .with_title(l.title.is_some() || l.title_problem.is_some())
+    }
+
+    pub fn with_title(mut self, title: bool) -> Ctx<'a> {
+        self.title = title;
+        self
     }
 
     pub fn edge(&self) -> geom::BoardEdge<'a> {
