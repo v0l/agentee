@@ -649,8 +649,7 @@ impl Rule for Creepage {
                 .local(reg)
         };
         let iso = &cx.spacing().isolation;
-        let mut found: Vec<(f64, f64, P, String, Vec<String>, usize, usize, String, String)> =
-            Vec::new();
+        let mut found: Vec<Violation> = Vec::new();
         pairs(
             cx,
             &outer,
@@ -682,17 +681,18 @@ impl Rule for Creepage {
                     barrier_name(cx, a, b),
                     Length::mm(c)
                 );
-                found.push((
-                    length,
-                    c,
-                    [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
+                found.push(Violation {
+                    rule: "creepage",
+                    group: "creepage".into(),
+                    subject: label(cx, a),
+                    other: label(cx, b),
+                    gap: length,
+                    need: c,
+                    at: [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0],
                     detail,
-                    vec![a.layer.clone()],
-                    a.net,
-                    b.net,
-                    label(cx, a),
-                    label(cx, b),
-                ));
+                    layers: vec![a.layer.clone()],
+                    nets: Some((a.net.min(b.net), a.net.max(b.net))),
+                });
             },
         );
         let thickness = cx.board().stackup.thickness().to_mm();
@@ -731,32 +731,20 @@ impl Rule for Creepage {
                     barrier_name(cx, a, b),
                     Length::mm(c)
                 );
-                found.push((
-                    length,
-                    c,
-                    wall,
+                found.push(Violation {
+                    rule: "creepage",
+                    group: "creepage".into(),
+                    subject: label(cx, a),
+                    other: label(cx, b),
+                    gap: length,
+                    need: c,
+                    at: wall,
                     detail,
-                    vec![a.layer.clone(), b.layer.clone()],
-                    a.net,
-                    b.net,
-                    label(cx, a),
-                    label(cx, b),
-                ));
+                    layers: vec![a.layer.clone(), b.layer.clone()],
+                    nets: Some((a.net.min(b.net), a.net.max(b.net))),
+                });
             },
         );
-        for (length, c, at, detail, layers, na, nb, sa, sb) in found {
-            out.push(Violation {
-                rule: "creepage",
-                group: "creepage".into(),
-                subject: sa,
-                other: sb,
-                gap: length,
-                need: c,
-                at,
-                detail,
-                layers,
-                nets: Some((na.min(nb), na.max(nb))),
-            });
-        }
+        out.extend(found);
     }
 }

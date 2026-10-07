@@ -1552,7 +1552,7 @@ impl LayoutFile {
                 }
                 let same = a.net.is_some() && a.net == b.net;
                 let hole = a.owner == Owner::Hole || b.owner == Owner::Hole;
-                if !same && !(hole && copper_rules) {
+                if !(same || hole && copper_rules) {
                     continue;
                 }
                 let dist = a.shape.distance(&b.shape);
