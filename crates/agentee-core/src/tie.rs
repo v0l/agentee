@@ -72,6 +72,7 @@ fn is_bga(fp_name: &str, pads: usize) -> bool {
 }
 
 pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult, String> {
+    let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let planes: Vec<usize> = plane_nets(layout)
         .into_iter()
         .filter(|n| nets.is_empty() || nets.iter().any(|g| glob(g, &layout.nets[*n].name)))
@@ -177,10 +178,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             let vlayers = spec.copper_layers(copper);
             let (vr, dr) = (spec.diameter.to_mm() / 2.0, spec.drill.to_mm() / 2.0);
             let width = layout.nets[net].width.min(pb.size()[0].min(pb.size()[1]));
-            let clear_of = |other: Option<usize>| {
-                let own = layout.nets[net].clearance;
-                other.map(|o| own.max(layout.nets[o].clearance)).unwrap_or(own)
-            };
+            let clear_of = |other: Option<usize>| spacing.widest(Some(net), other);
             let own_pad: Vec<Shape> = pad.outlines.iter().map(|o| Shape::Poly(o.clone())).collect();
             let off_own = |c: P| {
                 own_pad.iter().map(|s| s.to_point(c)).fold(f64::MAX, f64::min)

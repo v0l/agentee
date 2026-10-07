@@ -2,6 +2,7 @@ use super::Options;
 use agentee_core::board::Board;
 use agentee_core::layout::Layout;
 use agentee_core::place;
+pub use agentee_core::rules::Isolation;
 
 const NECKDOWN: f64 = 0.5;
 const POUR_STRIP: f64 = 0.25;
@@ -87,58 +88,6 @@ pub struct Rules {
     pub iso: Isolation,
 }
 
-#[derive(Clone, Default)]
-pub struct Isolation {
-    pub domain: Vec<Option<usize>>,
-    pub gap: Vec<Vec<[f64; 2]>>,
-    pub layers: usize,
-}
-
-impl Isolation {
-    pub fn new(layout: &Layout, board: &Board) -> Isolation {
-        let n = board.domains.len();
-        let mut gap = vec![vec![[0.0; 2]; n]; n];
-        for b in &board.barriers {
-            let inner = b.clearance.map_or(0.0, |c| c.to_mm());
-            let outer = inner.max(b.creepage.map_or(0.0, |c| c.to_mm()));
-            let [x, y] = b.between;
-            gap[x][y] = [inner, outer];
-            gap[y][x] = [inner, outer];
-        }
-        let barred: Vec<bool> = (0..n).map(|d| gap[d].iter().any(|g| g[1] > 0.0)).collect();
-        let domain = layout
-            .nets
-            .iter()
-            .map(|net| {
-                board.domain_of(&net.name, &net.class).first().copied().filter(|&d| barred[d])
-            })
-            .collect();
-        Isolation { domain, gap, layers: layout.copper.len() }
-    }
-
-    pub fn active(&self) -> bool {
-        self.domain.iter().any(Option::is_some)
-    }
-
-    pub fn of(&self, net: usize) -> Option<usize> {
-        self.domain.get(net).copied().flatten()
-    }
-
-    pub fn apart(&self, a: Option<usize>, b: Option<usize>, l: usize) -> f64 {
-        match (a, b) {
-            (Some(a), Some(b)) if a != b => {
-                let outer = l == 0 || l + 1 == self.layers;
-                self.gap[a][b][usize::from(outer)]
-            }
-            _ => 0.0,
-        }
-    }
-
-    pub fn widest(&self, a: Option<usize>) -> f64 {
-        a.map_or(0.0, |a| self.gap[a].iter().map(|g| g[0].max(g[1])).fold(0.0, f64::max))
-    }
-}
-
 fn plane_cover(layout: &Layout) -> Vec<Vec<(usize, f64)>> {
     let area = agentee_core::geom::signed_area(&layout.outline).abs().max(1e-9);
     layout
@@ -209,7 +158,7 @@ impl Rules {
             shadow: Vec::new(),
             cut: Vec::new(),
             casts: Vec::new(),
-            iso: Isolation::new(layout, board),
+            iso: Isolation::new(board, &layout.nets, layout.copper.len()),
         };
         let cover = plane_cover(layout);
         let plane: Vec<bool> = (0..nl)

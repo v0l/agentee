@@ -142,6 +142,22 @@ impl Shape {
     }
 }
 
+struct Apart<'a> {
+    spacing: Option<&'a crate::rules::Spacings>,
+    nets: &'a [usize],
+}
+
+impl Apart<'_> {
+    fn gap(&self, other: Option<usize>, layer: usize) -> f64 {
+        let Some(s) = self.spacing else { return 0.0 };
+        let l = s.layer(layer);
+        self.nets
+            .iter()
+            .map(|&n| crate::rules::Spacing::gap(&s.isolation, Some(n), other, l))
+            .fold(0.0, f64::max)
+    }
+}
+
 #[derive(Clone)]
 struct Obstacle {
     net: Option<usize>,
@@ -465,14 +481,16 @@ impl Grid {
         clearance: f64,
         vias: &[ViaOption],
         hole_cu: f64,
+        apart: &Apart,
     ) {
         let value = o.net.map(|n| n as u16 + 1).unwrap_or(BLOCK);
-        let c = clearance.max(o.clearance);
+        let c_on = |l: usize| clearance.max(o.clearance).max(apart.gap(o.net, l));
+        let c = o.layers.iter().map(|&l| c_on(l)).fold(clearance.max(o.clearance), f64::max);
         let slack = self.g * 0.6;
         let widest = o.layers.iter().map(|&l| half_widths[l]).fold(0.0, f64::max);
         for (x, y) in self.cells_near(&o.shape, widest + c + slack) {
             let d = o.shape.dist(self.center(x, y));
-            for &l in o.layers.iter().filter(|&&l| d <= half_widths[l] + c + slack) {
+            for &l in o.layers.iter().filter(|&&l| d <= half_widths[l] + c_on(l) + slack) {
                 let i = self.idx(l, x, y);
                 Self::mark(&mut self.track, i, value);
             }
@@ -480,9 +498,13 @@ impl Grid {
         for (k, via) in vias.iter().enumerate() {
             let reach = (via.via_r + c).max(via.drill_r + hole_cu) + slack;
             for (x, y) in self.cells_near(&o.shape, reach) {
+                let d = o.shape.dist(self.center(x, y));
                 for &l in &o.layers {
-                    let i = self.idx(l, x, y);
-                    Self::mark(&mut self.vias[k].fixed, i, value);
+                    let need = (via.via_r + c_on(l)).max(via.drill_r + hole_cu) + slack;
+                    if d <= need {
+                        let i = self.idx(l, x, y);
+                        Self::mark(&mut self.vias[k].fixed, i, value);
+                    }
                 }
             }
         }
@@ -615,6 +637,7 @@ fn route_once(
     polish: bool,
 ) -> Result<(RouteResult, Vec<Avoid>), String> {
     let copper = &layout.copper;
+    let spacing = crate::rules::Spacings::new(board, &layout.nets, copper.len());
     let layer_of = |name: &str| copper.iter().position(|c| c == name);
     let mut routing = Vec::new();
     for l in &opts.layers {
@@ -857,9 +880,10 @@ fn route_once(
             necking: Some(&necking),
         };
 
+        let apart = Apart { spacing: Some(&spacing), nets: &nets };
         let mut grid = build_grid(layout, opts.grid, &halves, &options, edge, &opts.fences);
         for o in &obstacles {
-            grid.add(o, &halves, clearance, &options, hole_cu);
+            grid.add(o, &halves, clearance, &options, hole_cu, &apart);
         }
         for &(c, r, span) in &drills {
             grid.add_drill(c, r, span, &options, ctx.hole_gap);
@@ -1160,7 +1184,7 @@ fn route_once(
         if !lost.is_empty() {
             let mut open = build_grid(layout, opts.grid, &halves, &options, edge, &opts.fences);
             for o in &obstacles[..file_obstacles] {
-                open.add(o, &halves, clearance, &options, hole_cu);
+                open.add(o, &halves, clearance, &options, hole_cu, &apart);
             }
             for &(c, r, span) in &drills[..file_drills] {
                 open.add_drill(c, r, span, &options, ctx.hole_gap);
@@ -3431,7 +3455,14 @@ mod tests {
             shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.0),
             clearance: 0.1,
         };
-        grid.add(&track, &[0.05], ctx.clearance, ctx.vias, ctx.hole_cu);
+        grid.add(
+            &track,
+            &[0.05],
+            ctx.clearance,
+            ctx.vias,
+            ctx.hole_cu,
+            &Apart { spacing: None, nets: &[] },
+        );
         assert!(!grid.via_ok(0, &ctx.vias[0], 14, 20, 0, false).0, "hole 0.35 mm from the track");
         assert!(grid.via_ok(0, &ctx.vias[0], 17, 20, 0, false).0, "hole 0.65 mm from the track");
         let via = Conn {
@@ -3633,7 +3664,7 @@ mod tests {
             shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.05),
             clearance: 0.1,
         };
-        grid.add(&wall, &[0.05; 4], 0.1, &vias, 0.15);
+        grid.add(&wall, &[0.05; 4], 0.1, &vias, 0.15, &Apart { spacing: None, nets: &[] });
         let fits = |grid: &Grid, k: usize, x: usize| grid.via_ok(k, &vias[k], x, 20, 0, false).0;
         assert!(fits(&grid, 0, 13) && !fits(&grid, 1, 13), "0.3 mm from the wall centre");
         assert!(fits(&grid, 1, 15), "0.5 mm from the wall centre");
@@ -3737,7 +3768,7 @@ mod tests {
         ];
         let mut grid = open_grid(60, 40, 1);
         for o in &obstacles {
-            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0);
+            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0, &Apart { spacing: None, nets: &[] });
         }
         let found = search(&grid, &obstacles, &[], 0, a, b, &ctx, false, None)?;
         let conn = conn_found(&grid, &found, 0, &ctx);
@@ -3851,7 +3882,7 @@ mod tests {
         let joined = [pad(a, 0.15), pad([a[0], a[1] + 0.3], 0.15), pad(b, 0.5)];
         let mut grid = open_grid(60, 40, 1);
         for o in &joined {
-            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0);
+            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0, &Apart { spacing: None, nets: &[] });
         }
         let found = search(&grid, &single, &[], 0, a, b, &ctx, false, None).unwrap();
         assert_eq!(found.necks.len(), 1);

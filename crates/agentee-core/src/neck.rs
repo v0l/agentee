@@ -1,6 +1,7 @@
 use crate::board::Board;
 use crate::geom::{self, P};
 use crate::layout::{DRC_EPSILON, Layout, NECKDOWN, class_of, glob};
+use crate::rules::Spacing;
 use crate::tune::{Obstacle, obstacles_of};
 use crate::units::Length;
 use serde::Serialize;
@@ -62,6 +63,8 @@ pub struct NeckResult {
 struct Rules<'a> {
     net: usize,
     layer: &'a str,
+    on: crate::rules::Layer,
+    spacing: &'a crate::rules::Spacings,
     clearance: f64,
     edge: f64,
     outline: &'a [P],
@@ -80,7 +83,10 @@ impl Rules<'_> {
         self.near
             .iter()
             .filter(|o| o.net != Some(self.net) && o.layers.iter().any(|l| l == self.layer))
-            .map(|o| o.distance(line) - self.clearance.max(o.clearance))
+            .map(|o| {
+                let iso = self.spacing.isolation.gap(Some(self.net), o.net, self.on);
+                o.distance(line) - self.clearance.max(o.clearance).max(iso)
+            })
             .chain(edges)
             .fold(f64::MAX, f64::min)
     }
@@ -240,6 +246,7 @@ fn joined_pad<'a>(outline: &Vec<P>, others: impl Iterator<Item = &'a Vec<P>>) ->
 
 pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckResult, String> {
     let obstacles = obstacles_of(layout, board);
+    let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let edge = board.rules.min_copper_to_edge.to_mm();
     let min_w = board.rules.min_track_width.to_mm();
     let mut out = NeckResult::default();
@@ -288,6 +295,8 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
             let rules = Rules {
                 net: t.net,
                 layer: &t.layer,
+                on: spacing.layer(layout.copper.iter().position(|c| c == &t.layer).unwrap_or(0)),
+                spacing: &spacing,
                 clearance: net.clearance,
                 edge,
                 outline: &layout.outline,

@@ -131,6 +131,7 @@ pub struct Ctx<'a> {
     pub title: bool,
     found: &'a [Finding],
     items: OnceCell<Vec<Cu>>,
+    spacing: OnceCell<crate::rules::Spacings>,
     grid: OnceCell<HashMap<(i64, i64), Vec<usize>>>,
     fills: OnceCell<Vec<FillIndex>>,
 }
@@ -225,6 +226,7 @@ impl<'a> Ctx<'a> {
             title: false,
             found: &[],
             items: OnceCell::new(),
+            spacing: OnceCell::new(),
             grid: OnceCell::new(),
             fills: OnceCell::new(),
         }
@@ -291,6 +293,11 @@ impl<'a> Ctx<'a> {
 
     pub fn pad_name(&self, part: usize, pad: usize) -> String {
         format!("{}.{}", self.parts[part].reference, self.parts[part].pads[pad].number)
+    }
+
+    pub fn spacing(&self) -> &crate::rules::Spacings {
+        self.spacing
+            .get_or_init(|| crate::rules::Spacings::new(self.board, self.nets, self.copper.len()))
     }
 
     pub fn copper_items(&self) -> &[Cu] {

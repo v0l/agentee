@@ -3,6 +3,7 @@ use crate::footprint::PadKind;
 use crate::geom::{self, P};
 use crate::interface::{Interface, Limit};
 use crate::layout::{Layout, LayoutNet, glob, serpentine};
+use crate::rules::Spacing;
 use serde::Serialize;
 
 #[derive(Clone, Debug)]
@@ -158,6 +159,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
     }
 
     let mut obstacles = obstacles_of(layout, board);
+    let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let floor = board.rules.min_clearance.to_mm();
@@ -239,6 +241,8 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 let t = &layout.tracks[ti];
                 let net = &layout.nets[t.net];
                 let (a, b) = (points[ti][k], points[ti][k + 1]);
+                let on =
+                    spacing.layer(layout.copper.iter().position(|c| c == &t.layer).unwrap_or(0));
                 let floor_pitch = t.width + net.clearance.max(floor);
                 let pitches: Vec<f64> = match opts.pitch {
                     Some(p) => vec![p],
@@ -259,6 +263,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                                 edge,
                                 &obstacles,
                                 layout.edge(),
+                                &|o| spacing.isolation.gap(Some(t.net), o, on),
                             )
                     })
                 }) else {
@@ -548,6 +553,7 @@ fn legal(
     edge: f64,
     obstacles: &[Obstacle],
     board: geom::BoardEdge,
+    apart: &dyn Fn(Option<usize>) -> f64,
 ) -> bool {
     let half = width / 2.0;
     let (lo, hi) = line.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| {
@@ -571,7 +577,7 @@ fn legal(
         {
             continue;
         }
-        let need = clearance.max(o.clearance).max(floor) + half;
+        let need = clearance.max(o.clearance).max(floor).max(apart(o.net)) + half;
         if o.distance(line) < need - 1e-6 {
             return false;
         }
@@ -737,21 +743,24 @@ mod tests {
         let obstacles = vec![wall(0.8), wall(-0.8)];
         let outline = vec![[-1.0, -5.0], [11.0, -5.0], [11.0, 5.0], [-1.0, 5.0]];
         let board = geom::BoardEdge::new(&outline, &[]);
-        let ok = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles, board);
+        let ok = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles, board, &|_| 0.0);
         let (pts, added) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, ok).unwrap();
         let len: f64 = pts.windows(2).map(|w| geom::dist(w[0], w[1])).sum();
         assert!((added - 1.5).abs() < 1e-9 && (len - 11.5).abs() < 1e-9, "{added} {len}");
         assert!(pts.iter().all(|p| p[1].abs() <= 0.55 + 1e-9));
         assert!(fit([0.0, 0.0], [0.8, 0.0], 1.5, 0.3, None, ok).is_none());
-        let tight = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[..1], board);
+        let tight =
+            |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[..1], board, &|_| 0.0);
         let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, tight).unwrap();
         assert!(pts.iter().all(|p| p[1] <= 1e-9), "meanders away from the wall");
         let slot = vec![vec![[0.0, 0.5], [10.0, 0.5], [10.0, 1.2], [0.0, 1.2]]];
-        let open = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[1..], board);
+        let open =
+            |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[1..], board, &|_| 0.0);
         let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, open).unwrap();
         assert!(pts.iter().any(|p| p[1] > 0.1));
         let cut = geom::BoardEdge::new(&outline, &slot);
-        let beside_slot = |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[1..], cut);
+        let beside_slot =
+            |l: &[P]| legal(l, 0.1, "F.Cu", 0, 0.1, 0.1, 0.2, &obstacles[1..], cut, &|_| 0.0);
         let (pts, _) = fit([0.0, 0.0], [10.0, 0.0], 1.5, 0.3, None, beside_slot).unwrap();
         assert!(pts.iter().all(|p| p[1] <= 1e-9), "meanders away from the board cutout");
     }

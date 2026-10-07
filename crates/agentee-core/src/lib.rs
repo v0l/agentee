@@ -21,6 +21,7 @@ pub mod place;
 pub mod project;
 pub mod rf;
 pub mod route;
+pub mod rules;
 pub mod schematic;
 pub mod sim;
 pub mod sparam;

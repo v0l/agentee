@@ -387,6 +387,7 @@ pub fn place(
     let cu = spec.copper();
     let silk = format!("{}.SilkS", spec.side);
     let cx = crate::drc::Ctx::of_layout(board, layout);
+    let rules = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let items = cx.copper_items();
     let holes = cx.holes();
     let hole_gap =
@@ -410,7 +411,7 @@ pub fn place(
     let mut out = Vec::new();
     for &ni in nets {
         let clearance = layout.nets[ni].clearance;
-        let apart = |n: usize| layout.nets[n].clearance.max(clearance);
+        let apart = |n: usize| rules.widest(Some(ni), Some(n)).max(clearance);
         let mut anchors: Vec<P> = Vec::new();
         for p in &layout.parts {
             for q in p.pads.iter().filter(|q| q.net == Some(ni) && !q.copper.is_empty()) {
@@ -484,12 +485,11 @@ pub fn place(
                 if !it.layers.contains(&cu) {
                     continue;
                 }
-                let gap = it
-                    .net
-                    .map(|n| layout.nets[n].clearance)
-                    .unwrap_or(clearance)
-                    .max(clearance)
-                    .max(if it.net == Some(ni) { OWN_ROOM } else { 0.0 });
+                let gap = if it.net == Some(ni) {
+                    OWN_ROOM.max(clearance)
+                } else {
+                    rules.widest(Some(ni), it.net).max(clearance)
+                };
                 if it.shape.circle_gap(c, r) < gap {
                     return false;
                 }
@@ -528,8 +528,8 @@ pub fn place(
                     [(q[0] * 1e4).round() / 1e4, (q[1] * 1e4).round() / 1e4]
                 })
                 .find(|q| {
-                    via_clear(&cx, layout, board, ni, *q, vr, dr, clearance)
-                        && stub_clear(&cx, layout, ni, c, *q, width / 2.0, &cu)
+                    via_clear(&cx, &rules, layout, board, ni, *q, vr, dr, clearance)
+                        && stub_clear(&cx, &rules, ni, c, *q, width / 2.0, &cu)
                         && added.iter().all(|o| {
                             let hh = board.rules.min_hole_to_hole.to_mm();
                             let hole = match o.via {
@@ -560,6 +560,7 @@ pub fn place(
 #[allow(clippy::too_many_arguments)]
 fn via_clear(
     cx: &crate::drc::Ctx,
+    rules: &crate::rules::Spacings,
     layout: &crate::layout::Layout,
     board: &Board,
     net: usize,
@@ -593,11 +594,7 @@ fn via_clear(
             }
             dr + hole_smd - vr
         } else {
-            it.net
-                .map(|n| layout.nets[n].clearance)
-                .unwrap_or(clearance)
-                .max(clearance)
-                .max(dr + hole_cu - vr)
+            rules.widest(Some(net), it.net).max(clearance).max(dr + hole_cu - vr)
         };
         if it.shape.circle_gap(at, vr) < gap.max(0.0) + if pad { 1e-3 } else { 0.0 } {
             return false;
@@ -615,7 +612,7 @@ fn via_clear(
 
 fn stub_clear(
     cx: &crate::drc::Ctx,
-    layout: &crate::layout::Layout,
+    rules: &crate::rules::Spacings,
     net: usize,
     a: P,
     b: P,
@@ -633,8 +630,7 @@ fn stub_clear(
         if it.net == Some(net) || !it.layers.iter().any(|l| l == cu) {
             return true;
         }
-        let gap =
-            it.net.map(|n| layout.nets[n].clearance).unwrap_or(0.0).max(layout.nets[net].clearance);
+        let gap = rules.widest(Some(net), it.net);
         (0..=steps).all(|i| {
             let t = i as f64 / steps as f64;
             let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];

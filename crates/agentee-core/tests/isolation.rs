@@ -408,3 +408,19 @@ fn a_hand_written_barrier_wins_over_the_class_voltage() {
     let e = hits(&p, "isolation-clearance");
     assert!(e.iter().any(|m| m.contains("needs 8mm")), "{e:?}");
 }
+
+#[test]
+fn spacing_answers_the_same_gap_the_barrier_checks() {
+    let p = mains(6.0, MAINS);
+    let (b, l) = (&p.boards[0].item, &p.layouts[0].item);
+    let s = agentee_core::rules::Spacings::new(b, &l.nets, l.copper.len());
+    let net = |n: &str| l.nets.iter().position(|x| x.name == n);
+    let (hot, cold) = (net("L"), net("GND"));
+    let barrier = s.isolation.barrier(b, hot.unwrap(), cold.unwrap()).expect("a barrier");
+    let creepage = barrier.creepage.unwrap().to_mm();
+    let clearance = barrier.clearance.unwrap().to_mm();
+    assert_eq!(s.gap(hot, cold, 0), creepage.max(clearance), "outer layers keep creepage");
+    assert_eq!(s.gap(hot, hot, 0), 0.0);
+    assert_eq!(s.gap(hot, None, 0), b.netclass("Mains").unwrap().clearance.to_mm());
+    assert!(s.reach(hot) >= creepage);
+}

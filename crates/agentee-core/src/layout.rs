@@ -3,6 +3,7 @@ use crate::diag::Diags;
 use crate::footprint::{Footprint, PadKind, PadShape};
 use crate::geom::{self, P, Transform};
 use crate::graphic::Bounds;
+use crate::rules::Spacing;
 use crate::schematic::{Schematic, UnionFind};
 use crate::units::{Length, Point};
 use serde::{Deserialize, Serialize};
@@ -864,10 +865,6 @@ fn skipped(at: &[Point], c: P) -> bool {
     at.iter().any(|q| geom::dist(q.to_mm(), c) < 1e-3)
 }
 
-fn max_clear_of(nets: &[LayoutNet], default: f64) -> f64 {
-    nets.iter().map(|n| n.clearance).fold(default, f64::max)
-}
-
 pub(crate) fn class_of<'a>(board: &'a Board, name: &str) -> Option<&'a Netclass> {
     board
         .netclasses
@@ -935,6 +932,7 @@ impl LayoutFile {
         let default_clearance = class_of(board, "Default")
             .map(|c| c.clearance.to_mm())
             .unwrap_or(board.rules.min_clearance.to_mm());
+        let spacing = crate::rules::Spacings::new(board, &nets, copper.len());
 
         let mut parts = Vec::new();
         let mut placed_refs: HashMap<&str, usize> = HashMap::new();
@@ -1198,11 +1196,8 @@ impl LayoutFile {
                     let blocked = parts.iter().flat_map(|p| &p.pads).any(|q| {
                         let reach = match q.net {
                             Some(n) if n == net => v.diameter / 2.0,
-                            other => (v.diameter / 2.0
-                                + other
-                                    .map_or(0.0, |n| nets[n].clearance)
-                                    .max(nets[net].clearance))
-                            .max(v.drill / 2.0 + hole_cu),
+                            other => (v.diameter / 2.0 + spacing.widest(Some(net), other))
+                                .max(v.drill / 2.0 + hole_cu),
                         };
                         !std::ptr::eq(q, *pad)
                             && q.copper.iter().any(|l| v.layers.contains(l))
@@ -1450,7 +1445,7 @@ impl LayoutFile {
                     continue;
                 }
                 let probe = Shape::Circle(c, r);
-                let reach = r + max_clear_of(&nets, default_clearance).max(smd_gap);
+                let reach = r + spacing.reach(Some(net)).max(smd_gap);
                 let near_smd = items.iter().any(|it| {
                     let Owner::Pad(pi, k) = it.owner else { return false };
                     parts[pi].pads[k].kind == PadKind::Smd
@@ -1470,7 +1465,7 @@ impl LayoutFile {
                         && it.bounds.max[1] >= c[1] - reach
                         && it.shape.distance(&probe)
                             < own
-                                .max(it.net.map(|n| nets[n].clearance).unwrap_or(default_clearance))
+                                .max(spacing.widest(Some(net), it.net))
                                 .max(self_gap)
                                 .max(it.pour_gap)
                                 - 1e-9
@@ -1500,8 +1495,7 @@ impl LayoutFile {
             }
         }
 
-        let clearance_of =
-            |n: Option<usize>| n.map(|n| nets[n].clearance).unwrap_or(default_clearance);
+        let clearance_of = |n: Option<usize>| spacing.class.of(n);
         let name_of = |it: &Item| -> String {
             match it.owner {
                 Owner::Pad(pi, k) => {
@@ -1600,7 +1594,7 @@ impl LayoutFile {
                         .filter(|&n| isolated[n])
                         .map(|n| nets[n].clearance)
                         .fold(min_clearance, f64::max),
-                    (None, None) => clearance_of(a.net).max(clearance_of(b.net)),
+                    (None, None) => spacing.class.gap(a.net, b.net, spacing.layer(0)),
                     (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
                 };
                 if dist <= 1e-6 {
@@ -1777,13 +1771,9 @@ impl LayoutFile {
                     min_width: z.min_width.map(Length::to_mm).unwrap_or(0.25),
                     min_island_area: z.min_island_area.unwrap_or(2.0),
                 };
-                let outer = copper.first() == Some(layer) || copper.last() == Some(layer);
+                let on = spacing.layer(copper.iter().position(|c| c == layer).unwrap_or(0));
                 let zone_gap = |n: Option<usize>| {
-                    let barrier = n.and_then(|n| board.barrier(domain_of[net], domain_of[n]));
-                    let apart = barrier.map_or(0.0, |b| {
-                        let surface = if outer { b.creepage } else { None };
-                        b.clearance.max(surface).map_or(0.0, Length::to_mm)
-                    });
+                    let apart = n.map_or(0.0, |_| spacing.isolation.gap(Some(net), n, on));
                     clearance_of(n).max(apart)
                 };
                 let hash = spec.hash(&items, &zone_gap, &blocker_hashes);

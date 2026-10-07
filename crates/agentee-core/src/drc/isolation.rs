@@ -311,8 +311,8 @@ fn pairs(
     need: impl Fn(&Barrier) -> Option<f64>,
     mut each: impl FnMut(&Conductor, &Conductor, f64),
 ) {
-    let domain: Vec<Option<usize>> = domains_of(cx).iter().map(|d| d.first().copied()).collect();
-    let all = conductors(cx, &domain, layers);
+    let iso = &cx.spacing().isolation;
+    let all = conductors(cx, &iso.domain, layers);
     let reach: f64 = cx.board.barriers.iter().filter_map(&need).fold(0.0, f64::max);
     if reach <= 0.0 {
         return;
@@ -346,7 +346,7 @@ fn pairs(
         near.dedup();
         for j in near.into_iter().filter(|&j| across || j > i) {
             let b = &all[j];
-            let Some(c) = cx.board.barrier(Some(a.domain), Some(b.domain)).and_then(&need) else {
+            let Some(c) = iso.barrier(cx.board, a.net, b.net).and_then(&need) else {
                 continue;
             };
             if !overlaps(&grown(&a.bounds, c), &b.bounds)
@@ -376,8 +376,9 @@ fn region(a: &Conductor, b: &Conductor, c: f64) -> Bounds {
 
 fn barrier_name(cx: &Ctx, a: &Conductor, b: &Conductor) -> String {
     let between = cx
-        .board
-        .barrier(Some(a.domain), Some(b.domain))
+        .spacing()
+        .isolation
+        .barrier(cx.board, a.net, b.net)
         .map(|x| x.between)
         .unwrap_or([a.domain, b.domain]);
     format!("{}-{}", cx.board.domains[between[0]].name, cx.board.domains[between[1]].name)
@@ -753,7 +754,9 @@ fn creepage(cx: &Ctx, r: &mut Report) {
         false,
         |b| b.creepage.map(Length::to_mm),
         |a, b, c| {
-            let Some(barrier) = cx.board.barrier(Some(a.domain), Some(b.domain)) else { return };
+            let Some(barrier) = cx.spacing().isolation.barrier(cx.board, a.net, b.net) else {
+                return;
+            };
             let reg = region(a, b, c);
             let (ea, eb) = (edges_in(cx, a, &reg), edges_in(cx, b, &reg));
             let Some((d, p, q)) = closest(&ea, &eb) else { return };
@@ -797,7 +800,9 @@ fn creepage(cx: &Ctx, r: &mut Report) {
         true,
         |b| b.creepage.map(Length::to_mm),
         |a, b, c| {
-            let Some(barrier) = cx.board.barrier(Some(a.domain), Some(b.domain)) else { return };
+            let Some(barrier) = cx.spacing().isolation.barrier(cx.board, a.net, b.net) else {
+                return;
+            };
             let reg = region(a, b, c);
             let (ea, eb) = (edges_in(cx, a, &reg), edges_in(cx, b, &reg));
             let Some((d, ..)) = closest(&ea, &eb) else { return };

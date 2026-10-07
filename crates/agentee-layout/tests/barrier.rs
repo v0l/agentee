@@ -51,11 +51,11 @@ clearance = "3mm"
 creepage = "4mm"
 "#;
 
-fn route(
+fn project(
     board: &str,
     parts: &[(&str, [f64; 2])],
     nets: &[(&str, [&str; 2])],
-) -> (Vec<String>, f64) {
+) -> (Project, std::path::PathBuf, String) {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let k = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("agentee-barrier-{}-{k}", std::process::id()));
@@ -79,7 +79,15 @@ fn route(
     }
     std::fs::write(dir.join("t.sch.toml"), sch).unwrap();
     std::fs::write(dir.join("t.pcb.toml"), &pcb).unwrap();
-    let p = Project::load(&dir).unwrap();
+    (Project::load(&dir).unwrap(), dir, pcb)
+}
+
+fn route(
+    board: &str,
+    parts: &[(&str, [f64; 2])],
+    nets: &[(&str, [&str; 2])],
+) -> (Vec<String>, f64) {
+    let (p, dir, pcb) = project(board, parts, nets);
     let inputs = p.layout_inputs(0).unwrap();
     let run = agentee_layout::Run {
         from: Some("global".into()),
@@ -125,4 +133,30 @@ fn two_routed_nets_keep_the_barrier_between_them() {
     let (errors, _) =
         route(BOARD, &parts, &[("P_LINE", ["U1.1", "U2.1"]), ("S_LINK", ["U3.1", "U4.1"])]);
     assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[test]
+fn agentee_route_keeps_the_barrier_from_a_pad_in_another_domain() {
+    let parts =
+        [("U1", [8.0, 8.0]), ("U2", [22.0, 8.0]), ("U3", [15.0, 9.5]), ("U4", [15.0, 18.0])];
+    let nets = [("S_LINK", ["U1.1", "U2.1"]), ("P_HOT", ["U3.1", "U4.1"])];
+    let (p, dir, _) = project(BOARD, &parts, &nets);
+    let opts = agentee_core::route::RouteOptions {
+        nets: vec!["S_LINK".into()],
+        grid: 0.1,
+        ..Default::default()
+    };
+    let r = agentee_core::route::route(&p.layouts[0].item, &p.boards[0].item, &opts).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(r.routed, 1, "{:?}", r.failed);
+    let pad = [[14.5, 9.0], [15.5, 9.0], [15.5, 10.0], [14.5, 10.0]];
+    let closest = r
+        .tracks
+        .iter()
+        .map(|t| {
+            agentee_core::geom::polyline_polygon_distance(&t.points, &pad)
+                - t.width.unwrap_or(0.25) / 2.0
+        })
+        .fold(f64::MAX, f64::min);
+    assert!(closest >= 4.0 - 0.05, "the track runs {closest:.2} mm from the other domain's pad");
 }
