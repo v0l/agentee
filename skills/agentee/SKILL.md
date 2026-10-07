@@ -140,7 +140,9 @@ Order of work, each stage passing check before the next:
      parts in different domains a barrier apart and clear of copper it is not moving.
    - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
    - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via.
-   - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`).
+   - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`). Each track
+     ends on its pad centre, and a run across an inner-layer pour of another net costs five times
+     as much, so planes are slotted only where no other layer fits.
    - `agentee tune NAME` meanders pairs over their skew and match groups short of their length.
    - `agentee neck NAME` necks tracks down where they enter a narrower pad.
    - `agentee fill NAME` fills the zones and stores the copper in the file.

@@ -223,6 +223,8 @@ struct Grid {
     window: Option<[usize; 4]>,
     fence: Vec<u16>,
     fence_nets: Vec<Vec<usize>>,
+    pads: Vec<(usize, Vec<usize>, Vec<P>)>,
+    pour: Vec<u16>,
 }
 
 impl Grid {
@@ -514,6 +516,9 @@ impl Grid {
         vias: &[ViaOption],
         hole_cu: f64,
     ) {
+        if let (Some(net), Shape::Poly(v)) = (o.net, &o.shape) {
+            self.pads.push((net, o.layers.clone(), v.clone()));
+        }
         let value = o.net.map(|n| n as u16 + 1).unwrap_or(BLOCK);
         let c = clearance.max(o.clearance);
         let slack = self.g * 0.6;
@@ -610,6 +615,7 @@ const DIRS: [(i64, i64); 8] =
     [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)];
 
 const ATTEMPTS: usize = 4;
+const PLANE_SLOT: f64 = 4.0;
 const SHUN: f64 = 4.0;
 
 pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<RouteResult, String> {
@@ -2169,7 +2175,10 @@ fn build_grid(
         window: None,
         fence: vec![0; w * h],
         fence_nets: Vec::new(),
+        pads: Vec::new(),
+        pour: Vec::new(),
     };
+    grid.pour = pours(&grid, layout, layers);
     for f in fences {
         let allowed: Vec<usize> = layout
             .nets
@@ -2230,6 +2239,32 @@ fn build_grid(
         }
     }
     grid
+}
+
+fn pours(grid: &Grid, layout: &Layout, layers: usize) -> Vec<u16> {
+    let inner = |z: &&crate::layout::ZoneFill| {
+        layout.copper.iter().position(|c| *c == z.layer).filter(|&l| l > 0 && l + 1 < layers)
+    };
+    let zones: Vec<(usize, &crate::layout::ZoneFill)> =
+        layout.zones.iter().filter_map(|z| Some((inner(&z)?, z))).collect();
+    if zones.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec![FREE; layers * grid.w * grid.h];
+    for (l, z) in zones {
+        let lo = grid.cell(z.origin);
+        let hi = grid
+            .cell([z.origin[0] + z.width as f64 * z.cell, z.origin[1] + z.height as f64 * z.cell]);
+        for y in lo.1.max(0)..=hi.1.min(grid.h as i64 - 1) {
+            for x in lo.0.max(0)..=hi.0.min(grid.w as i64 - 1) {
+                let (x, y) = (x as usize, y as usize);
+                if z.filled(grid.center(x, y)) {
+                    out[grid.idx(l, x, y)] = z.net as u16 + 1;
+                }
+            }
+        }
+    }
+    out
 }
 
 fn anchors(
@@ -2552,8 +2587,10 @@ fn search_between(
         let pull = if attract.is_some_and(|a| a.contains(&j)) { 0.5 } else { 1.0 };
         let push = if repel.is_some_and(|r| r.contains(&j)) { 8.0 } else { 0.0 };
         let off = if grid.corridor.as_ref().is_some_and(|c| !c[j]) { 1.0 } else { 0.0 };
+        let pour = grid.pour.get(j).is_some_and(|&p| p != FREE && p as usize != net + 1);
+        let slot = if pour { PLANE_SLOT } else { 0.0 };
         Some(
-            (step * (pull + off) + push) * grid.g
+            (step * (pull + off + slot) + push) * grid.g
                 + grid.hist[j] as f64
                 + if clash { penalty } else { 0.0 },
         )
@@ -2826,11 +2863,20 @@ fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
     let unpack = |i: usize| (i / plane, (i % plane) % grid.w, (i % plane) / grid.w);
     let mut tracks: Vec<(usize, Vec<P>)> = Vec::new();
     let mut vias = Vec::new();
-    let near = |i: usize, q: P| {
-        let (_, x, y) = unpack(i);
-        geom::dist(grid.center(x, y), q) < 0.35
+    let land = |i: usize, q: P| -> Option<P> {
+        let (l, x, y) = unpack(i);
+        let c = grid.center(x, y);
+        if geom::dist(c, q) < 0.35 {
+            return Some(q);
+        }
+        let (_, _, pad) = grid
+            .pads
+            .iter()
+            .find(|(n, layers, v)| *n == net && layers.contains(&l) && on_pad(v, c))?;
+        let to = if on_pad(pad, q) { q } else { bbox_center(pad) };
+        within(pad, c, to).then_some(to)
     };
-    let mut run: Vec<P> = if near(path[0], a) { vec![a] } else { Vec::new() };
+    let mut run: Vec<P> = land(path[0], a).into_iter().collect();
     let mut layer = unpack(path[0]).0;
     for &i in path {
         let (l, x, y) = unpack(i);
@@ -2843,8 +2889,8 @@ fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
         }
         run.push(p);
     }
-    if near(*path.last().unwrap(), b) {
-        run.push(b);
+    if let Some(end) = land(*path.last().unwrap(), b) {
+        run.push(end);
     }
     tracks.push((layer, run));
     let tracks = tracks
@@ -2855,6 +2901,17 @@ fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
         .filter(|(_, pts)| pts.len() >= 2)
         .collect();
     (tracks, vias)
+}
+
+fn on_pad(pad: &[P], p: P) -> bool {
+    geom::point_in_polygon(p, pad) || geom::polyline_polygon_distance(&[p, p], pad) < 1e-6
+}
+
+fn within(pad: &[P], p: P, q: P) -> bool {
+    (0..=8).all(|k| {
+        let t = k as f64 / 8.0;
+        on_pad(pad, [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t])
+    })
 }
 
 fn clear_line(grid: &Grid, l: usize, p: P, q: P, net: usize) -> bool {
@@ -3018,7 +3075,13 @@ fn route_pair(
     if geom::dist(ma, mb) < 1e-9 {
         return None;
     }
-    for &l in ctx.routing {
+    let plane = grid.w * grid.h;
+    let foreign = |v: &u16| *v != FREE && *v as usize != p + 1 && *v as usize != n + 1;
+    let poured =
+        |l: usize| grid.pour.get(l * plane..(l + 1) * plane).is_some_and(|c| c.iter().any(foreign));
+    let mut layers: Vec<usize> = ctx.routing.to_vec();
+    layers.sort_by_key(|&l| poured(l));
+    for l in layers {
         let pitch = ctx.widths[l] + gap;
         let Some(cells) = search_center(grid, l, p, n, ma, mb, pitch / 2.0, ctx) else {
             if std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
@@ -3296,6 +3359,8 @@ mod tests {
             window: None,
             fence: vec![0; w * h],
             fence_nets: Vec::new(),
+            pads: Vec::new(),
+            pour: Vec::new(),
         }
     }
 
