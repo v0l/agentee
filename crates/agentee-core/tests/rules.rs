@@ -114,3 +114,45 @@ fn every_registered_rule_judges_a_plan_by_what_it_adds() {
     assert!(!planned.is_empty(), "a 0.01 mm track broke nothing");
     assert!(planned.iter().all(|v| !placed.iter().any(|b| b.detail == v.detail)));
 }
+
+#[test]
+fn every_spot_in_a_green_zone_passes_the_rules() {
+    for (project, layout_net) in [(lna(), "VCC"), (sdr(), "GND")] {
+        let l = &project.layouts[0].item;
+        let b = &project.boards.iter().find(|x| x.name == l.board).unwrap().item;
+        let cx = agentee_core::drc::Ctx::new(
+            b,
+            &l.copper,
+            &l.outline,
+            &l.board_cutouts,
+            &l.parts,
+            &l.tracks,
+            &l.vias,
+            &[],
+            &l.nets,
+        );
+        let base = Placed::new(&cx);
+        let net = l.nets.iter().position(|n| n.name == layout_net).unwrap();
+        let via = agentee_core::layout::Via::of(&b.vias[0], net, [0.0, 0.0], &l.copper);
+        let mut ob = agentee_core::graphic::Bounds::EMPTY;
+        l.outline.iter().for_each(|p| ob.add(*p));
+        let c = ob.center();
+        let mut window = agentee_core::graphic::Bounds::EMPTY;
+        window.add([c[0] - 4.0, c[1] - 4.0]);
+        window.add([c[0] + 4.0, c[1] + 4.0]);
+        let zone = rules::green(&base, &rules::Template::via(&via), &window, 0.05);
+        let spots = zone.spots();
+        assert!(!spots.is_empty(), "nothing is green");
+        let step = (spots.len() / 300).max(1);
+        let mut bad = Vec::new();
+        for at in spots.iter().step_by(step) {
+            let v = agentee_core::layout::Via { at: *at, ..via.clone() };
+            if let Err(e) = rules::legal(&Planned::new(&base, vec![], vec![v])) {
+                bad.push((*at, e[0].rule, e[0].detail.clone(), e[0].other.clone()));
+            }
+        }
+        assert!(bad.is_empty(), "{} green spots break a rule: {:?}", bad.len(), &bad[..bad.len().min(3)]);
+        let free = rules::Zone::new(&window, 0.05, &l.copper).spots().len();
+        assert!(spots.len() < free, "the zone forbade nothing");
+    }
+}

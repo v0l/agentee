@@ -748,3 +748,69 @@ impl Rule for Creepage {
         out.extend(found);
     }
 }
+
+fn barrier_zone<C: Context>(
+    cx: &C,
+    t: &super::zone::Template,
+    zone: &mut super::zone::Zone,
+    layers: &[String],
+    need: impl Fn(&Barrier) -> Option<f64>,
+) {
+    let Some(net) = t.net else { return };
+    let iso = &cx.spacing().isolation;
+    let reach = cx.board().barriers.iter().filter_map(&need).fold(0.0, f64::max) + t.half();
+    if reach <= t.half() {
+        return;
+    }
+    let on: Vec<String> = t.layers.iter().filter(|l| layers.contains(l)).cloned().collect();
+    for j in cx.items_near(&zone.window(), reach) {
+        let b = cx.item(j);
+        let Some(other) = b.net else { continue };
+        if t.owns(b.net) {
+            continue;
+        }
+        let Some(c) = iso.barrier(cx.board(), net, other).and_then(&need) else { continue };
+        let shared: Vec<String> = b.layers.iter().filter(|l| on.contains(l)).cloned().collect();
+        if !shared.is_empty() {
+            zone.forbid(Some(&shared), &b.shape, c + t.half());
+        }
+    }
+    for z in cx.zones() {
+        if t.owns(Some(z.net)) {
+            continue;
+        }
+        let Some(c) = iso.barrier(cx.board(), net, z.net).and_then(&need) else { continue };
+        if on.contains(&z.layer) && !z.rings.is_empty() {
+            zone.forbid(
+                Some(std::slice::from_ref(&z.layer)),
+                &CuShape::Poly(z.rings.clone()),
+                c + t.half(),
+            );
+        }
+    }
+}
+
+impl super::zone::Constrains for IsolationClearance {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let copper = cx.copper().to_vec();
+        barrier_zone(cx, t, zone, &copper, |b| b.clearance.map(Length::to_mm));
+    }
+}
+
+impl super::zone::Constrains for Creepage {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let outer: Vec<String> =
+            [cx.copper().first(), cx.copper().last()].into_iter().flatten().cloned().collect();
+        barrier_zone(cx, t, zone, &outer, |b| b.creepage.map(Length::to_mm));
+    }
+}

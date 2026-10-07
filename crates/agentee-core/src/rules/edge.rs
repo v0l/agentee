@@ -42,3 +42,25 @@ impl Rule for CopperToEdge {
         }
     }
 }
+
+impl super::zone::Constrains for CopperToEdge {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        if matches!(t.kind, super::zone::Kind::Pad { .. }) {
+            return;
+        }
+        let edge = cx.edge();
+        if !edge.is_closed() {
+            return;
+        }
+        let need = cx.board().rules.min_copper_to_edge.to_mm() + t.half();
+        let window = zone.window();
+        zone.forbid_where(None, &window, 0.0, |p, m| {
+            !edge.contains(p) || edge.distance(p) < need + m
+        });
+    }
+}

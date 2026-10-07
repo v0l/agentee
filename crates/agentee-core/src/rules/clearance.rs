@@ -47,38 +47,71 @@ impl Spacing for ClassClearance {
 
 pub struct NetClearance;
 
+pub fn reach<C: super::Context>(cx: &C) -> f64 {
+    let min_clearance = cx.board().rules.min_clearance.to_mm();
+    cx.spacing()
+        .class
+        .reach(None)
+        .max(cx.parts().iter().filter_map(|p| p.footprint.clearance).fold(min_clearance, f64::max))
+}
+
+pub fn need<C: super::Context>(
+    cx: &C,
+    a: (crate::drc::Owner, Option<usize>),
+    b: &crate::drc::Cu,
+) -> Option<f64> {
+    use crate::drc::Owner;
+    let (owner, net) = a;
+    if net.is_some() && net == b.net {
+        return None;
+    }
+    let board = cx.board();
+    let parts = cx.parts();
+    let spacing = cx.spacing();
+    let min_clearance = board.rules.min_clearance.to_mm();
+    let footprint = |o: Owner| match o {
+        Owner::Pad(p, _) => parts.get(p).and_then(|p| p.footprint.clearance),
+        _ => None,
+    };
+    let tied = |o: Owner, other: Option<usize>| {
+        let Owner::Pad(pi, k) = o else { return false };
+        let Some(p) = parts.get(pi) else { return false };
+        let Some(group) = p.footprint.net_tie_group(&p.pads[k].number) else { return false };
+        other.is_some() && p.pads.iter().any(|q| q.net == other && group.contains(&q.number))
+    };
+    if tied(owner, b.net) || tied(b.owner, net) {
+        return None;
+    }
+    let same_part = matches!((owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q);
+    if let (true, Owner::Pad(p, k1), Owner::Pad(_, k2)) = (same_part, owner, b.owner) {
+        let n = |k: usize| parts[p].pads[k].number.as_str();
+        if parts[p].footprint.spark_gap(n(k1), n(k2)).is_some() {
+            return None;
+        }
+    }
+    let explicit = |n: usize| {
+        let net = &cx.nets()[n];
+        board.domain_of(&net.name, &net.class).first().is_some_and(|&d| !board.domains[d].implicit)
+    };
+    Some(match (footprint(owner), footprint(b.owner)) {
+        (None, None) if same_part => [net, b.net]
+            .into_iter()
+            .flatten()
+            .filter(|&n| explicit(n))
+            .map(|n| cx.nets()[n].clearance)
+            .fold(min_clearance, f64::max),
+        (None, None) => spacing.class.gap(net, b.net, spacing.layer(0)),
+        (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
+    })
+}
+
 impl super::Rule for NetClearance {
     fn id(&self) -> &'static str {
         "clearance"
     }
 
     fn eval<C: super::Context>(&self, cx: &C, out: &mut Vec<super::Violation>) {
-        use crate::drc::Owner;
-        let board = cx.board();
-        let parts = cx.parts();
-        let spacing = cx.spacing();
-        let min_clearance = board.rules.min_clearance.to_mm();
-        let explicit = |n: usize| {
-            let net = &cx.nets()[n];
-            board
-                .domain_of(&net.name, &net.class)
-                .first()
-                .is_some_and(|&d| !board.domains[d].implicit)
-        };
-        let footprint = |o: Owner| match o {
-            Owner::Pad(p, _) => parts.get(p).and_then(|p| p.footprint.clearance),
-            _ => None,
-        };
-        let tied = |a: &crate::drc::Cu, b: &crate::drc::Cu| {
-            let Owner::Pad(pi, k) = a.owner else { return false };
-            let Some(p) = parts.get(pi) else { return false };
-            let Some(group) = p.footprint.net_tie_group(&p.pads[k].number) else { return false };
-            b.net.is_some() && p.pads.iter().any(|q| q.net == b.net && group.contains(&q.number))
-        };
-        let reach = spacing
-            .class
-            .reach(None)
-            .max(parts.iter().filter_map(|p| p.footprint.clearance).fold(min_clearance, f64::max));
+        let reach = reach(cx);
         let subjects = cx.item_subjects(reach);
         let chosen: std::collections::HashSet<usize> = subjects.iter().copied().collect();
         for &i in &subjects {
@@ -92,33 +125,10 @@ impl super::Rule for NetClearance {
                 }
                 let b = cx.item(j);
                 let (a, b, i, j) = if j < i { (b, a, j, i) } else { (a, b, i, j) };
-                if (a.net.is_some() && a.net == b.net)
-                    || !a.layers.iter().any(|l| b.layers.contains(l))
-                {
+                if !a.layers.iter().any(|l| b.layers.contains(l)) {
                     continue;
                 }
-                let same_part =
-                    matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q);
-                if let (true, Owner::Pad(p, k1), Owner::Pad(_, k2)) = (same_part, a.owner, b.owner)
-                {
-                    let n = |k: usize| parts[p].pads[k].number.as_str();
-                    if parts[p].footprint.spark_gap(n(k1), n(k2)).is_some() {
-                        continue;
-                    }
-                }
-                if tied(a, b) || tied(b, a) {
-                    continue;
-                }
-                let need = match (footprint(a.owner), footprint(b.owner)) {
-                    (None, None) if same_part => [a.net, b.net]
-                        .into_iter()
-                        .flatten()
-                        .filter(|&n| explicit(n))
-                        .map(|n| cx.nets()[n].clearance)
-                        .fold(min_clearance, f64::max),
-                    (None, None) => spacing.class.gap(a.net, b.net, spacing.layer(0)),
-                    (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
-                };
+                let Some(need) = need(cx, (a.owner, a.net), b) else { continue };
                 let dist = a.shape.distance(&b.shape);
                 if dist > 1e-6 && dist + crate::layout::DRC_EPSILON >= need {
                     continue;
@@ -140,6 +150,27 @@ impl super::Rule for NetClearance {
                     ..Default::default()
                 });
             }
+        }
+    }
+}
+
+impl super::zone::Constrains for NetClearance {
+    fn constrain<C: super::Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let reach = reach(cx) + t.half();
+        for j in cx.items_near(&zone.window(), reach) {
+            let b = cx.item(j);
+            let shared: Vec<String> =
+                b.layers.iter().filter(|l| t.layers.contains(l)).cloned().collect();
+            if shared.is_empty() || t.owns(b.net) {
+                continue;
+            }
+            let Some(need) = need(cx, (t.owner(), t.net), b) else { continue };
+            zone.forbid(Some(&shared), &b.shape, need + t.half());
         }
     }
 }

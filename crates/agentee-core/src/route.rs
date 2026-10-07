@@ -142,22 +142,6 @@ impl Shape {
     }
 }
 
-struct Apart<'a> {
-    spacing: Option<&'a crate::rules::Spacings>,
-    nets: &'a [usize],
-}
-
-impl Apart<'_> {
-    fn gap(&self, other: Option<usize>, layer: usize) -> f64 {
-        let Some(s) = self.spacing else { return 0.0 };
-        let l = s.layer(layer);
-        self.nets
-            .iter()
-            .map(|&n| crate::rules::Spacing::gap(&s.isolation, Some(n), other, l))
-            .fold(0.0, f64::max)
-    }
-}
-
 #[derive(Clone)]
 struct Obstacle {
     net: Option<usize>,
@@ -240,6 +224,52 @@ struct Grid {
 }
 
 impl Grid {
+    #[allow(clippy::too_many_arguments)]
+    fn obey_zones(
+        &mut self,
+        cx: &crate::rules::Placed,
+        board: &Board,
+        layout: &Layout,
+        nets: &[usize],
+        halves: &[f64],
+        options: &[ViaOption],
+        routing: &[usize],
+    ) {
+        let Some(&net) = nets.first() else { return };
+        let mut window = crate::graphic::Bounds::EMPTY;
+        window.add(self.center(0, 0));
+        window.add(self.center(self.w - 1, self.h - 1));
+        let plane = self.w * self.h;
+        for &l in routing {
+            let mut t = crate::rules::Template::track(net, &layout.copper[l], halves[l] * 2.0);
+            t.also = nets.to_vec();
+            let z = crate::rules::green(cx, &t, &window, self.g);
+            for y in 0..self.h {
+                for x in 0..self.w {
+                    if !z.allows_cell(x, y) {
+                        self.track[l * plane + y * self.w + x] = BLOCK;
+                    }
+                }
+            }
+        }
+        for (k, o) in options.iter().enumerate() {
+            let Some(spec) = board.vias.iter().find(|v| v.name == o.name) else { continue };
+            let via = crate::layout::Via::of(spec, net, [0.0, 0.0], &layout.copper);
+            let mut t = crate::rules::Template::via(&via);
+            t.also = nets.to_vec();
+            let z = crate::rules::green(cx, &t, &window, self.g);
+            for y in 0..self.h {
+                for x in 0..self.w {
+                    if !z.allows_cell(x, y) {
+                        for &l in &o.layers {
+                            self.vias[k].fixed[l * plane + y * self.w + x] = BLOCK;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn add_drill(&mut self, c: P, r: f64, dielectrics: u32, vias: &[ViaOption], hole_gap: f64) {
         let shape = Shape::Circle(c, 0.0);
         for (k, v) in vias.iter().enumerate().filter(|(_, v)| v.dielectrics & dielectrics != 0) {
@@ -481,16 +511,14 @@ impl Grid {
         clearance: f64,
         vias: &[ViaOption],
         hole_cu: f64,
-        apart: &Apart,
     ) {
         let value = o.net.map(|n| n as u16 + 1).unwrap_or(BLOCK);
-        let c_on = |l: usize| clearance.max(o.clearance).max(apart.gap(o.net, l));
-        let c = o.layers.iter().map(|&l| c_on(l)).fold(clearance.max(o.clearance), f64::max);
+        let c = clearance.max(o.clearance);
         let slack = self.g * 0.6;
         let widest = o.layers.iter().map(|&l| half_widths[l]).fold(0.0, f64::max);
         for (x, y) in self.cells_near(&o.shape, widest + c + slack) {
             let d = o.shape.dist(self.center(x, y));
-            for &l in o.layers.iter().filter(|&&l| d <= half_widths[l] + c_on(l) + slack) {
+            for &l in o.layers.iter().filter(|&&l| d <= half_widths[l] + c + slack) {
                 let i = self.idx(l, x, y);
                 Self::mark(&mut self.track, i, value);
             }
@@ -500,7 +528,7 @@ impl Grid {
             for (x, y) in self.cells_near(&o.shape, reach) {
                 let d = o.shape.dist(self.center(x, y));
                 for &l in &o.layers {
-                    let need = (via.via_r + c_on(l)).max(via.drill_r + hole_cu) + slack;
+                    let need = (via.via_r + c).max(via.drill_r + hole_cu) + slack;
                     if d <= need {
                         let i = self.idx(l, x, y);
                         Self::mark(&mut self.vias[k].fixed, i, value);
@@ -707,7 +735,18 @@ fn route_once(
     polish: bool,
 ) -> Result<(RouteResult, Vec<Avoid>), String> {
     let copper = &layout.copper;
-    let spacing = crate::rules::Spacings::new(board, &layout.nets, copper.len());
+    let zone_world = crate::drc::Ctx::new(
+        board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &layout.tracks,
+        &layout.vias,
+        &[],
+        &layout.nets,
+    );
+    let zone_base = crate::rules::Placed::new(&zone_world);
     let layer_of = |name: &str| copper.iter().position(|c| c == name);
     let mut routing = Vec::new();
     for l in &opts.layers {
@@ -950,10 +989,9 @@ fn route_once(
             necking: Some(&necking),
         };
 
-        let apart = Apart { spacing: Some(&spacing), nets: &nets };
         let mut grid = build_grid(layout, opts.grid, &halves, &options, edge, &opts.fences);
         for o in &obstacles {
-            grid.add(o, &halves, clearance, &options, hole_cu, &apart);
+            grid.add(o, &halves, clearance, &options, hole_cu);
         }
         for &(c, r, span) in &drills {
             grid.add_drill(c, r, span, &options, ctx.hole_gap);
@@ -974,6 +1012,9 @@ fn route_once(
             .filter(|(a, b, n)| nets.contains(n) && picked(*a, *b))
             .cloned()
             .collect();
+        if !conns.is_empty() {
+            grid.obey_zones(&zone_base, board, layout, &nets, &halves, &options, routing);
+        }
         let crowd: Vec<usize> = conns
             .iter()
             .map(|c| grid.crowd(c.2, c.0, routing) + grid.crowd(c.2, c.1, routing))
@@ -1254,13 +1295,14 @@ fn route_once(
         if !lost.is_empty() {
             let mut open = build_grid(layout, opts.grid, &halves, &options, edge, &opts.fences);
             for o in &obstacles[..file_obstacles] {
-                open.add(o, &halves, clearance, &options, hole_cu, &apart);
+                open.add(o, &halves, clearance, &options, hole_cu);
             }
             for &(c, r, span) in &drills[..file_drills] {
                 open.add_drill(c, r, span, &options, ctx.hole_gap);
             }
             open.block_smd(&ctx);
             open.block_silk(&layout.silk, &options);
+            open.obey_zones(&zone_base, board, layout, &nets, &halves, &options, routing);
             for &ci in &lost {
                 let (a, b, net) = conns[ci];
                 let fresh: Vec<Obstacle> = routed
@@ -3525,14 +3567,7 @@ mod tests {
             shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.0),
             clearance: 0.1,
         };
-        grid.add(
-            &track,
-            &[0.05],
-            ctx.clearance,
-            ctx.vias,
-            ctx.hole_cu,
-            &Apart { spacing: None, nets: &[] },
-        );
+        grid.add(&track, &[0.05], ctx.clearance, ctx.vias, ctx.hole_cu);
         assert!(!grid.via_ok(0, &ctx.vias[0], 14, 20, 0, false).0, "hole 0.35 mm from the track");
         assert!(grid.via_ok(0, &ctx.vias[0], 17, 20, 0, false).0, "hole 0.65 mm from the track");
         let via = Conn {
@@ -3734,7 +3769,7 @@ mod tests {
             shape: Shape::Seg([1.0, 0.5], [1.0, 3.5], 0.05),
             clearance: 0.1,
         };
-        grid.add(&wall, &[0.05; 4], 0.1, &vias, 0.15, &Apart { spacing: None, nets: &[] });
+        grid.add(&wall, &[0.05; 4], 0.1, &vias, 0.15);
         let fits = |grid: &Grid, k: usize, x: usize| grid.via_ok(k, &vias[k], x, 20, 0, false).0;
         assert!(fits(&grid, 0, 13) && !fits(&grid, 1, 13), "0.3 mm from the wall centre");
         assert!(fits(&grid, 1, 15), "0.5 mm from the wall centre");
@@ -3838,7 +3873,7 @@ mod tests {
         ];
         let mut grid = open_grid(60, 40, 1);
         for o in &obstacles {
-            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0, &Apart { spacing: None, nets: &[] });
+            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0);
         }
         let found = search(&grid, &obstacles, &[], 0, a, b, &ctx, false, None)?;
         let conn = conn_found(&grid, &found, 0, &ctx);
@@ -3952,7 +3987,7 @@ mod tests {
         let joined = [pad(a, 0.15), pad([a[0], a[1] + 0.3], 0.15), pad(b, 0.5)];
         let mut grid = open_grid(60, 40, 1);
         for o in &joined {
-            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0, &Apart { spacing: None, nets: &[] });
+            grid.add(o, &[0.2], ctx.clearance, ctx.vias, 0.0);
         }
         let found = search(&grid, &single, &[], 0, a, b, &ctx, false, None).unwrap();
         assert_eq!(found.necks.len(), 1);

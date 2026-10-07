@@ -545,6 +545,14 @@ The tools that add copper check it against the same rules before they write it. 
 new copper when it breaks one, and report the rule. Pours are left out of these checks, since a
 pour refills around new copper.
 
+The distance rules (`clearance`, `isolation-clearance`, `creepage` measured straight,
+`copper-to-edge`, the hole rules and the via-in-pad rules) also say where new copper may go: for a
+track of a given width or a via of a given type they mark the area each one forbids, layer by
+layer, and what is left on every layer it needs is its green zone. `agentee route` blocks its
+search grid outside the green zones of the nets it routes, so a route never heads for a spot the
+check would refuse. The zone errs on the safe side by half a grid cell, and the check still
+judges the finished copper.
+
 ```toml
 [drc]                          # in the board file
 disable = ["silk-width"]       # rule ids to skip; their checks are not computed, so with silk-text

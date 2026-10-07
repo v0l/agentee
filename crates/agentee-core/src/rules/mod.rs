@@ -6,6 +6,7 @@ mod holes;
 mod isolation;
 mod registry;
 mod vias;
+pub mod zone;
 
 pub use barrier::{
     Creepage, IsolationClearance, Rim, Surface, closest as closest_edges,
@@ -20,6 +21,7 @@ pub use registry::{Registered, everything};
 pub use vias::{
     HoleToSmdPad, StackedVia, ViaAnnulusPastPad, ViaCutsPad, ViaInPad, ViaInPadFill, vias_in_pads,
 };
+pub use zone::{Constrains, Kind, Template, Zone, green, refresh};
 
 use crate::board::Board;
 use crate::layout::LayoutNet;

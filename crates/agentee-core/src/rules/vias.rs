@@ -310,3 +310,122 @@ impl Rule for StackedVia {
         }
     }
 }
+
+fn template_pads<C: Context>(
+    cx: &C,
+    t: &super::zone::Template,
+    reach: f64,
+    window: &crate::graphic::Bounds,
+) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for (p, part) in cx.parts().iter().enumerate() {
+        for (k, q) in part.pads.iter().enumerate() {
+            if !is_smd(q) || !q.copper.iter().any(|l| t.layers.contains(l)) {
+                continue;
+            }
+            let b = crate::drc::rings_bounds(&q.outlines);
+            if b.min[0] <= window.max[0] + reach
+                && b.max[0] >= window.min[0] - reach
+                && b.min[1] <= window.max[1] + reach
+                && b.max[1] >= window.min[1] - reach
+            {
+                out.push((p, k));
+            }
+        }
+    }
+    out
+}
+
+fn edge_gap(q: &PlacedPad, p: crate::geom::P) -> f64 {
+    q.outlines.iter().map(|o| edge_distance(o, p)).fold(f64::MAX, f64::min)
+}
+
+fn inside(q: &PlacedPad, p: crate::geom::P) -> bool {
+    q.outlines.iter().any(|o| geom::point_in_polygon(p, o))
+}
+
+impl super::zone::Constrains for ViaCutsPad {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let super::zone::Kind::Via { r, .. } = t.kind else { return };
+        let window = zone.window();
+        for (p, k) in template_pads(cx, t, r, &window) {
+            let q = pad(cx, p, k);
+            if !t.owns(q.net) {
+                continue;
+            }
+            let b = crate::drc::rings_bounds(&q.outlines);
+            zone.forbid_where(None, &b, r, |c, m| edge_gap(q, c) < r + m);
+        }
+    }
+}
+
+impl super::zone::Constrains for ViaInPadFill {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let super::zone::Kind::Via { r, drill, fill, .. } = t.kind else { return };
+        let max = cx.board().rules.max_filled_via_drill.to_mm();
+        let open = fill.is_some_and(|f| f != crate::board::ViaFill::FilledCapped);
+        if drill <= max + 1e-6 && !open {
+            return;
+        }
+        let window = zone.window();
+        for (p, k) in template_pads(cx, t, r, &window) {
+            let q = pad(cx, p, k);
+            if !t.owns(q.net) {
+                continue;
+            }
+            let b = crate::drc::rings_bounds(&q.outlines);
+            zone.forbid_where(None, &b, r, |c, m| inside(q, c) || edge_gap(q, c) < r + m);
+        }
+    }
+}
+
+impl super::zone::Constrains for HoleToSmdPad {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let super::zone::Kind::Via { drill, .. } = t.kind else { return };
+        let need = cx.board().rules.min_hole_to_smd_pad.to_mm();
+        let window = zone.window();
+        for (p, k) in template_pads(cx, t, need + drill, &window) {
+            let q = pad(cx, p, k);
+            if !(t.owns(q.net) || q.net.is_none()) {
+                continue;
+            }
+            let b = crate::drc::rings_bounds(&q.outlines);
+            zone.forbid_where(None, &b, need + drill, |c, m| {
+                !inside(q, c) && edge_gap(q, c) - drill / 2.0 < need + m
+            });
+        }
+    }
+}
+
+impl super::zone::Constrains for StackedVia {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let super::zone::Kind::Via { .. } = t.kind else { return };
+        let window = zone.window();
+        for k in 0..cx.via_count() {
+            let v = cx.via(k);
+            if t.owns(Some(v.net)) && crate::drc::near(&window, v.at, zone.cell) {
+                zone.forbid(None, &crate::drc::CuShape::Circle(v.at, 0.0), 1e-3);
+            }
+        }
+    }
+}

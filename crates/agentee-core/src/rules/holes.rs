@@ -194,3 +194,82 @@ impl Rule for HoleToHole {
         }
     }
 }
+
+impl super::zone::Constrains for HoleToCopper {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let copper = cx.copper();
+        let inner =
+            |l: &str| copper.len() >= 3 && copper[1..copper.len() - 1].iter().any(|c| c == l);
+        let layer_ok = |l: &str| self.0 != Which::Inner || inner(l);
+        let any_net = self.0 == Which::Npth;
+        let r = &cx.board().rules;
+        let most = [
+            r.min_via_hole_to_copper,
+            r.min_pth_hole_to_copper,
+            r.min_inner_pth_hole_to_copper,
+            r.min_npth_to_copper,
+        ]
+        .iter()
+        .map(|l| l.to_mm())
+        .fold(0.0, f64::max);
+        let window = zone.window();
+        for i in cx.holes_near(&window, most + t.half()) {
+            let h = cx.hole(i);
+            if !self.takes(h.plated, h.of) || !(any_net || h.net.is_none() || !t.owns(h.net)) {
+                continue;
+            }
+            let shared: Vec<String> =
+                t.layers.iter().filter(|l| h.layers.contains(l) && layer_ok(l)).cloned().collect();
+            if !shared.is_empty() {
+                let need = self.need(cx, h.of);
+                zone.forbid(Some(&shared), &super::zone::hole_shape(h), need + t.half());
+            }
+        }
+        let super::zone::Kind::Via { drill, ref hole, .. } = t.kind else { return };
+        if self.0 != Which::Plated {
+            return;
+        }
+        let need = r.min_via_hole_to_copper.to_mm();
+        for j in cx.items_near(&window, need + drill / 2.0) {
+            let c = cx.item(j);
+            if !(c.net.is_none() || !t.owns(c.net)) || !c.layers.iter().any(|l| hole.contains(l)) {
+                continue;
+            }
+            zone.forbid(None, &c.shape, need + drill / 2.0);
+        }
+        for (z, f) in cx.zones().iter().zip(cx.fills()) {
+            if t.owns(Some(z.net)) || !hole.contains(&z.layer) || z.rings.is_empty() {
+                continue;
+            }
+            let _ = f;
+            zone.forbid(None, &crate::drc::CuShape::Poly(z.rings.clone()), need + drill / 2.0);
+        }
+    }
+}
+
+impl super::zone::Constrains for HoleToHole {
+    fn constrain<C: Context>(
+        &self,
+        cx: &C,
+        t: &super::zone::Template,
+        zone: &mut super::zone::Zone,
+    ) {
+        let super::zone::Kind::Via { drill, ref hole, .. } = t.kind else { return };
+        let need = cx.board().rules.min_hole_to_hole.to_mm();
+        let mine = span(cx, hole);
+        let window = zone.window();
+        for i in cx.holes_near(&window, need + drill) {
+            let h = cx.hole(i);
+            let theirs = span(cx, &h.layers);
+            if mine.0.max(theirs.0) >= mine.1.min(theirs.1) {
+                continue;
+            }
+            zone.forbid(None, &super::zone::hole_shape(h), need + drill / 2.0);
+        }
+    }
+}
