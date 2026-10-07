@@ -103,6 +103,7 @@ pub fn canvas(
         }
     });
     ui.add_space(6.0);
+    let current = maps.get(st.map_index).cloned().unwrap_or_else(|| maps[0].clone());
     let key = (project.generation, index, st.map_index);
     if st.map_key != Some(key) {
         let values = current.decode();
@@ -121,7 +122,22 @@ pub fn canvas(
         current.origin[1] + (current.height - 1) as f64 * current.cell,
     ]);
     st.view.max_fit = 2000.0;
-    let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(b), 30.0);
+    let avail = ui.available_size();
+    let gap = 6.0;
+    let bounds = st.region.unwrap_or(b);
+    let ((resp, xf), strip) = ui
+        .horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            let view = ui
+                .allocate_ui(Vec2::new(avail.x - BAR_W - gap, avail.y), |ui| {
+                    st.view.show(ui, &bounds, 30.0)
+                })
+                .inner;
+            let (strip, _) =
+                ui.allocate_exact_size(Vec2::new(BAR_W, avail.y), egui::Sense::hover());
+            (view, strip)
+        })
+        .inner;
     let p = ui.painter_at(xf.rect);
     if let Some(tex) = &st.map_tex {
         let half = current.cell / 2.0;
@@ -140,7 +156,7 @@ pub fn canvas(
     if let Some(l) = layout {
         overlay(&p, &xf, l, &current.layer);
     }
-    bar(&p, &xf, &current);
+    bar(&ui.painter_at(strip), strip, &current);
     let hover = if st.interactive { resp.hover_pos() } else { None };
     cursor_readout(ui, &xf, hover);
     if let Some(h) = hover {
@@ -179,12 +195,14 @@ fn overlay(p: &egui::Painter, xf: &Xf, l: &Layout, layer: &str) {
     }
 }
 
-fn bar(p: &egui::Painter, xf: &Xf, m: &LayerMap) {
-    let r = xf.rect;
+const BAR_W: f32 = 130.0;
+
+fn bar(p: &egui::Painter, r: Rect, m: &LayerMap) {
+    p.rect_filled(r, 0.0, WELL);
+    p.rect_stroke(r, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
     let w = 16.0;
     let h = (r.height() * 0.5).min(260.0);
-    let area =
-        Rect::from_min_size(Pos2::new(r.right() - w - 70.0, r.top() + 16.0), Vec2::new(w, h));
+    let area = Rect::from_min_size(Pos2::new(r.left() + 14.0, r.top() + 16.0), Vec2::new(w, h));
     let n = 48;
     for k in 0..n {
         let t = k as f32 / (n - 1) as f32;
@@ -253,4 +271,56 @@ pub fn readings(ui: &mut Ui, list: &[agentee_core::sim::Reading]) {
         cell(p, row, at(1), cols[1].1, &fmt(x.value as f32, &x.unit), TRACE);
         cell(p, row, at(2), cols[2].1, &x.detail, LEGEND);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{Event, Modifiers, PointerButton, RawInput};
+
+    #[test]
+    fn a_layer_toggle_redraws_the_map_of_that_layer() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+        let project = Project::load(&root).unwrap();
+        let index = project.sims.iter().position(|s| s.name == "lna-dc").unwrap();
+        let sim = &project.sims[index].item;
+        let maps = &sim.maps.as_ref().unwrap().maps;
+        let ctx = egui::Context::default();
+        egui_bench::install(&ctx);
+        let mut st = PageState::default();
+        let mut time = 0.0;
+        let mut frame = |events: Vec<Event>, st: &mut PageState| {
+            time += 1.0 / 60.0;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1400.0, 900.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run_ui(input, |ui| canvas(ui, &project, sim, index, maps, st));
+        };
+        let button = |pos: Pos2, pressed: bool| Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        frame(Vec::new(), &mut st);
+        let first = maps[st.map_index].layer.clone();
+        let mut x = 10.0;
+        while maps[st.map_index].layer == first && x < 1400.0 {
+            let at = Pos2::new(x, 10.0);
+            frame(vec![Event::PointerMoved(at)], &mut st);
+            frame(vec![button(at, true)], &mut st);
+            frame(vec![button(at, false)], &mut st);
+            x += 12.0;
+        }
+        assert_ne!(maps[st.map_index].layer, first, "no layer toggle found");
+        frame(Vec::new(), &mut st);
+        let want = maps[st.map_index].decode();
+        assert_eq!(st.map_values.len(), want.len());
+        let same =
+            st.map_values.iter().zip(&want).all(|(a, b)| a == b || (a.is_nan() && b.is_nan()));
+        assert!(same, "the map shown is not the layer selected");
+    }
 }

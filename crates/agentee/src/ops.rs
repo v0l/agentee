@@ -728,9 +728,9 @@ pub fn fab(p: &Project, name: &str, out: &std::path::Path) -> Result<Value, Stri
             hidden_pins: false,
             show: show.into_iter().map(String::from).collect(),
             hide: hide.into_iter().map(String::from).collect(),
-            region: None,
+            ..Default::default()
         };
-        let png = agentee_view::render_png(p, r, &opts);
+        let png = agentee_view::render_png(p, r, &opts)?;
         let name = format!("assembly-{side}.png");
         std::fs::write(out.join(&name), png).map_err(|e| e.to_string())?;
         files.push(name);

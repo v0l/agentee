@@ -41,6 +41,7 @@ agentee import symbol Amplifier_Operational:LM358 --footprint Package_SO:SOIC-8_
 agentee check                                  # every item under .
 agentee show sensor-node                       # resolved model and trace analysis as JSON
 agentee render LM358 -o lm358.png              # PNG exactly as the viewer draws it
+agentee render pcb:sensor-node -o u1.png --canvas-only --focus U1   # zoom to U1, dim the rest
 agentee calc impedance --layer F.Cu --target 50ohm
 agentee calc trace-width --current 2A
 agentee view                                   # live window, reloads on save, edits layouts

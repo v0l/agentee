@@ -73,7 +73,7 @@ fn tools() -> Value {
         },
         {
             "name": "render_item",
-            "description": "Render an item to PNG exactly as the viewer shows it and return the image.",
+            "description": "Render an item to PNG exactly as the viewer shows it and return the image. Without the side panels the image is cropped to the drawing, so width and height are the largest it gets.",
             "inputSchema": s(json!({
                 "name": { "type": "string" },
                 "width": { "type": "integer", "default": 1400 },
@@ -85,6 +85,9 @@ fn tools() -> Value {
                 "show": { "type": "array", "items": { "type": "string" }, "description": "layers to turn on, e.g. F.Fab, F.Mask, In1.Cu" },
                 "hide": { "type": "array", "items": { "type": "string" } },
                 "region": { "type": "array", "items": { "type": "number" }, "description": "zoom to [x0, y0, x1, y1] in mm" },
+                "focus": { "type": "array", "items": { "type": "string" }, "description": "schematic or layout only: zoom to these parts, nets or pins (U1, SPI_*, U1.3) and fade the rest" },
+                "context": { "type": "string", "enum": ["dim", "hide", "show"], "default": "dim", "description": "what happens to everything outside focus" },
+                "rulers": { "type": "boolean", "description": "label mm coordinates along the edges, to pick the next region" },
             }), &["name"]),
         },
         {
@@ -337,6 +340,11 @@ fn int(a: &Value, k: &str, d: u64) -> u64 {
     a.get(k).and_then(Value::as_u64).unwrap_or(d)
 }
 
+fn png_size(png: &[u8]) -> (u32, u32) {
+    let be = |k: usize| u32::from_be_bytes(png[k..k + 4].try_into().unwrap());
+    (be(16), be(20))
+}
+
 fn under(root: &Path, rel: Option<&str>, default: &str) -> PathBuf {
     root.join(rel.unwrap_or(default))
 }
@@ -405,10 +413,14 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                         [f(0), f(1), f(2), f(3)]
                     },
                 ),
+                focus: strings(a, "focus"),
+                context: arg(a, "context").unwrap_or("dim").parse()?,
+                rulers: flag(a, "rulers"),
                 ..Default::default()
             };
-            let png = agentee_view::render_png(&p, r, &opts);
-            let mut note = format!("{} ({}x{})", p.name_of(r), opts.width, opts.height);
+            let png = agentee_view::render_png(&p, r, &opts)?;
+            let (w, h) = png_size(&png);
+            let mut note = format!("{} ({w}x{h})", p.name_of(r));
             if let Some(dest) = arg(a, "save_to") {
                 let path = root.join(dest);
                 std::fs::write(&path, &png).map_err(|e| format!("{}: {e}", path.display()))?;

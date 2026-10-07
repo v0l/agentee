@@ -2171,6 +2171,21 @@ text.
    and place vias there and save them into the layout.
 7. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
 
+### Rendering part of a design
+
+`agentee render` (MCP `render_item`) draws what the viewer draws. Without the side panels
+(`--canvas-only`) the PNG is cropped to the drawing, and `--width` and `--height` cap its size.
+
+| flag | does |
+|---|---|
+| `--region x0,y0,x1,y1` | zoom to that rectangle, in mm in the item's own coordinates |
+| `--focus A,B,...` | schematics and layouts: zoom to these references, net names or `REF.PIN`, `*` matching any run of characters. A net brings in the parts it touches, a pin its net |
+| `--context dim\|hide\|show` | what happens to everything outside `--focus` (default `dim`) |
+| `--rulers` | label mm coordinates along the top and left edges |
+| `--show` / `--hide` | layers to turn on or off, e.g. `--hide F.Cu --show In1.Cu` |
+
+A name that matches nothing is an error. `--region` with `--focus` keeps the filter and uses the
+region for the zoom.
 
 ## Importing a KiCad board
 

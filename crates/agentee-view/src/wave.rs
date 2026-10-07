@@ -252,8 +252,13 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
     let (mut from, mut to) = view.window(&r.name, end);
     let rows = rows(&r.traces, &r.buses, &view.open);
     let capped = if r.marks.len() >= agentee_sim::logic::MARK_LIMIT { " (capped)" } else { "" };
+    let help = if interactive {
+        "; wheel zooms, drag pans, click sets the cursor, N and P step markers, F fits"
+    } else {
+        ""
+    };
     let sub = format!(
-        "{} nets, {} to {} of {}, {} markers{capped}; wheel zooms, drag pans, click sets the cursor, N and P step markers, F fits",
+        "{} nets, {} to {} of {}, {} markers{capped}{help}",
         r.traces.len(),
         fmt_time(from),
         fmt_time(to),
@@ -935,7 +940,7 @@ mod tests {
                 show: show.iter().map(|s| s.to_string()).collect(),
                 ..Default::default()
             };
-            render_rgba(p, ItemRef::Sim(i), &opts).2
+            render_rgba(p, ItemRef::Sim(i), &opts).unwrap().2
         };
         let plain = render(&p, &[]);
         let cursor = render(&p, &["cursor=550ns"]);

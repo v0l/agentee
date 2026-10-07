@@ -107,6 +107,15 @@ enum Cmd {
         /// Zoom to x0,y0,x1,y1 in mm
         #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
         region: Option<Vec<f64>>,
+        /// Zoom to these parts, nets or pins (U1,SPI_*,U1.3) and fade the rest
+        #[arg(long, value_delimiter = ',')]
+        focus: Vec<String>,
+        /// What happens to everything outside --focus: dim, hide or show
+        #[arg(long, default_value = "dim")]
+        context: agentee_view::Context,
+        /// Label mm coordinates along the edges
+        #[arg(long)]
+        rulers: bool,
     },
     /// Open the viewer, it reloads when files change
     View {
@@ -622,6 +631,9 @@ fn run(cli: Cli) -> Result<bool, String> {
             show,
             hide,
             region,
+            focus,
+            context,
+            rulers,
         } => {
             let p = ops::load(&project)?;
             let r = ops::find(&p, &name)?;
@@ -635,8 +647,11 @@ fn run(cli: Cli) -> Result<bool, String> {
                 show,
                 hide,
                 region: region.filter(|r| r.len() == 4).map(|r| [r[0], r[1], r[2], r[3]]),
+                focus,
+                context,
+                rulers,
             };
-            let png = agentee_view::render_png(&p, r, &opts);
+            let png = agentee_view::render_png(&p, r, &opts)?;
             std::fs::write(&out, png).map_err(|e| format!("{}: {e}", out.display()))?;
             println!("{}", out.display());
             Ok(true)

@@ -1,3 +1,4 @@
+use crate::focus::{Focus, pick};
 use crate::paint::{self, Ink, SymbolStyle, Xf, text};
 use agentee_core::geom::{self, P};
 use agentee_core::schematic::{NetStyle, PinRef, Schematic};
@@ -29,6 +30,7 @@ pub fn schematic(
     s: &Schematic,
     hover: Option<Pos2>,
     show_hidden: bool,
+    focus: Option<&Focus>,
 ) -> Hover {
     let mut hit = Hover { net: None, pin: None };
     let mut best = 6.0f32;
@@ -54,6 +56,7 @@ pub fn schematic(
     });
 
     for (pi, part) in s.parts.iter().enumerate() {
+        let Some(p) = &pick(p, focus, focus.is_some_and(|f| f.part(pi))) else { continue };
         let local = xf.placed(part.transform());
         let unit =
             if part.symbol.units > 1 { part.symbol.unit_label(part.unit) } else { String::new() };
@@ -76,6 +79,7 @@ pub fn schematic(
     hit.net = highlight.or_else(|| hit.pin.and_then(|r| s.net_of(r)));
 
     for (ni, n) in s.nets.iter().enumerate() {
+        let Some(p) = &pick(p, focus, focus.is_some_and(|f| f.net(ni))) else { continue };
         let lit = hit.net == Some(ni);
         let color = if lit { TRACE } else { WIRE };
         let stroke = Stroke::new(if lit { 2.5 } else { 1.6 }, color);
@@ -125,6 +129,7 @@ pub fn schematic(
         }
     }
     for r in &s.no_connect {
+        let Some(p) = &pick(p, focus, focus.is_some_and(|f| f.part(r.part))) else { continue };
         let c = px(xf, s.parts[r.part].pin_at(r.pin));
         let k = xf.len(0.6).max(4.0);
         let st = Stroke::new(1.6, LEGEND);

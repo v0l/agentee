@@ -2,6 +2,7 @@ use agentee_core::footprint::{Drill, Footprint, Pad, PadKind};
 use agentee_core::geom::{self, Transform};
 use agentee_core::graphic::{Anchor, Bounds, Fill, Graphic, Shape, arc_points};
 use agentee_core::symbol::{PinNames, PinShape, Symbol};
+use agentee_core::units::trim;
 use egui::epaint::{PathShape, TextShape};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use egui_bench::theme::{self, ETCH, LEGEND, PANEL, READOUT, TRACE, VALUE, WELL};
@@ -166,6 +167,47 @@ pub fn grid(p: &Painter, xf: &Xf, pitch_mm: f64) {
     let c = LEGEND.gamma_multiply(0.5);
     p.line_segment([o - Vec2::X * 6.0, o + Vec2::X * 6.0], Stroke::new(1.0, c));
     p.line_segment([o - Vec2::Y * 6.0, o + Vec2::Y * 6.0], Stroke::new(1.0, c));
+}
+
+pub fn ruler_step(scale: f32) -> f64 {
+    let target = 90.0 / scale.max(1e-6) as f64;
+    let base = 10f64.powf(target.log10().floor());
+    [1.0, 2.0, 5.0, 10.0].iter().map(|m| m * base).find(|s| *s >= target).unwrap_or(base * 10.0)
+}
+
+pub fn rulers(p: &Painter, xf: &Xf) {
+    let step = ruler_step(xf.scale);
+    let places = (-step.log10().floor()).max(0.0) as usize;
+    let r = xf.rect;
+    let (lt, rb) = (xf.mm(r.left_top()), xf.mm(r.right_bottom()));
+    let line = Stroke::new(1.0, LEGEND.gamma_multiply(0.22));
+    let font = theme::figure(10.5);
+    let label = |at: Pos2, s: String, anchor: Align2| {
+        let g = p.layout_no_wrap(s, font.clone(), READOUT);
+        let rect = anchor.anchor_size(at, g.size()).expand(2.0);
+        p.rect_filled(rect, 2.0, WELL.gamma_multiply(0.85));
+        p.galley(rect.min + Vec2::splat(2.0), g, READOUT);
+    };
+    let span = |a: f64, b: f64| {
+        let (lo, hi) = (a.min(b), a.max(b));
+        ((lo / step).ceil() as i64)..=((hi / step).floor() as i64)
+    };
+    for k in span(lt[0], rb[0]) {
+        let x = xf.world([k as f64 * step, xf.center[1]]).x;
+        p.line_segment([Pos2::new(x, r.top()), Pos2::new(x, r.bottom())], line);
+        if x < r.left() + 36.0 {
+            continue;
+        }
+        label(Pos2::new(x, r.top() + 3.0), trim(k as f64 * step, places), Align2::CENTER_TOP);
+    }
+    for k in span(lt[1], rb[1]) {
+        let y = xf.world([xf.center[0], k as f64 * step]).y;
+        p.line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], line);
+        if y < r.top() + 24.0 {
+            continue;
+        }
+        label(Pos2::new(r.left() + 4.0, y), trim(k as f64 * step, places), Align2::LEFT_CENTER);
+    }
 }
 
 pub fn fill_polygon(p: &Painter, pts: Vec<Pos2>, fill: Color32, stroke: Stroke) {

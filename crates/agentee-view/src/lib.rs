@@ -4,6 +4,7 @@ pub mod canvas;
 pub mod edit;
 pub mod engine;
 pub mod eye;
+pub mod focus;
 pub mod gl3d;
 pub mod headless;
 pub mod heat;
@@ -19,4 +20,5 @@ pub mod tools;
 pub mod wave;
 
 pub use app::run;
+pub use focus::Context;
 pub use headless::{RenderOptions, render_png};

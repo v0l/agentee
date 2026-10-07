@@ -25,9 +25,10 @@ pub struct PageState {
     pub panels: bool,
     pub pcb_layers: Layers,
     pub ratsnest: bool,
-    pub zone_key: Option<(u64, usize)>,
-    pub zone_tex: Vec<egui::TextureHandle>,
     pub region: Option<agentee_core::graphic::Bounds>,
+    pub focus: Option<crate::focus::Focus>,
+    pub content_bottom: Option<f32>,
+    pub rulers: bool,
     pub hidden_curves: Vec<(usize, usize)>,
     pub sim_progress: Option<agentee_core::sim::SimProgress>,
     pub map_index: usize,
@@ -59,9 +60,10 @@ impl Default for PageState {
             panels: true,
             pcb_layers: crate::pcb::default_layers(),
             ratsnest: true,
-            zone_key: None,
-            zone_tex: Vec::new(),
             region: None,
+            focus: None,
+            content_bottom: None,
+            rulers: false,
             hidden_curves: Vec::new(),
             sim_progress: None,
             map_index: 0,
@@ -121,6 +123,8 @@ impl PageState {
             self.item = Some(item);
             self.view = View::default();
             self.unit = 1;
+            self.map_index = 0;
+            self.map_key = None;
         }
     }
 }
@@ -242,13 +246,18 @@ pub fn diagnostics(ui: &mut Ui, diags: &[Diagnostic], interactive: bool) {
     });
 }
 
-fn symbol_canvas(ui: &mut Ui, s: &Symbol, st: &mut PageState) {
-    let b = s.bounds(st.unit);
+pub fn symbol_bounds(s: &Symbol, unit: u32) -> agentee_core::graphic::Bounds {
+    let b = s.bounds(unit);
     let mut padded = b;
     if !b.is_empty() {
         padded.add([b.min[0], b.min[1] - 2.5]);
         padded.add([b.max[0], b.max[1] + 2.5]);
     }
+    padded
+}
+
+fn symbol_canvas(ui: &mut Ui, s: &Symbol, st: &mut PageState) {
+    let padded = symbol_bounds(s, st.unit);
     st.view.max_fit = if st.region.is_some() { 4000.0 } else { 45.0 };
     let (resp, xf) = st.view.show(ui, &st.region.unwrap_or(padded), 40.0);
     let p = ui.painter_at(xf.rect);
@@ -263,6 +272,9 @@ fn symbol_canvas(ui: &mut Ui, s: &Symbol, st: &mut PageState) {
         tips: true,
     };
     let hit = paint::symbol(&p, &xf, s, st.unit, &style, hover);
+    if st.rulers {
+        paint::rulers(&p, &xf);
+    }
     cursor_readout(ui, &xf, hover);
     if let Some(i) = hit {
         let pin = &s.pins[i];
@@ -282,6 +294,9 @@ fn footprint_canvas(ui: &mut Ui, fp: &Footprint, st: &mut PageState) {
     paint::grid(&p, &xf, 0.5);
     let hover = if st.interactive { resp.hover_pos() } else { None };
     let hit = paint::footprint(&p, &xf, fp, &st.layers, hover);
+    if st.rulers {
+        paint::rulers(&p, &xf);
+    }
     scale_bar(&p, &xf);
     cursor_readout(ui, &xf, hover);
     if let Some(i) = hit {
@@ -836,7 +851,8 @@ fn schematic_canvas(ui: &mut Ui, s: &Schematic, st: &mut PageState) {
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 2.54);
     let hover = if st.interactive { resp.hover_pos() } else { None };
-    for f in &s.sheets {
+    let frames = crate::focus::pick(&p, st.focus.as_ref(), false);
+    for (f, p) in s.sheets.iter().filter_map(|f| Some((f, frames.as_ref()?))) {
         let r = egui::Rect::from_two_pos(xf.world(f.min), xf.world(f.max));
         p.rect_stroke(r, 0.0, egui::Stroke::new(1.0, LEGEND), egui::StrokeKind::Middle);
         p.text(
@@ -847,7 +863,10 @@ fn schematic_canvas(ui: &mut Ui, s: &Schematic, st: &mut PageState) {
             LEGEND,
         );
     }
-    let hit = sheet::schematic(&p, &xf, s, hover, st.show_hidden);
+    let hit = sheet::schematic(&p, &xf, s, hover, st.show_hidden, st.focus.as_ref());
+    if st.rulers {
+        paint::rulers(&p, &xf);
+    }
     cursor_readout(ui, &xf, hover);
     if let Some((what, detail)) = sheet::legend_for(s, &hit) {
         resp.on_hover_ui_at_pointer(|ui| {
@@ -1001,16 +1020,14 @@ fn layout_view(
         Some(e) => e.layout(project, i),
         None => &project.layouts[i].item,
     };
-    let key = (project.generation, i);
-    if st.zone_key != Some(key) {
-        st.zone_tex = pcb::zone_textures(ui.ctx(), l);
-        st.zone_key = Some(key);
-    }
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 1.0);
     let quiet = ed.as_ref().is_some_and(|e| e.drag.is_some() || e.draft.is_some());
     let probe = if quiet { None } else { hover };
-    let hit = pcb::layout(&p, &xf, l, &st.pcb_layers, &st.zone_tex, probe, st.ratsnest);
+    let hit = pcb::layout(&p, &xf, l, &st.pcb_layers, probe, st.ratsnest, st.focus.as_ref());
+    if st.rulers {
+        paint::rulers(&p, &xf);
+    }
     if let Some(ed) = ed.as_deref() {
         canvas.overlay(&p, &xf, ed, hover.map(|h| xf.mm(h)));
         crate::tools::hint(ui, xf.rect, ed);
@@ -1128,10 +1145,16 @@ fn layout_props(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
     });
 }
 
+const SECTION: f32 = 44.0;
+const MIN_SMITH: f32 = 160.0;
+
 fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) {
     let s = &project.sims[index].item;
-    egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
-        ui.set_min_size(ui.available_size());
+    let frame = egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(12, 10));
+    let shown = frame.show(ui, |ui| {
+        if st.interactive {
+            ui.set_min_size(ui.available_size());
+        }
         sim_controls(ui, project, index, st);
         if let Some(pr) = &st.sim_progress {
             let secs = agentee_core::sim::now().saturating_sub(pr.started);
@@ -1232,11 +1255,13 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             return;
         };
         let h = ui.available_height();
+        let db = (h * 0.55).min(h - 2.0 * SECTION - 8.0 - MIN_SMITH).max(220.0);
         section(ui, "s-parameters", "magnitude, dB", |ui| {
-            crate::plot::db_plot(ui, r, &st.hidden_curves, (h * 0.55).max(220.0), st.interactive);
+            crate::plot::db_plot(ui, r, &st.hidden_curves, db, st.interactive);
         });
         ui.add_space(8.0);
-        let side = (ui.available_height() - 40.0).min(ui.available_width() * 0.5).max(160.0);
+        let side =
+            (ui.available_height() - SECTION).min(ui.available_width() * 0.5).max(MIN_SMITH);
         section(
             ui,
             "reflection",
@@ -1246,20 +1271,33 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
                     crate::plot::smith(ui, r, &st.hidden_curves, side);
                     if !r.curves.is_empty() {
                         ui.add_space(8.0);
+                        let n = r.curves.len();
+                        let width = ui.available_width();
+                        let gap = ui.spacing().item_spacing;
+                        let fit = |cols: usize| {
+                            let rows = n.div_ceil(cols) as f32;
+                            (side - gap.y * (rows - 1.0)) / rows
+                        };
+                        let max_cols = ((width / 260.0).floor() as usize).clamp(1, n);
+                        let cols = (1..=max_cols).find(|c| fit(*c) >= 110.0).unwrap_or(max_cols);
+                        let size = egui::vec2(
+                            (width - gap.x * (cols as f32 - 1.0)) / cols as f32,
+                            fit(cols),
+                        );
                         ui.vertical(|ui| {
-                            let n = r.curves.len() as f32;
-                            let size =
-                                egui::vec2(ui.available_width(), (side - 6.0 * (n - 1.0)) / n);
-                            for (k, c) in r.curves.iter().enumerate() {
-                                crate::plot::curve_plot(
-                                    ui,
-                                    r,
-                                    c,
-                                    crate::plot::color(k + 4),
-                                    size,
-                                    st.interactive,
-                                );
-                                ui.add_space(6.0);
+                            for row in r.curves.chunks(cols).enumerate() {
+                                ui.horizontal_top(|ui| {
+                                    for (k, c) in row.1.iter().enumerate() {
+                                        crate::plot::curve_plot(
+                                            ui,
+                                            r,
+                                            c,
+                                            crate::plot::color(row.0 * cols + k + 4),
+                                            size,
+                                            st.interactive,
+                                        );
+                                    }
+                                });
                             }
                         });
                     }
@@ -1267,6 +1305,7 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
             },
         );
     });
+    st.content_bottom = Some(shown.response.rect.bottom());
 }
 
 fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) {
@@ -1275,6 +1314,10 @@ fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState
         s.result.is_some() || s.maps.is_some() || s.channel.is_some() || s.logic_result.is_some();
     let starting = st.runs.starting(&s.name) && st.sim_progress.is_none();
     let running = st.sim_progress.is_some() || st.runs.starting(&s.name);
+    let failed = st.runs.failure(&s.name).is_some();
+    if !st.interactive && !running && !s.stale && !failed {
+        return;
+    }
     ui.horizontal(|ui| {
         if running {
             if toggle(ui, "stop", true).clicked() {
@@ -1288,7 +1331,7 @@ fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState
             }
         } else {
             let label = if has_result { "re-run" } else { "run" };
-            if toggle(ui, label, false).clicked() {
+            if st.interactive && toggle(ui, label, false).clicked() {
                 st.runs.start(project, &s.name);
             }
             if s.stale {

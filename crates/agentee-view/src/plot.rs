@@ -42,6 +42,97 @@ fn nice(step: f64) -> f64 {
     n * p
 }
 
+const ROW: f32 = 15.0;
+
+struct Legend {
+    rows: usize,
+    cols: usize,
+    colw: f32,
+}
+
+impl Legend {
+    fn new(p: &egui::Painter, entries: &[(String, Color32)], height: f32, max: f32) -> Legend {
+        let rows = ((height - 6.0) / ROW).floor().max(1.0) as usize;
+        let widest = entries
+            .iter()
+            .map(|(name, _)| {
+                p.layout_no_wrap(name.clone(), theme::legend_font(10.5), LEGEND).size().x
+            })
+            .fold(0.0, f32::max);
+        let colw = widest + 30.0;
+        let fit = (((max - 6.0) / colw).floor() as usize).max(1);
+        Legend { rows, cols: entries.len().div_ceil(rows).min(fit), colw }
+    }
+
+    fn width(&self, entries: &[(String, Color32)]) -> f32 {
+        if entries.is_empty() { 0.0 } else { self.colw * self.cols as f32 + 6.0 }
+    }
+}
+
+fn legend(p: &egui::Painter, strip: Rect, entries: &[(String, Color32)], l: &Legend) {
+    if entries.is_empty() {
+        return;
+    }
+    let (rows, colw) = (l.rows, l.colw);
+    let room = rows * l.cols;
+    let more = entries.len().saturating_sub(room);
+    let shown = if more > 0 { room - 1 } else { entries.len() };
+    let p = p.with_clip_rect(strip);
+    if more > 0 {
+        let k = shown;
+        let at = strip.left_top()
+            + Vec2::new(6.0 + (k / rows) as f32 * colw, 6.0 + (k % rows) as f32 * ROW + ROW / 2.0);
+        p.text(
+            at + Vec2::new(20.0, 0.0),
+            Align2::LEFT_CENTER,
+            format!("+{} more", entries.len() - shown),
+            theme::legend_font(10.5),
+            LEGEND,
+        );
+    }
+    for (k, (name, colour)) in entries.iter().take(shown).enumerate() {
+        let at = strip.left_top()
+            + Vec2::new(6.0 + (k / rows) as f32 * colw, 6.0 + (k % rows) as f32 * ROW + ROW / 2.0);
+        p.line_segment([at, at + Vec2::new(14.0, 0.0)], Stroke::new(2.0, *colour));
+        p.text(
+            at + Vec2::new(20.0, 0.0),
+            Align2::LEFT_CENTER,
+            name,
+            theme::legend_font(10.5),
+            *colour,
+        );
+    }
+}
+
+fn plot_area(
+    p: &egui::Painter,
+    rect: Rect,
+    left: f32,
+    entries: &[(String, Color32)],
+) -> (Rect, Rect, Legend) {
+    let inner =
+        Rect::from_min_max(rect.min + Vec2::new(left, 14.0), rect.max - Vec2::new(14.0, 30.0));
+    let l = Legend::new(p, entries, inner.height(), rect.width() * 0.45);
+    let w = l.width(entries);
+    let area = Rect::from_min_max(inner.min, inner.max - Vec2::new(w, 0.0));
+    let strip = Rect::from_min_max(
+        egui::pos2(area.right() + 16.0, inner.top()),
+        egui::pos2(rect.right() - 4.0, inner.bottom()),
+    );
+    (area, strip, l)
+}
+
+fn x_ticks(width: f32) -> f64 {
+    (width / 90.0).floor().clamp(2.0, 8.0) as f64
+}
+
+fn x_label(p: &egui::Painter, rect: Rect, at: Pos2, text: String) {
+    let g = p.layout_no_wrap(text, theme::figure(10.5), LEGEND);
+    let w = g.size().x;
+    let x = (at.x - w / 2.0).min(rect.right() - w - 2.0).max(rect.left() + 2.0);
+    p.galley(Pos2::new(x, at.y), g, LEGEND);
+}
+
 fn freq_text(f: f64) -> String {
     if f >= 1e9 {
         format!("{} GHz", agentee_core::units::trim(f / 1e9, 2))
@@ -62,10 +153,15 @@ pub fn db_plot(
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, WELL);
     p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
-    let area =
-        Rect::from_min_max(rect.min + Vec2::new(52.0, 14.0), rect.max - Vec2::new(14.0, 30.0));
     let shown: Vec<(usize, (usize, usize))> =
         curves(r).into_iter().enumerate().filter(|(_, c)| !hidden.contains(c)).collect();
+    let entries: Vec<(String, Color32)> = shown
+        .iter()
+        .map(|(k, (i, j))| {
+            (format!("{} {}>{}", label(*i, *j), r.ports[*j], r.ports[*i]), color(*k))
+        })
+        .collect();
+    let (area, strip, keys) = plot_area(&p, rect, 52.0, &entries);
     let (f0, f1) = (r.freqs[0], *r.freqs.last().unwrap());
     let (mut lo, mut top) = (f64::MAX, f64::MIN);
     for (_, (i, j)) in &shown {
@@ -94,17 +190,11 @@ pub fn db_plot(
         );
         d += ystep;
     }
-    let xstep = nice((f1 - f0) / 8.0);
+    let xstep = nice((f1 - f0) / x_ticks(area.width()));
     let mut f = (f0 / xstep).ceil() * xstep;
     while f <= f1 + 1.0 {
         p.line_segment([Pos2::new(x(f), area.top()), Pos2::new(x(f), area.bottom())], grid);
-        p.text(
-            Pos2::new(x(f), area.bottom() + 6.0),
-            Align2::CENTER_TOP,
-            freq_text(f),
-            theme::figure(10.5),
-            LEGEND,
-        );
+        x_label(&p, rect, Pos2::new(x(f), area.bottom() + 6.0), freq_text(f));
         f += xstep;
     }
     p.text(
@@ -125,20 +215,7 @@ pub fn db_plot(
             .collect();
         p.add(PathShape::line(pts, Stroke::new(if i == j { 1.6 } else { 2.0 }, color(*k))));
     }
-    let mut ly = area.top() + 6.0;
-    for (k, (i, j)) in &shown {
-        let at = Pos2::new(area.right() - 60.0, ly);
-        p.line_segment([at, at + Vec2::new(14.0, 0.0)], Stroke::new(2.0, color(*k)));
-        let name = format!("{} {}>{}", label(*i, *j), r.ports[*j], r.ports[*i]);
-        p.text(
-            at + Vec2::new(-6.0, 0.0),
-            Align2::RIGHT_CENTER,
-            name,
-            theme::legend_font(10.5),
-            color(*k),
-        );
-        ly += 15.0;
-    }
+    legend(&p, strip, &entries, &keys);
     if interactive
         && let Some(h) = resp.hover_pos()
         && area.contains(h)
@@ -170,7 +247,7 @@ pub fn curve_plot(
     p.rect_filled(rect, 0.0, WELL);
     p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
     let area =
-        Rect::from_min_max(rect.min + Vec2::new(52.0, 26.0), rect.max - Vec2::new(14.0, 26.0));
+        Rect::from_min_max(rect.min + Vec2::new(52.0, 24.0), rect.max - Vec2::new(14.0, 24.0));
     let known: Vec<(f64, f64)> = r
         .freqs
         .iter()
@@ -197,7 +274,8 @@ pub fn curve_plot(
     let (f0, f1) = (r.freqs[0], *r.freqs.last().unwrap());
     let lo = known.iter().map(|v| v.1).fold(f64::MAX, f64::min);
     let hi = known.iter().map(|v| v.1).fold(f64::MIN, f64::max);
-    let step = nice(((hi - lo).max(1e-3)) / 4.0);
+    let ticks = (area.height() / 20.0).floor().clamp(1.0, 4.0) as f64;
+    let step = nice(((hi - lo).max(1e-3)) / ticks);
     let (lo, hi) =
         ((lo / step).floor() * step, (hi / step).ceil() * step + if hi == lo { step } else { 0.0 });
     let x = |f: f64| area.left() + ((f - f0) / (f1 - f0)) as f32 * area.width();
@@ -215,17 +293,11 @@ pub fn curve_plot(
         );
         v += step;
     }
-    let xstep = nice((f1 - f0) / 5.0);
+    let xstep = nice((f1 - f0) / x_ticks(area.width()).min(5.0));
     let mut f = (f0 / xstep).ceil() * xstep;
     while f <= f1 + 1.0 {
         p.line_segment([Pos2::new(x(f), area.top()), Pos2::new(x(f), area.bottom())], grid);
-        p.text(
-            Pos2::new(x(f), area.bottom() + 5.0),
-            Align2::CENTER_TOP,
-            freq_text(f),
-            theme::figure(10.5),
-            LEGEND,
-        );
+        x_label(&p, rect, Pos2::new(x(f), area.bottom() + 5.0), freq_text(f));
         f += xstep;
     }
     let mut run: Vec<Pos2> = Vec::new();
@@ -354,8 +426,9 @@ pub fn xy_plot(
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, WELL);
     p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
-    let area =
-        Rect::from_min_max(rect.min + Vec2::new(52.0, 14.0), rect.max - Vec2::new(14.0, 30.0));
+    let entries: Vec<(String, Color32)> =
+        series.iter().enumerate().map(|(k, s)| (s.0.clone(), color(k))).collect();
+    let (area, strip, keys) = plot_area(&p, rect, 52.0, &entries);
     let finite = |v: &f64| v.is_finite();
     let (x0, x1) = series
         .iter()
@@ -387,17 +460,11 @@ pub fn xy_plot(
         );
         v += step;
     }
-    let xs = nice((x1 - x0) / 8.0);
+    let xs = nice((x1 - x0) / x_ticks(area.width()));
     let mut t = (x0 / xs).ceil() * xs;
     while t <= x1 {
         p.line_segment([Pos2::new(x(t), area.top()), Pos2::new(x(t), area.bottom())], grid);
-        p.text(
-            Pos2::new(x(t), area.bottom() + 6.0),
-            Align2::CENTER_TOP,
-            format!("{t:.0} {xunit}"),
-            theme::figure(10.5),
-            LEGEND,
-        );
+        x_label(&p, rect, Pos2::new(x(t), area.bottom() + 6.0), format!("{t:.0} {xunit}"));
         t += xs;
     }
     p.text(
@@ -407,7 +474,7 @@ pub fn xy_plot(
         theme::legend_font(10.5),
         LEGEND,
     );
-    for (k, (name, xs, ys)) in series.iter().enumerate() {
+    for (k, (_, xs, ys)) in series.iter().enumerate() {
         let pts: Vec<Pos2> = xs
             .iter()
             .zip(ys)
@@ -415,16 +482,8 @@ pub fn xy_plot(
             .map(|(a, b)| Pos2::new(x(*a), y(*b)))
             .collect();
         p.add(PathShape::line(pts, Stroke::new(1.8, color(k))));
-        let at = Pos2::new(area.right() - 60.0, area.top() + 6.0 + 15.0 * k as f32);
-        p.line_segment([at, at + Vec2::new(14.0, 0.0)], Stroke::new(2.0, color(k)));
-        p.text(
-            at + Vec2::new(-6.0, 0.0),
-            Align2::RIGHT_CENTER,
-            name,
-            theme::legend_font(10.5),
-            color(k),
-        );
     }
+    legend(&p, strip, &entries, &keys);
     if let Some(h) = resp.hover_pos()
         && area.contains(h)
     {
@@ -444,8 +503,12 @@ pub fn loglog(ui: &mut Ui, r: &SimResult, size: Vec2) {
     let p = ui.painter_at(rect);
     p.rect_filled(rect, 0.0, WELL);
     p.rect_stroke(rect, 0.0, Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
-    let area =
-        Rect::from_min_max(rect.min + Vec2::new(70.0, 14.0), rect.max - Vec2::new(14.0, 30.0));
+    let colour_of = |k: usize, c: &agentee_core::sim::Curve| {
+        if c.name == "target" { FAULT } else { color(k) }
+    };
+    let entries: Vec<(String, Color32)> =
+        r.curves.iter().enumerate().map(|(k, c)| (c.name.clone(), colour_of(k, c))).collect();
+    let (area, strip, keys) = plot_area(&p, rect, 70.0, &entries);
     let vals: Vec<f64> = r
         .curves
         .iter()
@@ -481,18 +544,12 @@ pub fn loglog(ui: &mut Ui, r: &SimResult, size: Vec2) {
     while d <= f1 + 1e-9 {
         let f = 10f64.powf(d);
         p.line_segment([Pos2::new(x(f), area.top()), Pos2::new(x(f), area.bottom())], grid);
-        p.text(
-            Pos2::new(x(f), area.bottom() + 6.0),
-            Align2::CENTER_TOP,
-            freq_text(f),
-            theme::figure(10.5),
-            LEGEND,
-        );
+        x_label(&p, rect, Pos2::new(x(f), area.bottom() + 6.0), freq_text(f));
         d += 1.0;
     }
     for (k, c) in r.curves.iter().enumerate() {
         let target = c.name == "target";
-        let colour = if target { FAULT } else { color(k) };
+        let colour = colour_of(k, c);
         let pts: Vec<Pos2> = r
             .freqs
             .iter()
@@ -500,16 +557,8 @@ pub fn loglog(ui: &mut Ui, r: &SimResult, size: Vec2) {
             .filter_map(|(f, v)| v.filter(|v| *v > 0.0).map(|v| Pos2::new(x(*f), y(v))))
             .collect();
         p.add(PathShape::line(pts, Stroke::new(if target { 1.2 } else { 1.8 }, colour)));
-        let at = Pos2::new(area.right() - 60.0, area.top() + 6.0 + 15.0 * k as f32);
-        p.line_segment([at, at + Vec2::new(14.0, 0.0)], Stroke::new(2.0, colour));
-        p.text(
-            at + Vec2::new(-6.0, 0.0),
-            Align2::RIGHT_CENTER,
-            &c.name,
-            theme::legend_font(10.5),
-            colour,
-        );
     }
+    legend(&p, strip, &entries, &keys);
     if let Some(h) = resp.hover_pos()
         && area.contains(h)
     {
@@ -522,5 +571,34 @@ pub fn loglog(ui: &mut Ui, r: &SimResult, size: Vec2) {
             }
         }
         resp.on_hover_text(lines.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legend_columns_stay_inside_their_share_and_count_the_rest() {
+        let ctx = egui::Context::default();
+        egui_bench::install(&ctx);
+        let _ = ctx.run_ui(Default::default(), |ui| {
+            let p = ui.painter();
+            let entries: Vec<(String, Color32)> =
+                (0..36).map(|k| (format!("S{k} AMP_OUT>AMP_IN"), color(k))).collect();
+            let l = Legend::new(p, &entries, 200.0, 300.0);
+            assert!(l.width(&entries) <= 300.0);
+            assert!(l.rows * l.cols < entries.len());
+            let few = &entries[..4];
+            let l = Legend::new(p, few, 200.0, 300.0);
+            assert_eq!((l.cols, l.rows >= 4), (1, true));
+        });
+    }
+
+    #[test]
+    fn x_ticks_thin_out_on_narrow_plots() {
+        assert_eq!(x_ticks(1200.0), 8.0);
+        assert_eq!(x_ticks(400.0), 4.0);
+        assert_eq!(x_ticks(100.0), 2.0);
     }
 }

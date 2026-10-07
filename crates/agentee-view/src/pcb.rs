@@ -1,12 +1,11 @@
+use crate::focus::{Focus, pick};
 use crate::paint::{self, Ink, Layers, Xf, fill_polygon, layer_color, text};
 use agentee_core::footprint::PadKind;
 use agentee_core::geom::{self, P};
 use agentee_core::graphic::{Graphic, Shape};
 use agentee_core::layout::Layout;
 use egui::epaint::PathShape;
-use egui::{
-    Align2, Color32, ColorImage, FontFamily, Painter, Pos2, Stroke, TextureHandle, TextureOptions,
-};
+use egui::{Align2, Color32, FontFamily, Painter, Pos2, Stroke};
 use egui_bench::theme::{self, ETCH, TRACE, VALUE, WELL};
 
 pub const IN1: Color32 = Color32::from_rgb(0x9E, 0xC2, 0x5A);
@@ -49,20 +48,6 @@ pub fn default_layers() -> Layers {
     Layers { hidden }
 }
 
-pub fn zone_textures(ctx: &egui::Context, l: &Layout) -> Vec<TextureHandle> {
-    l.zones
-        .iter()
-        .enumerate()
-        .map(|(i, z)| {
-            let c = copper_color(&z.layer).gamma_multiply(0.55);
-            let pixels: Vec<Color32> =
-                z.mask.iter().map(|m| if *m != 0 { c } else { Color32::TRANSPARENT }).collect();
-            let img = ColorImage::new([z.width, z.height], pixels);
-            ctx.load_texture(format!("zone-{}-{i}", l.name), img, TextureOptions::NEAREST)
-        })
-        .collect()
-}
-
 pub struct Hit {
     pub net: Option<usize>,
     pub pad: Option<(usize, usize)>,
@@ -92,11 +77,19 @@ pub fn layout(
     xf: &Xf,
     l: &Layout,
     layers: &Layers,
-    zones: &[TextureHandle],
     hover: Option<Pos2>,
     ratsnest: bool,
+    focus: Option<&Focus>,
 ) -> Hit {
+    let base = p;
     let mut hit = Hit { net: None, pad: None };
+    let net_lit = |n: usize| focus.is_some_and(|f| f.net(n));
+    let part_lit: Vec<bool> = (0..l.parts.len())
+        .map(|pi| focus.is_some_and(|f| crate::focus::part_lit(l, f, pi)))
+        .collect();
+    let pad_lit = |pi: usize, net: Option<usize>| {
+        focus.is_some_and(|f| f.part(pi) || net.is_some_and(|n| f.net(n)))
+    };
     if let Some(h) = hover {
         let m = xf.mm(h);
         for (pi, part) in l.parts.iter().enumerate() {
@@ -145,8 +138,8 @@ pub fn layout(
             continue;
         }
         let color = copper_color(layer);
-        let _ = zones;
         for z in l.zones.iter().filter(|z| &z.layer == layer) {
+            let Some(p) = &pick(p, focus, net_lit(z.net)) else { continue };
             let fill = copper_color(&z.layer).gamma_multiply(0.55);
             let mut mesh = egui::Mesh::default();
             for t in &z.triangles {
@@ -163,6 +156,7 @@ pub fn layout(
             }
         }
         for t in l.tracks.iter().filter(|t| &t.layer == layer) {
+            let Some(p) = &pick(p, focus, net_lit(t.net)) else { continue };
             let c = if hit.net == Some(t.net) {
                 color.lerp_to_gamma(Color32::WHITE, 0.35)
             } else {
@@ -175,6 +169,7 @@ pub fn layout(
                 if !pad.copper.iter().any(|c| c == layer) {
                     continue;
                 }
+                let Some(p) = &pick(p, focus, pad_lit(pi, pad.net)) else { continue };
                 let c = if pad.copper.len() > 1 {
                     paint::PTH
                 } else {
@@ -186,6 +181,7 @@ pub fn layout(
                     fill_polygon(p, o.iter().map(|q| xf.world(*q)).collect(), c, Stroke::NONE);
                 }
             }
+            let Some(p) = &pick(p, focus, part_lit[pi]) else { continue };
             let placed = xf.placed(part.transform());
             let c = color.lerp_to_gamma(Color32::WHITE, 0.22);
             for g in part.footprint.graphics.iter().filter(|g| part.flip_layer(&g.layer) == *layer)
@@ -198,6 +194,7 @@ pub fn layout(
     }
 
     for v in l.vias.iter().filter(|v| v.layers.iter().any(|x| layers.shows(x))) {
+        let Some(p) = &pick(p, focus, net_lit(v.net)) else { continue };
         let c = xf.world(v.at);
         let lit = hit.net == Some(v.net);
         let ring = paint::via_color(v.kind);
@@ -222,8 +219,9 @@ pub fn layout(
             p.add(PathShape::line(arc(c, r - w / 2.0, 0.0), Stroke::new(w, edge[1])));
         }
     }
-    for part in &l.parts {
+    for (pi, part) in l.parts.iter().enumerate() {
         for pad in &part.pads {
+            let Some(p) = &pick(p, focus, pad_lit(pi, pad.net)) else { continue };
             if let Some((c, s, rot)) = pad.drill {
                 let local = geom::rounded_rect(s[0], s[1], s[0].min(s[1]) / 2.0, 8);
                 let pts = local
@@ -242,6 +240,7 @@ pub fn layout(
 
     board_art(p, xf, l, layers);
     for (pi, part) in l.parts.iter().enumerate() {
+        let Some(p) = &pick(p, focus, part_lit[pi]) else { continue };
         let placed = xf.placed(part.transform());
         for g in &part.footprint.graphics {
             let layer = part.flip_layer(&g.layer);
@@ -319,6 +318,7 @@ pub fn layout(
             .iter()
             .filter(|q| !q.number.is_empty() && q.copper.iter().any(|c| layers.shows(c)));
         for pad in shown {
+            let Some(p) = &pick(base, focus, pad_lit(pi, pad.net)) else { continue };
             let mut b = agentee_core::graphic::Bounds::EMPTY;
             pad.outlines.iter().flatten().for_each(|q| b.add(*q));
             let [w, h] = b.size();
@@ -357,6 +357,7 @@ pub fn layout(
     }
     if ratsnest {
         for (a, b, n) in &l.ratsnest {
+            let Some(p) = &pick(p, focus, net_lit(*n)) else { continue };
             let lit = hit.net == Some(*n);
             p.line_segment(
                 [xf.world(*a), xf.world(*b)],
