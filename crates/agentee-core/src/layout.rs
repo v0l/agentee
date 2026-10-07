@@ -1099,6 +1099,20 @@ impl LayoutFile {
             }
         }
 
+        let fixed = vias.clone();
+        let fan_world = crate::drc::Ctx::new(
+            board,
+            &copper,
+            &outline,
+            &board_cutouts,
+            &parts,
+            &tracks,
+            &fixed,
+            &[],
+            &nets,
+        );
+        let fan_base = crate::rules::Placed::new(&fan_world);
+        let mut fanned = crate::rules::Plan::default();
         for (i, f) in self.fanouts.iter().enumerate() {
             let at = format!("fanouts[{i}] {}", f.reference);
             let matched: Vec<&Placed> = parts
@@ -1192,23 +1206,22 @@ impl LayoutFile {
                     if !inside {
                         continue;
                     }
-                    let hole_cu = board.rules.min_via_hole_to_copper.to_mm();
-                    let blocked = parts.iter().flat_map(|p| &p.pads).any(|q| {
-                        let reach = match q.net {
-                            Some(n) if n == net => v.diameter / 2.0,
-                            other => (v.diameter / 2.0 + spacing.widest(Some(net), other))
-                                .max(v.drill / 2.0 + hole_cu),
-                        };
+                    let other_pad = parts.iter().flat_map(|p| &p.pads).any(|q| {
                         !std::ptr::eq(q, *pad)
+                            && q.net == Some(net)
                             && q.copper.iter().any(|l| v.layers.contains(l))
-                            && q.outlines.iter().any(|o| {
-                                geom::point_in_polygon(*c, o)
-                                    || geom::polyline_polygon_distance(&[*c, *c], o) < reach
-                            })
+                            && crate::drc::rings_point_gap(&q.outlines, *c) < v.diameter / 2.0
                     });
-                    if blocked {
+                    let plan = crate::rules::Plan { vias: vec![v.clone()], ..Default::default() };
+                    if other_pad
+                        || crate::rules::legal(&crate::rules::Planned::after(
+                            &fan_base, &fanned, plan,
+                        ))
+                        .is_err()
+                    {
                         continue;
                     }
+                    fanned.vias.push(v.clone());
                     vias.push(v);
                     placed += 1;
                 }
@@ -1329,6 +1342,20 @@ impl LayoutFile {
             .chain(board_texts(&graphics))
             .map(|t| t.outline())
             .collect();
+        let stitch_fixed = vias.clone();
+        let stitch_world = crate::drc::Ctx::new(
+            board,
+            &copper,
+            &outline,
+            &board_cutouts,
+            &parts,
+            &tracks,
+            &stitch_fixed,
+            &[],
+            &nets,
+        );
+        let stitch_base = crate::rules::Placed::new(&stitch_world);
+        let mut stitched = crate::rules::Plan::default();
         for (i, st) in self.stitching.iter().enumerate() {
             let at = format!("stitching[{i}] {}", st.net);
             let Some(net) = net_index(&st.net) else {
@@ -1398,7 +1425,6 @@ impl LayoutFile {
             }
             let margin = st.margin.map(Length::to_mm).unwrap_or(0.0);
             let edge = board.rules.min_copper_to_edge.to_mm().max(margin) + r;
-            let hole_gap = board.rules.min_hole_to_hole.to_mm();
             let through = (0, copper.len().saturating_sub(1));
             let span = spec.span(&copper);
             let mut drills: Vec<(P, f64, (usize, usize))> = vias
@@ -1423,17 +1449,12 @@ impl LayoutFile {
                         .unwrap_or_else(|| outline.clone())
                 })
                 .collect();
-            let own = nets[net].clearance;
             let mut placed = 0;
             for c in candidates.into_iter().filter(|c| !skipped(&st.skip_at, *c)) {
                 let board_edge = geom::BoardEdge::new(&outline, &board_cutouts);
                 if !board_edge.contains(c)
                     || board_edge.distance(c) < edge - 1e-9
                     || !zoned.iter().any(|z| geom::point_in_polygon(c, z))
-                    || drills.iter().any(|(q, dr, (a, b))| {
-                        span.0.max(*a) < span.1.min(*b)
-                            && geom::dist(c, *q) - dr - drill / 2.0 < hole_gap - 1e-9
-                    })
                 {
                     continue;
                 }
@@ -1445,7 +1466,6 @@ impl LayoutFile {
                     continue;
                 }
                 let probe = Shape::Circle(c, r);
-                let reach = r + spacing.reach(Some(net)).max(smd_gap);
                 let near_smd = items.iter().any(|it| {
                     let Owner::Pad(pi, k) = it.owner else { return false };
                     parts[pi].pads[k].kind == PadKind::Smd
@@ -1455,25 +1475,15 @@ impl LayoutFile {
                 if near_smd {
                     continue;
                 }
-                let self_gap = (drill / 2.0 + hole_to_copper - r).max(0.0);
-                let blocked = items.iter().any(|it| {
-                    it.net != Some(net)
-                        && it.layers.iter().any(|l| layers.contains(l))
-                        && it.bounds.min[0] <= c[0] + reach
-                        && it.bounds.max[0] >= c[0] - reach
-                        && it.bounds.min[1] <= c[1] + reach
-                        && it.bounds.max[1] >= c[1] - reach
-                        && it.shape.distance(&probe)
-                            < own
-                                .max(spacing.widest(Some(net), it.net))
-                                .max(self_gap)
-                                .max(it.pour_gap)
-                                - 1e-9
-                });
-                if blocked {
+                let v = Via { source: ViaSource::Stitch(i), ..Via::of(spec, net, c, &copper) };
+                let plan = crate::rules::Plan { vias: vec![v.clone()], ..Default::default() };
+                if crate::rules::legal(&crate::rules::Planned::after(&stitch_base, &stitched, plan))
+                    .is_err()
+                {
                     continue;
                 }
-                vias.push(Via { source: ViaSource::Stitch(i), ..Via::of(spec, net, c, &copper) });
+                stitched.vias.push(v.clone());
+                vias.push(v);
                 items.push(Item {
                     owner: Owner::Via(vias.len() - 1),
                     net: Some(net),
