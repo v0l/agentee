@@ -170,21 +170,50 @@ pub struct Planned<'a> {
     pub vias: Vec<Via>,
     items: Vec<Cu>,
     holes: Vec<Hole>,
-    bounds: Bounds,
+    first_item: usize,
+    first_hole: usize,
 }
 
 impl<'a> Planned<'a> {
     pub fn new(base: &'a Placed<'a>, tracks: Vec<Track>, vias: Vec<Via>) -> Planned<'a> {
-        let (bt, bv) = (base.cx.tracks.len(), base.cx.vias.len());
+        Planned::after(base, &[], &[], tracks, vias)
+    }
+
+    pub fn after(
+        base: &'a Placed<'a>,
+        kept_tracks: &[Track],
+        kept_vias: &[Via],
+        tracks: Vec<Track>,
+        vias: Vec<Via>,
+    ) -> Planned<'a> {
+        let (mut items, mut holes) = Planned::copper(base, kept_tracks, kept_vias, 0, 0);
+        let (first_item, first_hole) = (items.len(), holes.len());
+        let (more, more_holes) =
+            Planned::copper(base, &tracks, &vias, kept_tracks.len(), kept_vias.len());
+        items.extend(more);
+        holes.extend(more_holes);
+        let mut all_tracks = kept_tracks.to_vec();
+        all_tracks.extend(tracks);
+        let mut all_vias = kept_vias.to_vec();
+        all_vias.extend(vias);
+        Planned { base, tracks: all_tracks, vias: all_vias, items, holes, first_item, first_hole }
+    }
+
+    fn copper(
+        base: &Placed,
+        tracks: &[Track],
+        vias: &[Via],
+        track_from: usize,
+        via_from: usize,
+    ) -> (Vec<Cu>, Vec<Hole>) {
+        let (bt, bv) = (base.cx.tracks.len() + track_from, base.cx.vias.len() + via_from);
         let mut items = Vec::new();
         let mut holes = Vec::new();
-        let mut bounds = Bounds::EMPTY;
         for (k, t) in tracks.iter().enumerate() {
             for w in t.points.windows(2) {
                 let mut b = Bounds::EMPTY;
                 b.add_circle(w[0], t.width / 2.0);
                 b.add_circle(w[1], t.width / 2.0);
-                bounds.union(&b);
                 items.push(Cu {
                     owner: Owner::Track(bt + k),
                     net: Some(t.net),
@@ -197,7 +226,6 @@ impl<'a> Planned<'a> {
         for (k, v) in vias.iter().enumerate() {
             let mut b = Bounds::EMPTY;
             b.add_circle(v.at, v.diameter / 2.0);
-            bounds.union(&b);
             items.push(Cu {
                 owner: Owner::Via(bv + k),
                 net: Some(v.net),
@@ -216,7 +244,7 @@ impl<'a> Planned<'a> {
                 layers: v.hole.clone(),
             });
         }
-        Planned { base, tracks, vias, items, holes, bounds }
+        (items, holes)
     }
 
     fn base_items(&self) -> usize {
@@ -298,31 +326,31 @@ impl Context for Planned<'_> {
     }
 
     fn item_subjects(&self, reach: f64) -> Vec<usize> {
-        let n = self.base_items();
-        if self.bounds.is_empty() {
-            return Vec::new();
+        let mut out = Vec::new();
+        for c in &self.items[self.first_item..] {
+            out.extend(self.items_near(&c.bounds, reach));
         }
-        let mut out = self.base.items_near(&self.bounds, reach);
-        out.extend(n..n + self.items.len());
+        out.sort_unstable();
+        out.dedup();
         out
     }
 
     fn hole_subjects(&self, reach: f64) -> Vec<usize> {
-        let n = self.base_holes();
-        if self.bounds.is_empty() {
-            return Vec::new();
+        let mut out = Vec::new();
+        for c in &self.items[self.first_item..] {
+            out.extend(self.holes_near(&c.bounds, reach));
         }
-        let mut out = self.base.holes_near(&self.bounds, reach);
-        out.extend(n..n + self.holes.len());
+        out.sort_unstable();
+        out.dedup();
         out
     }
 
     fn planned_item(&self, i: usize) -> bool {
-        i >= self.base_items()
+        i >= self.base_items() + self.first_item
     }
 
     fn planned_hole(&self, i: usize) -> bool {
-        i >= self.base_holes()
+        i >= self.base_holes() + self.first_hole
     }
 
     fn describe(&self, i: usize) -> String {

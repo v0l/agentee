@@ -55,11 +55,6 @@ struct Item {
     smd: bool,
 }
 
-struct Hole {
-    at: P,
-    r: f64,
-}
-
 pub fn plane_nets(layout: &Layout) -> Vec<usize> {
     let mut v: Vec<usize> = layout.zones.iter().map(|z| z.net).collect();
     v.sort_unstable();
@@ -81,15 +76,10 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
         return Err("no net with a zone to tie pads to; add a [[zones]] first".into());
     }
     let rules = &board.rules;
-    let hole_hole = rules.min_hole_to_hole.to_mm();
-    let hole_cu = rules.min_via_hole_to_copper.to_mm();
     let hole_smd = rules.min_hole_to_smd_pad.to_mm();
-    let edge_gap = rules.min_copper_to_edge.to_mm();
-    let edge = layout.edge();
     let copper = &layout.copper;
 
     let mut items: Vec<Item> = Vec::new();
-    let mut holes: Vec<Hole> = Vec::new();
     for p in &layout.parts {
         for pad in &p.pads {
             for o in &pad.outlines {
@@ -99,9 +89,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                     shape: Shape::Poly(o.clone()),
                     smd: pad.drill.is_none() && !pad.copper.is_empty(),
                 });
-            }
-            if let Some((c, s, _)) = pad.drill {
-                holes.push(Hole { at: c, r: s[0].max(s[1]) / 2.0 });
             }
         }
     }
@@ -124,7 +111,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             shape: Shape::Circle(v.at, v.diameter / 2.0),
             smd: false,
         });
-        holes.push(Hole { at: v.at, r: v.drill / 2.0 });
     }
     let mut placed: Vec<(usize, P)> = layout
         .vias
@@ -132,6 +118,22 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
         .filter(|v| !stitched(v) && planes.contains(&v.net))
         .map(|v| (v.net, v.at))
         .collect();
+    let fixed: Vec<crate::layout::Via> =
+        layout.vias.iter().filter(|v| !stitched(v)).cloned().collect();
+    let world = crate::drc::Ctx::new(
+        board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &layout.tracks,
+        &fixed,
+        &[],
+        &layout.nets,
+    );
+    let base = crate::rules::Placed::new(&world);
+    let mut planned_tracks: Vec<crate::layout::Track> = Vec::new();
+    let mut planned_vias: Vec<crate::layout::Via> = Vec::new();
 
     let mut out = TieResult::default();
     for part in &layout.parts {
@@ -178,19 +180,46 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             let vlayers = spec.copper_layers(copper);
             let (vr, dr) = (spec.diameter.to_mm() / 2.0, spec.drill.to_mm() / 2.0);
             let width = layout.nets[net].width.min(pb.size()[0].min(pb.size()[1]));
-            let clear_of = |other: Option<usize>| spacing.widest(Some(net), other);
+            let apart = |other: Option<usize>, l: &[String]| {
+                l.iter()
+                    .filter_map(|n| copper.iter().position(|c| c == n))
+                    .map(|i| {
+                        crate::rules::Spacing::gap(
+                            &spacing.isolation,
+                            Some(net),
+                            other,
+                            spacing.layer(i),
+                        )
+                    })
+                    .fold(0.0, f64::max)
+            };
+            let stub = |c: P| crate::layout::Track {
+                source: usize::MAX,
+                net,
+                layer: layer.clone(),
+                width,
+                points: vec![pc, c],
+            };
+            let follows_rules = |c: P| {
+                let via = crate::layout::Via::of(spec, net, c, copper);
+                let plan = crate::rules::Planned::after(
+                    &base,
+                    &planned_tracks,
+                    &planned_vias,
+                    vec![stub(c)],
+                    vec![via],
+                );
+                crate::rules::legal(&plan).is_ok()
+            };
+            let stacked = |c: P| {
+                fixed.iter().chain(&planned_vias).any(|v| geom::dist(v.at, c) < v.drill / 2.0 + dr)
+            };
             let own_pad: Vec<Shape> = pad.outlines.iter().map(|o| Shape::Poly(o.clone())).collect();
             let off_own = |c: P| {
                 own_pad.iter().map(|s| s.to_point(c)).fold(f64::MAX, f64::min)
                     >= (vr + PAD_GAP).max(dr + hole_smd)
             };
             let legal = |c: P| -> bool {
-                if !edge.contains(c) || edge.distance(c) < edge_gap + vr {
-                    return false;
-                }
-                if holes.iter().any(|h| geom::dist(h.at, c) - h.r - dr < hole_hole) {
-                    return false;
-                }
                 for it in &items {
                     let shares = it.layers.iter().any(|l| vlayers.contains(l));
                     let d = it.shape.to_point(c);
@@ -200,17 +229,19 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                     if it.net == Some(net) {
                         continue;
                     }
-                    if shares && d < vr + clear_of(it.net) {
+                    let shared: Vec<String> =
+                        it.layers.iter().filter(|l| vlayers.contains(l)).cloned().collect();
+                    if d < vr + apart(it.net, &shared) {
                         return false;
                     }
-                    if d < dr + hole_cu {
+                    if it.layers.contains(&layer)
+                        && it.shape.to_segment(pc, c)
+                            < width / 2.0 + apart(it.net, std::slice::from_ref(&layer))
+                    {
                         return false;
                     }
                 }
-                items.iter().filter(|it| it.net != Some(net)).all(|it| {
-                    !it.layers.contains(&layer)
-                        || it.shape.to_segment(pc, c) >= width / 2.0 + clear_of(it.net)
-                })
+                !stacked(c) && follows_rules(c)
             };
             let out_dir = {
                 let d = [pc[0] - centre[0], pc[1] - centre[1]];
@@ -273,7 +304,8 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 shape: Shape::Seg(pc, c, width / 2.0),
                 smd: false,
             });
-            holes.push(Hole { at: c, r: dr });
+            planned_tracks.push(stub(c));
+            planned_vias.push(crate::layout::Via::of(spec, net, c, copper));
             placed.push((net, c));
             out.tied += 1;
         }
