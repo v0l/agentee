@@ -123,7 +123,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 let plan = crate::rules::Planned::after(
                     &base,
                     &kept,
-                    crate::rules::Plan { tracks: vec![stub(c)], vias: vec![via], pads: Vec::new() },
+                    crate::rules::Plan { tracks: vec![stub(c)], vias: vec![via], ..Default::default() },
                 );
                 crate::rules::legal(&plan).is_ok()
             };

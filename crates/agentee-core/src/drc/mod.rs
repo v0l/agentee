@@ -7,7 +7,7 @@ use crate::graphic::Graphic;
 use crate::interface::Interface;
 use crate::layout::{Layout, LayoutNet, MatchGroup, Pair, Placed, PlacedPad, Track, Via, ZoneFill};
 use serde::Serialize;
-use std::cell::OnceCell;
+use std::sync::OnceLock as OnceCell;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -144,6 +144,7 @@ pub enum HoleOf {
     Pad(usize, usize),
 }
 
+#[derive(Clone, Debug)]
 pub struct Hole {
     pub of: HoleOf,
     pub a: P,

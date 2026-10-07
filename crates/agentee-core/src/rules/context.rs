@@ -36,6 +36,10 @@ pub trait Context {
 
     fn counts(&self, a: bool, b: bool) -> bool;
 
+    fn rigid(&self, _: Owner, _: Owner) -> bool {
+        false
+    }
+
     fn layouts(&self, f: &mut dyn FnMut(&Ctx, bool));
 }
 
@@ -43,6 +47,7 @@ pub struct Placed<'a> {
     pub cx: &'a Ctx<'a>,
     holes: Vec<Hole>,
     grid: HashMap<(i64, i64), Vec<usize>>,
+    pads: Vec<(usize, usize)>,
 }
 
 const CELL: f64 = 1.0;
@@ -78,7 +83,15 @@ impl<'a> Placed<'a> {
     pub fn new(cx: &'a Ctx<'a>) -> Placed<'a> {
         let holes = cx.holes();
         let grid = index(holes.iter().map(Hole::bounds));
-        Placed { cx, holes, grid }
+        let mut pads = vec![(0, 0); cx.parts.len()];
+        for (i, c) in cx.copper_items().iter().enumerate() {
+            let Owner::Pad(p, _) = c.owner else { break };
+            if pads[p].1 == 0 {
+                pads[p].0 = i;
+            }
+            pads[p].1 = i + 1;
+        }
+        Placed { cx, holes, grid, pads }
     }
 
     fn hole_count(&self) -> usize {
@@ -200,10 +213,22 @@ pub struct Planned<'a> {
     pub tracks: Vec<Track>,
     pub vias: Vec<Via>,
     pub pads: Vec<Pad>,
+    pub parts: Vec<Move>,
     items: Vec<Cu>,
     holes: Vec<Hole>,
     first_item: usize,
     first_hole: usize,
+    first_via: usize,
+    first_part: usize,
+    hidden: Vec<bool>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Move {
+    pub part: usize,
+    pub at: P,
+    pub rotation: f64,
+    pub bottom: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -224,6 +249,7 @@ pub struct Plan {
     pub tracks: Vec<Track>,
     pub vias: Vec<Via>,
     pub pads: Vec<Pad>,
+    pub parts: Vec<Move>,
 }
 
 impl Plan {
@@ -231,15 +257,26 @@ impl Plan {
         self.tracks.extend(o.tracks);
         self.vias.extend(o.vias);
         self.pads.extend(o.pads);
+        self.parts.extend(o.parts);
     }
 }
 
 impl<'a> Planned<'a> {
     pub fn new(base: &'a Placed<'a>, tracks: Vec<Track>, vias: Vec<Via>) -> Planned<'a> {
-        Planned::after(base, &Plan::default(), Plan { tracks, vias, pads: Vec::new() })
+        Planned::after(base, &Plan::default(), Plan { tracks, vias, ..Default::default() })
     }
 
     pub fn after(base: &'a Placed<'a>, kept: &Plan, plan: Plan) -> Planned<'a> {
+        Planned::hiding(base, &[], kept, plan)
+    }
+
+    pub fn hiding(base: &'a Placed<'a>, hide: &[usize], kept: &Plan, plan: Plan) -> Planned<'a> {
+        let mut hidden = vec![false; base.parts().len()];
+        for &p in hide.iter().chain(kept.parts.iter().chain(&plan.parts).map(|m| &m.part)) {
+            if let Some(h) = hidden.get_mut(p) {
+                *h = true;
+            }
+        }
         let (mut items, mut holes) = Planned::copper(base, kept, [0, 0, 0]);
         let (first_item, first_hole) = (items.len(), holes.len());
         let from = [kept.tracks.len(), kept.vias.len(), kept.pads.len()];
@@ -253,10 +290,14 @@ impl<'a> Planned<'a> {
             tracks: all.tracks,
             vias: all.vias,
             pads: all.pads,
+            parts: all.parts,
             items,
             holes,
             first_item,
             first_hole,
+            first_via: kept.vias.len(),
+            first_part: kept.parts.len(),
+            hidden,
         }
     }
 
@@ -310,7 +351,56 @@ impl<'a> Planned<'a> {
                 shape: CuShape::Poly(vec![q.outline.clone()]),
             });
         }
+        for m in &plan.parts {
+            Planned::moved(base, m, &mut items, &mut holes);
+        }
         (items, holes)
+    }
+
+    fn moved(base: &Placed, m: &Move, items: &mut Vec<Cu>, holes: &mut Vec<Hole>) {
+        let Some(part) = base.parts().get(m.part) else { return };
+        let from = part.transform();
+        let to = geom::Transform { at: m.at, rotation: m.rotation, mirror: m.bottom };
+        let map = |p: P| {
+            let d = geom::rotate([p[0] - from.at[0], p[1] - from.at[1]], -from.rotation);
+            to.apply(if from.mirror { [-d[0], d[1]] } else { d })
+        };
+        let copper = base.copper();
+        let flip = |l: &String| {
+            if m.bottom == part.bottom {
+                return l.clone();
+            }
+            copper
+                .iter()
+                .position(|c| c == l)
+                .map_or_else(|| l.clone(), |i| copper[copper.len() - 1 - i].clone())
+        };
+        let (lo, hi) = base.pads[m.part];
+        for c in &base.cx.copper_items()[lo..hi] {
+            let CuShape::Poly(rings) = &c.shape else { continue };
+            let rings: Vec<Vec<P>> =
+                rings.iter().map(|r| r.iter().map(|&p| map(p)).collect()).collect();
+            items.push(Cu {
+                owner: c.owner,
+                net: c.net,
+                layers: c.layers.iter().map(flip).collect(),
+                bounds: crate::drc::rings_bounds(&rings),
+                shape: CuShape::Poly(rings),
+            });
+        }
+        for h in base.holes.iter().filter(|h| matches!(h.of, HoleOf::Pad(p, _) if p == m.part)) {
+            holes.push(Hole { a: map(h.a), b: map(h.b), ..h.clone() });
+        }
+    }
+
+    fn shown_item(&self, i: usize) -> bool {
+        i >= self.base_items()
+            || !matches!(self.base.item(i).owner, Owner::Pad(p, _) if self.hidden[p])
+    }
+
+    fn shown_hole(&self, i: usize) -> bool {
+        i >= self.base_holes()
+            || !matches!(self.base.hole(i).of, HoleOf::Pad(p, _) if self.hidden[p])
     }
 
     fn base_items(&self) -> usize {
@@ -384,16 +474,17 @@ impl Context for Planned<'_> {
 
     fn via_subjects(&self) -> Vec<usize> {
         let n = self.base.via_count();
-        (n + self.first_hole..n + self.vias.len()).collect()
+        (n + self.first_via..n + self.vias.len()).collect()
     }
 
     fn planned_via(&self, k: usize) -> bool {
-        k >= self.base.via_count() + self.first_hole
+        k >= self.base.via_count() + self.first_via
     }
 
     fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize> {
         let n = self.base_items();
         let mut out = self.base.items_near(b, reach);
+        out.retain(|&i| self.shown_item(i));
         for (k, c) in self.items.iter().enumerate() {
             if overlaps(&c.bounds, b, reach) {
                 out.push(n + k);
@@ -405,6 +496,7 @@ impl Context for Planned<'_> {
     fn holes_near(&self, b: &Bounds, reach: f64) -> Vec<usize> {
         let n = self.base_holes();
         let mut out = self.base.holes_near(b, reach);
+        out.retain(|&i| self.shown_hole(i));
         for (k, h) in self.holes.iter().enumerate() {
             if overlaps(&h.bounds(), b, reach) {
                 out.push(n + k);
@@ -472,6 +564,15 @@ impl Context for Planned<'_> {
 
     fn counts(&self, a: bool, b: bool) -> bool {
         a || b
+    }
+
+    fn rigid(&self, a: Owner, b: Owner) -> bool {
+        match (a, b) {
+            (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q => {
+                self.parts[self.first_part..].iter().any(|m| m.part == p)
+            }
+            _ => false,
+        }
     }
 
     fn layouts(&self, f: &mut dyn FnMut(&Ctx, bool)) {

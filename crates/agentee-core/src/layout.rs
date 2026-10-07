@@ -199,7 +199,7 @@ pub struct CutoutFile {
     pub points: Vec<Point>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayoutFile {
     pub name: String,

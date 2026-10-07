@@ -134,6 +134,8 @@ pub struct PlaceInput<'a> {
     pub heat: Vec<(String, f64)>,
     pub silk: Vec<SilkArea>,
     pub texts: Vec<SilkText>,
+    pub tracks: &'a [crate::layout::TrackFile],
+    pub vias: &'a [crate::layout::ViaFile],
 }
 
 #[derive(Clone, Debug)]
@@ -878,6 +880,8 @@ struct Placer<'a> {
     soft_labels: bool,
     hot_gap: f64,
     label_at: Vec<Option<(u8, Bounds)>>,
+    copper: Option<(&'a Copper<'a>, Vec<Option<usize>>)>,
+    reach: f64,
 }
 
 const CELL: f64 = 2.0;
@@ -1458,7 +1462,48 @@ impl<'a> Placer<'a> {
 
     fn legal(&self, i: usize, st: St, skip: &[usize]) -> bool {
         let sh = self.shapes(i, st);
-        self.inside(i, st, &sh) && !self.clashes(i, &sh, skip) && !self.too_hot(i, &sh, skip)
+        self.inside(i, st, &sh)
+            && !self.clashes(i, &sh, skip)
+            && !self.too_hot(i, &sh, skip)
+            && self.copper_ok(i, st, &sh, skip)
+    }
+
+    fn copper_ok(&self, i: usize, st: St, sh: &[WShape], skip: &[usize]) -> bool {
+        let Some((cu, at)) = &self.copper else { return true };
+        let Some(me) = at[i] else { return true };
+        let mv = |k: usize, st: St| crate::rules::Move {
+            part: k,
+            at: st.at,
+            rotation: st.rot,
+            bottom: st.bottom,
+        };
+        let mut own = Bounds::EMPTY;
+        sh.iter().filter(|s| !s.label).for_each(|s| own.union(&s.b));
+        let reach = self.reach + 1.0;
+        let near = Bounds {
+            min: [own.min[0] - reach, own.min[1] - reach],
+            max: [own.max[0] + reach, own.max[1] + reach],
+        };
+        if !cu.separates && !cu.fixed_near(&own, reach) {
+            return true;
+        }
+        let mut kept = crate::rules::Plan::default();
+        let mut seen = Vec::new();
+        for c in self.grid.cells(&near) {
+            for &j in &self.grid.cells[c] {
+                if j == i || skip.contains(&j) || seen.contains(&j) {
+                    continue;
+                }
+                seen.push(j);
+                let p = &self.parts[j];
+                if let (true, false, Some(k)) = (p.placed, p.fixed, at[j]) {
+                    kept.parts.push(mv(k, p.st));
+                }
+            }
+        }
+        let plan = crate::rules::Plan { parts: vec![mv(me, st)], ..Default::default() };
+        let planned = crate::rules::Planned::hiding(&cu.base, &cu.hidden, &kept, plan);
+        crate::rules::legal(&planned).is_ok()
     }
 
     fn too_hot(&self, i: usize, sh: &[WShape], skip: &[usize]) -> bool {
@@ -2082,10 +2127,128 @@ fn with_spec<'b>(
         heat: input.heat.clone(),
         silk: input.silk.clone(),
         texts: input.texts.clone(),
+        tracks: input.tracks,
+        vias: input.vias,
     }
 }
 
-fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceResult, String> {
+struct Copper<'a> {
+    base: crate::rules::Placed<'a>,
+    index: HashMap<String, usize>,
+    hidden: Vec<usize>,
+    hide: Vec<bool>,
+    separates: bool,
+}
+
+impl Copper<'_> {
+    fn fixed_near(&self, b: &Bounds, reach: f64) -> bool {
+        use crate::drc::{HoleOf, Owner};
+        use crate::rules::Context;
+        let cx = &self.base;
+        cx.items_near(b, reach)
+            .into_iter()
+            .any(|i| !matches!(cx.item(i).owner, Owner::Pad(p, _) if self.hide[p]))
+            || cx
+                .holes_near(b, reach)
+                .into_iter()
+                .any(|i| !matches!(cx.hole(i).of, HoleOf::Pad(p, _) if self.hide[p]))
+    }
+
+    fn reach(&self) -> f64 {
+        use crate::rules::Context;
+        let cx = &self.base;
+        let nets = (0..cx.nets().len()).map(|n| cx.spacing().reach(Some(n)));
+        let barriers = cx
+            .board()
+            .barriers
+            .iter()
+            .flat_map(|b| [b.clearance, b.creepage])
+            .flatten()
+            .map(Length::to_mm);
+        crate::rules::clearance::reach(cx).max(nets.chain(barriers).fold(0.0, f64::max))
+    }
+}
+
+fn moving(input: &PlaceInput, opts: &PlaceOptions, reference: &str) -> bool {
+    let chosen = opts.parts.is_empty() || opts.parts.iter().any(|g| glob(g, reference));
+    !input
+        .placements
+        .iter()
+        .find(|f| f.reference == reference)
+        .is_some_and(|f| f.locked || opts.keep_placed || !chosen)
+}
+
+fn place_once(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, String> {
+    let mut footprints = input.placements.to_vec();
+    for r in input.schematic.references() {
+        let has_fp =
+            input.schematic.parts.iter().any(|p| p.reference == r && p.footprint.is_some());
+        if has_fp && footprints.iter().all(|f| f.reference != r) {
+            footprints.push(PlacementFile {
+                reference: r.to_string(),
+                at: Point::mm(0.0, 0.0),
+                rotation: None,
+                side: None,
+                label: None,
+                mlcc: None,
+                locked: false,
+            });
+        }
+    }
+    let file = crate::layout::LayoutFile {
+        footprints,
+        tracks: input.tracks.to_vec(),
+        vias: input.vias.to_vec(),
+        ..Default::default()
+    };
+    let cx = crate::layout::Context {
+        dir: std::path::PathBuf::new(),
+        board: input.board,
+        schematic: input.schematic,
+        footprints: input.footprints.clone(),
+        heat: Vec::new(),
+    };
+    let layout = file.resolve(&cx, &mut crate::diag::Diags::new(""));
+    let hidden: Vec<usize> = (0..layout.parts.len())
+        .filter(|&i| moving(input, opts, &layout.parts[i].reference))
+        .collect();
+    let stale: std::collections::HashSet<usize> =
+        hidden.iter().flat_map(|&i| layout.parts[i].pads.iter().filter_map(|q| q.net)).collect();
+    let tracks: Vec<crate::layout::Track> =
+        layout.tracks.iter().filter(|t| !stale.contains(&t.net)).cloned().collect();
+    let vias: Vec<crate::layout::Via> =
+        layout.vias.iter().filter(|v| !stale.contains(&v.net)).cloned().collect();
+    let world = crate::drc::Ctx::new(
+        input.board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &tracks,
+        &vias,
+        &[],
+        &layout.nets,
+    );
+    let base = crate::rules::Placed::new(&world);
+    let separates = crate::rules::Context::spacing(&base).isolation.separates();
+    let mut hide = vec![false; layout.parts.len()];
+    hidden.iter().for_each(|&i| hide[i] = true);
+    let matters = separates || hide.iter().any(|h| !h) || !tracks.is_empty() || !vias.is_empty();
+    let copper = Copper {
+        base,
+        index: layout.parts.iter().enumerate().map(|(i, p)| (p.reference.clone(), i)).collect(),
+        hidden,
+        hide,
+        separates,
+    };
+    place_with(input, opts, (matters && layout.outline.len() >= 3).then_some(&copper))
+}
+
+fn place_with<'a>(
+    input: &PlaceInput<'a>,
+    opts: &PlaceOptions,
+    copper: Option<&'a Copper<'a>>,
+) -> Result<PlaceResult, String> {
     let board = input.board;
     let sch = input.schematic;
     if input.outline.len() < 3 {
@@ -2427,6 +2590,7 @@ fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRe
     let mut two_pin_at = vec![usize::MAX; nets.len()];
     two_pin.iter().enumerate().for_each(|(x, n)| two_pin_at[*n] = x);
     let reach = ob.size()[0].hypot(ob.size()[1]) + 10.0;
+    let pl_refs: Vec<String> = parts.iter().map(|p| p.reference.clone()).collect();
     let mut pl = Placer {
         parts,
         part_links: vec![Vec::new(); n_parts],
@@ -2453,6 +2617,12 @@ fn place_once<'a>(input: &PlaceInput<'a>, opts: &PlaceOptions) -> Result<PlaceRe
         soft_labels,
         hot_gap,
         label_at: vec![None; n_parts],
+        copper: copper.map(|c| {
+            let at: Vec<Option<usize>> =
+                pl_refs.iter().map(|r| c.index.get(r.as_str()).copied()).collect();
+            (c, at)
+        }),
+        reach: copper.map_or(0.0, Copper::reach),
     };
 
     pl.build_clusters();

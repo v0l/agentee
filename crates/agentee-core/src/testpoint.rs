@@ -495,6 +495,7 @@ pub fn place(
                 points: vec![c, q],
             }],
             vias: vec![crate::layout::Via::of(v, ni, q, &layout.copper)],
+            ..Default::default()
         };
         let mut found: Option<(P, P, f64, f64, f64)> = None;
         for (_, c) in candidates {

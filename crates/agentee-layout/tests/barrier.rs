@@ -160,3 +160,56 @@ fn agentee_route_keeps_the_barrier_from_a_pad_in_another_domain() {
         .fold(f64::MAX, f64::min);
     assert!(closest >= 4.0 - 0.05, "the track runs {closest:.2} mm from the other domain's pad");
 }
+
+fn placed_gap(board: &str) -> f64 {
+    let parts =
+        [("U1", [15.0, 10.0]), ("U2", [15.0, 10.0]), ("U3", [15.0, 10.0]), ("U4", [15.0, 10.0])];
+    let nets = [("P_A", ["U1.1", "U2.1"]), ("S_B", ["U3.1", "U4.1"])];
+    let (p, dir, _) = project(board, &parts, &nets);
+    let layout = &p.layouts[0].item;
+    let file: agentee_core::layout::LayoutFile =
+        agentee_core::project::parse(&std::fs::read_to_string(&p.layouts[0].path).unwrap())
+            .unwrap();
+    let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
+        p.footprints.iter().map(|e| (e.name.as_str(), &e.item)).collect();
+    let spec = agentee_core::place::PlaceFile::default();
+    let input = agentee_core::place::PlaceInput {
+        board: &p.boards[0].item,
+        outline: &layout.outline,
+        cutouts: &layout.board_cutouts,
+        schematic: &p.schematics[0].item,
+        footprints: &footprints,
+        placements: &file.footprints,
+        spec: &spec,
+        fast_nets: Vec::new(),
+        heat: Vec::new(),
+        silk: Vec::new(),
+        texts: Vec::new(),
+        tracks: &[],
+        vias: &[],
+    };
+    let r = agentee_core::place::place(&input, &Default::default()).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(r.failed.is_empty(), "{:?}", r.failed);
+    let at = |name: &str| r.placements.iter().find(|q| q.reference == name).unwrap().at;
+    let mut gap = f64::MAX;
+    for a in ["U1", "U2"] {
+        for b in ["U3", "U4"] {
+            let (pa, pb) = (at(a), at(b));
+            let d = ((pa[0] - pb[0]).abs() - 1.0)
+                .max(0.0)
+                .hypot(((pa[1] - pb[1]).abs() - 1.0).max(0.0));
+            gap = gap.min(d);
+        }
+    }
+    gap
+}
+
+#[test]
+fn the_placer_keeps_parts_in_other_domains_apart() {
+    let open = BOARD.split("\n[[domains]]").next().unwrap();
+    let close = placed_gap(open);
+    assert!(close < 4.0, "the parts land {close:.2} mm apart with no barrier");
+    let gap = placed_gap(BOARD);
+    assert!(gap >= 4.0 - 1e-6, "the parts land {gap:.2} mm apart across the barrier");
+}

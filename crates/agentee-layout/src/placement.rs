@@ -464,6 +464,8 @@ fn global_place(
         heat: model.heat.clone(),
         silk: place::board_silk(&l.graphics, &l.artwork),
         texts: place::movable_texts(&l.graphics),
+        tracks: &model.file.tracks,
+        vias: &model.file.vias,
     };
     let opts = place::PlaceOptions {
         parts: free.clone(),

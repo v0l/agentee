@@ -140,6 +140,8 @@ pub fn place_text(
         heat: pl::thermal_heat(&inputs.sims, &file.name),
         silk: pl::board_silk(&graphics, &artwork),
         texts: pl::movable_texts(&graphics),
+        tracks: &file.tracks,
+        vias: &file.vias,
     };
     let r = pl::place(&input, opts)?;
     let mut doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;

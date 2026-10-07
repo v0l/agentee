@@ -1778,6 +1778,8 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         heat,
         silk: pl::board_silk(&graphics, &artwork),
         texts: pl::movable_texts(&graphics),
+        tracks: &file.tracks,
+        vias: &file.vias,
     };
     let opts = pl::PlaceOptions {
         parts: a.parts.clone(),

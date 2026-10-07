@@ -193,6 +193,8 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
         heat: vec![("U1".into(), 0.45)],
         silk: place::board_silk(&layout.graphics, &layout.artwork),
         texts: place::movable_texts(&layout.graphics),
+        tracks: &file.tracks,
+        vias: &file.vias,
     };
     place::place(&input, opts).unwrap()
 }

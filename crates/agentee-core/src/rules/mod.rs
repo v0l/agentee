@@ -1,5 +1,5 @@
 mod barrier;
-mod clearance;
+pub(crate) mod clearance;
 mod context;
 mod edge;
 mod holes;
@@ -14,7 +14,7 @@ pub use barrier::{
     ring_edges as barrier_edges,
 };
 pub use clearance::{ClassClearance, NetClearance};
-pub use context::{Context, Pad, Placed, Plan, Planned};
+pub use context::{Context, Move, Pad, Placed, Plan, Planned};
 pub use edge::CopperToEdge;
 pub use holes::{HoleToCopper, HoleToHole, Which};
 pub use isolation::Isolation;

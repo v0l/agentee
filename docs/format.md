@@ -553,6 +553,16 @@ search grid outside the green zones of the nets it routes, so a route never head
 check would refuse. The zone errs on the safe side by half a grid cell, and the check still
 judges the finished copper.
 
+The layout engine builds its search grid from the same keepouts: each pad, track, via, hole and
+board edge carries the gap its rule asks for, so the engine and the check measure one set of
+numbers.
+
+`agentee place` and the engine's place stage hold each part to the rules as well. When the board
+has a barrier between domains, or keeps copper or parts that are not being placed, every spot a
+part is tried at is checked with its pads at that spot against the copper around it, and a spot
+that breaks a rule is passed over. Tracks and vias on nets that touch a part being placed are
+ignored, since moving the part leaves them to be routed again.
+
 ```toml
 [drc]                          # in the board file
 disable = ["silk-width"]       # rule ids to skip; their checks are not computed, so with silk-text

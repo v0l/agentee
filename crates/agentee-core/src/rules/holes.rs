@@ -77,7 +77,9 @@ impl Rule for HoleToCopper {
             let other_net = |n: Option<usize>| any_net || n.is_none() || n != h.net;
             let mut worst: Option<(f64, String)> = None;
             for j in cx.items_near(&hb, need) {
-                if !cx.counts(cx.planned_hole(i), cx.planned_item(j)) {
+                if !cx.counts(cx.planned_hole(i), cx.planned_item(j))
+                    || cx.rigid(owner_of(h.of), cx.item(j).owner)
+                {
                     continue;
                 }
                 let c = cx.item(j);
@@ -166,7 +168,9 @@ impl Rule for HoleToHole {
                 if j == i || (j < i && chosen.contains(&j)) {
                     continue;
                 }
-                if !cx.counts(cx.planned_hole(i), cx.planned_hole(j)) {
+                if !cx.counts(cx.planned_hole(i), cx.planned_hole(j))
+                    || cx.rigid(owner_of(a.of), owner_of(cx.hole(j).of))
+                {
                     continue;
                 }
                 let b = cx.hole(j);
@@ -266,5 +270,12 @@ impl super::zone::Constrains for HoleToHole {
             }
             zone.forbid(None, &super::zone::hole_shape(h), need + drill / 2.0);
         }
+    }
+}
+
+fn owner_of(h: HoleOf) -> Owner {
+    match h {
+        HoleOf::Via(v) => Owner::Via(v),
+        HoleOf::Pad(p, k) => Owner::Pad(p, k),
     }
 }

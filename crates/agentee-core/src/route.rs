@@ -685,7 +685,7 @@ pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> Rout
                 Some(crate::layout::Via::of(spec, net, v.at, &layout.copper))
             })
             .collect();
-        let plan = crate::rules::Plan { tracks, vias, pads: Vec::new() };
+        let plan = crate::rules::Plan { tracks, vias, ..Default::default() };
         match crate::rules::legal(&crate::rules::Planned::after(&base, &kept, plan.clone())) {
             Ok(()) => kept.extend(plan),
             Err(broken) => {

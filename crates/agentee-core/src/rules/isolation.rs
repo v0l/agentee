@@ -38,6 +38,10 @@ impl Isolation {
         self.domain.iter().any(Option::is_some)
     }
 
+    pub fn separates(&self) -> bool {
+        self.active() && self.barrier.iter().flatten().any(Option::is_some)
+    }
+
     pub fn of(&self, net: usize) -> Option<usize> {
         self.domain.get(net).copied().flatten()
     }

@@ -181,6 +181,11 @@ fn exempt<C: Context>(cx: &C, a: &Conductor, b: &Conductor) -> bool {
     }
 }
 
+fn rigid<C: Context>(cx: &C, a: &Conductor, b: &Conductor) -> bool {
+    let (Of::Item(i), Of::Item(j)) = (a.of, b.of) else { return false };
+    cx.rigid(cx.item(i).owner, cx.item(j).owner)
+}
+
 fn label<C: Context>(cx: &C, c: &Conductor) -> String {
     match c.of {
         Of::Item(i) => cx.describe(i),
@@ -230,7 +235,7 @@ fn pairs<C: Context>(
         near.dedup();
         for j in near.into_iter().filter(|&j| across || j > i) {
             let b = &all[j];
-            if !cx.counts(planned(cx, a), planned(cx, b)) {
+            if !cx.counts(planned(cx, a), planned(cx, b)) || rigid(cx, a, b) {
                 continue;
             }
             let Some(c) = iso.barrier(cx.board(), a.net, b.net).and_then(&need) else {

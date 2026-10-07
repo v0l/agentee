@@ -120,7 +120,9 @@ impl super::Rule for NetClearance {
                 if j == i || (j < i && chosen.contains(&j)) {
                     continue;
                 }
-                if !cx.counts(cx.planned_item(i), cx.planned_item(j)) {
+                if !cx.counts(cx.planned_item(i), cx.planned_item(j))
+                    || cx.rigid(cx.item(i).owner, cx.item(j).owner)
+                {
                     continue;
                 }
                 let b = cx.item(j);

@@ -151,8 +151,61 @@ fn every_spot_in_a_green_zone_passes_the_rules() {
                 bad.push((*at, e[0].rule, e[0].detail.clone(), e[0].other.clone()));
             }
         }
-        assert!(bad.is_empty(), "{} green spots break a rule: {:?}", bad.len(), &bad[..bad.len().min(3)]);
+        assert!(
+            bad.is_empty(),
+            "{} green spots break a rule: {:?}",
+            bad.len(),
+            &bad[..bad.len().min(3)]
+        );
         let free = rules::Zone::new(&window, 0.05, &l.copper).spots().len();
         assert!(spots.len() < free, "the zone forbade nothing");
     }
+}
+
+#[test]
+fn a_moved_part_is_judged_where_it_lands() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    let p = agentee_core::Project::load(&root).unwrap();
+    let l = &p.layouts[0].item;
+    let b = &p.boards.iter().find(|x| x.name == l.board).unwrap().item;
+    let cx = agentee_core::drc::Ctx::new(
+        b,
+        &l.copper,
+        &l.outline,
+        &l.board_cutouts,
+        &l.parts,
+        &l.tracks,
+        &l.vias,
+        &[],
+        &l.nets,
+    );
+    let base = Placed::new(&cx);
+    let mut alone = Vec::new();
+    rules::check(&base, &mut alone);
+    let at = |r: &str| l.parts.iter().position(|p| p.reference == r).unwrap();
+    let stay = |i: usize| rules::Move {
+        part: i,
+        at: l.parts[i].at.to_mm(),
+        rotation: l.parts[i].rotation,
+        bottom: l.parts[i].bottom,
+    };
+    for i in 0..l.parts.len() {
+        let mut out = Vec::new();
+        let plan = rules::Plan { parts: vec![stay(i)], ..Default::default() };
+        rules::check(&Planned::after(&base, &rules::Plan::default(), plan), &mut out);
+        assert!(out.len() <= alone.len(), "{}: {:?}", l.parts[i].reference, out);
+    }
+    let (u, r) = (at("U1"), at("R1"));
+    let onto = rules::Move { at: l.parts[r].at.to_mm(), ..stay(u) };
+    let plan = rules::Plan { parts: vec![onto], ..Default::default() };
+    assert!(rules::legal(&Planned::after(&base, &rules::Plan::default(), plan)).is_err());
+    let hidden = Planned::hiding(
+        &base,
+        &[r],
+        &rules::Plan::default(),
+        rules::Plan { parts: vec![onto], ..Default::default() },
+    );
+    let mut out = Vec::new();
+    rules::check(&hidden, &mut out);
+    assert!(out.iter().all(|v| !v.subject.contains("R1.") && !v.other.contains("R1.")), "{out:?}");
 }
