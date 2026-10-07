@@ -120,7 +120,9 @@ Order of work, each stage passing check before the next:
    board:NAME` prints them per layer. Give every class that carries more than logic levels a
    `voltage` (`"48VDC"`, `"230VAC"`): it sets the clearance and creepage to every other class
    (reinforced from SELV), defaults DC sim supplies and logic rails, and checks capacitor ratings.
-   Do not write `[[domains]]` or `[[barriers]]` for what a voltage already covers.
+   One class per conductor that can differ: `DC+`/`DC-` with signed voltages, `L1`, `L2`, `L3`
+   each `"230VAC"`, never two phases in one class. Do not write `[[domains]]` or `[[barriers]]`
+   for what a voltage already covers.
    `agentee edit board` does all of this, and check names the width a class needs.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same
    number in its footprint.

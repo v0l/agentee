@@ -465,6 +465,12 @@ one. `agentee show board:NAME` lists every barrier with its working voltage and 
 
 `pollution_degree = 2` at the top of the board file (1, 2 or 3, default 2) picks the columns.
 
+Give each conductor that can stand at a different voltage its own class: `DC+ = "400VDC"` and
+`DC- = "-400VDC"` (800 V apart), and `L1`, `L2`, `L3` at `"230VAC"` each. Nets inside one class
+are only held to that class's own clearance, so L1 and L2 in one `Mains` class would miss the
+line to line voltage. Two AC classes are taken as in antiphase (L1 to L2 at 460 V rather than
+398 V), which errs on the safe side.
+
 The voltage reaches further than spacing:
 
 - A DC sim `[[supplies]]` pad with no `voltage` is held at its net's class voltage.
