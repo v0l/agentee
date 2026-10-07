@@ -537,6 +537,14 @@ in brackets, e.g. `[via-cuts-pad]`. `agentee drc NAME --list` (MCP `drc` with `l
 every rule with its category, severity, and whether it applies to this board and why; `agentee
 drc NAME` prints the layout's rule messages alone.
 
+The tools that add copper check it against the same rules before they write it. `tie`,
+`testpoints`, fanouts and stitching vias try each spot against `clearance`, `short`,
+`copper-to-edge`, the hole rules, `isolation-clearance`, `creepage`, `via-cuts-pad`,
+`via-in-pad-fill`, `hole-to-smd-pad` and `stacked-via`, and skip a spot that breaks one. `tune` and
+`neck` do the same for each meander and neck. `agentee route` and the layout engine drop a net's
+new copper when it breaks one, and report the rule. Pours are left out of these checks, since a
+pour refills around new copper.
+
 ```toml
 [drc]                          # in the board file
 disable = ["silk-width"]       # rule ids to skip; their checks are not computed, so with silk-text
