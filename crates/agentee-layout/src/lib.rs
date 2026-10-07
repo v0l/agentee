@@ -318,7 +318,17 @@ impl Driver<'_, '_> {
 
     fn write_route(&mut self, model: &mut Model) -> Result<u128, String> {
         let Some(d) = model.detail.as_ref() else { return Ok(0) };
-        self.text = write_plan(&self.text, ROUTE, &route_toml(&d.tracks, &d.vias));
+        let (_, bare) = (self.cfg.resolve)(&strip_plan(&self.text, ROUTE))?;
+        let held = agentee_core::route::hold_to_rules(
+            &bare,
+            model.board,
+            agentee_core::route::RouteResult {
+                tracks: d.tracks.clone(),
+                vias: d.vias.clone(),
+                ..Default::default()
+            },
+        );
+        self.text = write_plan(&self.text, ROUTE, &route_toml(&held.tracks, &held.vias));
         self.reload(model)
     }
 }

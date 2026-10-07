@@ -611,7 +611,77 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
     if let Some((first, avoid)) = redo {
         best = route_once(layout, board, opts, &first, &avoid, true)?.0;
     }
-    Ok(best)
+    Ok(hold_to_rules(layout, board, best))
+}
+
+pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> RouteResult {
+    let world = crate::drc::Ctx::new(
+        board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &layout.tracks,
+        &layout.vias,
+        &[],
+        &layout.nets,
+    );
+    let base = crate::rules::Placed::new(&world);
+    let mut kept = crate::rules::Plan::default();
+    let mut nets: Vec<String> = Vec::new();
+    for n in r.tracks.iter().map(|t| &t.net).chain(r.vias.iter().map(|v| &v.net)) {
+        if !nets.contains(n) {
+            nets.push(n.clone());
+        }
+    }
+    for name in nets {
+        let Some(net) = layout.nets.iter().position(|n| n.name == name) else { continue };
+        let tracks: Vec<crate::layout::Track> = r
+            .tracks
+            .iter()
+            .filter(|t| t.net == name)
+            .map(|t| crate::layout::Track {
+                source: usize::MAX,
+                net,
+                layer: t.layer.clone(),
+                width: t.width.unwrap_or(layout.nets[net].width),
+                points: t.points.clone(),
+            })
+            .collect();
+        let vias: Vec<crate::layout::Via> = r
+            .vias
+            .iter()
+            .filter(|v| v.net == name)
+            .filter_map(|v| {
+                let spec = board.vias.iter().find(|s| s.name == v.via)?;
+                Some(crate::layout::Via::of(spec, net, v.at, &layout.copper))
+            })
+            .collect();
+        let plan = crate::rules::Plan { tracks, vias, pads: Vec::new() };
+        match crate::rules::legal(&crate::rules::Planned::after(&base, &kept, plan.clone())) {
+            Ok(()) => kept.extend(plan),
+            Err(broken) => {
+                let first = r.tracks.iter().find(|t| t.net == name);
+                let ends = first
+                    .map(|t| (t.points[0], *t.points.last().unwrap()))
+                    .unwrap_or(([0.0, 0.0], [0.0, 0.0]));
+                let v = &broken[0];
+                r.failed.push(Unrouted {
+                    net: name.clone(),
+                    from: ends.0,
+                    to: ends.1,
+                    reason: format!(
+                        "the route broke [{}]: {} is {:.3} mm from {}, needs {:.3} mm; it was dropped",
+                        v.rule, v.subject, v.gap, v.other, v.need
+                    ),
+                });
+                r.tracks.retain(|t| t.net != name);
+                r.vias.retain(|v| v.net != name);
+                r.routed = r.routed.saturating_sub(1);
+            }
+        }
+    }
+    r
 }
 
 #[derive(Clone)]
