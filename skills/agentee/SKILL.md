@@ -14,6 +14,30 @@ comments and layout of the file, and it checks what it changed. Reach for a text
 a key it has no command for. It covers schematics, layouts and board specs, not symbols and
 footprints: those still go in a text editor, or in from KiCad. See "Editing with commands" below.
 
+## Installing
+
+Run `agentee --version` first. If it is missing, install the release build:
+
+```sh
+curl -fsSL https://agentee.sh/install.sh | sh          # Linux and macOS, into ~/.local/bin
+irm https://agentee.sh/install.ps1 | iex               # Windows PowerShell
+cargo install --git https://github.com/v0l/agentee agentee   # anything else, Rust 1.92+
+```
+
+Rerun the same command to update. `search` and `import` read the KiCad libraries from
+`/usr/share/kicad` (Debian and Ubuntu package them as `kicad-symbols` and `kicad-footprints`) or
+from KiCad.app on macOS; set `KICAD9_SYMBOL_DIR` and `KICAD9_FOOTPRINT_DIR` for anywhere else.
+FDTD and thermal sims need a GPU through Vulkan, Metal or DX12; the 2D field solver falls back to
+the CPU. Rendering to PNG runs headless. Full per-platform notes are at https://agentee.sh.
+
+To use it over MCP instead of the shell:
+
+```json
+{ "mcpServers": { "agentee": { "command": "agentee", "args": ["mcp", "/path/to/project"] } } }
+```
+
+## Reference
+
 The full key-by-key reference is `agentee docs` (MCP `format_reference`). Read the section for
 the file kind you are about to write before writing it. This skill covers how to work, not every
 key.
@@ -32,12 +56,33 @@ Every edit goes through the same four steps. Do not batch several unchecked edit
 4. `agentee show KIND:NAME` when you need numbers: pin positions, net lengths and delays,
    solved trace widths, sim readings.
 
+`agentee list` names every item with its error count. `agentee drc NAME` prints a layout's rule
+messages alone, and `--list` every rule id with whether it applies to this board; turn one off
+with `[drc] disable = ["id"]` in the board file.
+
 Every diagnostic names the file, the item and the place (`tracks[1] RF_IN`, `U1.1`, a coordinate).
 Fix the named thing, rerun check. When a silk label fails, check prints a `label = { at = [...] }`
-line that passes every rule; paste it.
+line that passes every rule; `agentee silk NAME` pastes them all for you, and `--hide` hides the
+ones with nowhere to go.
 
 Name items with their kind whenever names collide, which they do by design (`lna` is a board, a
 schematic and a layout): `board:lna`, `sch:lna`, `pcb:lna`, `sim:lna-rf`, `sym:R`, `fp:R_0402_1005Metric`.
+
+A whole schematic or board at 1400 px is too small to read. Render the part you are asking about:
+
+```sh
+agentee render pcb:NAME -o /tmp/x.png --canvas-only --rulers          # mm labels on the edges
+agentee render pcb:NAME -o /tmp/x.png --canvas-only --region 10,5,30,20
+agentee render sch:NAME -o /tmp/x.png --canvas-only --focus U3,SPI_*   # zoom to them, dim the rest
+agentee render pcb:NAME -o /tmp/x.png --canvas-only --focus U3.4 --context hide
+```
+
+`--focus` takes references, net names and `REF.PIN`, with `*` as a wildcard, on schematics and
+layouts. A net brings in the parts it touches. `--context` is `dim` (default), `hide` to leave
+only the focus, or `show` to just zoom. Start from an overview with `--rulers`, then pass the
+coordinates you read off it to `--region`. With `--canvas-only` the PNG is cropped to the drawing,
+so `--width` and `--height` are the largest it gets. Combine with `--hide`/`--show` to look at one
+copper layer.
 
 `agentee view` opens a live window that reloads on save. Start it for the human if they are
 watching; you work from `render` and `show`.
@@ -61,9 +106,9 @@ by name.
 
 Order of work, each stage passing check before the next:
 
-1. **Board spec.** Pick `fab` (`jlcpcb` or `generic`) and a stackup preset from
-   `agentee stackups --fab jlcpcb --layers 4` rather than typing layers in. Define `Default` and
-   one net class per kind of net (RF, power, pairs). Put impedance and current targets on the
+1. **Board spec.** Pick `fab` (`jlcpcb`, `generic`, or `hdi` for microvia boards) and a stackup
+   preset from `agentee stackups --fab jlcpcb --layers 4` (or `pcbway`, `generic`) rather than
+   typing layers in. Define `Default` and one net class per kind of net (RF, power, pairs). Put impedance and current targets on the
    class and let check solve the widths; `agentee show board:NAME` prints them per layer.
    `agentee edit board` does all of this, and check names the width a class needs.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same
@@ -76,10 +121,20 @@ Order of work, each stage passing check before the next:
    VIL and VIH, floating inputs, pulls too weak for the leakage, and overdriven pins. List ADC
    inputs in `analog`.
 4. **Layout.** Place footprints, add zones, then tracks and vias net by net. `agentee edit pcb`
-   writes a placement, a track, a via or a zone by hand; `agentee place`, `route` and `tie` are
-   the automatic ones and are usually better for anything with many connections. Check reports
-   the ratsnest for every unrouted connection, so route until `unrouted` is 0 on every net in
-   `show pcb:NAME`.
+   writes a placement, a track, a via or a zone by hand. The automatic tools are usually better
+   for anything with many connections, and each takes `--dry-run`:
+   - `agentee place NAME` places every part (`--parts 'U*'`, `--keep-placed`, `--seed N`).
+   - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
+   - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via.
+   - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`).
+   - `agentee tune NAME` meanders pairs over their skew and match groups short of their length.
+   - `agentee neck NAME` necks tracks down where they enter a narrower pad.
+   - `agentee fill NAME` fills the zones and stores the copper in the file.
+   - `agentee layout NAME` runs the whole engine (place, access, route, finish) from the
+     layout's `[engine]` settings; `--from`, `--to` and `--only` pick stages.
+
+   Check reports the ratsnest for every unrouted connection, so route until `unrouted` is 0 on
+   every net in `show pcb:NAME`.
 5. **Simulate** what the design depends on (see below).
 6. **Fab.** `agentee fab pcb:NAME -o fab/` once check has no errors.
 7. **Enclosure.** `agentee export pcb:NAME -o NAME.step` writes the board solid and every part
@@ -101,6 +156,9 @@ agentee import footprint Package_TO_SOT_SMD:SOT-89-3
 Imports land in `symbols/` and `footprints/`. `--force` overwrites. Run check straight after:
 KiCad silk is often 0.12 mm and JLCPCB wants 0.15 mm, so widen it in the imported `.fp.toml`.
 `agentee models` fetches the 3D models the footprints name.
+
+`agentee import board path/NAME.kicad_pcb --dir DIR` turns a whole KiCad board into a project:
+board spec, layout, a netlist schematic, footprints and box symbols.
 
 When KiCad lacks the part, `agentee new symbol NAME` / `new footprint NAME` and build it from the
 datasheet. Use `[[bodies]]` with per-side pin lists for box symbols and pad rows (`count`,
@@ -202,8 +260,9 @@ unless the design gives a reason not to, and say why in DESIGN.md when you don't
   JTAG where there is no connector). Keep them on one side (the bottom by default) so one
   fixture reaches all of them: round pads of 1 mm or more, centres at least 1.27 mm apart (2.54 mm
   for 100 mil pogo pins), 1 mm from parts and 3 mm from the edge and tooling holes, not under
-  parts, never on high-speed pairs or RF lines (the stub hurts them). Use `TestPoint_Pad_D1.0mm`
-  style footprints and name them `TP1...`.
+  parts, never on high-speed pairs or RF lines (the stub hurts them). `agentee testpoints NAME`
+  adds a `TP` part to the schematic and a routed `TestPoint_Pad_D1.0mm` pad to the layout for
+  each net that has no probe access (`--nets`, `--side B`, `--pitch 2.54`).
 - **Fiducials and tooling holes.** Two or three fiducials per side that has fine-pitch parts,
   and non-plated tooling holes if the board is tested in a fixture.
 - Every fab package carries `agentee vX.Y.Z-hash` in silk; leave room for it.
@@ -225,7 +284,8 @@ suggests the width that meets the target.
 
 ## Simulation
 
-Each `*.sim.toml` has a `kind`: FDTD (default), `cascade`, `channel`, `pdn`, `dc`, `thermal`.
+Each `*.sim.toml` has a `kind`: FDTD (default), `cascade`, `channel`, `pdn`, `dc`, `thermal`,
+`logic`. A logic sim runs a schematic's digital parts and writes a VCD as well as the result.
 `agentee sim NAME` writes `NAME.result.json` (and `NAME.sNp` for S-parameters) next to the spec.
 Read the result with `agentee show sim:NAME`: the `readings` list is the summary (gain, match,
 NF, stability, eye height, peak temperature, drop). Look at the plots with `agentee render sim:NAME`.
@@ -273,11 +333,13 @@ and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas
 
 ## MCP
 
-`agentee mcp <project>` serves the same operations on stdio: `format_reference`, `check`,
-`list_items`, `show_item`, `render_item` (returns the PNG inline), `run_sim`, `sparam`,
-`field_solve`, `impedance`, `trace_width`, `serpentine`, `parts`, `kicad_search`,
-`import_kicad_symbol`, `import_kicad_footprint`, `new_item`, `models`, `fab`, `export`. You still write the
-TOML files yourself with your normal file tools.
+`agentee mcp <project>` serves the same operations on stdio: `format_reference`, `check`, `drc`,
+`list_items`, `show_item`, `render_item` (returns the PNG inline, takes `focus`, `context`,
+`region` and `rulers`), `stackups`, `run_sim`, `sparam`, `field_solve`, `impedance`,
+`trace_width`, `serpentine`, `place`, `route`, `tie`, `fill`, `tune`, `neck`, `silk`,
+`testpoints`, `layout`, `parts`, `kicad_search`, `import_kicad_symbol`,
+`import_kicad_footprint`, `new_item`, `models`, `fab`, `export`. There is no `edit` tool: write
+the TOML files yourself with your normal file tools, or run `agentee edit` in a shell.
 
 ## Worked examples
 
@@ -285,3 +347,8 @@ TOML files yourself with your normal file tools.
 - `examples/lna`: a full design. Board spec with a field-solved coplanar RF class, schematic,
   routed four layer layout, FDTD, cascade with vendor data, DC drop and thermal sims, and
   `DESIGN.md`. Copy its patterns before inventing new ones.
+- `examples/sdr`: a large design. Hierarchical schematic (power, clock, FPGA, RF, USB sheets),
+  BGAs, USB 3 pairs with an FDTD and eye, DC drop on the core rail, thermal, and `DESIGN.md`.
+- `examples/hdi`: a 1+4+1 HDI coupon with microvias in the pads of a 0.5 mm BGA.
+- `examples/logic`: logic sims of a counter and an I2C write, with their VCDs.
+- `examples/hackrf-pro`: the HackRF Pro main board, imported from KiCad with `import board`.
