@@ -136,7 +136,8 @@ Order of work, each stage passing check before the next:
 4. **Layout.** Place footprints, add zones, then tracks and vias net by net. `agentee edit pcb`
    writes a placement, a track, a via or a zone by hand. The automatic tools are usually better
    for anything with many connections, and each takes `--dry-run`:
-   - `agentee place NAME` places every part (`--parts 'U*'`, `--keep-placed`, `--seed N`).
+   - `agentee place NAME` places every part (`--parts 'U*'`, `--keep-placed`, `--seed N`). It keeps
+     parts in different domains a barrier apart and clear of copper it is not moving.
    - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
    - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via.
    - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`).
