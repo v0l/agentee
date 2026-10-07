@@ -53,13 +53,12 @@ pub(crate) struct Obstacle {
     pub(crate) net: Option<usize>,
     pub(crate) layers: Vec<String>,
     shape: Shape,
-    pub(crate) clearance: f64,
     pub(crate) lo: P,
     pub(crate) hi: P,
 }
 
 impl Obstacle {
-    fn new(net: Option<usize>, layers: Vec<String>, shape: Shape, clearance: f64) -> Self {
+    fn new(net: Option<usize>, layers: Vec<String>, shape: Shape) -> Self {
         let (lo, hi) = match &shape {
             Shape::Poly(p) => p.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), q| {
                 ([lo[0].min(q[0]), lo[1].min(q[1])], [hi[0].max(q[0]), hi[1].max(q[1])])
@@ -69,7 +68,7 @@ impl Obstacle {
             }
             Shape::Circle(c, r) => ([c[0] - r, c[1] - r], [c[0] + r, c[1] + r]),
         };
-        Obstacle { net, layers, shape, clearance, lo, hi }
+        Obstacle { net, layers, shape, lo, hi }
     }
 
     pub(crate) fn distance(&self, line: &[P]) -> f64 {
@@ -158,8 +157,21 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
         }
     }
 
-    let mut obstacles = obstacles_of(layout, board);
+    let mut obstacles = obstacles_of(layout);
     let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
+    let world = crate::drc::Ctx::new(
+        board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &layout.tracks,
+        &layout.vias,
+        &[],
+        &layout.nets,
+    );
+    let base = crate::rules::Placed::new(&world);
+    let mut kept = crate::rules::Plan::default();
     let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let floor = board.rules.min_clearance.to_mm();
@@ -244,6 +256,13 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 let on =
                     spacing.layer(layout.copper.iter().position(|c| c == &t.layer).unwrap_or(0));
                 let floor_pitch = t.width + net.clearance.max(floor);
+                let meander = |line: &[P]| crate::layout::Track {
+                    source: usize::MAX,
+                    net: t.net,
+                    layer: t.layer.clone(),
+                    width: t.width,
+                    points: line.to_vec(),
+                };
                 let pitches: Vec<f64> = match opts.pitch {
                     Some(p) => vec![p],
                     None => {
@@ -258,23 +277,35 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                                 t.width,
                                 &t.layer,
                                 t.net,
-                                net.clearance,
+                                0.0,
                                 floor,
                                 edge,
                                 &obstacles,
                                 layout.edge(),
-                                &|o| spacing.isolation.gap(Some(t.net), o, on),
+                                &|o| {
+                                    crate::rules::Spacing::gap(&spacing.class, Some(t.net), o, on)
+                                        .max(spacing.isolation.gap(Some(t.net), o, on))
+                                },
                             )
+                            && crate::rules::legal(&crate::rules::Planned::after(
+                                &base,
+                                &kept,
+                                crate::rules::Plan {
+                                    tracks: vec![meander(line)],
+                                    ..Default::default()
+                                },
+                            ))
+                            .is_ok()
                     })
                 }) else {
                     continue;
                 };
+                kept.tracks.push(meander(&pts));
                 for w in pts.windows(2) {
                     obstacles.push(Obstacle::new(
                         Some(t.net),
                         vec![t.layer.clone()],
                         Shape::Seg(w[0], w[1], t.width / 2.0),
-                        net.clearance,
                     ));
                 }
                 let mut np = points[ti][..k].to_vec();
@@ -577,7 +608,7 @@ fn legal(
         {
             continue;
         }
-        let need = clearance.max(o.clearance).max(floor).max(apart(o.net)) + half;
+        let need = clearance.max(floor).max(apart(o.net)) + half;
         if o.distance(line) < need - 1e-6 {
             return false;
         }
@@ -585,26 +616,19 @@ fn legal(
     true
 }
 
-pub(crate) fn obstacles_of(layout: &Layout, board: &Board) -> Vec<Obstacle> {
+pub(crate) fn obstacles_of(layout: &Layout) -> Vec<Obstacle> {
     let mut out = Vec::new();
-    let rules = &board.rules;
     let nl = layout.copper.len();
-    let clearance = |n: Option<usize>| n.map(|n| layout.nets[n].clearance).unwrap_or(0.0);
     for part in &layout.parts {
         for pad in &part.pads {
             for o in &pad.outlines {
-                out.push(Obstacle::new(
-                    pad.net,
-                    pad.copper.clone(),
-                    Shape::Poly(o.clone()),
-                    clearance(pad.net),
-                ));
+                out.push(Obstacle::new(pad.net, pad.copper.clone(), Shape::Poly(o.clone())));
             }
             if let Some((c, s, _)) = pad.drill {
                 let r = s[0].max(s[1]) / 2.0;
                 let hole = Shape::Circle(c, r);
                 if pad.kind == PadKind::Npth || pad.copper.is_empty() {
-                    out.push(Obstacle::new(None, layout.copper.clone(), hole, 0.0));
+                    out.push(Obstacle::new(None, layout.copper.clone(), hole));
                 } else {
                     let (outer, inner): (Vec<_>, Vec<_>) = layout
                         .copper
@@ -613,18 +637,8 @@ pub(crate) fn obstacles_of(layout: &Layout, board: &Board) -> Vec<Obstacle> {
                         .partition(|(i, _)| *i == 0 || *i + 1 == nl);
                     let names =
                         |v: Vec<(usize, &String)>| v.into_iter().map(|(_, l)| l.clone()).collect();
-                    out.push(Obstacle::new(
-                        pad.net,
-                        names(outer),
-                        Shape::Circle(c, r),
-                        rules.min_pth_hole_to_copper.to_mm(),
-                    ));
-                    out.push(Obstacle::new(
-                        pad.net,
-                        names(inner),
-                        hole,
-                        rules.min_inner_pth_hole_to_copper.to_mm(),
-                    ));
+                    out.push(Obstacle::new(pad.net, names(outer), Shape::Circle(c, r)));
+                    out.push(Obstacle::new(pad.net, names(inner), hole));
                 }
             }
         }
@@ -635,7 +649,6 @@ pub(crate) fn obstacles_of(layout: &Layout, board: &Board) -> Vec<Obstacle> {
                 Some(t.net),
                 vec![t.layer.clone()],
                 Shape::Seg(w[0], w[1], t.width / 2.0),
-                clearance(Some(t.net)),
             ));
         }
     }
@@ -644,13 +657,11 @@ pub(crate) fn obstacles_of(layout: &Layout, board: &Board) -> Vec<Obstacle> {
             Some(v.net),
             v.layers.clone(),
             Shape::Circle(v.at, v.diameter / 2.0),
-            clearance(Some(v.net)),
         ));
         out.push(Obstacle::new(
             Some(v.net),
             layout.copper.clone(),
             Shape::Circle(v.at, v.drill / 2.0),
-            rules.min_via_hole_to_copper.to_mm(),
         ));
     }
     out
@@ -738,7 +749,7 @@ mod tests {
     #[test]
     fn a_meander_fits_between_walls_and_adds_what_was_asked() {
         let wall = |y: f64| {
-            Obstacle::new(Some(1), vec!["F.Cu".into()], Shape::Seg([0.0, y], [10.0, y], 0.05), 0.1)
+            Obstacle::new(Some(1), vec!["F.Cu".into()], Shape::Seg([0.0, y], [10.0, y], 0.05))
         };
         let obstacles = vec![wall(0.8), wall(-0.8)];
         let outline = vec![[-1.0, -5.0], [11.0, -5.0], [11.0, 5.0], [-1.0, 5.0]];

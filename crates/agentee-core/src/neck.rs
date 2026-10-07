@@ -84,12 +84,26 @@ impl Rules<'_> {
             .iter()
             .filter(|o| o.net != Some(self.net) && o.layers.iter().any(|l| l == self.layer))
             .map(|o| {
+                let need = self.spacing.class.gap(Some(self.net), o.net, self.on);
                 let iso = self.spacing.isolation.gap(Some(self.net), o.net, self.on);
-                o.distance(line) - self.clearance.max(o.clearance).max(iso)
+                o.distance(line) - self.clearance.max(need).max(iso)
             })
             .chain(edges)
             .fold(f64::MAX, f64::min)
     }
+}
+
+fn as_tracks(t: &crate::layout::Track, necks: &[NeckSegment]) -> Vec<crate::layout::Track> {
+    necks
+        .iter()
+        .map(|n| crate::layout::Track {
+            source: usize::MAX,
+            net: t.net,
+            layer: t.layer.clone(),
+            width: n.width,
+            points: n.points.clone(),
+        })
+        .collect()
 }
 
 fn length(line: &[P]) -> f64 {
@@ -245,8 +259,21 @@ fn joined_pad<'a>(outline: &Vec<P>, others: impl Iterator<Item = &'a Vec<P>>) ->
 }
 
 pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckResult, String> {
-    let obstacles = obstacles_of(layout, board);
+    let obstacles = obstacles_of(layout);
     let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
+    let world = crate::drc::Ctx::new(
+        board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &layout.tracks,
+        &layout.vias,
+        &[],
+        &layout.nets,
+    );
+    let base = crate::rules::Placed::new(&world);
+    let mut kept = crate::rules::Plan::default();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let min_w = board.rules.min_track_width.to_mm();
     let mut out = NeckResult::default();
@@ -306,7 +333,23 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
                 if end == 0 { points.clone() } else { points.iter().rev().copied().collect() };
             match cut(&path, outline, pad_w, &rules, t.width, floor, limit, opts.taper) {
                 Ok(None) => {}
+                Ok(Some(c))
+                    if crate::rules::legal(&crate::rules::Planned::after(
+                        &base,
+                        &kept,
+                        crate::rules::Plan { tracks: as_tracks(t, &c.necks), ..Default::default() },
+                    ))
+                    .is_err() =>
+                {
+                    out.failed.push(NeckFailed {
+                        track: t.source,
+                        net: net.name.clone(),
+                        pad: name,
+                        why: "the neck would break a design rule".into(),
+                    });
+                }
                 Ok(Some(c)) => {
+                    kept.tracks.extend(as_tracks(t, &c.necks));
                     let why = if t.width > pad_w + 1e-6 {
                         "wider than the pad"
                     } else {
