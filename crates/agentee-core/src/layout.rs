@@ -1537,7 +1537,8 @@ impl LayoutFile {
         };
         let domain_of: Vec<Option<usize>> =
             nets.iter().map(|n| board.domain_of(&n.name, &n.class).first().copied()).collect();
-        let isolated: Vec<bool> = domain_of.iter().map(Option::is_some).collect();
+        let isolated: Vec<bool> =
+            domain_of.iter().map(|d| d.is_some_and(|d| !board.domains[d].implicit)).collect();
         let same_part = |a: &Item, b: &Item| matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q);
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();

@@ -80,7 +80,7 @@ impl Setup {
             inner_oz: inner.split_last().and_then(|(_, v)| v.iter().copied().reduce(f64::max)),
             blind_buried: board.vias.iter().any(|v| v.kind != crate::board::ViaKind::Through),
             impedance: board.netclasses.iter().any(|n| n.impedance.is_some()),
-            domains: !board.domains.is_empty(),
+            domains: board.domains.iter().any(|d| !d.implicit),
             barrier_clearance: board.barriers.iter().any(|b| b.clearance.is_some()),
             creepage: board.barriers.iter().any(|b| b.creepage.is_some()),
             ..Setup::default()

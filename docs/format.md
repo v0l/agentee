@@ -93,6 +93,7 @@ name = "Power"
 track_width = "1mm"
 current = "3A"                 # checked against IPC-2221 on every layer
 max_temp_rise = "10C"          # default 10C
+voltage = "48VDC"              # or "-12VDC", "230VAC" (rms); sets spacing, see Net class voltage
 
 [[netclasses]]
 name = "USB"
@@ -434,9 +435,50 @@ of its own but their blind via drill (`min_blind_via_drill`, 0.2 mm), applied on
 set `min_controlled_depth_drill` in `[rules]` from your fab's figure. On `hdi-6l-1n1` a 0.15 mm controlled depth drill reaches
 In1.Cu or In4.Cu (0.123 mm deep), not In2.Cu.
 
+### Net class voltage
+
+Give a class the voltage its nets carry, `voltage = "48VDC"`, `"-12VDC"` or `"230VAC"` (AC is
+rms against 0 V), and agentee works out the spacing from it:
+
+- **Its own clearance.** A class with a `voltage` and no `clearance` gets the IPC-2221B table 6-1
+  spacing for its peak voltage on an outer uncoated layer (column B2), and never less than the
+  fab's `min_clearance`. A `clearance` set below that is an error naming the figure.
+- **Between classes.** Every pair of classes is held apart by the voltage between them: the
+  difference of their DC parts plus both AC parts at peak. A class with no `voltage` counts as
+  0 V. A class over the SELV limits (60 VDC, 30 VAC) and one at or under them get
+  **reinforced** insulation; two classes on the same side get **functional** insulation.
+- **Functional** spacing is IPC-2221B B2 clearance and IEC 60664-1 table F.4 creepage for printed
+  wiring at the board's pollution degree. **Reinforced** spacing is clearance for the next rated
+  impulse voltage above the one the working voltage sees (IEC 60664-1 tables F.1 and F.2,
+  overvoltage category II for AC, which is taken as mains, and the peak for DC) and twice the basic
+  creepage for material group IIIa (FR4 of unknown CTI), never under the IPC-2221B figure.
+  AC classes are rated 10% over their nominal for mains tolerance. 230 VAC to SELV comes out at
+  3 mm clearance and 5.06 mm creepage.
+
+Pairs that need more than their class clearances become barriers between implicit domains, one
+per class, so the `isolation-clearance` and `creepage` rules check them, and pours and the
+autorouter keep them, exactly as for hand written ones. Pads of one footprint are only held to the
+barrier between their classes, not to the class clearance, since the part's own pitch is rated by
+its maker. A hand written `[[domains]]` entry that names a class takes that class out of the
+implicit ones, and a hand written `[[barriers]]` entry between two domains replaces the implicit
+one. `agentee show board:NAME` lists every barrier with its working voltage and grade.
+
+`pollution_degree = 2` at the top of the board file (1, 2 or 3, default 2) picks the columns.
+
+The voltage reaches further than spacing:
+
+- A DC sim `[[supplies]]` pad with no `voltage` is held at its net's class voltage.
+- Every net of a DC class that `rails` does not list becomes a rail at that voltage for the
+  signal level check.
+- A capacitor's rating (`100n/50V`, `10u 25V`, or a `voltage` field) and any part's
+  `rated_voltage` field are checked against the peak voltage between the classes of its nets, with
+  a class without `voltage` taken as 0 V: under it is an error, under 1.25 times it a warning.
+
 ### Isolation domains and barriers
 
-A net class has one clearance, held against every other net. Where nets must keep more distance
+A net class has one clearance, held against every other net. Net class voltages cover most
+boards; write domains and barriers by hand where you need more, such as reinforced isolation the
+classes cannot express or a group of nets by name. Where nets must keep more distance
 from one group than from their neighbours (a mains primary from the secondary, a floating rail
 from the rest of the secondary), put the nets in domains and set a barrier between two domains:
 
@@ -538,8 +580,8 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `clearance` | error | always | copper of two nets closer than the larger of their class clearances (a footprint `clearance` replaces them for its pads), or copper run into a non-plated hole. Pads of one footprint are held to `min_clearance` and to the class clearance of nets in an isolation domain; spark gap electrodes are skipped |
 | `isolation-domain` | error | `[[domains]]` | a net whose class or name puts it in two domains |
 | `isolation-unassigned` | warning | `[[domains]]` | nets in no domain, which no barrier covers |
-| `isolation-clearance` | error | a barrier with `clearance` | copper of two domains on one layer closer than the clearance of the barrier between them, pads of one footprint and pours included; one line per net pair with the closest spot |
-| `creepage` | error | a barrier with `creepage` | copper of two domains closer along the board surface than the barrier's creepage: on one outer layer around board cutouts and non-plated holes at least the groove width of its `pollution_degree` wide, and from F.Cu to B.Cu down a cutout or hole wall or round the board edge |
+| `isolation-clearance` | error | a barrier with `clearance`, or class voltages that need one | copper of two domains on one layer closer than the clearance of the barrier between them, pads of one footprint and pours included; one line per net pair with the closest spot |
+| `creepage` | error | a barrier with `creepage`, or class voltages that need one | copper of two domains closer along the board surface than the barrier's creepage: on one outer layer around board cutouts and non-plated holes at least the groove width of its `pollution_degree` wide, and from F.Cu to B.Cu down a cutout or hole wall or round the board edge |
 | `spark-gap` | error | footprints with `spark_gaps` | a spark gap whose electrodes are not the declared `gap` apart (to 0.01 mm), sit under `min_clearance`, share a net or lack one, or have solder mask across the gap on an outer layer |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
 | `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
@@ -1883,7 +1925,7 @@ cell = 0.05                    # raster cell in mm
 
 [[supplies]]
 pad = "D2.1"
-voltage = "4.7V"
+voltage = "4.7V"               # default: the class voltage of the pad's net
 
 [[supplies]]
 pad = "J3.2"

@@ -398,7 +398,8 @@ pub struct HeatFile {
 #[serde(deny_unknown_fields)]
 pub struct SupplyFile {
     pub pad: String,
-    pub voltage: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voltage: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -442,6 +443,7 @@ pub struct PadRef {
 pub struct Supply {
     pub pad: PadRef,
     pub volts: f64,
+    pub from_class: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -895,6 +897,17 @@ pub fn hash(src: &str) -> u64 {
     h
 }
 
+pub fn with_class_supplies(hash: u64, sim: &Sim) -> u64 {
+    let mut h = hash;
+    for s in sim.supplies.iter().filter(|s| s.from_class) {
+        for b in s.volts.to_bits().to_le_bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+        }
+    }
+    h
+}
+
 pub fn freq(s: &str) -> Option<f64> {
     let lower = s.trim().to_ascii_lowercase();
     let body = lower.strip_suffix("hz").unwrap_or(&lower).trim();
@@ -1145,7 +1158,13 @@ impl SimFile {
         }
     }
 
-    pub fn resolve(&self, layout: &Layout, copper: &[String], d: &mut Diags) -> Sim {
+    pub fn resolve(
+        &self,
+        layout: &Layout,
+        copper: &[String],
+        board: Option<&crate::board::Board>,
+        d: &mut Diags,
+    ) -> Sim {
         let kind = self.kind.unwrap_or_default();
         let stray = self.logic_only_fields();
         if !stray.is_empty() {
@@ -1292,8 +1311,11 @@ impl SimFile {
             .filter_map(|(i, s)| {
                 let at = format!("supplies[{i}] {}", s.pad);
                 let pad = pad_ref(&s.pad, d, &at)?;
-                let volts = unit_value(&s.voltage, &[("mv", 1e-3), ("v", 1.0)], &at, d)?;
-                Some(Supply { pad, volts })
+                let volts = match &s.voltage {
+                    Some(v) => unit_value(v, &[("mv", 1e-3), ("v", 1.0)], &at, d)?,
+                    None => class_volts(layout, board, &pad, &at, d)?,
+                };
+                Some(Supply { pad, volts, from_class: s.voltage.is_none() })
             })
             .collect();
         let loads: Vec<Load> = self
@@ -1584,6 +1606,42 @@ impl SimFile {
             stale: false,
             copper_now: None,
             copper_then: None,
+        }
+    }
+}
+
+fn class_volts(
+    layout: &Layout,
+    board: Option<&crate::board::Board>,
+    pad: &PadRef,
+    at: &str,
+    d: &mut Diags,
+) -> Option<f64> {
+    let Some(net) = layout.parts[pad.part].pads[pad.pad].net.map(|n| &layout.nets[n]) else {
+        d.error(at, format!("{} is on no net, give the supply a `voltage`", pad.label));
+        return None;
+    };
+    match board.and_then(|b| b.voltage_of(&net.class)) {
+        Some(v) if v.ac == 0.0 => Some(v.dc),
+        Some(v) => {
+            d.error(
+                at,
+                format!(
+                    "{} is on {} of netclass {} at {v}; a DC drop needs a DC `voltage` on the supply",
+                    pad.label, net.name, net.class
+                ),
+            );
+            None
+        }
+        None => {
+            d.error(
+                at,
+                format!(
+                    "{} is on {} of netclass {}, which has no `voltage`: give the supply a `voltage` or the class one",
+                    pad.label, net.name, net.class
+                ),
+            );
+            None
         }
     }
 }

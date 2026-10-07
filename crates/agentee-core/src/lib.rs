@@ -11,6 +11,7 @@ pub mod geom;
 pub mod graphic;
 pub mod height;
 pub mod ibis;
+pub mod insulation;
 pub mod interface;
 pub mod layout;
 pub mod levels;

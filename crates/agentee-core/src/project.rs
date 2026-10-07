@@ -387,7 +387,9 @@ impl Project {
                 continue;
             };
             let copper = layout.item.copper.clone();
-            let mut item = file.resolve(&layout.item, &copper, &mut d);
+            let board = p.boards.iter().find(|b| b.name == layout.item.board).map(|b| &b.item);
+            let mut item = file.resolve(&layout.item, &copper, board, &mut d);
+            hash = crate::sim::with_class_supplies(hash, &item);
             if file.kind == Some(crate::sim::SimKind::Cascade) {
                 hash = p.check_cascade(&f, &item, hash, &mut d);
             }
@@ -543,7 +545,11 @@ impl Project {
             };
             let (whole, frames) = flatten(file, sch_files, &lib, &mut Vec::new(), &mut d, checked);
             let mut item = if checked {
-                let item = whole.resolve(&lib, &mut d);
+                let mut item = whole.resolve(&lib, &mut d);
+                if let Some(b) = board {
+                    item.add_class_rails(b);
+                    crate::insulation::check_ratings(&item, b, &mut d);
+                }
                 let laid_out = pcb_files.iter().any(|(_, l)| match l.schematic.as_deref() {
                     Some(n) => n == file.name,
                     None => sch_files.len() == 1,

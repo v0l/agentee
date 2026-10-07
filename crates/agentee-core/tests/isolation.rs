@@ -335,3 +335,76 @@ fn creepage_reaches_the_other_side_through_a_cutout_or_round_the_edge() {
         "1.5 mm to the edge, the 1.6104 mm board, 1.5 mm back: {e:?}"
     );
 }
+
+const MAINS: &str = "[[netclasses]]\nname = \"Mains\"\ntrack_width = \"0.5mm\"\nvia = \"std\"\nvoltage = \"230VAC\"\n";
+
+const HOT_COLD: &[(&str, &str, &[&str])] =
+    &[("L", "Mains", &["U1.1"]), ("GND", "Default", &["U2.1"])];
+
+fn mains(gap: f64, rules: &str) -> Project {
+    let (fps, pcb) = across(gap);
+    load(&Board {
+        rules,
+        cutouts: "",
+        footprints: &fps,
+        parts: &[("U1", "ONE", 1), ("U2", "ONE", 1)],
+        nets: HOT_COLD,
+        pcb: &pcb,
+    })
+}
+
+#[test]
+fn a_mains_class_is_kept_reinforced_from_low_voltage_with_no_domains_written() {
+    let p = mains(2.0, MAINS);
+    let b = &p.boards[0].item;
+    let class = b.netclass("Mains").unwrap();
+    assert_eq!(class.clearance.to_mm(), 2.5, "IPC-2221B B2 for 230VAC");
+    let barrier =
+        b.barriers.iter().find(|x| x.description.contains("reinforced")).expect("barrier");
+    assert!(barrier.clearance.unwrap().to_mm() >= 3.0);
+    assert!(barrier.creepage.unwrap().to_mm() >= 5.0);
+    let e = hits(&p, "isolation-clearance");
+    assert!(e.iter().any(|m| m.contains("U1.1 is 2mm from U2.1")), "{e:?}");
+    let p = mains(4.0, MAINS);
+    assert!(hits(&p, "isolation-clearance").is_empty());
+    let e = hits(&p, "creepage");
+    assert!(e.iter().any(|m| m.contains("U1.1 is 4mm from U2.1 along the surface")), "{e:?}");
+    let p = mains(5.5, MAINS);
+    assert!(hits(&p, "isolation-clearance").is_empty() && hits(&p, "creepage").is_empty());
+    assert!(hits(&p, "isolation-unassigned").is_empty(), "implicit domains are not a user's");
+}
+
+#[test]
+fn low_voltage_classes_make_no_barriers() {
+    let low = MAINS.replace("230VAC", "12VDC");
+    let p = mains(2.0, &low);
+    let b = &p.boards[0].item;
+    assert!(b.barriers.is_empty() && b.domains.is_empty(), "{:?}", b.barriers);
+    assert_eq!(b.netclass("Mains").unwrap().clearance, b.rules.min_clearance);
+}
+
+#[test]
+fn a_class_clearance_under_its_voltage_is_an_error() {
+    let tight = MAINS.replace("via = \"std\"\n", "via = \"std\"\nclearance = \"0.3mm\"\n");
+    let p = mains(6.0, &tight);
+    let e: Vec<_> = p.boards[0]
+        .diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .map(|d| d.message.clone())
+        .collect();
+    assert!(e.iter().any(|m| m.contains("carries 230VAC") && m.contains("2.5mm")), "{e:?}");
+}
+
+#[test]
+fn a_hand_written_barrier_wins_over_the_class_voltage() {
+    let rules = format!(
+        "{MAINS}\n[[domains]]\nname = \"hot\"\nclasses = [\"Mains\"]\n[[domains]]\nname = \"cold\"\nclasses = [\"Default\"]\n[[barriers]]\nbetween = [\"hot\", \"cold\"]\nclearance = \"8mm\"\n"
+    );
+    let p = mains(6.0, &rules);
+    let b = &p.boards[0].item;
+    let hot_cold = |x: &&agentee_core::board::Barrier| x.between == [0, 1] || x.between == [1, 0];
+    assert_eq!(b.barriers.iter().filter(hot_cold).count(), 1, "{:?}", b.barriers);
+    let e = hits(&p, "isolation-clearance");
+    assert!(e.iter().any(|m| m.contains("needs 8mm")), "{e:?}");
+}

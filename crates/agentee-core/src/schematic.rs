@@ -440,6 +440,17 @@ impl SchematicFile {
 }
 
 impl Schematic {
+    pub fn add_class_rails(&mut self, board: &crate::board::Board) {
+        for n in &self.nets {
+            if self.rails.contains_key(&n.name) {
+                continue;
+            }
+            if let Some(v) = board.voltage_of(&n.class).filter(|v| v.ac == 0.0) {
+                self.rails.insert(n.name.clone(), [v.dc, v.dc]);
+            }
+        }
+    }
+
     pub fn net_of(&self, r: PinRef) -> Option<usize> {
         self.nets.iter().position(|n| n.pins.contains(&r))
     }

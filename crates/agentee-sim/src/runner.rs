@@ -133,7 +133,7 @@ pub fn run(
         return run_pdn(p, entry, &src);
     }
     if spec.kind != agentee_core::sim::SimKind::Fdtd {
-        let hash = agentee_core::sim::hash(&src);
+        let hash = agentee_core::sim::with_class_supplies(agentee_core::sim::hash(&src), spec);
         let mut result = match spec.kind {
             agentee_core::sim::SimKind::Dc => {
                 crate::boardsim::dc(&layout.item, &board.item, spec, hash)?

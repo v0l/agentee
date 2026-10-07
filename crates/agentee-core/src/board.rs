@@ -1,5 +1,6 @@
 use crate::calc::{self, Line, TraceGeometry};
 use crate::diag::Diags;
+use crate::insulation::Voltage;
 use crate::units::{Amps, Kelvin, Length, Ohms, Percent, Point};
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,8 @@ pub struct BoardFile {
     pub domains: Vec<DomainFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub barriers: Vec<BarrierFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pollution_degree: Option<u8>,
     #[serde(default)]
     pub drc: DrcFile,
 }
@@ -60,6 +63,7 @@ pub struct Domain {
     pub description: String,
     pub classes: Vec<String>,
     pub nets: Vec<String>,
+    pub implicit: bool,
 }
 
 impl Domain {
@@ -368,6 +372,8 @@ pub struct NetclassFile {
     pub name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voltage: Option<Voltage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track_width: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1122,6 +1128,7 @@ impl Via {
 pub struct Netclass {
     pub name: String,
     pub description: String,
+    pub voltage: Option<Voltage>,
     pub track_width: Length,
     pub clearance: Length,
     pub via: Vec<String>,
@@ -1154,6 +1161,7 @@ impl Netclass {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Board {
+    pub pollution_degree: u8,
     pub name: String,
     pub description: String,
     pub fab: String,
@@ -1170,7 +1178,23 @@ pub struct Board {
 
 impl Board {
     pub fn domain_of(&self, net: &str, class: &str) -> Vec<usize> {
-        (0..self.domains.len()).filter(|&i| self.domains[i].holds(net, class)).collect()
+        let held = |implicit: bool| -> Vec<usize> {
+            (0..self.domains.len())
+                .filter(|&i| {
+                    self.domains[i].implicit == implicit && self.domains[i].holds(net, class)
+                })
+                .collect()
+        };
+        let explicit = held(false);
+        if explicit.is_empty() { held(true) } else { explicit }
+    }
+
+    pub fn netclass(&self, name: &str) -> Option<&Netclass> {
+        self.netclasses.iter().find(|n| n.name == name)
+    }
+
+    pub fn voltage_of(&self, class: &str) -> Option<Voltage> {
+        self.netclass(class).and_then(|n| n.voltage)
     }
 
     pub fn barrier(&self, a: Option<usize>, b: Option<usize>) -> Option<&Barrier> {
@@ -1258,7 +1282,7 @@ impl BoardFile {
             })
             .collect();
 
-        let netclasses = self
+        let netclasses: Vec<Netclass> = self
             .netclasses
             .iter()
             .enumerate()
@@ -1280,11 +1304,27 @@ impl BoardFile {
                         })
                         .unwrap_or(rules.min_track_width)
                 });
+                let rated = n.voltage.map(|v| Length::mm(crate::insulation::own_clearance(v)));
+                if let (Some(need), Some(set), Some(v)) = (rated, n.clearance, n.voltage)
+                    && set < need
+                {
+                    d.error(
+                        &at,
+                        format!(
+                            "netclass `{}` carries {v}, which needs {need} between its own nets on an outer layer (IPC-2221B table 6-1, uncoated); `clearance` is {set}, raise it or leave it out",
+                            n.name
+                        ),
+                    );
+                }
+                let clearance = n
+                    .clearance
+                    .unwrap_or_else(|| rated.map_or(rules.min_clearance, |r| r.max(rules.min_clearance)));
                 Netclass {
                     name: n.name.clone(),
                     description: n.description.clone(),
+                    voltage: n.voltage,
                     track_width,
-                    clearance: n.clearance.unwrap_or(rules.min_clearance),
+                    clearance,
                     via: n.via.as_ref().map(ViaNames::list).unwrap_or_default(),
                     current: n.current,
                     max_temp_rise: n.max_temp_rise.unwrap_or(Kelvin(10.0)),
@@ -1315,8 +1355,14 @@ impl BoardFile {
             })
             .collect();
 
-        let (domains, barriers) = self.resolve_isolation(d);
+        let pollution_degree = self.pollution_degree.unwrap_or(2);
+        if !(1..=3).contains(&pollution_degree) {
+            d.error("pollution_degree", "`pollution_degree` is 1, 2 or 3");
+        }
+        let (mut domains, mut barriers) = self.resolve_isolation(d);
+        implicit_isolation(&netclasses, pollution_degree, &mut domains, &mut barriers);
         Board {
+            pollution_degree,
             name: self.name.clone(),
             description: self.description.clone(),
             fab,
@@ -1356,6 +1402,7 @@ impl BoardFile {
                 description: f.description.clone(),
                 classes: f.classes.clone(),
                 nets: f.nets.clone(),
+                implicit: false,
             });
         }
         let mut barriers: Vec<Barrier> = Vec::new();
@@ -2122,6 +2169,101 @@ impl Board {
         }
         let t = self.stackup.thickness();
         d.info("stackup", format!("{n_cu} copper layers, {t} finished thickness"));
+    }
+}
+
+fn domain_voltage(d: &Domain, classes: &[Netclass]) -> Option<Voltage> {
+    d.classes
+        .iter()
+        .filter_map(|c| classes.iter().find(|n| &n.name == c)?.voltage)
+        .max_by(|a, b| a.peak().total_cmp(&b.peak()))
+}
+
+fn implicit_isolation(
+    classes: &[Netclass],
+    pollution_degree: u8,
+    domains: &mut Vec<Domain>,
+    barriers: &mut Vec<Barrier>,
+) {
+    if classes.iter().all(|c| c.voltage.is_none()) {
+        return;
+    }
+    let explicit = domains.len();
+    let claimed = |c: &str| domains[..explicit].iter().any(|d| d.classes.iter().any(|x| x == c));
+    let mut ends: Vec<(Option<usize>, &str, Voltage, f64)> = Vec::new();
+    for (i, d) in domains.iter().enumerate() {
+        if let Some(v) = domain_voltage(d, classes) {
+            let clear = d
+                .classes
+                .iter()
+                .filter_map(|c| classes.iter().find(|n| &n.name == c))
+                .map(|n| n.clearance.to_mm())
+                .fold(0.0, f64::max);
+            ends.push((Some(i), d.name.as_str(), v, clear));
+        }
+    }
+    let free: Vec<&Netclass> = classes.iter().filter(|c| !claimed(&c.name)).collect();
+    for c in &free {
+        ends.push((None, c.name.as_str(), c.voltage.unwrap_or(Voltage::ZERO), c.clearance.to_mm()));
+    }
+    let mut plan: Vec<(usize, usize, crate::insulation::Spacing)> = Vec::new();
+    for a in 0..ends.len() {
+        for b in a + 1..ends.len() {
+            let (ea, eb) = (&ends[a], &ends[b]);
+            if let (Some(x), Some(y)) = (ea.0, eb.0)
+                && barriers.iter().any(|z| z.between == [x, y] || z.between == [y, x])
+            {
+                continue;
+            }
+            let s = crate::insulation::spacing(ea.2, eb.2, pollution_degree);
+            let own = ea.3.max(eb.3);
+            let needed = s.grade == crate::insulation::Grade::Reinforced
+                || s.clearance > own + 1e-9
+                || s.creepage > own + 1e-9 && s.working.hazardous();
+            if needed {
+                plan.push((a, b, s));
+            }
+        }
+    }
+    let mut index: Vec<Option<usize>> = ends.iter().map(|e| e.0).collect();
+    let names: Vec<String> = ends.iter().map(|e| e.1.to_string()).collect();
+    let voltages: Vec<String> = ends
+        .iter()
+        .map(|e| match e.0 {
+            None if classes.iter().any(|c| c.name == e.1 && c.voltage.is_none()) => {
+                "no voltage, taken as 0V".to_string()
+            }
+            _ => e.2.to_string(),
+        })
+        .collect();
+    for (a, b, s) in plan {
+        for k in [a, b] {
+            if index[k].is_none() {
+                let taken = domains.iter().any(|d| d.name == names[k]);
+                domains.push(Domain {
+                    name: if taken { format!("class {}", names[k]) } else { names[k].clone() },
+                    description: format!("netclass {} at {}", names[k], voltages[k]),
+                    classes: vec![names[k].clone()],
+                    nets: Vec::new(),
+                    implicit: true,
+                });
+                index[k] = Some(domains.len() - 1);
+            }
+        }
+        let grade = match s.grade {
+            crate::insulation::Grade::Reinforced => "reinforced",
+            crate::insulation::Grade::Functional => "functional",
+        };
+        barriers.push(Barrier {
+            between: [index[a].unwrap(), index[b].unwrap()],
+            description: format!(
+                "{grade} insulation for {} between {} ({}) and {} ({})",
+                s.working, names[a], voltages[a], names[b], voltages[b]
+            ),
+            clearance: Some(Length::mm(s.clearance)),
+            creepage: Some(Length::mm(s.creepage)),
+            pollution_degree,
+        });
     }
 }
 

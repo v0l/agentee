@@ -215,6 +215,27 @@ fn board_and_layout_edits_write_the_keys() {
     assert!(board.contains("name = \"Power\""), "{board}");
     assert!(board.contains("current = \"1A\""), "{board}");
 
+    run(
+        &d,
+        &[
+            "edit",
+            "board",
+            "b",
+            "class",
+            "Mains",
+            "--track-width",
+            "0.5mm",
+            "--voltage",
+            "230VAC",
+            "--via",
+            "std",
+        ],
+    );
+    let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();
+    assert!(board.contains("voltage = \"230VAC\""), "{board}");
+    let (_, err, ok) = run(&d, &["edit", "board", "b", "class", "Mains", "--voltage", "230 amps"]);
+    assert!(!ok && err.contains("unknown voltage unit"), "{err}");
+
     edit(&d, &["board", "b", "outline", "--size", "40,25", "--corner-radius", "2mm"]);
     let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();
     assert!(board.contains("size = [40.0, 25.0]"), "{board}");
