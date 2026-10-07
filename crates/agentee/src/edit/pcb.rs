@@ -61,7 +61,7 @@ pub fn usage(name: &str) -> &'static str {
         "place" => "place REF [X,Y] [--rotation 90] [--bottom] [--locked]",
         "unplace" => "unplace REF ...",
         "track" => "track NET LAYER X,Y X,Y ... [--width 0.2mm]",
-        "untrack" => "untrack NET | X,Y X,Y ...",
+        "untrack" => "untrack NET [X,Y X,Y] | X,Y X,Y",
         "via" => "via NET X,Y [--via std] [--count 1] [--pitch 1.2,0]",
         "unvia" => "unvia NET X,Y | NET ...",
         "zone" => {
@@ -332,44 +332,95 @@ fn track(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
 }
 
 fn untrack(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
-    let words = o.rest();
-    let pts = o.words("point")?;
+    let mut words = o.rest();
+    words.extend(o.words("point")?);
     o.done("untrack", 0)?;
-    let net = words.first().cloned().unwrap_or_default();
-    let key: Option<String> = (net.starts_with(|c: char| c.is_ascii_digit())
-        || net.ends_with(".Cu"))
-    .then_some(net.clone());
-    let ends: Vec<[f64; 2]> = pts.iter().filter_map(|p| parse_xy(p).ok()).collect();
-    let same = |a: Option<[f64; 2]>, b: [f64; 2]| {
-        a.is_some_and(|a| (a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6)
-    };
-    let want = |t: &Table| -> bool {
-        if let Some(net) = &key
-            && text(t, "net").as_deref() != Some(net.as_str())
-        {
-            return false;
+    let mut net: Option<String> = None;
+    let mut ends: Vec<[f64; 2]> = Vec::new();
+    for w in &words {
+        if w.contains(',') {
+            ends.push(parse_xy(w)?);
+        } else if net.is_none() {
+            net = Some(w.clone());
+        } else {
+            return Err(format!("untrack: `{w}` is neither X,Y nor the only net name"));
         }
-        let pts: Vec<Option<[f64; 2]>> = t
-            .get("points")
-            .and_then(|v| v.as_array())
-            .map(|a| a.iter().map(point_of).collect())
-            .unwrap_or_default();
-        ends.is_empty() || (pts.len() == 2 && same(pts[0], ends[0]) && same(pts[1], ends[1]))
-    };
+    }
+    if net.is_none() && ends.is_empty() {
+        return Err("untrack: give a net name or the two points of a track".into());
+    }
+    if !ends.is_empty() && ends.len() != 2 {
+        return Err("untrack: give the two points the removed span runs between".into());
+    }
     let doc = s.doc(path)?;
     let a = doc
         .get_mut("tracks")
         .and_then(|v| v.as_array_of_tables_mut())
         .ok_or("this layout has no tracks")?;
+    let of_net =
+        |t: &Table| net.as_deref().is_none_or(|n| text(t, "net").as_deref() == Some(n));
     let before = a.len();
-    a.retain(|t| !want(t));
-    if a.len() == before {
-        return Err(match key {
-            Some(net) => format!("no track of net `{net}` on that point"),
-            None => "untrack: give a net name or the two points of a track".into(),
+    let mut kept: Vec<Table> = Vec::new();
+    let mut cut = 0usize;
+    for t in a.iter() {
+        if !of_net(t) {
+            kept.push(t.clone());
+            continue;
+        }
+        if ends.is_empty() {
+            cut += 1;
+            continue;
+        }
+        match split_track(t, ends[0], ends[1]) {
+            Some(parts) => {
+                cut += 1;
+                kept.extend(parts);
+            }
+            None => kept.push(t.clone()),
+        }
+    }
+    if cut == 0 {
+        return Err(match (&net, ends.is_empty()) {
+            (Some(n), true) => format!("no track of net `{n}`"),
+            (Some(n), false) => format!("no track of net `{n}` runs between those points"),
+            (None, _) => "no track runs between those points".into(),
         });
     }
-    Ok(Report::log(format!("removed {} tracks", before - a.len())))
+    a.clear();
+    for t in kept {
+        a.push(t);
+    }
+    Ok(Report::log(match ends.is_empty() {
+        true => format!("removed {} tracks", before - a.len()),
+        false => format!("cut the span from {} tracks", cut),
+    }))
+}
+
+fn split_track(t: &Table, from: [f64; 2], to: [f64; 2]) -> Option<Vec<Table>> {
+    let pts = t.get("points").and_then(|v| v.as_array())?;
+    let same = |v: &TValue, b: [f64; 2]| {
+        point_of(v).is_some_and(|a| (a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6)
+    };
+    let i = pts.iter().position(|v| same(v, from))?;
+    let j = pts.iter().position(|v| same(v, to))?;
+    if i == j {
+        return None;
+    }
+    let (lo, hi) = (i.min(j), i.max(j));
+    let all: Vec<TValue> = pts.iter().cloned().collect();
+    let piece = |span: &[TValue]| {
+        (span.len() >= 2).then(|| {
+            let mut p = t.clone();
+            let mut a = Array::new();
+            for v in span {
+                a.push(v.clone());
+            }
+            a.fmt();
+            set(&mut p, "points", TValue::Array(a));
+            p
+        })
+    };
+    Some([piece(&all[..=lo]), piece(&all[hi..])].into_iter().flatten().collect())
 }
 
 fn point_of(v: &TValue) -> Option<[f64; 2]> {

@@ -489,3 +489,41 @@ fn keeps_every_repeated_field() {
         run(&d, &["edit", "sch", "t", "set", "R1", "--value", "2k", "--value", "3k"]);
     assert!(!ok && err.contains("more than once"), "{err}");
 }
+
+#[test]
+fn untrack_takes_only_the_named_net_or_span() {
+    let d = dir("untrack");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.sch.toml"),
+        "name = \"t\"\nboard = \"b\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n\
+         [[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n[[nets]]\nname = \"B\"\npins = [\"R1.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.pcb.toml"),
+        "name = \"t\"\nboard = \"b\"\nschematic = \"t\"\n\
+         [[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[1, 1], [2, 1], [3, 1], [4, 1]]\n\
+         [[tracks]]\nnet = \"B\"\nlayer = \"F.Cu\"\npoints = [[1, 5], [2, 5]]\n",
+    )
+    .unwrap();
+    let (out, _, _) = run(&d, &["edit", "pcb", "t", "untrack", "2,1", "3,1"]);
+    assert!(out.contains("cut the span from 1 tracks"), "{out}");
+    let pcb = sch(&d, "t.pcb.toml");
+    assert!(pcb.contains("points = [[1, 1], [2, 1]]"), "{pcb}");
+    assert!(pcb.contains("points = [[3, 1], [4, 1]]"), "{pcb}");
+    assert!(pcb.contains("net = \"B\""), "{pcb}");
+
+    let (out, _, _) = run(&d, &["edit", "pcb", "t", "untrack", "A"]);
+    assert!(out.contains("removed 2 tracks"), "{out}");
+    let pcb = sch(&d, "t.pcb.toml");
+    assert!(!pcb.contains("net = \"A\""), "{pcb}");
+    assert!(pcb.contains("points = [[1, 5], [2, 5]]"), "{pcb}");
+
+    let (_, err, ok) = run(&d, &["edit", "pcb", "t", "untrack", "A"]);
+    assert!(!ok && err.contains("no track of net `A`"), "{err}");
+}

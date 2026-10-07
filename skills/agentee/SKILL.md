@@ -207,7 +207,8 @@ the symbol is missing but a symbol in the project uses that footprint, that one 
 `board`, `schematic`). `place` takes a part of the layout's schematic or of any sheet that
 schematic lists, at any depth, and says which sheet it found it on. A net, layer or via name
 that is not in the schematic or its sheets is an error naming what is, so a typo never becomes a
-net or a placement of its own.
+net or a placement of its own. `untrack NET` drops every track of that net; `untrack X,Y X,Y`
+(optionally after a net) cuts the span between two points of a track and keeps the rest.
 
 **Board** (`class NAME --track-width ... --impedance ... --via ...`, `unclass`, `via NAME --drill
 ... --diameter ...`, `unvia`, `outline`, `cutout`, `stackup`). `class` edits the netclass of that
