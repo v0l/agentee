@@ -260,7 +260,6 @@ fn joined_pad<'a>(outline: &Vec<P>, others: impl Iterator<Item = &'a Vec<P>>) ->
 
 pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckResult, String> {
     let obstacles = obstacles_of(layout);
-    let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let world = crate::drc::Ctx::new(
         board,
         &layout.copper,
@@ -273,6 +272,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
         &layout.nets,
     );
     let base = crate::rules::Placed::new(&world);
+    let spacing = crate::rules::Context::spacing(&base);
     let mut kept = crate::rules::Plan::default();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let min_w = board.rules.min_track_width.to_mm();
@@ -323,7 +323,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
                 net: t.net,
                 layer: &t.layer,
                 on: spacing.layer(layout.copper.iter().position(|c| c == &t.layer).unwrap_or(0)),
-                spacing: &spacing,
+                spacing,
                 clearance: net.clearance,
                 edge,
                 outline: &layout.outline,

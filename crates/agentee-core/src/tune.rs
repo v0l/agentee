@@ -158,7 +158,6 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
     }
 
     let mut obstacles = obstacles_of(layout);
-    let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let world = crate::drc::Ctx::new(
         board,
         &layout.copper,
@@ -171,6 +170,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
         &layout.nets,
     );
     let base = crate::rules::Placed::new(&world);
+    let spacing = crate::rules::Context::spacing(&base);
     let mut kept = crate::rules::Plan::default();
     let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
     let edge = board.rules.min_copper_to_edge.to_mm();
