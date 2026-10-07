@@ -88,11 +88,17 @@ impl App {
     fn watch(&mut self, ctx: egui::Context) {
         let (tx, rx) = channel();
         let watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-            if let Ok(e) = res
-                && changes_content(&e.kind)
-                && e.paths
-                    .iter()
-                    .any(|p| Kind::of(p).is_some() || p.to_string_lossy().ends_with(".result.json"))
+            let Ok(e) = res else { return };
+            if !changes_content(&e.kind) {
+                return;
+            }
+            if e.paths.iter().any(|p| agentee_3d::is_model(p)) {
+                agentee_3d::models_changed();
+                ctx.request_repaint();
+            }
+            if e.paths
+                .iter()
+                .any(|p| Kind::of(p).is_some() || p.to_string_lossy().ends_with(".result.json"))
             {
                 let _ = tx.send(());
                 ctx.request_repaint();

@@ -57,6 +57,15 @@ impl Default for Camera {
     }
 }
 
+impl Camera {
+    pub fn zoom_at(&mut self, factor: f32, from_centre: Vec2) {
+        let before = self.zoom;
+        self.zoom = (self.zoom * factor).clamp(0.2, 20.0);
+        let k = self.zoom / before;
+        self.pan = from_centre + (self.pan - from_centre) * k;
+    }
+}
+
 pub const AMBIENT: f32 = 0.30;
 pub const KEY: f32 = 0.80;
 pub const FILL: f32 = 0.25;
@@ -871,9 +880,12 @@ pub fn show(
         } else if resp.dragged() {
             cam.pan += resp.drag_delta();
         }
-        if resp.hovered() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            cam.zoom = (cam.zoom * (1.0 + scroll * 0.002)).clamp(0.2, 20.0);
+        if let Some(at) = resp.hover_pos() {
+            let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
+            let factor = pinch * (1.0 + scroll * 0.002);
+            if (factor - 1.0).abs() > 1e-4 {
+                cam.zoom_at(factor, at - rect.center());
+            }
         }
         if resp.double_clicked() {
             *cam = Camera::default();
@@ -933,6 +945,100 @@ pub fn show(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_model_rewritten_on_disk_shows_in_the_next_scene() {
+        let dir = std::env::temp_dir().join(format!("agentee-3d-swap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["symbols", "footprints", "3dmodels"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+        }
+        let lna = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+        std::fs::copy(lna.join("symbols/R.sym.toml"), dir.join("symbols/R.sym.toml")).unwrap();
+        let fp = std::fs::read_to_string(lna.join("footprints/R_0402_1005Metric.fp.toml")).unwrap();
+        let fp: String = fp
+            .lines()
+            .map(|l| if l.starts_with("model") { "model = \"3dmodels/r.wrl\"" } else { l })
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(dir.join("footprints/R_0402_1005Metric.fp.toml"), fp).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\nfootprint = \"R_0402_1005Metric\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[footprints]]\nref = \"R1\"\nat = [10, 5]\n",
+        )
+        .unwrap();
+        let quads = |n: usize| {
+            let mut s = String::from("#VRML V2.0 utf8\n");
+            for i in 0..n {
+                s += &format!(
+                    "Shape {{ geometry IndexedFaceSet {{ coord Coordinate {{ point [ 0 0 {i}, 1 0 {i}, 1 1 {i}, 0 1 {i} ] }} coordIndex [ 0 1 2 3 -1 ] }} }}\n"
+                );
+            }
+            s
+        };
+        let model = dir.join("3dmodels/r.wrl");
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let part_triangles = || {
+            let scene = build(&p.layouts[0].item, &p.boards[0].item, &dir, Fetch::Never);
+            scene.surfaces.iter().filter(|s| s.part).map(|s| s.positions.len() / 3).sum::<usize>()
+        };
+        std::fs::write(&model, quads(1)).unwrap();
+        let first = part_triangles();
+        std::fs::write(&model, quads(4)).unwrap();
+        let generation = agentee_3d::generation();
+        assert!(agentee_3d::is_model(&model));
+        agentee_3d::models_changed();
+        assert!(agentee_3d::generation() > generation, "the scene key would not change");
+        let second = part_triangles();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(first > 0 && second > first, "{first} then {second} part triangles");
+    }
+
+    #[test]
+    fn zooming_keeps_the_point_under_the_pointer() {
+        let scene = Scene {
+            id: 0,
+            surfaces: Vec::new(),
+            images: Vec::new(),
+            centre: [5.0, 3.0, 0.0],
+            radius: 10.0,
+            pending: 0,
+            missing: Vec::new(),
+        };
+        let size = Vec2::new(800.0, 600.0);
+        let mut cam = Camera { pan: Vec2::new(40.0, -25.0), ..Default::default() };
+        let pointer = Vec2::new(220.0, -130.0);
+        let v = view(&scene, &cam, size);
+        let dist = scene.radius * 2.4;
+        let under = add(
+            v.target,
+            add(
+                scale(v.right, pointer.x * dist / v.focal),
+                scale(v.up, -pointer.y * dist / v.focal),
+            ),
+        );
+        let screen = |v: &View| {
+            let d = sub(under, v.eye);
+            let z = dot(d, v.forward);
+            Vec2::new(v.focal * dot(d, v.right) / z, -v.focal * dot(d, v.up) / z)
+        };
+        assert!((screen(&v) - pointer).length() < 1e-2, "{:?}", screen(&v));
+        for factor in [1.6, 0.5, 3.0] {
+            cam.zoom_at(factor, pointer);
+            let after = screen(&view(&scene, &cam, size));
+            assert!((after - pointer).length() < 0.5, "{factor}: {after:?}");
+        }
+    }
+
     use super::*;
 
     #[test]

@@ -322,6 +322,16 @@ pub fn generation() -> u64 {
     GENERATION.load(Ordering::Relaxed)
 }
 
+pub fn models_changed() {
+    library().fetching.retain(|_, state| state.is_none());
+    GENERATION.fetch_add(1, Ordering::Relaxed);
+}
+
+pub fn is_model(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    matches!(ext.as_str(), "step" | "stp" | "wrl" | "vrml")
+}
+
 pub fn set_waker(f: impl Fn() + Send + Sync + 'static) {
     library().waker = Some(Arc::new(f));
 }

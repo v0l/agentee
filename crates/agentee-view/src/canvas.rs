@@ -106,3 +106,53 @@ pub fn cursor_readout(ui: &Ui, xf: &Xf, hover: Option<Pos2>) {
         egui_bench::theme::LEGEND,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{Event, Modifiers, MouseWheelUnit, RawInput, TouchPhase};
+
+    #[test]
+    fn the_wheel_zooms_about_the_pointer() {
+        for flip in [false, true] {
+            let ctx = egui::Context::default();
+            let mut view = View { flip, ..Default::default() };
+            let mut b = Bounds::EMPTY;
+            b.add([0.0, 0.0]);
+            b.add([40.0, 30.0]);
+            let pointer = Pos2::new(700.0, 150.0);
+            let mut under = None;
+            let mut xf_last = None;
+            for k in 0..40 {
+                let events = match k {
+                    1 => vec![Event::PointerMoved(pointer)],
+                    2 => vec![Event::MouseWheel {
+                        unit: MouseWheelUnit::Point,
+                        delta: Vec2::new(0.0, 240.0),
+                        phase: TouchPhase::Move,
+                        modifiers: Modifiers::NONE,
+                    }],
+                    _ => Vec::new(),
+                };
+                let input = RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0))),
+                    time: Some(k as f64 / 60.0),
+                    events,
+                    ..Default::default()
+                };
+                let _ = ctx.run_ui(input, |ui| {
+                    let (_, xf) = view.show(ui, &b, 30.0);
+                    if k == 1 {
+                        under = Some(xf.mm(pointer));
+                    }
+                    xf_last = Some(xf);
+                });
+            }
+            let (under, xf) = (under.unwrap(), xf_last.unwrap());
+            assert!(view.scale > 25.0, "flip {flip}: did not zoom, scale {}", view.scale);
+            let now = xf.mm(pointer);
+            let moved = ((now[0] - under[0]).powi(2) + (now[1] - under[1]).powi(2)).sqrt();
+            assert!(moved < 0.05, "flip {flip}: {under:?} drifted to {now:?}");
+        }
+    }
+}

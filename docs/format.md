@@ -1482,7 +1482,8 @@ meander on a segment you pick. Net lengths and delays are in `agentee show pcb:N
 The viewer's layout page has a `3d` tab (`agentee view --3d` opens on it): the board in its
 stackup thickness, mask and silk colours and finish, copper under the mask, bare pads, plated and
 bare drill walls, and each part's 3D model. The `parts` toggle hides the models. Drag to orbit,
-shift-drag to pan, scroll to zoom, double-click to reset. The viewer draws with OpenGL
+shift-drag to pan, scroll to zoom toward the pointer, double-click to reset. A `.step`, `.stp`,
+`.wrl` or `.vrml` file written anywhere under the project is loaded again into the open view. The viewer draws with OpenGL
 ([three-d](https://github.com/asny/three-d)); `agentee render pcb:NAME --show 3d` (or `3d-top`,
 `3d-bottom`) draws the same scene in software, `--hide parts` leaves the models out and `--region`
 aims the camera at that area.
