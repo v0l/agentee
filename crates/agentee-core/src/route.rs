@@ -90,6 +90,8 @@ pub struct RouteResult {
     pub tracks: Vec<RoutedTrack>,
     pub vias: Vec<RoutedVia>,
     pub failed: Vec<Unrouted>,
+    #[serde(skip)]
+    pub per_net: std::collections::HashMap<String, usize>,
 }
 
 #[derive(Clone)]
@@ -705,7 +707,8 @@ pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> Rout
                 });
                 r.tracks.retain(|t| t.net != name);
                 r.vias.retain(|v| v.net != name);
-                r.routed = r.routed.saturating_sub(1);
+                let lost = r.per_net.remove(&name).unwrap_or(1);
+                r.routed = r.routed.saturating_sub(lost);
             }
         }
     }
@@ -1350,6 +1353,7 @@ fn route_once(
             let placed: Vec<(P, &ViaOption)> =
                 placed.into_iter().map(|(at, k)| (at, &ctx.vias[k])).collect();
             let name = layout.nets[conn.net].name.clone();
+            *out.per_net.entry(name.clone()).or_default() += 1;
             for (l, pts) in conn.tracks {
                 for w in pts.windows(2) {
                     obstacles.push(Obstacle {

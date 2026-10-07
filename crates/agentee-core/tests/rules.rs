@@ -209,3 +209,39 @@ fn a_moved_part_is_judged_where_it_lands() {
     rules::check(&hidden, &mut out);
     assert!(out.iter().all(|v| !v.subject.contains("R1.") && !v.other.contains("R1.")), "{out:?}");
 }
+
+#[test]
+fn a_dropped_net_takes_all_its_connections_off_the_count() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    let p = agentee_core::Project::load(&root).unwrap();
+    let l = &p.layouts[0].item;
+    let b = &p.boards.iter().find(|x| x.name == l.board).unwrap().item;
+    let pads: Vec<_> = l
+        .parts
+        .iter()
+        .flat_map(|q| &q.pads)
+        .filter(|q| q.net.is_some() && q.copper.iter().any(|c| c == "F.Cu"))
+        .collect();
+    let a = pads[0];
+    let other = pads.iter().find(|q| q.net != a.net).unwrap();
+    let centre =
+        |q: &agentee_core::layout::PlacedPad| agentee_core::drc::rings_bounds(&q.outlines).center();
+    let name = l.nets[a.net.unwrap()].name.clone();
+    let mut per_net = std::collections::HashMap::new();
+    per_net.insert(name.clone(), 2);
+    let r = agentee_core::route::RouteResult {
+        connections: 3,
+        routed: 3,
+        tracks: vec![agentee_core::route::RoutedTrack {
+            net: name,
+            layer: "F.Cu".into(),
+            width: None,
+            points: vec![centre(a), centre(other)],
+        }],
+        per_net,
+        ..Default::default()
+    };
+    let held = agentee_core::route::hold_to_rules(l, b, r);
+    assert!(held.tracks.is_empty());
+    assert_eq!(held.routed, 1);
+}
