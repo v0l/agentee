@@ -36,6 +36,7 @@ impl Rule for CopperToEdge {
                     gap: if inside { to_edge } else { f64::NEG_INFINITY },
                     need,
                     at,
+                    ..Default::default()
                 });
             }
         }

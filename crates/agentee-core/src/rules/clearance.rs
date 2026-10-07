@@ -137,6 +137,7 @@ impl super::Rule for NetClearance {
                     gap: dist.max(0.0),
                     need,
                     at,
+                    ..Default::default()
                 });
             }
         }

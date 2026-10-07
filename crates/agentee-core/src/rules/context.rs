@@ -17,6 +17,7 @@ pub trait Context {
 
     fn item(&self, i: usize) -> &Cu;
     fn hole(&self, i: usize) -> &Hole;
+    fn hole_count(&self) -> usize;
     fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize>;
     fn holes_near(&self, b: &Bounds, reach: f64) -> Vec<usize>;
 
@@ -118,6 +119,10 @@ impl Context for Placed<'_> {
 
     fn hole(&self, i: usize) -> &Hole {
         &self.holes[i]
+    }
+
+    fn hole_count(&self) -> usize {
+        self.holes.len()
     }
 
     fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize> {
@@ -301,6 +306,10 @@ impl Context for Planned<'_> {
     fn hole(&self, i: usize) -> &Hole {
         let n = self.base_holes();
         if i < n { self.base.hole(i) } else { &self.holes[i - n] }
+    }
+
+    fn hole_count(&self) -> usize {
+        self.base_holes() + self.holes.len()
     }
 
     fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize> {

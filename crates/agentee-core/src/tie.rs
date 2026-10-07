@@ -38,18 +38,9 @@ impl Shape {
             Shape::Circle(o, r) => (geom::dist(c, *o) - r).max(0.0),
         }
     }
-
-    fn to_segment(&self, a: P, b: P) -> f64 {
-        match self {
-            Shape::Poly(v) => geom::polyline_polygon_distance(&[a, b], v),
-            Shape::Seg(p, q, r) => (geom::segment_segment_distance(a, b, *p, *q) - r).max(0.0),
-            Shape::Circle(o, r) => (geom::point_segment_distance(*o, a, b) - r).max(0.0),
-        }
-    }
 }
 
 struct Item {
-    net: Option<usize>,
     layers: Vec<String>,
     shape: Shape,
     smd: bool,
@@ -67,7 +58,6 @@ fn is_bga(fp_name: &str, pads: usize) -> bool {
 }
 
 pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult, String> {
-    let spacing = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
     let planes: Vec<usize> = plane_nets(layout)
         .into_iter()
         .filter(|n| nets.is_empty() || nets.iter().any(|g| glob(g, &layout.nets[*n].name)))
@@ -84,7 +74,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
         for pad in &p.pads {
             for o in &pad.outlines {
                 items.push(Item {
-                    net: pad.net,
                     layers: pad.copper.clone(),
                     shape: Shape::Poly(o.clone()),
                     smd: pad.drill.is_none() && !pad.copper.is_empty(),
@@ -95,7 +84,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
     for t in &layout.tracks {
         for w in t.points.windows(2) {
             items.push(Item {
-                net: Some(t.net),
                 layers: vec![t.layer.clone()],
                 shape: Shape::Seg(w[0], w[1], t.width / 2.0),
                 smd: false,
@@ -106,7 +94,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
         |v: &&crate::layout::Via| matches!(v.source, crate::layout::ViaSource::Stitch(_));
     for v in layout.vias.iter().filter(|v| !stitched(v)) {
         items.push(Item {
-            net: Some(v.net),
             layers: v.layers.clone(),
             shape: Shape::Circle(v.at, v.diameter / 2.0),
             smd: false,
@@ -180,19 +167,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             let vlayers = spec.copper_layers(copper);
             let (vr, dr) = (spec.diameter.to_mm() / 2.0, spec.drill.to_mm() / 2.0);
             let width = layout.nets[net].width.min(pb.size()[0].min(pb.size()[1]));
-            let apart = |other: Option<usize>, l: &[String]| {
-                l.iter()
-                    .filter_map(|n| copper.iter().position(|c| c == n))
-                    .map(|i| {
-                        crate::rules::Spacing::gap(
-                            &spacing.isolation,
-                            Some(net),
-                            other,
-                            spacing.layer(i),
-                        )
-                    })
-                    .fold(0.0, f64::max)
-            };
             let stub = |c: P| crate::layout::Track {
                 source: usize::MAX,
                 net,
@@ -224,20 +198,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                     let shares = it.layers.iter().any(|l| vlayers.contains(l));
                     let d = it.shape.to_point(c);
                     if it.smd && shares && (d < vr + PAD_GAP || d < dr + hole_smd) {
-                        return false;
-                    }
-                    if it.net == Some(net) {
-                        continue;
-                    }
-                    let shared: Vec<String> =
-                        it.layers.iter().filter(|l| vlayers.contains(l)).cloned().collect();
-                    if d < vr + apart(it.net, &shared) {
-                        return false;
-                    }
-                    if it.layers.contains(&layer)
-                        && it.shape.to_segment(pc, c)
-                            < width / 2.0 + apart(it.net, std::slice::from_ref(&layer))
-                    {
                         return false;
                     }
                 }
@@ -292,14 +252,8 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 points: vec![pc, c],
             });
             out.vias.push(RoutedVia { net: name, at: c, via: spec.name.clone() });
+            items.push(Item { layers: vlayers.clone(), shape: Shape::Circle(c, vr), smd: false });
             items.push(Item {
-                net: Some(net),
-                layers: vlayers.clone(),
-                shape: Shape::Circle(c, vr),
-                smd: false,
-            });
-            items.push(Item {
-                net: Some(net),
                 layers: vec![layer.clone()],
                 shape: Shape::Seg(pc, c, width / 2.0),
                 smd: false,

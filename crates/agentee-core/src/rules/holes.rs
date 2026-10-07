@@ -125,6 +125,7 @@ impl Rule for HoleToCopper {
                     gap,
                     need,
                     at: h.a,
+                    ..Default::default()
                 });
             }
         }
@@ -186,6 +187,7 @@ impl Rule for HoleToHole {
                         gap,
                         need,
                         at: a.a,
+                        ..Default::default()
                     });
                 }
             }

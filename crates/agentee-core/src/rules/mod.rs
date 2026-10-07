@@ -1,9 +1,11 @@
+mod barrier;
 mod clearance;
 mod context;
 mod edge;
 mod holes;
 mod isolation;
 
+pub use barrier::{Creepage, IsolationClearance, Rim, Surface, closest as closest_edges, ring_edges as barrier_edges};
 pub use clearance::{ClassClearance, NetClearance};
 pub use context::{Context, Placed, Planned};
 pub use edge::CopperToEdge;
@@ -25,7 +27,7 @@ impl Layer {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Violation {
     pub rule: &'static str,
     pub group: String,
@@ -34,6 +36,9 @@ pub struct Violation {
     pub gap: f64,
     pub need: f64,
     pub at: crate::geom::P,
+    pub detail: String,
+    pub layers: Vec<String>,
+    pub nets: Option<(usize, usize)>,
 }
 
 pub trait Rule: Sync {
@@ -48,6 +53,8 @@ pub fn check<C: Context>(cx: &C, out: &mut Vec<Violation>) {
     HoleToCopper(Which::Inner).eval(cx, out);
     HoleToCopper(Which::Npth).eval(cx, out);
     HoleToHole.eval(cx, out);
+    IsolationClearance.eval(cx, out);
+    Creepage.eval(cx, out);
 }
 
 pub fn legal<C: Context>(cx: &C) -> Result<(), Vec<Violation>> {

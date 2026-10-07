@@ -588,11 +588,11 @@ pub fn outline_distance(outline: &[P], p: P) -> f64 {
 }
 
 pub struct FillIndex {
-    edges: Vec<(P, P)>,
-    cell: f64,
+    pub(crate) edges: Vec<(P, P)>,
+    pub(crate) cell: f64,
     y0: f64,
     rows: Vec<Vec<usize>>,
-    bins: HashMap<(i64, i64), Vec<usize>>,
+    pub(crate) bins: HashMap<(i64, i64), Vec<usize>>,
     pub bounds: Bounds,
 }
 
