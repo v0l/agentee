@@ -242,3 +242,31 @@ fn a_glob_fanout_leaves_test_points_alone() {
     let vias = &p.layouts[0].item.vias;
     assert!(vias.iter().any(|v| agentee_core::geom::dist(v.at, [12.0, 15.0]) < 0.5), "{vias:?}");
 }
+
+#[test]
+fn a_net_with_copper_on_the_probe_side_gets_a_stub_and_no_via() {
+    let parts = [Part { side: "bottom", ..part("R1", [20.0, 15.0]) }];
+    let p = load("", &parts, RAIL_AND_SIGNAL, "");
+    let layout = &p.layouts[0].item;
+    let r1 = layout.parts.iter().find(|q| q.reference == "R1").unwrap();
+    let pad = r1.pads.iter().find(|q| q.net.is_some()).unwrap();
+    let c = testpoint::pad_center(pad);
+    let net = layout.nets[pad.net.unwrap()].name.clone();
+    let track = format!(
+        "\n[[tracks]]\nnet = \"{net}\"\nlayer = \"B.Cu\"\npoints = [[{}, {}], [{}, {}]]\n",
+        c[0],
+        c[1],
+        c[0],
+        c[1] + 4.0
+    );
+    let p = load("", &parts, RAIL_AND_SIGNAL, &track);
+    let layout = &p.layouts[0].item;
+    let ni = layout.nets.iter().position(|n| n.name == net).unwrap();
+    let spots = testpoint::place(layout, &p.boards[0].item, &layout.test, &[ni], 1.27);
+    let s = &spots[0];
+    let (at, stub) = (s.at.unwrap(), s.stub.unwrap());
+    assert!(s.via.is_none(), "a via was added at {:?}", s.via);
+    let on_track = agentee_core::geom::point_segment_distance(stub, c, [c[0], c[1] + 4.0]);
+    let on_pad = agentee_core::geom::dist(stub, c);
+    assert!(on_track < 1e-3 || on_pad < 1e-3, "stub from {at:?} ends at {stub:?}");
+}

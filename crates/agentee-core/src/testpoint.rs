@@ -348,7 +348,18 @@ const OWN_ROOM: f64 = 0.3;
 pub struct Placement {
     pub net: usize,
     pub at: Option<P>,
+    pub stub: Option<P>,
     pub via: Option<P>,
+}
+
+fn nearest_on_segment(p: P, a: P, b: P) -> P {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let len2 = d[0] * d[0] + d[1] * d[1];
+    if len2 < 1e-12 {
+        return a;
+    }
+    let t = (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2).clamp(0.0, 1.0);
+    [a[0] + t * d[0], a[1] + t * d[1]]
 }
 
 fn class_via<'a>(board: &'a Board, net: &LayoutNet) -> Option<&'a crate::board::Via> {
@@ -413,10 +424,32 @@ pub fn place(
         anchors.extend(
             layout.tracks.iter().filter(|t| t.net == ni).flat_map(|t| t.points.iter().copied()),
         );
+        let mut side: Vec<(P, P)> = Vec::new();
+        for p in &layout.parts {
+            for q in p.pads.iter().filter(|q| q.net == Some(ni) && q.copper.contains(&cu)) {
+                let c = pad_center(q);
+                side.push((c, c));
+            }
+        }
+        side.extend(
+            layout
+                .vias
+                .iter()
+                .filter(|v| v.net == ni && v.layers.contains(&cu))
+                .map(|v| (v.at, v.at)),
+        );
+        for t in layout.tracks.iter().filter(|t| t.net == ni && t.layer == cu) {
+            side.extend(t.points.windows(2).map(|w| (w[0], w[1])));
+        }
+        let side_point = |c: P| -> Option<P> {
+            side.iter()
+                .map(|(a, b)| nearest_on_segment(c, *a, *b))
+                .min_by(|a, b| geom::dist(*a, c).total_cmp(&geom::dist(*b, c)))
+        };
         let mut ab = crate::graphic::Bounds::EMPTY;
         anchors.iter().for_each(|a| ab.add(*a));
         if ab.is_empty() || ob.is_empty() {
-            out.push(Placement { net: ni, at: None, via: None });
+            out.push(Placement { net: ni, at: None, stub: None, via: None });
             continue;
         }
         let reach = 12.0;
@@ -431,6 +464,7 @@ pub fn place(
                 let c = [(x * 1e4).round() / 1e4, (y * 1e4).round() / 1e4];
                 let d = anchors.iter().map(|a| geom::dist(*a, c)).fold(f64::MAX, f64::min);
                 if d <= reach {
+                    let d = side_point(c).map_or(d, |q| geom::dist(q, c));
                     candidates.push((d, c));
                 }
                 x += spacing;
@@ -497,12 +531,30 @@ pub fn place(
             vias: vec![crate::layout::Via::of(v, ni, q, &layout.copper)],
             ..Default::default()
         };
-        let mut found: Option<(P, P, f64, f64, f64)> = None;
-        for (_, c) in candidates {
-            if !clear(c, &taken) {
-                continue;
-            }
-            let Some(v) = via else { break };
+        let direct = |c: P, q: P| crate::rules::Plan {
+            pads: vec![crate::rules::Pad::round(ni, &cu, c, r)],
+            tracks: vec![crate::layout::Track {
+                source: usize::MAX,
+                net: ni,
+                layer: cu.clone(),
+                width: layout.nets[ni].width,
+                points: vec![c, q],
+            }],
+            ..Default::default()
+        };
+        let open: Vec<P> =
+            candidates.into_iter().map(|(_, c)| c).filter(|c| clear(*c, &taken)).collect();
+        let stubbed = open.iter().find_map(|&c| {
+            side_point(c)
+                .map(|q| [(q[0] * 1e4).round() / 1e4, (q[1] * 1e4).round() / 1e4])
+                .filter(|q| geom::dist(*q, c) <= reach)
+                .filter(|q| {
+                    crate::rules::legal(&crate::rules::Planned::after(&base, &kept, direct(c, *q)))
+                        .is_ok()
+                })
+                .map(|q| (c, q, false))
+        });
+        let via_spot = |c: P, v: &crate::board::Via| -> Option<P> {
             let (vr, dr) = (v.diameter.to_mm() / 2.0, v.drill.to_mm() / 2.0);
             let len = (r + vr + clearance).max(r + dr + hole_gap);
             let len = (len / 0.05).ceil() * 0.05;
@@ -520,9 +572,7 @@ pub fn place(
                 };
                 off(*a).total_cmp(&off(*b))
             });
-            let width = layout.nets[ni].width;
-            let spot = dirs
-                .into_iter()
+            dirs.into_iter()
                 .map(|d| {
                     let q = [c[0] + len * d.cos(), c[1] + len * d.sin()];
                     [(q[0] * 1e4).round() / 1e4, (q[1] * 1e4).round() / 1e4]
@@ -535,19 +585,25 @@ pub fn place(
                             probe(c, *q, v),
                         ))
                         .is_ok()
-                });
-            if let Some(q) = spot {
-                found = Some((c, q, vr, dr, width / 2.0));
-                break;
-            }
-        }
-        if let Some((c, q, ..)) = found {
+                })
+        };
+        let found = stubbed.or_else(|| {
+            let v = via?;
+            open.iter().find_map(|&c| via_spot(c, v).map(|q| (c, q, true)))
+        });
+        if let Some((c, q, with_via)) = found {
             taken.push(c);
-            if let Some(v) = via {
-                kept.extend(probe(c, q, v));
+            match via.filter(|_| with_via) {
+                Some(v) => kept.extend(probe(c, q, v)),
+                None => kept.extend(direct(c, q)),
             }
         }
-        out.push(Placement { net: ni, at: found.map(|f| f.0), via: found.map(|f| f.1) });
+        out.push(Placement {
+            net: ni,
+            at: found.map(|f| f.0),
+            stub: found.map(|f| f.1),
+            via: found.filter(|f| f.2).map(|f| f.1),
+        });
     }
     out
 }

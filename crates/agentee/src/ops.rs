@@ -1406,7 +1406,7 @@ fn ensure_library(root: &Path, p: &Project) -> Result<Vec<String>, String> {
     Ok(written)
 }
 
-type Placed = (String, String, [f64; 2], Option<String>, Option<[f64; 2]>);
+type Placed = (String, String, [f64; 2], Option<String>, Option<[f64; 2]>, bool);
 
 fn unjoined(layout: &agentee_core::layout::Layout, placed: &[Placed]) -> Vec<String> {
     placed
@@ -1447,19 +1447,19 @@ fn drop_testpoints(layout: &Path, dropped: &[Placed]) -> Result<(), String> {
                 .and_then(|v| v.as_array())
                 .map(|a| a.iter().map(point).collect())
                 .unwrap_or_default();
-            !dropped.iter().any(|(_, net, at, _, via)| {
+            !dropped.iter().any(|(_, net, at, _, stub, _)| {
                 text(t, "net").as_deref() == Some(net)
                     && pts.len() == 2
                     && same(pts[0], *at)
-                    && via.is_some_and(|v| same(pts[1], v))
+                    && stub.is_some_and(|v| same(pts[1], v))
             })
         });
     }
     if let Some(a) = doc.get_mut("vias").and_then(|v| v.as_array_of_tables_mut()) {
         a.retain(|t| {
             let at = t.get("at").and_then(|v| v.as_value()).and_then(point);
-            !dropped.iter().any(|(_, net, _, _, via)| {
-                text(t, "net").as_deref() == Some(net) && via.is_some_and(|v| same(at, v))
+            !dropped.iter().any(|(_, net, _, _, stub, via)| {
+                *via && text(t, "net").as_deref() == Some(net) && stub.is_some_and(|v| same(at, v))
             })
         });
     }
@@ -1564,7 +1564,7 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
                 continue;
             }
         }
-        placed.push((reference, net, at, sheet, s.via));
+        placed.push((reference, net, at, sheet, s.stub, s.via.is_some()));
     }
     let base = json!({
         "layout": entry.name,
@@ -1575,7 +1575,9 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     let listed = |placed: &[Placed]| -> Vec<Value> {
         placed
             .iter()
-            .map(|(r, n, a, s, v)| json!({ "ref": r, "net": n, "at": a, "sheet": s, "via": v }))
+            .map(|(r, n, a, s, stub, via)| {
+                json!({ "ref": r, "net": n, "at": a, "sheet": s, "stub": stub, "via": via.then_some(stub) })
+            })
             .collect()
     };
     if !o.write || placed.is_empty() {
@@ -1589,14 +1591,14 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
     let f = |v: f64| (v * 1e4).round() / 1e4;
     let mut text = format!("\n# agentee testpoints {}", o.nets.join(" ")).trim_end().to_string();
     text.push('\n');
-    for (r, _, at, _, _) in &placed {
+    for (r, _, at, ..) in &placed {
         text += &format!("\n[[footprints]]\nref = \"{r}\"\nat = [{}, {}]\n", f(at[0]), f(at[1]));
         if spec.bottom() {
             text += "side = \"bottom\"\n";
         }
     }
-    for (_, net, at, _, via) in &placed {
-        let Some(v) = via else { continue };
+    for (_, net, at, _, stub, via) in &placed {
+        let Some(v) = stub else { continue };
         text += &format!(
             "\n[[tracks]]\nnet = \"{net}\"\nlayer = \"{}\"\npoints = [[{}, {}], [{}, {}]]\n",
             spec.copper(),
@@ -1605,7 +1607,9 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
             f(v[0]),
             f(v[1])
         );
-        text += &format!("\n[[vias]]\nnet = \"{net}\"\nat = [{}, {}]\n", f(v[0]), f(v[1]));
+        if *via {
+            text += &format!("\n[[vias]]\nnet = \"{net}\"\nat = [{}, {}]\n", f(v[0]), f(v[1]));
+        }
     }
     let path = entry.path.clone();
     let layout_name = entry.name.clone();
