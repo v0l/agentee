@@ -15,7 +15,7 @@ pub static RULES: &[Rule] = &[
         summary: "copper of two different nets touches",
         when: "every board",
         applies: every,
-        check: recorded,
+        check: net_clearance,
     },
     Rule {
         id: "clearance",
@@ -24,7 +24,7 @@ pub static RULES: &[Rule] = &[
         summary: "copper of two nets closer than their net class clearance, or a pad footprint clearance, or copper run into a non-plated hole",
         when: "every board",
         applies: every,
-        check: recorded,
+        check: net_clearance,
     },
     Rule {
         id: "unrouted",
@@ -436,32 +436,37 @@ fn track_grazes_pad(cx: &Ctx, r: &mut Report) {
     }
 }
 
-fn copper_to_edge(cx: &Ctx, r: &mut Report) {
-    let edge = cx.edge();
-    if !edge.is_closed() {
-        return;
+fn net_clearance(cx: &Ctx, r: &mut Report) {
+    use crate::rules::Rule;
+    super::recorded(cx, r);
+    let placed = crate::rules::Placed::new(cx);
+    let mut found = Vec::new();
+    crate::rules::NetClearance.eval(&placed, &mut found);
+    let rule = r.rule;
+    for v in found.into_iter().filter(|v| v.rule == rule) {
+        if v.rule == "short" {
+            r.emit("short", format!("{} touches {}", v.subject, v.other));
+        } else {
+            r.emit(
+                "clearance",
+                format!("{} is {} from {}, needs {}", v.subject, mm(v.gap), v.other, mm(v.need)),
+            );
+        }
     }
-    let need = cx.board.rules.min_copper_to_edge.to_mm();
-    for c in cx.copper_items() {
-        let (inside, to_edge) = match c.shape {
-            CuShape::Seg(a, b, hw) => {
-                let centre = edge.segment_distance(a, b);
-                (edge.contains(a) && edge.contains(b) && centre > 0.0, centre - hw)
-            }
-            CuShape::Circle(o, ro) => (edge.contains(o), edge.distance(o) - ro),
-            CuShape::Poly(_) => continue,
-        };
-        if !inside {
-            r.emit("edge", format!("{} leaves the board", cx.describe(c)));
-        } else if to_edge + crate::layout::DRC_EPSILON < need {
+}
+
+fn copper_to_edge(cx: &Ctx, r: &mut Report) {
+    use crate::rules::Rule;
+    let placed = crate::rules::Placed::new(cx);
+    let mut found = Vec::new();
+    crate::rules::CopperToEdge.eval(&placed, &mut found);
+    for v in found {
+        if v.gap == f64::NEG_INFINITY {
+            r.emit("edge", format!("{} leaves the board", v.subject));
+        } else {
             r.emit(
                 "edge",
-                format!(
-                    "{} is {} from the board edge, needs {}",
-                    cx.describe(c),
-                    mm(to_edge),
-                    mm(need)
-                ),
+                format!("{} is {} from the board edge, needs {}", v.subject, mm(v.gap), mm(v.need)),
             );
         }
     }

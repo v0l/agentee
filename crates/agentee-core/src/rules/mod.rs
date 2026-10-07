@@ -1,7 +1,13 @@
 mod clearance;
+mod context;
+mod edge;
+mod holes;
 mod isolation;
 
-pub use clearance::ClassClearance;
+pub use clearance::{ClassClearance, NetClearance};
+pub use context::{Context, Placed, Planned};
+pub use edge::CopperToEdge;
+pub use holes::{HoleToCopper, HoleToHole, Which};
 pub use isolation::Isolation;
 
 use crate::board::Board;
@@ -17,6 +23,37 @@ impl Layer {
     pub fn new(index: usize, count: usize) -> Layer {
         Layer { index, outer: index == 0 || index + 1 == count }
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Violation {
+    pub rule: &'static str,
+    pub group: String,
+    pub subject: String,
+    pub other: String,
+    pub gap: f64,
+    pub need: f64,
+    pub at: crate::geom::P,
+}
+
+pub trait Rule: Sync {
+    fn id(&self) -> &'static str;
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>);
+}
+
+pub fn check<C: Context>(cx: &C, out: &mut Vec<Violation>) {
+    NetClearance.eval(cx, out);
+    CopperToEdge.eval(cx, out);
+    HoleToCopper(Which::Plated).eval(cx, out);
+    HoleToCopper(Which::Inner).eval(cx, out);
+    HoleToCopper(Which::Npth).eval(cx, out);
+    HoleToHole.eval(cx, out);
+}
+
+pub fn legal<C: Context>(cx: &C) -> Result<(), Vec<Violation>> {
+    let mut out = Vec::new();
+    check(cx, &mut out);
+    if out.is_empty() { Ok(()) } else { Err(out) }
 }
 
 pub trait Spacing: Send + Sync {

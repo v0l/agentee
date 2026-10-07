@@ -1,4 +1,4 @@
-use super::{Category, Ctx, Hole, HoleOf, Owner, Report, Rule, Setup, every, near};
+use super::{Category, Ctx, Hole, HoleOf, Report, Rule, Setup, every};
 use crate::board::{DrillKind, LayerKind, ViaKind};
 use crate::diag::Severity;
 use crate::geom::{self, P};
@@ -260,49 +260,6 @@ struct Hit {
     other: String,
 }
 
-fn crowding(
-    cx: &Ctx,
-    h: &Hole,
-    need: f64,
-    any_net: bool,
-    layer_ok: &dyn Fn(&str) -> bool,
-) -> Option<Hit> {
-    let mut worst: Option<(f64, String)> = None;
-    let items = cx.copper_items();
-    let hb = h.bounds();
-    let shares = |layers: &[String]| layers.iter().any(|l| h.layers.contains(l) && layer_ok(l));
-    let other_net = |n: Option<usize>| any_net || n.is_none() || n != h.net;
-    for i in cx.items_near(&hb, need) {
-        let c = &items[i];
-        let own = match (h.of, c.owner) {
-            (HoleOf::Via(a), Owner::Via(b)) => a == b,
-            (HoleOf::Pad(p, k), Owner::Pad(q, j)) => (p, k) == (q, j),
-            _ => false,
-        };
-        if own || !other_net(c.net) || !shares(&c.layers) {
-            continue;
-        }
-        let gap = h.gap_to(&c.shape);
-        if gap + 1e-6 < need && worst.as_ref().is_none_or(|w| gap < w.0) {
-            worst = Some((gap, cx.describe(c)));
-        }
-    }
-    for (z, f) in cx.zones.iter().zip(cx.fills()) {
-        if !other_net(Some(z.net))
-            || !h.layers.contains(&z.layer)
-            || !layer_ok(&z.layer)
-            || !near(&f.bounds, hb.center(), need + hb.size()[0].max(hb.size()[1]))
-        {
-            continue;
-        }
-        let gap = h.gap_to_fill(f, need);
-        if gap + 1e-6 < need && worst.as_ref().is_none_or(|w| gap < w.0) {
-            worst = Some((gap, format!("the {} pour on {}", cx.nets[z.net].name, z.layer)));
-        }
-    }
-    worst.map(|(gap, other)| Hit { gap, hole: cx.hole_name(h), other })
-}
-
 fn report_groups(
     groups: BTreeMap<String, Vec<Hit>>,
     need_of: &dyn Fn(&str) -> f64,
@@ -328,50 +285,31 @@ fn report_groups(
     }
 }
 
-fn group_of(cx: &Ctx, h: &Hole) -> String {
-    match h.of {
-        HoleOf::Via(_) => format!("vias {}", mm(h.size[0])),
-        HoleOf::Pad(p, _) => format!("part {}", cx.parts[p].reference),
+fn from_rule(cx: &Ctx, rule: impl crate::rules::Rule, what: &str, r: &mut Report) {
+    let placed = crate::rules::Placed::new(cx);
+    let mut found = Vec::new();
+    rule.eval(&placed, &mut found);
+    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
+    let mut need: BTreeMap<String, f64> = BTreeMap::new();
+    for v in found {
+        need.insert(v.group.clone(), v.need);
+        groups.entry(v.group).or_default().push(Hit { gap: v.gap, hole: v.subject, other: v.other });
     }
+    report_groups(groups, &|g| need.get(g).copied().unwrap_or(0.0), what, r);
 }
 
 fn hole_to_copper(cx: &Ctx, r: &mut Report) {
-    let rules = &cx.board.rules;
-    let (via, pth) = (rules.min_via_hole_to_copper.to_mm(), rules.min_pth_hole_to_copper.to_mm());
-    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
-    for h in cx.holes().into_iter().filter(|h| h.plated) {
-        let need = if matches!(h.of, HoleOf::Via(_)) { via } else { pth };
-        if let Some(hit) = crowding(cx, &h, need, false, &|_| true) {
-            groups.entry(group_of(cx, &h)).or_default().push(hit);
-        }
-    }
-    let need_of = |g: &str| if g.starts_with("vias") { via } else { pth };
-    report_groups(groups, &need_of, "another net's copper", r);
+    let rule = crate::rules::HoleToCopper(crate::rules::Which::Plated);
+    from_rule(cx, rule, "another net's copper", r);
 }
 
 fn inner_hole_to_copper(cx: &Ctx, r: &mut Report) {
-    let need = cx.board.rules.min_inner_pth_hole_to_copper.to_mm();
-    let inner: Vec<&String> =
-        cx.copper.iter().skip(1).take(cx.copper.len().saturating_sub(2)).collect();
-    let is_inner = |l: &str| inner.iter().any(|i| i.as_str() == l);
-    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
-    for h in cx.holes().into_iter().filter(|h| h.plated && matches!(h.of, HoleOf::Pad(..))) {
-        if let Some(hit) = crowding(cx, &h, need, false, &is_inner) {
-            groups.entry(group_of(cx, &h)).or_default().push(hit);
-        }
-    }
-    report_groups(groups, &|_| need, "another net's copper on an inner layer", r);
+    let rule = crate::rules::HoleToCopper(crate::rules::Which::Inner);
+    from_rule(cx, rule, "another net's copper on an inner layer", r);
 }
 
 fn npth_to_copper(cx: &Ctx, r: &mut Report) {
-    let need = cx.board.rules.min_npth_to_copper.to_mm();
-    let mut groups: BTreeMap<String, Vec<Hit>> = BTreeMap::new();
-    for h in cx.holes().into_iter().filter(|h| !h.plated) {
-        if let Some(hit) = crowding(cx, &h, need, true, &|_| true) {
-            groups.entry(group_of(cx, &h)).or_default().push(hit);
-        }
-    }
-    report_groups(groups, &|_| need, "copper", r);
+    from_rule(cx, crate::rules::HoleToCopper(crate::rules::Which::Npth), "copper", r);
 }
 
 fn hole_to_edge(cx: &Ctx, r: &mut Report) {
@@ -397,44 +335,23 @@ fn hole_to_edge(cx: &Ctx, r: &mut Report) {
     }
 }
 
-type Drill = (P, f64, String, Option<usize>, (usize, usize));
-
 fn hole_to_hole(cx: &Ctx, r: &mut Report) {
-    let all = (0, cx.copper.len().saturating_sub(1));
-    let mut drills: Vec<Drill> = cx
-        .vias
-        .iter()
-        .map(|v| {
-            let name = format!("via at [{:.3}, {:.3}]", v.at[0], v.at[1]);
-            (v.at, v.drill / 2.0, name, None, v.span_of(cx.copper).unwrap_or(all))
-        })
-        .collect();
-    for (pi, p) in cx.parts.iter().enumerate() {
-        for pad in &p.pads {
-            if let Some((c, s, _)) = pad.drill {
-                let name = format!("{}.{}", p.reference, pad.number);
-                drills.push((c, s[0].min(s[1]) / 2.0, name, Some(pi), all));
-            }
-        }
-    }
-    let hole_gap = cx.board.rules.min_hole_to_hole.to_mm();
-    let mut close = 0;
-    let mut first = None;
-    for i in 0..drills.len() {
-        for j in i + 1..drills.len() {
-            let (a, b) = (&drills[i], &drills[j]);
-            if (a.3.is_some() && a.3 == b.3) || a.4.0.max(b.4.0) >= a.4.1.min(b.4.1) {
-                continue;
-            }
-            let gap = geom::dist(a.0, b.0) - a.1 - b.1;
-            if gap + 1e-6 < hole_gap && geom::dist(a.0, b.0) > 1e-6 {
-                close += 1;
-                first.get_or_insert(format!("{} is {} from {}", a.2, mm(gap), b.2));
-            }
-        }
-    }
-    if let Some(f) = first {
-        r.emit("drills", format!("{close} drill pairs closer than {}, first: {f}", mm(hole_gap)));
+    use crate::rules::Rule;
+    let placed = crate::rules::Placed::new(cx);
+    let mut found = Vec::new();
+    crate::rules::HoleToHole.eval(&placed, &mut found);
+    if let Some(f) = found.first() {
+        r.emit(
+            "drills",
+            format!(
+                "{} drill pairs closer than {}, first: {} is {} from {}",
+                found.len(),
+                mm(f.need),
+                f.subject,
+                mm(f.gap),
+                f.other
+            ),
+        );
     }
 }
 

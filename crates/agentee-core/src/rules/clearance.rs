@@ -44,3 +44,101 @@ impl Spacing for ClassClearance {
         self.of(net).max(self.widest)
     }
 }
+
+pub struct NetClearance;
+
+impl super::Rule for NetClearance {
+    fn id(&self) -> &'static str {
+        "clearance"
+    }
+
+    fn eval<C: super::Context>(&self, cx: &C, out: &mut Vec<super::Violation>) {
+        use crate::drc::Owner;
+        let board = cx.board();
+        let parts = cx.parts();
+        let spacing = cx.spacing();
+        let min_clearance = board.rules.min_clearance.to_mm();
+        let explicit = |n: usize| {
+            let net = &cx.nets()[n];
+            board
+                .domain_of(&net.name, &net.class)
+                .first()
+                .is_some_and(|&d| !board.domains[d].implicit)
+        };
+        let footprint = |o: Owner| match o {
+            Owner::Pad(p, _) => parts.get(p).and_then(|p| p.footprint.clearance),
+            _ => None,
+        };
+        let tied = |a: &crate::drc::Cu, b: &crate::drc::Cu| {
+            let Owner::Pad(pi, k) = a.owner else { return false };
+            let Some(p) = parts.get(pi) else { return false };
+            let Some(group) = p.footprint.net_tie_group(&p.pads[k].number) else { return false };
+            b.net.is_some() && p.pads.iter().any(|q| q.net == b.net && group.contains(&q.number))
+        };
+        let reach = spacing
+            .class
+            .reach(None)
+            .max(parts.iter().filter_map(|p| p.footprint.clearance).fold(min_clearance, f64::max));
+        let subjects = cx.item_subjects(reach);
+        let chosen: std::collections::HashSet<usize> = subjects.iter().copied().collect();
+        for &i in &subjects {
+            let a = cx.item(i);
+            for j in cx.items_near(&a.bounds, reach) {
+                if j == i || (j < i && chosen.contains(&j)) {
+                    continue;
+                }
+                if !cx.counts(cx.planned_item(i), cx.planned_item(j)) {
+                    continue;
+                }
+                let b = cx.item(j);
+                let (a, b, i, j) = if j < i { (b, a, j, i) } else { (a, b, i, j) };
+                if (a.net.is_some() && a.net == b.net)
+                    || !a.layers.iter().any(|l| b.layers.contains(l))
+                {
+                    continue;
+                }
+                let same_part =
+                    matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q);
+                if let (true, Owner::Pad(p, k1), Owner::Pad(_, k2)) = (same_part, a.owner, b.owner)
+                {
+                    let n = |k: usize| parts[p].pads[k].number.as_str();
+                    if parts[p].footprint.spark_gap(n(k1), n(k2)).is_some() {
+                        continue;
+                    }
+                }
+                if tied(a, b) || tied(b, a) {
+                    continue;
+                }
+                let need = match (footprint(a.owner), footprint(b.owner)) {
+                    (None, None) if same_part => [a.net, b.net]
+                        .into_iter()
+                        .flatten()
+                        .filter(|&n| explicit(n))
+                        .map(|n| cx.nets()[n].clearance)
+                        .fold(min_clearance, f64::max),
+                    (None, None) => spacing.class.gap(a.net, b.net, spacing.layer(0)),
+                    (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
+                };
+                let dist = a.shape.distance(&b.shape);
+                if dist > 1e-6 && dist + crate::layout::DRC_EPSILON >= need {
+                    continue;
+                }
+                let at = match a.shape {
+                    crate::drc::CuShape::Seg(p, _, _) | crate::drc::CuShape::Circle(p, _) => p,
+                    crate::drc::CuShape::Poly(ref v) => {
+                        v.first().and_then(|r| r.first()).copied().unwrap_or([0.0, 0.0])
+                    }
+                };
+                out.push(super::Violation {
+                    rule: if dist <= 1e-6 { "short" } else { "clearance" },
+                    group: if dist <= 1e-6 { "short" } else { "clearance" }.into(),
+                    subject: cx.describe(i),
+                    other: cx.describe(j),
+                    gap: dist.max(0.0),
+                    need,
+                    at,
+                });
+            }
+        }
+    }
+}

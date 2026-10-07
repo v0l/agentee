@@ -468,6 +468,64 @@ pub enum CuShape {
 }
 
 impl CuShape {
+    pub fn point_distance(&self, p: P) -> f64 {
+        match self {
+            CuShape::Poly(v) => v
+                .iter()
+                .map(|poly| {
+                    if geom::point_in_polygon(p, poly) {
+                        0.0
+                    } else {
+                        geom::polyline_polygon_distance(&[p, p], poly)
+                    }
+                })
+                .fold(f64::MAX, f64::min),
+            CuShape::Seg(a, b, hw) => geom::point_segment_distance(p, *a, *b) - hw,
+            CuShape::Circle(c, r) => geom::dist(p, *c) - r,
+        }
+    }
+
+    pub fn distance(&self, o: &CuShape) -> f64 {
+        match (self, o) {
+            (CuShape::Seg(a, b, h1), CuShape::Seg(c, d, h2)) => {
+                geom::segment_segment_distance(*a, *b, *c, *d) - h1 - h2
+            }
+            (CuShape::Seg(a, b, h), CuShape::Circle(c, r))
+            | (CuShape::Circle(c, r), CuShape::Seg(a, b, h)) => {
+                geom::point_segment_distance(*c, *a, *b) - h - r
+            }
+            (CuShape::Circle(a, r1), CuShape::Circle(b, r2)) => geom::dist(*a, *b) - r1 - r2,
+            (CuShape::Poly(v), CuShape::Seg(a, b, h))
+            | (CuShape::Seg(a, b, h), CuShape::Poly(v)) => v
+                .iter()
+                .map(|poly| {
+                    if geom::point_in_polygon(*a, poly) || geom::point_in_polygon(*b, poly) {
+                        -h
+                    } else {
+                        geom::polyline_polygon_distance(&[*a, *b], poly) - h
+                    }
+                })
+                .fold(f64::MAX, f64::min),
+            (CuShape::Poly(v), CuShape::Circle(c, r))
+            | (CuShape::Circle(c, r), CuShape::Poly(v)) => {
+                v.iter()
+                    .map(|poly| {
+                        if geom::point_in_polygon(*c, poly) {
+                            0.0
+                        } else {
+                            geom::polyline_polygon_distance(&[*c, *c], poly)
+                        }
+                    })
+                    .fold(f64::MAX, f64::min)
+                    - r
+            }
+            (CuShape::Poly(a), CuShape::Poly(b)) => a
+                .iter()
+                .flat_map(|p| b.iter().map(move |q| geom::polygon_distance(p, q)))
+                .fold(f64::MAX, f64::min),
+        }
+    }
+
     pub fn circle_gap(&self, c: P, r: f64) -> f64 {
         match self {
             CuShape::Poly(v) => rings_point_gap(v, c) - r,

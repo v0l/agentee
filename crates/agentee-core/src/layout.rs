@@ -1517,23 +1517,6 @@ impl LayoutFile {
 
         let rule_on = |id: &str| crate::drc::id_enabled(board, id);
         let copper_rules = rule_on("short") || rule_on("clearance");
-        let min_clearance = board.rules.min_clearance.to_mm();
-        let footprint_clearance = |it: &Item| match it.owner {
-            Owner::Pad(pi, _) => parts[pi].footprint.clearance,
-            _ => None,
-        };
-        let net_tied = |pad: &Item, other: &Item| {
-            let Owner::Pad(pi, k) = pad.owner else { return false };
-            let p = &parts[pi];
-            let Some(group) = p.footprint.net_tie_group(&p.pads[k].number) else { return false };
-            other.net.is_some()
-                && p.pads.iter().any(|q| q.net == other.net && group.contains(&q.number))
-        };
-        let domain_of: Vec<Option<usize>> =
-            nets.iter().map(|n| board.domain_of(&n.name, &n.class).first().copied()).collect();
-        let isolated: Vec<bool> =
-            domain_of.iter().map(|d| d.is_some_and(|d| !board.domains[d].implicit)).collect();
-        let same_part = |a: &Item, b: &Item| matches!((a.owner, b.owner), (Owner::Pad(p, _), Owner::Pad(q, _)) if p == q);
         let mut uf = UnionFind::new(items.len());
         let mut shorts = Vec::new();
         let mut tight = Vec::new();
@@ -1568,7 +1551,8 @@ impl LayoutFile {
                     continue;
                 }
                 let same = a.net.is_some() && a.net == b.net;
-                if !same && (!copper_rules || net_tied(a, b) || net_tied(b, a)) {
+                let hole = a.owner == Owner::Hole || b.owner == Owner::Hole;
+                if !same && !(hole && copper_rules) {
                     continue;
                 }
                 let dist = a.shape.distance(&b.shape);
@@ -1578,34 +1562,10 @@ impl LayoutFile {
                     }
                     continue;
                 }
-                if a.owner == Owner::Hole || b.owner == Owner::Hole {
-                    if dist <= 0.0 {
-                        tight.push(format!(
-                            "{} runs into a hole",
-                            if a.owner == Owner::Hole { name_of(b) } else { name_of(a) }
-                        ));
-                    }
-                    continue;
-                }
-                let need = match (footprint_clearance(a), footprint_clearance(b)) {
-                    (None, None) if same_part(a, b) => [a.net, b.net]
-                        .into_iter()
-                        .flatten()
-                        .filter(|&n| isolated[n])
-                        .map(|n| nets[n].clearance)
-                        .fold(min_clearance, f64::max),
-                    (None, None) => spacing.class.gap(a.net, b.net, spacing.layer(0)),
-                    (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
-                };
-                if dist <= 1e-6 {
-                    shorts.push(format!("{} touches {}", name_of(a), name_of(b)));
-                } else if dist + DRC_EPSILON < need {
+                if dist <= 0.0 {
                     tight.push(format!(
-                        "{} is {} from {}, needs {}",
-                        name_of(a),
-                        Length::mm(dist),
-                        name_of(b),
-                        Length::mm(need)
+                        "{} runs into a hole",
+                        if a.owner == Owner::Hole { name_of(b) } else { name_of(a) }
                     ));
                 }
             }
