@@ -280,7 +280,7 @@ impl Base {
         } else {
             Vec::new()
         };
-        let grid = Grid::build(layout, &rules, opts.grid, &fences);
+        let grid = Grid::build(layout, board, &rules, opts.grid, &fences);
         let zone = zone_map(layout, &grid);
         Ok(Base { rules, grid, islands, zone, nets })
     }

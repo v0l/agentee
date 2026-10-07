@@ -161,16 +161,15 @@ impl super::zone::Constrains for NetClearance {
         t: &super::zone::Template,
         zone: &mut super::zone::Zone,
     ) {
-        let reach = reach(cx) + t.half();
-        for j in cx.items_near(&zone.window(), reach) {
-            let b = cx.item(j);
+        let window = zone.window();
+        for k in super::keepout::copper(cx, Some(&window), reach(cx) + t.half()) {
             let shared: Vec<String> =
-                b.layers.iter().filter(|l| t.layers.contains(l)).cloned().collect();
-            if shared.is_empty() || t.owns(b.net) {
+                k.layers.iter().filter(|l| t.layers.contains(l)).cloned().collect();
+            if shared.is_empty() {
                 continue;
             }
-            let Some(need) = need(cx, (t.owner(), t.net), b) else { continue };
-            zone.forbid(Some(&shared), &b.shape, need + t.half());
+            let Some(need) = k.need(cx, t) else { continue };
+            zone.forbid(Some(&shared), &k.shape, need + t.half());
         }
     }
 }

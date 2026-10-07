@@ -463,6 +463,7 @@ pub struct Cu {
     pub shape: CuShape,
 }
 
+#[derive(Clone, Debug)]
 pub enum CuShape {
     Poly(Vec<Vec<P>>),
     Seg(P, P, f64),

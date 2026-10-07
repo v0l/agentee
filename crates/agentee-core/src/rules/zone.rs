@@ -43,7 +43,12 @@ impl Template {
     }
 
     pub fn pad(net: usize, layer: &str, r: f64) -> Template {
-        Template { net: Some(net), also: Vec::new(), layers: vec![layer.into()], kind: Kind::Pad { r } }
+        Template {
+            net: Some(net),
+            also: Vec::new(),
+            layers: vec![layer.into()],
+            kind: Kind::Pad { r },
+        }
     }
 
     pub fn half(&self) -> f64 {

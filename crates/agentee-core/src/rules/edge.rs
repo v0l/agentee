@@ -57,10 +57,12 @@ impl super::zone::Constrains for CopperToEdge {
         if !edge.is_closed() {
             return;
         }
-        let need = cx.board().rules.min_copper_to_edge.to_mm() + t.half();
         let window = zone.window();
-        zone.forbid_where(None, &window, 0.0, |p, m| {
-            !edge.contains(p) || edge.distance(p) < need + m
-        });
+        zone.forbid_where(None, &window, 0.0, |p, _| !edge.contains(p));
+        for k in super::keepout::edge(cx) {
+            if let Some(need) = k.need(cx, t) {
+                zone.forbid(None, &k.shape, need + t.half());
+            }
+        }
     }
 }

@@ -202,11 +202,6 @@ impl super::zone::Constrains for HoleToCopper {
         t: &super::zone::Template,
         zone: &mut super::zone::Zone,
     ) {
-        let copper = cx.copper();
-        let inner =
-            |l: &str| copper.len() >= 3 && copper[1..copper.len() - 1].iter().any(|c| c == l);
-        let layer_ok = |l: &str| self.0 != Which::Inner || inner(l);
-        let any_net = self.0 == Which::Npth;
         let r = &cx.board().rules;
         let most = [
             r.min_via_hole_to_copper,
@@ -218,17 +213,17 @@ impl super::zone::Constrains for HoleToCopper {
         .map(|l| l.to_mm())
         .fold(0.0, f64::max);
         let window = zone.window();
-        for i in cx.holes_near(&window, most + t.half()) {
-            let h = cx.hole(i);
-            if !self.takes(h.plated, h.of) || (!any_net && t.owns(h.net)) {
+        for k in super::keepout::holes(cx, Some(&window), most + t.half()) {
+            if k.rule != self.id() {
                 continue;
             }
             let shared: Vec<String> =
-                t.layers.iter().filter(|l| h.layers.contains(l) && layer_ok(l)).cloned().collect();
-            if !shared.is_empty() {
-                let need = self.need(cx, h.of);
-                zone.forbid(Some(&shared), &super::zone::hole_shape(h), need + t.half());
+                k.layers.iter().filter(|l| t.layers.contains(l)).cloned().collect();
+            if shared.is_empty() {
+                continue;
             }
+            let Some(need) = k.need(cx, t) else { continue };
+            zone.forbid(Some(&shared), &k.shape, need + t.half());
         }
         let super::zone::Kind::Via { drill, ref hole, .. } = t.kind else { return };
         if self.0 != Which::Plated {

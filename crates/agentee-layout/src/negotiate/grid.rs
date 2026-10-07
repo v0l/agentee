@@ -1,5 +1,4 @@
 use super::rules::{Isolation, Need, Rules, um};
-use agentee_core::footprint::PadKind;
 use agentee_core::geom::{self, P};
 use agentee_core::layout::{Layout, ViaSource};
 
@@ -40,6 +39,16 @@ pub enum Shape {
     Poly(Vec<P>),
     Seg(P, P, f64),
     Circle(P, f64),
+}
+
+fn shapes(s: &agentee_core::drc::CuShape) -> Vec<Shape> {
+    match s {
+        agentee_core::drc::CuShape::Poly(rings) => {
+            rings.iter().map(|r| Shape::Poly(r.clone())).collect()
+        }
+        agentee_core::drc::CuShape::Seg(a, b, h) => vec![Shape::Seg(*a, *b, *h)],
+        agentee_core::drc::CuShape::Circle(c, r) => vec![Shape::Circle(*c, *r)],
+    }
 }
 
 impl Shape {
@@ -336,7 +345,13 @@ impl Grid {
         }
     }
 
-    pub fn build(layout: &Layout, rules: &Rules, g: f64, fences: &[Fence]) -> Grid {
+    pub fn build(
+        layout: &Layout,
+        board_spec: &agentee_core::board::Board,
+        rules: &Rules,
+        g: f64,
+        fences: &[Fence],
+    ) -> Grid {
         let nl = layout.copper.len();
         let b = layout.bounds();
         let snap = |v: f64| ((v / g).floor() - 2.0) * g;
@@ -400,53 +415,56 @@ impl Grid {
                     }
                 }
             }
-            for &(a, b) in &edges {
-                grid.stamp_edge(&Shape::Seg(a, b, 0.0), rules.edge, reach);
+        }
+        let fixed: Vec<agentee_core::layout::Via> = layout
+            .vias
+            .iter()
+            .filter(|v| !matches!(v.source, ViaSource::Stitch(_)))
+            .cloned()
+            .collect();
+        let world = agentee_core::drc::Ctx::new(
+            board_spec,
+            &layout.copper,
+            &layout.outline,
+            &layout.board_cutouts,
+            &layout.parts,
+            &layout.tracks,
+            &fixed,
+            &[],
+            &layout.nets,
+        );
+        let placed = agentee_core::rules::Placed::new(&world);
+        let net_id = |n: Option<usize>| n.map(|n| n as u16).unwrap_or(NONE);
+        for k in agentee_core::rules::keepout::all(&placed, None, reach) {
+            let layers: Vec<usize> = k.layers.iter().filter_map(|c| layer_of(c)).collect();
+            if k.rule == "copper-to-edge" {
+                if let agentee_core::drc::CuShape::Seg(a, b, _) = k.shape {
+                    grid.stamp_edge(&Shape::Seg(a, b, 0.0), k.gap.max(rules.edge), reach);
+                }
+                continue;
+            }
+            let clr = match k.owner {
+                agentee_core::drc::Owner::Track(t) if k.rule == "clearance" => {
+                    let net = world.tracks[t].net;
+                    rules.nets.get(net).and_then(|r| r.as_ref()).map_or(k.gap, |r| r.band)
+                }
+                _ => k.gap,
+            };
+            let net = if k.every { NONE } else { net_id(k.net) };
+            for shape in shapes(&k.shape) {
+                grid.stamp(&shape, &layers, net, clr, reach);
             }
         }
-        let net_id = |n: Option<usize>| n.map(|n| n as u16).unwrap_or(NONE);
         let hole_reach =
             rules.vias.iter().map(|o| o.dr).fold(0.0, f64::max) + rules.hole_gap + rules.slack + g;
         for part in &layout.parts {
             for pad in &part.pads {
-                let layers: Vec<usize> = pad.copper.iter().filter_map(|c| layer_of(c)).collect();
-                let clr = pad.net.map(|n| layout.nets[n].clearance).unwrap_or(0.0);
-                if !layers.is_empty() {
-                    for o in &pad.outlines {
-                        grid.stamp(&Shape::Poly(o.clone()), &layers, net_id(pad.net), clr, reach);
-                    }
-                }
                 if let Some((c, s, _)) = pad.drill {
-                    let hole = Shape::Circle(c, s[0].max(s[1]) / 2.0);
-                    if pad.kind == PadKind::Npth || layers.is_empty() {
-                        let all: Vec<usize> = (0..nl).collect();
-                        grid.stamp(&hole, &all, NONE, rules.npth, reach);
-                    } else {
-                        let outer = [0, nl - 1];
-                        let inner: Vec<usize> = (1..nl.saturating_sub(1)).collect();
-                        grid.stamp(&hole, &outer, net_id(pad.net), rules.pth_cu, reach);
-                        grid.stamp(&hole, &inner, net_id(pad.net), rules.inner_pth_cu, reach);
-                    }
                     grid.stamp_hole(c, s[0].min(s[1]) / 2.0, hole_reach);
                 }
             }
         }
-        for t in &layout.tracks {
-            let Some(l) = layer_of(&t.layer) else { continue };
-            let clr = rules
-                .nets
-                .get(t.net)
-                .and_then(|r| r.as_ref())
-                .map_or(layout.nets[t.net].clearance, |r| r.band);
-            for s in t.points.windows(2) {
-                grid.stamp(&Shape::Seg(s[0], s[1], t.width / 2.0), &[l], t.net as u16, clr, reach);
-            }
-        }
-        for v in layout.vias.iter().filter(|v| !matches!(v.source, ViaSource::Stitch(_))) {
-            let layers: Vec<usize> = v.layers.iter().filter_map(|c| layer_of(c)).collect();
-            let clr =
-                layout.nets[v.net].clearance.max(v.drill / 2.0 + rules.hole_cu - v.diameter / 2.0);
-            grid.stamp(&Shape::Circle(v.at, v.diameter / 2.0), &layers, v.net as u16, clr, reach);
+        for v in &fixed {
             grid.stamp_hole(v.at, v.drill / 2.0, hole_reach);
         }
         for z in layout.zones.iter().filter(|_| std::env::var("AGENTEE_POUR").is_ok()) {
