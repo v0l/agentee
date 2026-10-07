@@ -353,7 +353,9 @@ All lengths: `min_track_width`, `min_clearance`, `min_drill`, `min_via_drill`, `
 depth over laser drill), `max_controlled_depth_aspect_ratio` (depth over drill of a controlled depth
 via), and the switches `hdi` (the fab builds blind, buried and microvias and
 backdrills) and `stacked_microvias` (the fab stacks microvias). Footprints are checked against
-the rules of the board when the project has exactly one board, otherwise against `generic`.
+the rules of every board whose layout places them, so a project with a 4 layer and a 2 layer
+board holds each footprint only to the boards it is on. A footprint no layout places is checked
+against each board and reported for the one it fits best; with no board, against `generic`.
 
 The fab preset is a table keyed by the copper layer count, the outer copper weight (from the
 first copper layer's thickness) and the finish, so a 4 layer 1 oz board gets tighter track rules
@@ -726,6 +728,34 @@ Bodies and hand-placed `[[pins]]` / `[[graphics]]` can be mixed.
 Multi-unit symbols: give pins and graphics a `unit`. The same pin number may appear in more than
 one unit only when it has the same name (a shared pin).
 
+### Logic levels
+
+A symbol can state the input thresholds of its pins, for the schematic's signal level check.
+`[levels]` applies to every `input` and `bidirectional` pin; a pin's own `levels` table overrides
+it field by field, and puts any pin type under the check.
+
+```toml
+[levels]
+supply = "VDD"                 # pin name or number whose rail the % levels scale with
+vih = "75%"                    # of the supply; or volts, "2.0V"
+vil = "25%"
+min = "-0.3V"                  # absolute limits, sums allowed: "100%+0.3V"
+max = "100%+0.3V"
+leakage = "50nA"               # input leakage, either way
+# pull_up = "45k"              # a fixed internal pull to the supply
+# pull_down = "45k"
+
+[[pins]]
+number = "12"
+name = "NRST"
+type = "input"
+at = [-7.62, 0.0]
+side = "left"
+levels = { vih = "70%", pull_up = "45k" }
+```
+
+Only pins with levels are checked; nothing is assumed for a symbol without them.
+
 ## Footprint (`*.fp.toml`)
 
 ```toml
@@ -735,6 +765,7 @@ tags = ["SOIC", "SO"]
 mount = "smd"                  # smd | tht | other, default from the pads
 height = "1.5mm"               # body height in the 3D view when there is no model
 model = "${KICAD9_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.step"
+# model = "https://raw.githubusercontent.com/espressif/kicad-libraries/<commit>/3dmodels/espressif.3dshapes/ESP32-C3-MINI-1.STEP"
 model_offset = ["0mm", "0mm", "0mm"]   # optional, as in KiCad: model frame, Y up
 model_rotate = [0, 0, 0]               # optional, degrees about X, Y, Z
 model_scale = [1, 1, 1]                # optional
@@ -847,6 +878,25 @@ pins = ["C2.2", "J2.1", "L3.1"]   # REF.PIN, by number or by a unique pin name
 # wires = [[[x, y], [x, y]], ...] # draw it yourself; check verifies it reaches every pin
 ```
 
+Rails and analog inputs, for the signal level check, go at the top of the file (or the top
+schematic of a sheet set):
+
+```toml
+rails = { GND = 0, "3V3" = [3.25, 3.35], VBUS = [4.75, 5.25] }   # volts, or [min, max]
+analog = ["U1.13"]             # inputs read by an ADC: only min and max apply
+```
+
+With `rails` set, check works out the voltage every input with `levels` sees: resistors (`R`
+parts, 1% unless the part has a `tolerance` field), switches (`SW` parts, every open and closed
+state), open collector outputs (off and low), internal pulls and input leakage, each at its worst
+corner across rail and resistor ranges. It is an error when the input can sit between VIL and VIH,
+when it floats with nothing tying it to a rail, when leakage through a weak pull moves it out of a
+valid level, and when it can go past its `min` or `max`. Within 100 mV of a threshold is a
+warning. A net with anything else on it (an output, a connector, a diode, a supply pin of a net not
+in `rails`) is driven by something it cannot model and is skipped. Capacitors and test points are
+ignored. A bidirectional pin may be driving: unless a switch or open collector on the net shows
+it is pulled, the other inputs on its net are skipped and it is not reported as floating.
+
 ### Sheets
 
 Split a large design into one schematic per section and join them in a top schematic that lists
@@ -868,8 +918,8 @@ the top schematic runs every check on the joined design and draws the sheets sta
 bottom. The top file may hold parts and nets of its own too.
 
 Check reports pins in two nets, pins in no net, single-pin nets, several outputs on one net,
-hand wires that miss a pin or touch another net's pin, overlapping parts, and footprints whose
-pads do not cover the symbol's pins. Every net in the `Default` netclass is a warning, whether it
+hand wires that miss a pin or touch another net's pin, overlapping parts, footprints whose
+pads do not cover the symbol's pins, and signal levels when `rails` is set. Every net in the `Default` netclass is a warning, whether it
 names no class or names `Default`: the class sets the net's width, clearance, vias and routing
 order, so each net should say what it is. The warning needs a board and a layout of the
 schematic; a schematic only simulated (like `examples/logic`) skips it. Give the board a class
@@ -1492,8 +1542,12 @@ generated part; `agentee models` skips the generated ones.
 Models are STEP or VRML, placed the way KiCad places them (`model_offset`, `model_rotate`,
 `model_scale`). A model path is looked up as given, then under `KICAD9_3DMODEL_DIR` and friends,
 `3dmodels/` in the project, `~/.cache/agentee/3dmodels` and `/usr/share/kicad/3dmodels`, trying
-`.step`, `.stp` and `.wrl`. KiCad library models that are not on disk are downloaded from the
-kicad-packages3D repository into the cache: `agentee models` (MCP `models`) fetches them all and
+`.step`, `.stp` and `.wrl`, gzipped or not. A model can also be an `https://` URL to a STEP or
+VRML file, so vendor models need not be checked in: it is downloaded once into
+`~/.cache/agentee/3dmodels/url/` and counts as the project's own model, so it wins over a
+generated part. Pin the URL to a commit or release so the file cannot change under you. KiCad
+library models that are not on disk are downloaded from the kicad-packages3D repository into the
+cache: `agentee models` (MCP `models`) fetches them all and
 reports what it found, and the viewer fetches in the background. A part without a model is a box
 over its fab outline, `height` tall, else a height guessed from the footprint name. STEP files are
 meshed with [truck](https://github.com/ricosjp/truck), with colours from their styled items and
@@ -1501,6 +1555,16 @@ assembly placements applied. Edges use the 3D curve of each surface curve, not i
 Unclamped B-spline curves and surfaces are cut to their valid knot range. An edge curve that
 still does not evaluate to finite points is meshed as a straight line, and a face whose surface
 does not is left out.
+
+`agentee export pcb:NAME -o NAME.step` (MCP `export`) writes the layout as one STEP assembly
+(AP214) for enclosure CAD. The board is a solid of the stackup thickness with its pad holes,
+slots and board cutouts; vias are left out. Each part is an instance named by its reference:
+a STEP model goes in as the vendor wrote it, solids, colours and sub-assemblies intact, and is
+written once however many parts use it. VRML models and generated bodies go in as faceted
+surfaces, and a part with no model at all as a box over its fab outline. The frame is the
+layout's with Y up and the board's bottom face at z = 0, so a part on the top side starts at
+the board thickness. The report lists the STEP files used, how many parts were faceted, the
+parts drawn as boxes and the models that could not be found.
 
 Pads take their nets from the schematic (pad number = pin number). Zones are filled with the
 clearance to every other net and to the board edge, and islands that reach nothing are removed.
@@ -2106,6 +2170,7 @@ text.
 6. `agentee view` keeps a live window open for a human, who can also move parts, route tracks
    and place vias there and save them into the layout.
 7. `agentee fab NAME -o fab/` writes the manufacturing package once the layout has no errors.
+
 
 ## Importing a KiCad board
 

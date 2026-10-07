@@ -199,6 +199,15 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
+    /// Write the board and every part model of a layout as one STEP assembly, for enclosure CAD
+    Export {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Output file, .step or .stp
+        #[arg(short, long)]
+        out: PathBuf,
+    },
     /// Stock, price and cheaper equivalents for a layout's or schematic's BOM from Mouser and Farnell, with keys in ~/.config/agentee/distributors.toml
     Parts {
         name: String,
@@ -835,6 +844,11 @@ fn run(cli: Cli) -> Result<bool, String> {
         Cmd::Fab { name, project, out } => {
             let p = ops::load(&project)?;
             print_json(&ops::fab(&p, &name, &out)?);
+            Ok(true)
+        }
+        Cmd::Export { name, project, out } => {
+            let p = ops::load(&project)?;
+            print_json(&ops::export(&p, &name, &out)?);
             Ok(true)
         }
         Cmd::Tie { name, project, nets, dry_run } => {

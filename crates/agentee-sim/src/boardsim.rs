@@ -284,6 +284,15 @@ pub fn dc(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<MapRe
             level.entry(rt).or_insert(v);
         }
     }
+    for l in &spec.loads {
+        let fed = pad_copper(&l.pad).into_iter().any(|n| level.contains_key(&root(&mut parent, n)));
+        if !fed {
+            return Err(format!(
+                "load {}: its copper reaches no supply; add a supply on that island or a link to one",
+                l.pad.label
+            ));
+        }
+    }
     p.offset = (0..len).map(|n| *level.get(&root(&mut parent, n)).unwrap_or(&0.0)).collect();
     for n in 0..len {
         if p.fixed[n].is_none() && !level.contains_key(&root(&mut parent, n)) {
@@ -673,6 +682,53 @@ mod tests {
             })
             .count();
         assert!((49..=81).contains(&holes), "{holes} cells out");
+    }
+
+    #[test]
+    fn a_load_on_copper_with_no_supply_is_an_error_not_a_voltage() {
+        let dir = std::env::temp_dir().join(format!("agentee-sim-island-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("symbols")).unwrap();
+        std::fs::create_dir_all(dir.join("footprints")).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("symbols/P.sym.toml"),
+            "name = \"P\"\nreference = \"J\"\nfootprint = \"PAD\"\n[[pins]]\nnumber = \"1\"\nat = [0.0, 0.0]\nside = \"left\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("footprints/PAD.fp.toml"),
+            "name = \"PAD\"\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [0.0, 0.0]\nsize = [2.0, 2.0]\nlayers = [\"F.Cu\", \"F.Mask\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[parts]]\nref = \"J1\"\nsymbol = \"P\"\nat = [0, 0]\n\
+             [[parts]]\nref = \"J2\"\nsymbol = \"P\"\nat = [10.16, 0]\n\
+             [[nets]]\nname = \"A\"\npins = [\"J1.1\"]\n[[nets]]\nname = \"B\"\npins = [\"J2.1\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[footprints]]\nref = \"J1\"\nat = [4, 5]\n\
+             [[footprints]]\nref = \"J2\"\nat = [16, 5]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sim.toml"),
+            "name = \"t\"\nkind = \"dc\"\nlayout = \"t\"\ncell = 0.25\n\
+             [[supplies]]\npad = \"J1.1\"\nvoltage = \"5V\"\n\
+             [[loads]]\npad = \"J2.1\"\ncurrent = \"100mA\"\nreturn = \"J1.1\"\n",
+        )
+        .unwrap();
+        let p = agentee_core::Project::load(&dir).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let err = dc(&p.layouts[0].item, &p.boards[0].item, &p.sims[0].item, 0).unwrap_err();
+        assert!(err.contains("load J2.1") && err.contains("no supply"), "{err}");
     }
 
     #[test]

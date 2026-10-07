@@ -71,6 +71,10 @@ Order of work, each stage passing check before the next:
 3. **Schematic.** Place parts, list nets as `REF.PIN`, and give every net a `class`; a net left in
    `Default` is a warning. Leave `wires` out and agentee routes them. `agentee edit sch` does all
    of this, one batch of commands for the whole sheet. Put deliberately open pins in `no_connect`.
+   Give the symbols of logic and MCU parts a `[levels]` table from the datasheet (VIH, VIL,
+   limits, leakage) and the schematic a `rails` table, and check flags dividers that land between
+   VIL and VIH, floating inputs, pulls too weak for the leakage, and overdriven pins. List ADC
+   inputs in `analog`.
 4. **Layout.** Place footprints, add zones, then tracks and vias net by net. `agentee edit pcb`
    writes a placement, a track, a via or a zone by hand; `agentee place`, `route` and `tie` are
    the automatic ones and are usually better for anything with many connections. Check reports
@@ -78,6 +82,8 @@ Order of work, each stage passing check before the next:
    `show pcb:NAME`.
 5. **Simulate** what the design depends on (see below).
 6. **Fab.** `agentee fab pcb:NAME -o fab/` once check has no errors.
+7. **Enclosure.** `agentee export pcb:NAME -o NAME.step` writes the board solid and every part
+   model as one STEP assembly to design a case around.
 
 Write a `DESIGN.md` next to the files as you go: the circuit, why each part was chosen, the layout
 rules the circuit needs, and what is still unverified. `examples/lna/DESIGN.md` is the model.
@@ -270,7 +276,7 @@ and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas
 `agentee mcp <project>` serves the same operations on stdio: `format_reference`, `check`,
 `list_items`, `show_item`, `render_item` (returns the PNG inline), `run_sim`, `sparam`,
 `field_solve`, `impedance`, `trace_width`, `serpentine`, `parts`, `kicad_search`,
-`import_kicad_symbol`, `import_kicad_footprint`, `new_item`, `models`, `fab`. You still write the
+`import_kicad_symbol`, `import_kicad_footprint`, `new_item`, `models`, `fab`, `export`. You still write the
 TOML files yourself with your normal file tools.
 
 ## Worked examples

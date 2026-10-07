@@ -137,6 +137,7 @@ fn pin(n: &Node, unit: u32) -> Option<PinFile> {
         unit: (unit > 0).then_some(unit),
         shape: Some(pin_shape(n.arg(1).unwrap_or("line"))).filter(|s| *s != PinShape::Line),
         hidden: n.flag("hide"),
+        levels: None,
     })
 }
 
@@ -217,6 +218,7 @@ pub fn convert(lib: &Node, name: &str) -> Result<SymbolFile, String> {
         bodies: Vec::new(),
         graphics,
         pins,
+        levels: None,
     })
 }
 

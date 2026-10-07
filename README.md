@@ -45,6 +45,7 @@ agentee calc impedance --layer F.Cu --target 50ohm
 agentee calc trace-width --current 2A
 agentee view                                   # live window, reloads on save, edits layouts
 agentee view --3d                              # layouts open in the 3D view
+agentee export sensor-node -o sensor-node.step # board and part models as one STEP for case CAD
 agentee models                                 # fetch the KiCad 3D models the footprints name
 agentee fill sensor-node                       # fill the zones and store the copper in the layout
 agentee tie sensor-node                        # a via beside every ground and supply pad

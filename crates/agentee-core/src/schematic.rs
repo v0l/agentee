@@ -69,6 +69,26 @@ pub struct SchematicFile {
     pub no_connect: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sheets: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rails: BTreeMap<String, RailFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub analog: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum RailFile {
+    Volts(f64),
+    Range([f64; 2]),
+}
+
+impl RailFile {
+    pub fn range(self) -> [f64; 2] {
+        match self {
+            RailFile::Volts(v) => [v, v],
+            RailFile::Range(r) => r,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -158,6 +178,8 @@ pub struct Schematic {
     pub no_connect: Vec<PinRef>,
     pub sheets: Vec<SheetFrame>,
     pub parent: Option<String>,
+    pub rails: BTreeMap<String, [f64; 2]>,
+    pub analog: Vec<PinRef>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -218,6 +240,8 @@ impl SchematicFile {
             nets: Vec::new(),
             no_connect: Vec::new(),
             sheets: Vec::new(),
+            rails: BTreeMap::new(),
+            analog: Vec::new(),
         };
         let mut seen: HashMap<String, (usize, &str, usize)> = HashMap::new();
         for (f, offset) in &sources {
@@ -227,6 +251,18 @@ impl SchematicFile {
                 out.parts.push(p);
             }
             out.no_connect.extend(f.no_connect.iter().cloned());
+            out.analog.extend(f.analog.iter().cloned());
+            for (name, rail) in &f.rails {
+                match out.rails.get(name) {
+                    Some(r) if r.range() != rail.range() => d.error(
+                        format!("rails.{name}"),
+                        format!("{:?} V here but {:?} V on another sheet", rail.range(), r.range()),
+                    ),
+                    _ => {
+                        out.rails.insert(name.clone(), *rail);
+                    }
+                }
+            }
             for n in &f.nets {
                 let wires: Vec<Vec<Point>> =
                     n.wires.iter().map(|w| w.iter().map(|q| *q + *offset).collect()).collect();
@@ -374,6 +410,20 @@ impl SchematicFile {
             });
         }
         let no_connect = self.no_connect.iter().filter_map(|s| find(s, d, "no_connect")).collect();
+        let analog = self.analog.iter().filter_map(|s| find(s, d, "analog")).collect();
+        let mut rails = BTreeMap::new();
+        for (name, rail) in &self.rails {
+            let [lo, hi] = rail.range();
+            let at = format!("rails.{name}");
+            if !(lo.is_finite() && hi.is_finite()) || lo > hi {
+                d.error(&at, "a rail is volts, or [min, max] with min <= max");
+                continue;
+            }
+            if !nets.iter().any(|n: &Net| &n.name == name) {
+                d.warn(&at, format!("no net is named {name}"));
+            }
+            rails.insert(name.clone(), [lo, hi]);
+        }
         Schematic {
             name: self.name.clone(),
             description: self.description.clone(),
@@ -383,6 +433,8 @@ impl SchematicFile {
             no_connect,
             sheets: Vec::new(),
             parent: None,
+            rails,
+            analog,
         }
     }
 }
@@ -521,6 +573,9 @@ impl Schematic {
             if n.style == NetStyle::Wire && (n.drawn_by_hand || !n.wires.is_empty()) {
                 self.check_wires(n, d);
             }
+        }
+        if !sheet {
+            crate::levels::check(self, d);
         }
         for r in &self.no_connect {
             if owner.contains_key(r) {

@@ -13,6 +13,7 @@ pub mod height;
 pub mod ibis;
 pub mod interface;
 pub mod layout;
+pub mod levels;
 pub mod logic;
 pub mod neck;
 pub mod place;

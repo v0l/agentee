@@ -258,6 +258,11 @@ fn tools() -> Value {
             "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output folder, relative to the project" } }), &["name", "out"]),
         },
         {
+            "name": "export",
+            "description": "Write a layout as one STEP assembly for enclosure CAD: the board as a solid with its drilled holes and cutouts, each part's STEP model embedded and placed, and VRML, generated and missing models as surfaces or boxes. Board bottom at z = 0, X and Y as the layout with Y up.",
+            "inputSchema": s(json!({ "name": { "type": "string" }, "out": { "type": "string", "description": "output .step file, relative to the project" } }), &["name", "out"]),
+        },
+        {
             "name": "parts",
             "description": "Price a layout's or schematic's BOM at Mouser and Farnell and find cheaper equivalents: the same part at the other distributor, resistors and ceramic capacitors with the same value, package, tolerance, voltage and dielectric (never a downgrade), generic discretes (2N7002, S1D, SS14, SMAJ..) by name and package, indicator LEDs by colour and package, and the distributor's suggested replacement for parts going obsolete. Costs are at the needed quantity, buying up to a price break when that is cheaper. Keys come from ~/.config/agentee/distributors.toml ([mouser] api_key, [farnell] api_key and store).",
             "inputSchema": s(json!({
@@ -655,6 +660,15 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             &ops::load(root)?,
             arg(a, "name").ok_or("name is required")?,
         )?))])),
+        "export" => {
+            let p = ops::load(root)?;
+            let out = root.join(arg(a, "out").ok_or("out is required")?);
+            Ok(ok(vec![text(pretty(&ops::export(
+                &p,
+                arg(a, "name").ok_or("name is required")?,
+                &out,
+            )?))]))
+        }
         "fab" => {
             let p = ops::load(root)?;
             let out = root.join(arg(a, "out").ok_or("out is required")?);

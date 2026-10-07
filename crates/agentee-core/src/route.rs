@@ -636,6 +636,7 @@ fn route_once(
     }
 
     let hole_cu = board.rules.min_via_hole_to_copper.to_mm();
+    let npth_cu = board.rules.min_npth_to_copper.to_mm();
     let mut obstacles = Vec::new();
     let mut smd = Vec::new();
     for part in &layout.parts {
@@ -666,7 +667,7 @@ fn route_once(
                     net: None,
                     layers: (0..copper.len()).collect(),
                     shape: Shape::Circle(c, s[0].max(s[1]) / 2.0),
-                    clearance: 0.0,
+                    clearance: if pad.kind == PadKind::Npth { npth_cu } else { 0.0 },
                 });
             }
         }
@@ -2105,6 +2106,15 @@ fn anchors(
     let at: Vec<usize> = (0..own.len()).filter(|&i| own[i].shape.dist(p) < 1e-6).collect();
     let pads: Vec<usize> =
         at.iter().copied().filter(|&i| matches!(own[i].shape, Shape::Poly(_))).collect();
+    let centred: Vec<usize> = pads
+        .iter()
+        .copied()
+        .filter(|&i| match &own[i].shape {
+            Shape::Poly(v) => geom::dist(bbox_center(v), p) < 1e-6,
+            _ => false,
+        })
+        .collect();
+    let pads = if centred.is_empty() { pads } else { centred };
     let mut stack = if pads.is_empty() { at } else { pads };
     stack.iter().for_each(|&i| seen[i] = true);
     let mut group = Vec::new();
@@ -2132,6 +2142,15 @@ fn anchors(
     out.sort_unstable();
     out.dedup();
     out
+}
+
+fn bbox_center(v: &[P]) -> P {
+    let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+    for q in v {
+        lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+        hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+    }
+    [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0]
 }
 
 fn touch(a: &Shape, b: &Shape) -> bool {
@@ -2204,10 +2223,15 @@ fn end_of(
     soft: bool,
 ) -> End {
     let cells = anchors(grid, obstacles, fresh, net, p, ctx.routing);
-    let pad = obstacles.iter().find_map(|o| match &o.shape {
-        Shape::Poly(v) if o.net == Some(net) && geom::point_in_polygon(p, v) => Some((v, o)),
-        _ => None,
-    });
+    let containing = || {
+        obstacles.iter().filter_map(|o| match &o.shape {
+            Shape::Poly(v) if o.net == Some(net) && geom::point_in_polygon(p, v) => Some((v, o)),
+            _ => None,
+        })
+    };
+    let pad = containing()
+        .find(|(v, _)| geom::dist(bbox_center(v), p) < 1e-6)
+        .or_else(|| containing().next());
     let (Some(nk), Some((pad, o))) = (ctx.necking, pad) else {
         return End { cells, stubs: Vec::new() };
     };
@@ -3746,6 +3770,50 @@ mod tests {
         assert!(necked_route(0.5, Some(&tight)).is_err());
         let fab = Necking { min_width: 0.35, ..necking };
         assert!(necked_route(0.5, Some(&fab)).is_err());
+    }
+
+    #[test]
+    fn an_end_anchors_on_the_pad_centred_on_it_not_a_same_net_pad_on_the_other_side() {
+        let grid = open_grid(60, 40, 2);
+        let p = [2.025, 2.025];
+        let pad = |c: P, layer: usize| Obstacle {
+            net: Some(0),
+            layers: vec![layer],
+            shape: Shape::Poly(square(c, 0.4)),
+            clearance: 0.15,
+        };
+        let bottom = pad(p, 1);
+        let top = pad([p[0] + 0.3, p[1] + 0.2], 0);
+        let obstacles = [top, bottom];
+        let cells = anchors(&grid, &obstacles, &[], 0, p, &[0, 1]);
+        let plane = grid.w * grid.h;
+        assert!(!cells.is_empty());
+        assert!(cells.iter().all(|&i| i / plane == 1), "anchored on the top pad");
+        let opts = RouteOptions::default();
+        let outline = square([3.0, 2.0], 3.0);
+        let necking = Necking {
+            length: 0.6,
+            min_width: 0.1,
+            edge: 0.0,
+            board: geom::BoardEdge::new(&outline, &[]),
+        };
+        let ctx = Ctx {
+            hole_gap: 0.2,
+            hole_cu: 0.0,
+            hole_smd: 0.0,
+            smd: &[],
+            widths: vec![0.6, 0.6],
+            clearance: 0.15,
+            via_layers: &[0, 1],
+            vias: &[test_via(&[0, 1], false)],
+            stack_vias: true,
+            routing: &[0, 1],
+            opts: &opts,
+            necking: Some(&necking),
+        };
+        let end = end_of(&grid, &obstacles, &[], 0, p, &ctx, false);
+        assert!(end.cells.iter().all(|&i| i / plane == 1), "end reaches the top layer");
+        assert!(end.stubs.iter().all(|(_, n)| n.layer == 1), "neck on the top layer");
     }
 
     #[test]

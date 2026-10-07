@@ -1,4 +1,5 @@
 use crate::raster::{Canvas, Textures};
+use agentee_3d::export::rotation;
 use agentee_3d::{Fetch, Status};
 use agentee_core::board::Board;
 use agentee_core::footprint::PadKind;
@@ -519,23 +520,6 @@ fn rasterize(decal: &Decal, base: Color32, bounds: [f64; 4], ppm: f64) -> Image 
     };
     canvas.draw(&[prim], &Textures::default(), 1.0);
     Image { width: pw, height: ph, rgba: canvas.to_rgba8() }
-}
-
-fn rotation(deg: [f64; 3]) -> [[f64; 3]; 3] {
-    let [x, y, z] = deg.map(|d| (-d).to_radians());
-    let rx = [[1.0, 0.0, 0.0], [0.0, x.cos(), -x.sin()], [0.0, x.sin(), x.cos()]];
-    let ry = [[y.cos(), 0.0, y.sin()], [0.0, 1.0, 0.0], [-y.sin(), 0.0, y.cos()]];
-    let rz = [[z.cos(), -z.sin(), 0.0], [z.sin(), z.cos(), 0.0], [0.0, 0.0, 1.0]];
-    let m = |a: [[f64; 3]; 3], b: [[f64; 3]; 3]| {
-        let mut o = [[0.0; 3]; 3];
-        for i in 0..3 {
-            for j in 0..3 {
-                o[i][j] = (0..3).map(|k| a[i][k] * b[k][j]).sum();
-            }
-        }
-        o
-    };
-    m(m(rz, ry), rx)
 }
 
 fn is_metal(c: [f32; 3]) -> bool {

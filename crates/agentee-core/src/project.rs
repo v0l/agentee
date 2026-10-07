@@ -309,11 +309,9 @@ impl Project {
             layouts: pcb_files,
             sims: mut sim_files,
         } = files;
-        let rules = p.rules();
         for (f, file) in fp_files {
             let mut d = Diags::new(&file.name);
             let item = file.resolve(&mut d);
-            item.check(&rules, &mut d);
             p.footprints.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         for (f, file) in sym_files {
@@ -343,6 +341,7 @@ impl Project {
             p.layouts.push(Entry { name: item.name.clone(), diags: tag(d, &f), path: f, item });
         }
         p.leave_placed_via_types_to_layouts();
+        p.check_footprints();
         let cascade = |f: &SimFile| {
             matches!(
                 f.kind,
@@ -449,6 +448,62 @@ impl Project {
         }
         p.measure_interfaces();
         Ok(p)
+    }
+
+    fn footprint_board_rules(&self, name: &str) -> Vec<Rules> {
+        let short = name.rsplit(':').next().unwrap_or(name);
+        let mut users: Vec<Rules> = Vec::new();
+        for l in &self.layouts {
+            let placed = l.item.parts.iter().any(|pl| {
+                let n = pl.footprint_name.as_str();
+                n == name || n.rsplit(':').next().unwrap_or(n) == short
+            });
+            let Some(b) = self.boards.iter().find(|b| b.name == l.item.board) else { continue };
+            if placed && !users.contains(&b.item.rules) {
+                users.push(b.item.rules.clone());
+            }
+        }
+        users
+    }
+
+    fn check_footprints(&mut self) {
+        let mut every: Vec<Rules> = Vec::new();
+        for b in &self.boards {
+            if !every.contains(&b.item.rules) {
+                every.push(b.item.rules.clone());
+            }
+        }
+        if every.is_empty() {
+            every.push(fab_rules("generic").unwrap());
+        }
+        for i in 0..self.footprints.len() {
+            let users = self.footprint_board_rules(&self.footprints[i].item.name);
+            let fp = &self.footprints[i];
+            let run = |rules: &Rules| {
+                let mut d = Diags::new(&fp.item.name);
+                fp.item.check(rules, &mut d);
+                tag(d, &fp.path)
+            };
+            let found: Vec<Diagnostic> = if users.is_empty() {
+                every
+                    .iter()
+                    .map(run)
+                    .min_by_key(|l| l.iter().filter(|d| d.severity == Severity::Error).count())
+                    .unwrap_or_default()
+            } else {
+                let mut all: Vec<Diagnostic> = Vec::new();
+                for d in users.iter().flat_map(run) {
+                    if !all
+                        .iter()
+                        .any(|x| x.severity == d.severity && x.at == d.at && x.message == d.message)
+                    {
+                        all.push(d);
+                    }
+                }
+                all
+            };
+            self.footprints[i].diags.extend(found);
+        }
     }
 
     fn leave_placed_via_types_to_layouts(&mut self) {

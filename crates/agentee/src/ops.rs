@@ -664,6 +664,28 @@ pub fn sparam(p: &Project, name: &str, q: &SparamQuery) -> Result<Value, String>
     Ok(out)
 }
 
+pub fn export(p: &Project, name: &str, out: &std::path::Path) -> Result<Value, String> {
+    let ext = out.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if ext != "step" && ext != "stp" {
+        return Err(format!("{}: only .step and .stp are written", out.display()));
+    }
+    let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
+    let ItemRef::Layout(i) = r else {
+        return Err(format!("`{name}` is not a layout"));
+    };
+    let layout = &p.layouts[i].item;
+    let board = p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
+    let r = agentee_3d::export::step(layout, &board.item, &p.root, out)?;
+    Ok(json!({
+        "file": r.file,
+        "parts": r.parts,
+        "step_models": r.step_models,
+        "mesh_parts": r.meshes,
+        "box_parts": r.boxes,
+        "missing_models": r.missing,
+    }))
+}
+
 pub fn fab(p: &Project, name: &str, out: &std::path::Path) -> Result<Value, String> {
     let r = find(p, &format!("pcb:{name}")).or_else(|_| find(p, name))?;
     let ItemRef::Layout(i) = r else {

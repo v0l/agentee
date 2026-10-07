@@ -156,6 +156,48 @@ impl<'a> Step<'a> {
         ]
     }
 
+    fn first_ref(&self, id: u64, arg: usize) -> Option<u64> {
+        let body = self.bodies.get(&id)?;
+        args(body).get(arg).and_then(|a| refs(a).first().copied())
+    }
+
+    fn child_reps_by_relationship(&self) -> HashMap<u64, u64> {
+        let mut rep_of_definition: HashMap<u64, u64> = HashMap::new();
+        for (&id, body) in &self.bodies {
+            if kind(body) != "SHAPE_DEFINITION_REPRESENTATION" {
+                continue;
+            }
+            let (Some(pds), Some(rep)) = (self.first_ref(id, 0), self.first_ref(id, 1)) else {
+                continue;
+            };
+            if let Some(def) = self.first_ref(pds, 2) {
+                rep_of_definition.insert(def, rep);
+            }
+        }
+        let mut out = HashMap::new();
+        for (&id, body) in &self.bodies {
+            if kind(body) != "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION" {
+                continue;
+            }
+            let (Some(rel), Some(pds)) = (self.first_ref(id, 0), self.first_ref(id, 1)) else {
+                continue;
+            };
+            let Some(usage) = self.first_ref(pds, 2) else { continue };
+            if !self
+                .bodies
+                .get(&usage)
+                .is_some_and(|b| kind(b).ends_with("ASSEMBLY_USAGE_OCCURRENCE"))
+            {
+                continue;
+            }
+            if let Some(child) = self.first_ref(usage, 4).and_then(|pd| rep_of_definition.get(&pd))
+            {
+                out.insert(rel, *child);
+            }
+        }
+        out
+    }
+
     fn length_unit(&self, id: u64, depth: usize) -> Option<f64> {
         let body = self.bodies.get(&id)?;
         if !body.contains("LENGTH_UNIT") || depth > 4 {
@@ -278,27 +320,14 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
     let mut items: HashMap<u64, Vec<u64>> = HashMap::new();
     let mut identity: HashMap<u64, Vec<u64>> = HashMap::new();
     let mut children: HashMap<u64, Vec<(u64, M)>> = HashMap::new();
+    let mut placed_rels: Vec<(u64, u64, u64, u64)> = Vec::new();
     for (&id, body) in &step.bodies {
         let k = kind(body);
         if body.starts_with('(') {
             if body.contains("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION") {
                 let r = refs(body);
                 if r.len() >= 3 {
-                    let t = step.bodies.get(&r[2]).copied().unwrap_or("");
-                    let m = if t.starts_with("ITEM_DEFINED_TRANSFORMATION") {
-                        let tr = refs(t);
-                        if tr.len() >= 2 {
-                            mul(
-                                &step.placement(tr[1], unit_of(r[1])),
-                                &inverse_rigid(&step.placement(tr[0], unit_of(r[0]))),
-                            )
-                        } else {
-                            IDENTITY
-                        }
-                    } else {
-                        IDENTITY
-                    };
-                    children.entry(r[1]).or_default().push((r[0], m));
+                    placed_rels.push((id, r[0], r[1], r[2]));
                 }
             }
             continue;
@@ -317,6 +346,42 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
                 items.insert(id, refs(list));
             }
         }
+    }
+    let component_of = |start: u64| -> HashSet<u64> {
+        let mut seen = HashSet::from([start]);
+        let mut queue = VecDeque::from([start]);
+        while let Some(r) = queue.pop_front() {
+            for &n in identity.get(&r).into_iter().flatten() {
+                if seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+        }
+        seen
+    };
+    let child_reps = step.child_reps_by_relationship();
+    placed_rels.sort_unstable();
+    for (id, rep_1, rep_2, transform) in placed_rels {
+        let parent_first = child_reps.get(&id).is_some_and(|&child| {
+            !component_of(child).contains(&rep_1) && component_of(child).contains(&rep_2)
+        });
+        let (child, parent, child_item, parent_item) =
+            if parent_first { (rep_2, rep_1, 1, 0) } else { (rep_1, rep_2, 0, 1) };
+        let t = step.bodies.get(&transform).copied().unwrap_or("");
+        let m = if t.starts_with("ITEM_DEFINED_TRANSFORMATION") {
+            let tr = refs(t);
+            if tr.len() >= 2 {
+                mul(
+                    &step.placement(tr[parent_item], unit_of(parent)),
+                    &inverse_rigid(&step.placement(tr[child_item], unit_of(child))),
+                )
+            } else {
+                IDENTITY
+            }
+        } else {
+            IDENTITY
+        };
+        children.entry(parent).or_default().push((child, m));
     }
     for (&rep, list) in &items {
         for &it in list {
@@ -847,6 +912,24 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
 mod tests {
     use super::*;
     use truck_stepio::r#in::alias::{BSplineCurve, NurbsCurve};
+
+    #[test]
+    fn assembly_usage_names_the_child_whichever_side_of_the_relationship_it_is_on() {
+        let text = "DATA;\n\
+            #1 = PRODUCT_DEFINITION ( 'parent', '', #90, #91 ) ;\n\
+            #2 = PRODUCT_DEFINITION ( 'child', '', #92, #91 ) ;\n\
+            #3 = PRODUCT_DEFINITION_SHAPE ( '', '', #1 ) ;\n\
+            #4 = PRODUCT_DEFINITION_SHAPE ( '', '', #2 ) ;\n\
+            #5 = SHAPE_DEFINITION_REPRESENTATION ( #3, #10 ) ;\n\
+            #6 = SHAPE_DEFINITION_REPRESENTATION ( #4, #11 ) ;\n\
+            #7 = NEXT_ASSEMBLY_USAGE_OCCURRENCE ( 'NAUO1', ' ', ' ', #1, #2, $ ) ;\n\
+            #8 = PRODUCT_DEFINITION_SHAPE ( '', '', #7 ) ;\n\
+            #9 = CONTEXT_DEPENDENT_SHAPE_REPRESENTATION ( #20, #8 ) ;\n\
+            #20 =( REPRESENTATION_RELATIONSHIP ('','', #10, #11 ) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION ( #30 )SHAPE_REPRESENTATION_RELATIONSHIP( ) );\n\
+            ENDSEC;";
+        let step = Step { bodies: records(text) };
+        assert_eq!(step.child_reps_by_relationship().get(&20), Some(&11));
+    }
 
     #[test]
     fn placements_compose_and_invert() {

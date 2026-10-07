@@ -53,6 +53,7 @@ name = "agentee-3d"
 version = "0.1.0"
 dependencies = [
  "agentee-core",
+ "flate2",
  "ruststep",
  "toml",
  "truck-meshalgo",
