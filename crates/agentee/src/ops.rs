@@ -96,18 +96,54 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
     match r {
         ItemRef::Sim(i) => {
             let s = &p.sims[i].item;
-            json!({
-                "kind": "sim",
-                "file": p.sims[i].path,
-                "sim": s,
-                "result": s.result.as_ref().map(|r| json!({
+            let path = agentee_core::sim::result_path(&p.sims[i].path);
+            let fdtd = s.result.as_ref().map(|r| {
+                json!({
                     "ports": r.ports,
                     "freqs_hz": [r.freqs.first(), r.freqs.last(), r.freqs.len()],
                     "cells": r.cells,
                     "steps": r.steps,
                     "seconds": r.seconds,
-                    "path": agentee_core::sim::result_path(&p.sims[i].path),
-                })),
+                    "readings": r.readings,
+                    "path": path,
+                })
+            });
+            let maps = s.maps.as_ref().map(|r| {
+                json!({
+                    "kind": r.kind,
+                    "readings": r.readings,
+                    "maps": r.maps.iter().map(|m| json!({
+                        "layer": m.layer,
+                        "quantity": m.quantity,
+                        "unit": m.unit,
+                        "min": m.min,
+                        "max": m.max,
+                    })).collect::<Vec<_>>(),
+                    "iterations": r.iterations,
+                    "residual": r.residual,
+                    "cells": r.cells,
+                    "seconds": r.seconds,
+                    "device": r.device,
+                    "path": path,
+                })
+            });
+            let channel = s.channel.as_ref().map(|r| {
+                json!({
+                    "kind": r.kind,
+                    "bit_rate": r.bit_rate,
+                    "ui_ps": r.ui_ps,
+                    "rise_ps": r.rise_ps,
+                    "eye": { "phases": r.eye.phases, "bins": r.eye.bins, "v_min_mv": r.eye.v_min_mv, "v_max_mv": r.eye.v_max_mv },
+                    "readings": r.readings,
+                    "seconds": r.seconds,
+                    "path": path,
+                })
+            });
+            json!({
+                "kind": "sim",
+                "file": p.sims[i].path,
+                "sim": s,
+                "result": fdtd.or(maps).or(channel),
                 "logic": s.logic_result.as_ref().map(|r| json!({
                     "passed": r.passed,
                     "failures": r.failures,
