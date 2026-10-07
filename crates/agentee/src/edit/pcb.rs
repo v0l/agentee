@@ -357,8 +357,7 @@ fn untrack(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> 
         .get_mut("tracks")
         .and_then(|v| v.as_array_of_tables_mut())
         .ok_or("this layout has no tracks")?;
-    let of_net =
-        |t: &Table| net.as_deref().is_none_or(|n| text(t, "net").as_deref() == Some(n));
+    let of_net = |t: &Table| net.as_deref().is_none_or(|n| text(t, "net").as_deref() == Some(n));
     let before = a.len();
     let mut kept: Vec<Table> = Vec::new();
     let mut cut = 0usize;

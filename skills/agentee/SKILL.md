@@ -320,7 +320,7 @@ suggests the width that meets the target.
 Each `*.sim.toml` has a `kind`: FDTD (default), `cascade`, `channel`, `pdn`, `dc`, `thermal`,
 `logic`. A logic sim runs a schematic's digital parts and writes a VCD as well as the result.
 `agentee sim NAME` writes `NAME.result.json` (and `NAME.sNp` for S-parameters) next to the spec.
-Read the result with `agentee show sim:NAME`: the `readings` list is the summary (gain, match,
+Read the result with `agentee show sim:NAME`: `result.readings` is the summary (gain, match,
 NF, stability, eye height, peak temperature, drop). Look at the plots with `agentee render sim:NAME`.
 
 FDTD is expensive. The LNA example's six-port run took 27 minutes on a workstation GPU. So:
