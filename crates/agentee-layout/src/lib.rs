@@ -10,6 +10,7 @@ pub mod pinswap;
 pub mod placement;
 pub mod planes;
 pub mod score;
+pub mod search;
 pub mod start;
 pub mod tangle;
 

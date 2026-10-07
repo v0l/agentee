@@ -281,6 +281,51 @@ The engine writes `# plan planes` for the rail regions and `# plan route` for al
 Running a routing stage strips those and the retired `detail`, `escape`, `tie` and `global`
 sections first.
 
+## Search
+
+`agentee layout NAME --search [N]` runs the pipeline for N settings (16 by default) and keeps
+the best. With no `[engine.search]` it varies `[engine.place] seed`. Each candidate starts from
+the same file, so the result is a choice between placements, not a walk away from the one in
+the file.
+
+It screens first: every candidate runs up to `global` (or `screen`) and is ranked on the score
+total, which there is mostly wirelength, crossings and overflow. The best `keep` (4) run the rest
+of the stages, and the one with the fewest copper overlaps, then the fewest unrouted
+connections, then the lowest total, is written with its knob values set in `[engine]`, so
+`agentee layout NAME` on the original file reproduces it. A knob of a stage after the screen
+(`detail.via_cost`) does not change the screen, so candidates that differ only there are screened
+once and go through together. Candidates run in parallel, a quarter of the cores at a time in
+full and half in the screen, since detail is threaded itself.
+
+```toml
+[engine.search]
+knobs = { "place.seed" = [1, 2, 3, 4, 5, 6, 7, 8], "place.density" = [0.6, 0.7], "detail.via_cost" = ["1mm", "3mm"] }
+tries = 24        # candidates; every combination when they fit, a seeded sample when not
+keep = 4          # screened candidates that get the full run
+screen = "global" # the last stage of the screen
+seed = 1          # the sample's seed
+```
+
+A knob is a dotted path under `[engine]` and check refuses one the engine does not have. The
+current values are always run in full whatever their screen, so a search never writes something
+worse than a plain run of the same file.
+
+On `examples/sdr` at `e2a9020`, `--search 8 --keep 2` took 5.4 minutes on 48 threads: about 56 s
+a screen, about 260 s a full run. The file's seed 5 screened sixth. Seed 8 won with 302
+unrouted and 10 overlaps, against 310 and 14 for the runner-up.
+
+What the `layout-engine` branch measured on `examples/sdr`, and why the search is shaped this way:
+
+- With the chips hand-placed the router reached 338 of 356 connections. With them free the
+  plain placer landed near 270 of 311. The placement decides the outcome more than any router
+  setting.
+- Rip-up was the router's time dial and mostly noise on a free placement: limits of 0, 4, 12,
+  20 and 32 gave 266, 263, 270, 279 and 274 connections in 215 to 980 s, with no trend.
+- So the time goes on placements. The screen cost 43 s a candidate against 215 s for a full
+  run, which made 40 placements with 8 kept affordable.
+- Any-angle part turns (`turn`) and the smooth-score descent (`descend`) lowered the tangle but
+  never routed better than the plain placer, so neither came across.
+
 ## Benchmarks
 
 `cargo test -p agentee-layout --release --test bench -- --nocapture` runs the `lna` cases;

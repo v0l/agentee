@@ -42,13 +42,15 @@ fn tools() -> Value {
         },
         {
             "name": "layout",
-            "description": "Run the layout engine on a layout: the configured [engine] phases in order, then the score per term with the worst offenders of each. Phases not implemented yet are listed as skipped.",
+            "description": "Run the layout engine on a layout: the configured [engine] phases in order, then the score per term with the worst offenders of each. Phases not implemented yet are listed as skipped. With search it tries many settings in parallel (placement seeds by default, or the [engine.search] knobs), screens them on the cheap stages, runs the best few in full and writes the one that routes best, with its settings pinned in [engine]. Use search instead of rerunning place and route by hand with different seeds.",
             "inputSchema": s(json!({
                 "name": { "type": "string" },
                 "from": { "type": "string", "description": "start at this phase" },
                 "to": { "type": "string", "description": "stop after this phase" },
                 "only": { "type": "string", "description": "run one phase" },
                 "dry_run": { "type": "boolean", "description": "report without writing the plan" },
+                "search": { "type": ["boolean", "integer"], "description": "true, or how many settings to try (default 16)" },
+                "keep": { "type": "integer", "description": "with search, how many of the screen's best get the full run (default 4)" },
             }), &["name"]),
         },
         {
@@ -384,6 +386,13 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                     to: arg(a, "to").map(String::from),
                     only: arg(a, "only").map(String::from),
                     write: !flag(a, "dry_run"),
+                    search: match (a.get("search"), a.get("keep").and_then(Value::as_u64)) {
+                        (Some(Value::Bool(false)) | None, None) => None,
+                        (s, keep) => Some(agentee_layout::search::Ask {
+                            tries: s.and_then(Value::as_u64).filter(|&n| n > 0).map(|n| n as usize),
+                            keep: keep.map(|n| n as usize),
+                        }),
+                    },
                 },
             )?;
             Ok(ok(vec![text(pretty(&r))]))

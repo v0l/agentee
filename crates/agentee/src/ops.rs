@@ -1929,6 +1929,7 @@ pub struct LayoutArgs {
     pub to: Option<String>,
     pub only: Option<String>,
     pub write: bool,
+    pub search: Option<agentee_layout::search::Ask>,
 }
 
 pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, String> {
@@ -1944,14 +1945,27 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
         watch: None,
         stop: None,
     };
-    let r = agentee_layout::run_text(&inputs, &text, &run)
+    let searched = a
+        .search
+        .as_ref()
+        .map(|ask| agentee_layout::search::search(&inputs, &text, &run, ask))
+        .transpose()
         .map_err(|e| format!("{}: {e}", path.display()))?;
+    let r = match &searched {
+        Some(s) => s.run.clone(),
+        None => agentee_layout::run_text(&inputs, &text, &run)
+            .map_err(|e| format!("{}: {e}", path.display()))?,
+    };
     if a.write && r.text != text {
         std::fs::write(&path, &r.text).map_err(|e| e.to_string())?;
     }
     let mut v = serde_json::to_value(&r).unwrap_or_default();
     v["score_table"] = json!(r.score.table());
     v["time_table"] = json!(r.time.table());
+    if let Some(s) = searched {
+        v["search_table"] = json!(s.table());
+        v["search"] = serde_json::to_value(&s).unwrap_or_default();
+    }
     Ok(v)
 }
 

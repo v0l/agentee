@@ -45,6 +45,41 @@ pub struct EngineFile {
     pub detail: Option<DetailFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangle: Option<TangleFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<SearchFile>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchFile {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub knobs: BTreeMap<String, Vec<toml::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tries: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u64>,
+}
+
+pub fn knob_path(key: &str) -> Vec<String> {
+    key.strip_prefix("engine.").unwrap_or(key).split('.').map(str::to_string).collect()
+}
+
+pub fn knob_fits(key: &str, value: &toml::Value) -> Result<(), String> {
+    let path = knob_path(key);
+    if path.iter().any(|p| p.is_empty()) || path.first().is_some_and(|p| p == "search") {
+        return Err(format!("`{key}` is not an engine setting"));
+    }
+    let mut v = value.clone();
+    for k in path.iter().rev() {
+        let mut t = toml::map::Map::new();
+        t.insert(k.clone(), v);
+        v = toml::Value::Table(t);
+    }
+    v.try_into::<EngineFile>().map(|_| ()).map_err(|e| format!("`{key}` = {value}: {e}"))
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -163,6 +198,26 @@ impl EngineFile {
                     d.warn("engine.phases", format!("`{p}` is now part of the `{s}` stage"))
                 }
                 Some(_) => {}
+            }
+        }
+        if let Some(sf) = &self.search {
+            for (k, values) in &sf.knobs {
+                if values.is_empty() {
+                    d.error("engine.search.knobs", format!("`{k}` lists no values"));
+                }
+                for v in values {
+                    if let Err(e) = knob_fits(k, v) {
+                        d.error("engine.search.knobs", e);
+                    }
+                }
+            }
+            if let Some(s) = &sf.screen
+                && stage_of(s).is_none()
+            {
+                d.error(
+                    "engine.search.screen",
+                    format!("no stage `{s}`, the stages are {}", PHASES.join(", ")),
+                );
             }
         }
         for k in self.score.keys() {

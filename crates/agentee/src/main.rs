@@ -417,6 +417,12 @@ enum Cmd {
         /// Report without writing the plan into the layout file
         #[arg(long)]
         dry_run: bool,
+        /// Try this many settings (default 16, or `[engine.search] tries`) and keep the one that routes best: placement seeds unless `[engine.search] knobs` names others
+        #[arg(long, num_args = 0..=1, default_missing_value = "0")]
+        search: Option<usize>,
+        /// With --search, how many of the cheap screen's best get the full run (default 4)
+        #[arg(long)]
+        keep: Option<usize>,
         #[arg(long)]
         json: bool,
     },
@@ -946,17 +952,22 @@ fn run(cli: Cli) -> Result<bool, String> {
             print_json(&r);
             Ok(ok)
         }
-        Cmd::Layout { name, project, from, to, only, dry_run, json } => {
+        Cmd::Layout { name, project, from, to, only, dry_run, search, keep, json } => {
+            let search = (search.is_some() || keep.is_some())
+                .then(|| agentee_layout::search::Ask { tries: search.filter(|&n| n > 0), keep });
             let r = ops::layout_engine(
                 &project,
                 &name,
-                &ops::LayoutArgs { from, to, only, write: !dry_run },
+                &ops::LayoutArgs { from, to, only, write: !dry_run, search },
             )?;
             if json {
                 print_json(&r);
             } else {
                 for s in r["skipped"].as_array().into_iter().flatten() {
                     println!("skipped {}", s.as_str().unwrap_or(""));
+                }
+                if let Some(t) = r["search_table"].as_str() {
+                    println!("{t}");
                 }
                 print!("{}", r["score_table"].as_str().unwrap_or(""));
                 print!("{}", r["time_table"].as_str().unwrap_or(""));
