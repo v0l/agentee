@@ -1,6 +1,6 @@
 use crate::pages::{PageState, page};
+use agentee_core::Severity;
 use agentee_core::project::{ItemRef, Kind, Project};
-use agentee_core::{Diagnostic, Severity};
 use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use egui_bench::prelude::*;
 use notify::{RecursiveMode, Watcher};
@@ -347,32 +347,17 @@ impl App {
         }
     }
 
-    fn failures(&self, ui: &mut Ui) {
-        if self.project.failures.is_empty() && self.error.is_none() {
-            return;
-        }
+    fn error(&self, ui: &mut Ui) {
+        let Some(e) = &self.error else { return };
         card(
             ui,
             Some(FAULT),
             |ui| {
-                Line::new().legend("files that did not load").show(ui);
+                Line::new().legend("error").show(ui);
             },
-            |ui| {
-                if let Some(e) = &self.error {
-                    status(ui, false, e);
-                }
-                for f in &self.project.failures {
-                    failure(ui, f);
-                }
-            },
+            |ui| status(ui, false, e),
         );
     }
-}
-
-fn failure(ui: &mut Ui, d: &Diagnostic) {
-    let file = d.file.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
-    Line::new().legend(&d.at).value(file).size(11.0).wrapped(ui);
-    Line::new().value(&d.message).tint(FAULT).size(11.5).wrapped(ui);
 }
 
 impl App {
@@ -445,7 +430,7 @@ impl eframe::App for App {
             .min_size(200.0)
             .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
             .show(ui, |ui| {
-                self.failures(ui);
+                self.error(ui);
                 self.list(ui);
             });
         let current = self.current();
@@ -465,6 +450,23 @@ impl eframe::App for App {
             match current {
                 Some(item) => page(ui, &self.project, item, &mut self.st),
                 None => {
+                    if !self.project.failures.is_empty() {
+                        egui::Panel::bottom("diagnostics")
+                            .resizable(true)
+                            .default_size(150.0)
+                            .frame(
+                                egui::Frame::NONE
+                                    .fill(CHASSIS)
+                                    .inner_margin(egui::Margin::symmetric(10, 6)),
+                            )
+                            .show(ui, |ui| {
+                                crate::pages::diagnostics(
+                                    ui,
+                                    &crate::pages::with_failures(&self.project, &[]),
+                                    true,
+                                )
+                            });
+                    }
                     ui.add_space(20.0);
                     ui.horizontal(|ui| {
                         ui.add_space(20.0);

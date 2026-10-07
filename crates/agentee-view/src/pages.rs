@@ -161,7 +161,7 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         .resizable(st.interactive)
         .default_size(150.0)
         .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 6)))
-        .show(ui, |ui| diagnostics(ui, diags, st.interactive));
+        .show(ui, |ui| diagnostics(ui, &with_failures(project, diags), st.interactive));
     egui::Panel::right("properties")
         .resizable(st.interactive)
         .default_size(SIDE_W)
@@ -212,6 +212,14 @@ fn severity_color(s: Severity) -> Color32 {
         Severity::Warning => WARN,
         Severity::Info => LEGEND,
     }
+}
+
+pub fn with_failures(project: &Project, diags: &[Diagnostic]) -> Vec<Diagnostic> {
+    let failed = project.failures.iter().map(|f| Diagnostic {
+        at: [f.item.as_str(), f.at.as_str()].join(" ").trim().to_string(),
+        ..f.clone()
+    });
+    failed.chain(diags.iter().cloned()).collect()
 }
 
 pub fn diagnostics(ui: &mut Ui, diags: &[Diagnostic], interactive: bool) {

@@ -163,3 +163,25 @@ fn a_canvas_sim_render_stops_at_its_content() {
     assert_eq!(w, 1400);
     assert!(h < 700, "{h}");
 }
+
+#[test]
+fn files_that_did_not_load_lead_every_item_s_diagnostics() {
+    let dir = std::env::temp_dir().join(format!("agentee-view-fail-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("t.board.toml"),
+        "name = \"t\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("bad.sch.toml"), "name = \"bad\"\nnope = 1\n").unwrap();
+    let project = Project::load(&dir).unwrap();
+    assert_eq!(project.failures.len(), 1);
+    let board = project.find("board:t").unwrap();
+    let shown = agentee_view::pages::with_failures(&project, project.diags_of(board));
+    assert_eq!(shown.len(), project.diags_of(board).len() + 1);
+    assert!(shown[0].at.starts_with("bad.sch.toml"), "{}", shown[0].at);
+    assert!(shown[0].message.contains("nope"), "{}", shown[0].message);
+    let opts = RenderOptions { width: 900, height: 600, ..Default::default() };
+    assert!(render_png(&project, board, &opts).is_ok());
+}
