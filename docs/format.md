@@ -27,7 +27,7 @@ agentee edit sch NAME add R1 R 10k --footprint R_0402_1005Metric --at 25.4,25.4
 agentee edit sch NAME net VBUS C1.1 U1.7 --class Power
 agentee edit pcb NAME place R1 12.7,20.32
 agentee edit board NAME class RF --impedance 50ohm --coplanar-gap 0.2mm --solver field
-agentee edit sch - < script.txt        # a list of commands, one load, one check at the end
+agentee edit sch NAME - < script.txt   # a list of commands, one load, one check at the end
 ```
 
 A pin is `REF.PIN`, by number or by a unique pin name; a name several pins share is an error. A

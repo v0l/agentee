@@ -101,6 +101,40 @@ fn one_load_for_a_whole_script() {
 }
 
 #[test]
+fn a_script_names_its_item_when_there_are_several() {
+    let d = dir("named-script");
+    std::fs::write(d.join("a.sch.toml"), "name = \"a\"\n").unwrap();
+    std::fs::write(d.join("b.sch.toml"), "name = \"b\"\n").unwrap();
+
+    let (_, err, ok) = run(&d, &["edit", "sch", "-"]);
+    assert!(!ok);
+    assert!(err.contains("agentee edit sch NAME -") && err.contains("a, b"), "{err}");
+
+    let mut child = Command::new(bin())
+        .args(["edit", "sch", "b", "-"])
+        .current_dir(&d)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(
+        child.stdin.as_mut().unwrap(),
+        b"add R1 R 1k\nadd R2 R 10k\nnet MID R1.2 R2.1\n",
+    )
+    .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(sch(&d, "b.sch.toml").contains("pins = [\"R1.2\", \"R2.1\"]"));
+    assert_eq!(sch(&d, "a.sch.toml"), "name = \"a\"\n");
+
+    let script = d.join("build.txt");
+    std::fs::write(&script, "nc R2.2\n").unwrap();
+    edit(&d, &["sch", "b", script.to_str().unwrap()]);
+    assert!(sch(&d, "b.sch.toml").contains("no_connect = [\"R2.2\"]"));
+}
+
+#[test]
 fn a_pin_moves_when_it_joins_another_net() {
     let d = dir("move");
     std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();

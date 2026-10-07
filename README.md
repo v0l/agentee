@@ -75,8 +75,8 @@ the project does not have, with a `--footprint` it does, finds the symbol that u
 Commands also run as a list, one per line, so a whole section costs one load and one check:
 
 ```sh
-agentee edit sch - < build.txt
-agentee edit sch build.txt                    # or from a file
+agentee edit sch sensor-node - < build.txt
+agentee edit sch sensor-node build.txt        # or from a file
 agentee edit sch sensor-node --list           # the parts and nets as JSON
 agentee edit pcb sensor-node help
 agentee edit board sensor-node help

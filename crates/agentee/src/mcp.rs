@@ -11,8 +11,9 @@ const PROTOCOL: &str = "2025-06-18";
 
 const INSTRUCTIONS: &str = "agentee is an electronic design package for agents. The design lives in TOML files: \
 *.board.toml (board spec: stackup, fab rules, vias, net classes), *.sym.toml (schematic symbols) and *.fp.toml \
-(footprints). Read format_reference before writing any file. Edit the files directly, then call check and fix \
-every error. Use render_item to see what you made. Prefer importing KiCad parts (kicad_search, then \
+(footprints). Change schematics, layouts and board specs with the edit tool, all the commands of one change in \
+one call. Write symbols and footprints directly, reading format_reference first. Then call check and fix every \
+error. Never rewrite the TOML from a script. Use render_item to see what you made. Prefer importing KiCad parts (kicad_search, then \
 import_kicad_symbol / import_kicad_footprint) over drawing them by hand.";
 
 fn tools() -> Value {
@@ -60,6 +61,15 @@ fn tools() -> Value {
                 "thickness": { "type": "number", "description": "finished thickness in mm, within 10%" },
                 "search": { "type": "string", "description": "substring of name or description" },
             }), &[]),
+        },
+        {
+            "name": "edit",
+            "description": "Edit a schematic (sch), layout (pcb) or board spec (board) with commands, one per line, in one load and one check at the end. It keeps the file's comments and layout and returns the check report of what it touched. A command that names a missing pin, part or net fails before anything is written. Send `help` alone for the commands of that target. Commands: sch add/remove/move/set/net/connect/disconnect/nc/unnc/note; pcb place/unplace/track/untrack/via/unvia/zone/unzone/pair/text/fanout/stitch/watermark/test; board class/unclass/via/unvia/outline/cutout/stackup.",
+            "inputSchema": s(json!({
+                "target": { "type": "string", "enum": ["sch", "pcb", "board"] },
+                "item": { "type": "string", "description": "item name, optional when the project has one of that kind" },
+                "commands": { "type": "string", "description": "one command per line, e.g. `add R1 R 10k --footprint R_0402_1005Metric` then `net MID R1.2 R2.1 --class Signal`" },
+            }), &["target", "commands"]),
         },
         {
             "name": "list_items",
@@ -389,6 +399,30 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 search: arg(a, "search"),
             };
             Ok(ok(vec![text(ops::stackups_text(&ops::stackups(&q)))]))
+        }
+        "edit" => {
+            let kind = match arg(a, "target") {
+                Some("sch") => Kind::Schematic,
+                Some("pcb") => Kind::Layout,
+                Some("board") => Kind::Board,
+                _ => return Err("target is sch, pcb or board".into()),
+            };
+            let commands = arg(a, "commands").ok_or("commands is required")?;
+            if commands.trim() == "help" {
+                let mut t = String::new();
+                for cmd in crate::edit::commands(kind) {
+                    t += &crate::edit::usage(kind, cmd);
+                    t += "\n";
+                }
+                return Ok(ok(vec![text(t)]));
+            }
+            let lines: Vec<String> = commands.lines().map(str::to_string).collect();
+            let item = match arg(a, "item") {
+                Some(n) => n.to_string(),
+                None => crate::edit::only_item(root, kind)?,
+            };
+            let (t, _, clean) = crate::edit::run_lines(root, kind, &item, &lines)?;
+            Ok(json!({ "content": [text(t)], "isError": !clean }))
         }
         "list_items" => Ok(ok(vec![text(pretty(&ops::list(&ops::load(root)?)))])),
         "show_item" => {
@@ -832,6 +866,41 @@ mod tests {
         let tools =
             handle(&demo(), &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" })).unwrap();
         assert!(tools["result"]["tools"].as_array().unwrap().len() > 5);
+    }
+
+    #[test]
+    fn edit_runs_a_batch_on_a_named_schematic() {
+        let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+        let dir = std::env::temp_dir().join(format!("agentee-mcp-edit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("symbols")).unwrap();
+        std::fs::create_dir_all(dir.join("footprints")).unwrap();
+        for f in ["symbols/R.sym.toml", "footprints/R_0402_1005Metric.fp.toml"] {
+            std::fs::copy(lna.join(f), dir.join(f)).unwrap();
+        }
+        std::fs::write(dir.join("a.sch.toml"), "name = \"a\"\n").unwrap();
+        std::fs::write(dir.join("b.sch.toml"), "name = \"b\"\n").unwrap();
+        let edit = |args: Value| {
+            let c = json!({ "jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": { "name": "edit", "arguments": args } });
+            handle(&dir, &c).unwrap()
+        };
+
+        let r = edit(json!({ "target": "sch", "commands": "add R1 R 1k" }));
+        assert_eq!(r["result"]["isError"], true, "{r}");
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("a, b"), "{r}");
+
+        let r = edit(
+            json!({ "target": "sch", "item": "b", "commands": "add R1 R 1k\nadd R2 R 10k\nnet MID R1.2 R2.1" }),
+        );
+        assert_eq!(r["result"]["isError"], false, "{r}");
+        let text = std::fs::read_to_string(dir.join("b.sch.toml")).unwrap();
+        assert!(text.contains("pins = [\"R1.2\", \"R2.1\"]"), "{text}");
+
+        let r = edit(json!({ "target": "pcb", "commands": "help" }));
+        assert!(
+            r["result"]["content"][0]["text"].as_str().unwrap().contains("track NET LAYER"),
+            "{r}"
+        );
     }
 
     #[test]

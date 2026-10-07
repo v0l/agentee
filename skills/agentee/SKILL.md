@@ -9,10 +9,15 @@ A project is a directory of TOML files. You write the files; `agentee` loads eve
 the directory, checks it, computes what the stackup gives, and renders it. There is no editor
 state to sync: the files are the design. `agentee edit` writes those files for you.
 
-Prefer `agentee edit` over writing the TOML yourself. It has the same result, it keeps the
-comments and layout of the file, and it checks what it changed. Reach for a text editor only for
-a key it has no command for. It covers schematics, layouts and board specs, not symbols and
-footprints: those still go in a text editor, or in from KiCad. See "Editing with commands" below.
+Change schematics, layouts and board specs with `agentee edit`, and send a change of more than
+one command as one batch (`agentee edit sch NAME -` with the commands on stdin). It keeps the
+comments and layout of the file, refuses a typo before writing, and checks what it changed.
+Reach for a text editor only for a key it has no command for, and for symbols and footprints,
+which it does not cover. See "Editing with commands" below.
+
+Never parse and rewrite the TOML from a Python or shell script. It drops comments, skips the
+checks `edit` does, and turns a typo into a new net or part. When a change is too repetitive to
+type, have the script print `agentee edit` commands and pipe them in (see below).
 
 ## Installing
 
@@ -44,9 +49,11 @@ key.
 
 ## The loop
 
-Every edit goes through the same four steps. Do not batch several unchecked edits.
+Every change goes through the same four steps. A change is one batch of `agentee edit` commands
+(a whole sheet, a bus, a row of parts) or one hand edit of a file. Do not stack several hand
+edits before checking them.
 
-1. Edit one file, with `agentee edit` where there is a command for it.
+1. Make the change, with `agentee edit` where there is a command for it.
 2. `agentee check` (exit 0 clean, 1 errors, 2 load failure). Add `--item pcb:NAME` to scope it,
    `--info` for notes, `--json` for machine output. An `agentee edit` already ran this for the
    files it touched and printed the result, so `check` is for anything else you changed.
@@ -154,7 +161,8 @@ agentee import footprint Package_TO_SOT_SMD:SOT-89-3
 ```
 
 Imports land in `symbols/` and `footprints/`. `--force` overwrites. Run check straight after:
-KiCad silk is often 0.12 mm and JLCPCB wants 0.15 mm, so widen it in the imported `.fp.toml`.
+KiCad silk is often 0.12 mm and JLCPCB wants 0.15 mm, so check names the footprints to widen.
+Change the `width` of their silk `[[graphics]]` in a text editor, one file at a time.
 `agentee models` fetches the 3D models the footprints name.
 
 `agentee import board path/NAME.kicad_pcb --dir DIR` turns a whole KiCad board into a project:
@@ -197,12 +205,12 @@ net or a placement of its own.
 ... --diameter ...`, `unvia`, `outline`, `cutout`, `stackup`). `class` edits the netclass of that
 name in place or adds it. `stackup --preset NAME` takes a name from `agentee stackups`.
 
-Write several commands to a file, or pipe them in, when a change is more than one part or one
-net. It is one load and one check at the end, so it is much faster and the intermediate states
-that check would flag never happen:
+Pipe the commands in, or write them to a file, whenever a change is more than one command. It
+is one load and one check at the end, so it is much faster, and the half-built states that check
+would flag between single commands (a part with no net yet) never happen:
 
 ```sh
-agentee edit sch - <<'EOF'
+agentee edit sch power - <<'EOF'
 add R1 R 10k --footprint R_0402_1005Metric
 add R2 R 4k7
 add C1 C 100n --footprint C_0402_1005Metric
@@ -212,8 +220,24 @@ note "input divider"
 EOF
 ```
 
-`agentee edit sch build.txt` does the same from a file. Both edit the one schematic the project
-has; with more than one it says so and names them, so pass the item name instead.
+`agentee edit sch power build.txt` does the same from a file. The same works for `pcb` and
+`board`. The item name can be left out when the project has only one item of that kind; with
+more, the error names them. Lines starting with `#` are skipped.
+
+A batch has no loops. For anything repetitive (16 decoupling caps, a `D0..D15` bus, a row of
+placements at a pitch) generate the lines and pipe them in. Doing the coordinate arithmetic in a
+script is right; editing the TOML from it is not:
+
+```sh
+for i in $(seq 0 15); do
+  echo "add C$((10+i)) C 100n --footprint C_0402_1005Metric"
+  echo "net 3V3 C$((10+i)).1"
+  echo "net GND C$((10+i)).2"
+done | agentee edit sch power -
+
+python3 -c 'for i in range(16): print(f"place C{10+i} {20+i*1.5:.2f},12 --rotation 90")' \
+  | agentee edit pcb main -
+```
 
 Each edit writes the file, refills a layout's stored zone fills if the layout stored them, and
 prints the check diagnostics of the files it touched. It exits 1 if any of those is an error, so a
@@ -338,8 +362,9 @@ and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas
 `region` and `rulers`), `stackups`, `run_sim`, `sparam`, `field_solve`, `impedance`,
 `trace_width`, `serpentine`, `place`, `route`, `tie`, `fill`, `tune`, `neck`, `silk`,
 `testpoints`, `layout`, `parts`, `kicad_search`, `import_kicad_symbol`,
-`import_kicad_footprint`, `new_item`, `models`, `fab`, `export`. There is no `edit` tool: write
-the TOML files yourself with your normal file tools, or run `agentee edit` in a shell.
+`import_kicad_footprint`, `new_item`, `models`, `fab`, `export`, `edit`. `edit` takes `target`
+(`sch`, `pcb` or `board`), `item`, and `commands`: the same batch as `agentee edit`, one command
+per line. Send `commands = "help"` for the list.
 
 ## Worked examples
 

@@ -666,6 +666,14 @@ pub fn kind_name(k: Kind) -> &'static str {
     }
 }
 
+fn stem(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Schematic => "sch",
+        Kind::Layout => "pcb",
+        _ => "board",
+    }
+}
+
 fn handler<'a>(kind: Kind, cmd: &str) -> Option<Cmd> {
     match kind {
         Kind::Schematic => sch::command(cmd),
@@ -757,7 +765,13 @@ pub fn only_item(root: &Path, kind: Kind) -> Result<String, String> {
             let mut names: Vec<String> = many.iter().map(|(_, n)| n.clone()).collect();
             names.sort();
             names.dedup();
-            Err(format!("the project has {} {}, name one", many.len(), kind_name(kind)))
+            Err(format!(
+                "the project has {} {}s, name one before the script (`agentee edit {} NAME -`): {}",
+                many.len(),
+                kind_name(kind),
+                stem(kind),
+                names.join(", ")
+            ))
         }
     }
 }

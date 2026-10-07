@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod edit;
 mod mcp;
 mod ops;
@@ -453,9 +455,9 @@ enum Cmd {
     /// Edit a schematic, layout or board with commands instead of writing TOML by hand
     ///
     /// Every edit takes the item name and a command. `agentee edit sch help` lists them with
-    /// their arguments. A list of commands also works: `agentee edit sch -` reads them from
-    /// stdin, one per line, and `agentee edit sch FILE` from a file, one load, one check at the
-    /// end. It rewrites the TOML, keeps the comments and layout of the file, and prints the
+    /// their arguments. A list of commands also works: `agentee edit sch NAME -` reads them from
+    /// stdin, one per line, and `agentee edit sch NAME FILE` from a file, one load, one check at
+    /// the end. NAME can be left out when the project has one item of that kind. It rewrites the TOML, keeps the comments and layout of the file, and prints the
     /// check report of the files it touched.
     ///
     /// Pin references are REF.PIN, by number (U1.3) or by a unique pin name (U1.VCC). The pin
@@ -464,7 +466,7 @@ enum Cmd {
         /// schematic, layout or board
         #[arg(value_enum)]
         target: EditKind,
-        /// Item name, `-` for stdin, a script file, or a command
+        /// Item name, or `-` for stdin or a script file when the project has one item of the kind
         name: String,
         /// Arguments of the command
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -1000,16 +1002,17 @@ fn run(cli: Cli) -> Result<bool, String> {
                 println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
                 return Ok(true);
             }
-            let (text, v, ok) = if name == "-" {
-                let lines = read_lines(&mut std::io::stdin().lock())?;
-                edit::run_lines(&root, target.kind(), "", &lines)?
-            } else if args.is_empty() && Path::new(&name).is_file() {
-                let file = std::fs::File::open(&name).map_err(|e| format!("{name}: {e}"))?;
-                let mut reader = std::io::BufReader::new(file);
-                let lines = read_lines(&mut reader)?;
-                let item =
-                    edit::only_item(&root, target.kind()).map_err(|e| format!("{name}: {e}"))?;
-                edit::run_lines(&root, target.kind(), &item, &lines)?
+            let kind = target.kind();
+            let script_arg = |a: &str| {
+                a == "-" || (!edit::commands(kind).contains(&a) && Path::new(a).is_file())
+            };
+            let (text, v, ok) = if args.is_empty() && script_arg(&name) {
+                let item = edit::only_item(&root, kind)?;
+                edit::run_lines(&root, kind, &item, &script_lines(&name)?)?
+            } else if let [script] = args.as_slice()
+                && script_arg(script)
+            {
+                edit::run_lines(&root, kind, &name, &script_lines(script)?)?
             } else if args.is_empty() {
                 return Err("give a command: `agentee edit sch ITEM help` lists them".into());
             } else {
@@ -1033,6 +1036,14 @@ fn report(text: String, v: &serde_json::Value, json: bool, ok: bool) -> Result<b
     Ok(ok)
 }
 
+fn script_lines(source: &str) -> Result<Vec<String>, String> {
+    if source == "-" {
+        return read_lines(&mut std::io::stdin().lock());
+    }
+    let file = std::fs::File::open(source).map_err(|e| format!("{source}: {e}"))?;
+    read_lines(&mut std::io::BufReader::new(file))
+}
+
 fn read_lines(r: &mut dyn std::io::BufRead) -> Result<Vec<String>, String> {
     let mut lines = Vec::new();
     for line in std::io::BufRead::lines(r) {
@@ -1050,8 +1061,9 @@ fn edit_help(kind: Kind) -> String {
     };
     text += &format!(
         "agentee edit {stem} ITEM COMMAND [args]   (sch = sch:NAME, pcb = pcb:NAME)\n\
-         agentee edit {stem} -   commands on stdin, one per line\n\
-         agentee edit {stem} FILE   commands from a file; the project needs exactly one {} for this\n\n",
+         agentee edit {stem} ITEM -   commands on stdin, one per line\n\
+         agentee edit {stem} ITEM FILE   commands from a file\n\
+         ITEM can be left out of the last two when the project has one {}\n\n",
         match kind {
             Kind::Schematic => "schematic",
             Kind::Layout => "layout",
