@@ -4,6 +4,7 @@ mod context;
 mod edge;
 mod holes;
 mod isolation;
+mod registry;
 mod vias;
 
 pub use barrier::{
@@ -15,6 +16,7 @@ pub use context::{Context, Pad, Placed, Plan, Planned};
 pub use edge::CopperToEdge;
 pub use holes::{HoleToCopper, HoleToHole, Which};
 pub use isolation::Isolation;
+pub use registry::{Registered, everything};
 pub use vias::{
     HoleToSmdPad, StackedVia, ViaAnnulusPastPad, ViaCutsPad, ViaInPad, ViaInPadFill, vias_in_pads,
 };

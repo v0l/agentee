@@ -755,6 +755,16 @@ pub fn id_enabled(board: &Board, id: &str) -> bool {
     !board.drc.disable.iter().any(|d| d == id)
 }
 
+pub fn messages(rule: &Rule, cx: &Ctx) -> Vec<crate::diag::Diagnostic> {
+    if !(rule.applies)(&Setup::of(cx)) || !enabled(cx.board, rule) {
+        return Vec::new();
+    }
+    let mut d = Diags::new("");
+    let mut report = Report { d: &mut d, rule: rule.id, severity: severity_of(cx.board, rule) };
+    (rule.check)(cx, &mut report);
+    d.list
+}
+
 pub fn run(cx: &Ctx, d: &mut Diags) {
     let setup = Setup::of(cx);
     for rule in registry() {

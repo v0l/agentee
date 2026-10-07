@@ -83,3 +83,34 @@ fn a_planned_track_is_judged_after_kept_vias_the_same_as_alone() {
     assert!(!alone.is_empty());
     assert_eq!(alone, after);
 }
+
+fn lna() -> agentee_core::Project {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    agentee_core::Project::load(&root).unwrap()
+}
+
+#[test]
+fn every_registered_rule_judges_a_plan_by_what_it_adds() {
+    let p = lna();
+    let l = &p.layouts[0].item;
+    let b = &p.boards[0].item;
+    let cx = agentee_core::drc::Ctx::of_layout(b, l);
+    let base = Placed::new(&cx);
+    let mut placed = Vec::new();
+    rules::everything(&base, &mut placed);
+    let ruled: Vec<&agentee_core::Diagnostic> =
+        p.layouts[0].diags.iter().filter(|d| d.rule.is_some()).collect();
+    assert!(placed.len() <= ruled.len(), "{} against {}", placed.len(), ruled.len());
+    let net = l.nets.iter().position(|n| n.name == "VCC").unwrap();
+    let thin = agentee_core::layout::Track {
+        source: usize::MAX,
+        net,
+        layer: "F.Cu".into(),
+        width: 0.01,
+        points: vec![[2.0, 2.0], [2.0, 4.0]],
+    };
+    let mut planned = Vec::new();
+    rules::everything(&Planned::new(&base, vec![thin], vec![]), &mut planned);
+    assert!(!planned.is_empty(), "a 0.01 mm track broke nothing");
+    assert!(planned.iter().all(|v| !placed.iter().any(|b| b.detail == v.detail)));
+}

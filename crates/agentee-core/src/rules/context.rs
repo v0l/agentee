@@ -35,6 +35,8 @@ pub trait Context {
     fn part_of_hole(&self, i: usize) -> Option<usize>;
 
     fn counts(&self, a: bool, b: bool) -> bool;
+
+    fn layouts(&self, f: &mut dyn FnMut(&Ctx, bool));
 }
 
 pub struct Placed<'a> {
@@ -186,6 +188,10 @@ impl Context for Placed<'_> {
 
     fn counts(&self, _: bool, _: bool) -> bool {
         true
+    }
+
+    fn layouts(&self, f: &mut dyn FnMut(&Ctx, bool)) {
+        f(self.cx, false);
     }
 }
 
@@ -466,6 +472,31 @@ impl Context for Planned<'_> {
 
     fn counts(&self, a: bool, b: bool) -> bool {
         a || b
+    }
+
+    fn layouts(&self, f: &mut dyn FnMut(&Ctx, bool)) {
+        let base = self.base.cx;
+        f(base, false);
+        let tracks: Vec<Track> = base.tracks.iter().chain(&self.tracks).cloned().collect();
+        let vias: Vec<Via> = base.vias.iter().chain(&self.vias).cloned().collect();
+        let merged = Ctx::new(
+            base.board,
+            base.copper,
+            base.outline,
+            base.board_cutouts,
+            base.parts,
+            &tracks,
+            &vias,
+            base.zones,
+            base.nets,
+        )
+        .with_signals(base.graphics, base.pairs, base.match_groups, base.interfaces)
+        .with_title(base.title);
+        let merged = match base.test {
+            Some(t) => merged.with_test(t),
+            None => merged,
+        };
+        f(&merged, true);
     }
 }
 
