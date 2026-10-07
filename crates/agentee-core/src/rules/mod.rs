@@ -4,13 +4,20 @@ mod context;
 mod edge;
 mod holes;
 mod isolation;
+mod vias;
 
-pub use barrier::{Creepage, IsolationClearance, Rim, Surface, closest as closest_edges, ring_edges as barrier_edges};
+pub use barrier::{
+    Creepage, IsolationClearance, Rim, Surface, closest as closest_edges,
+    ring_edges as barrier_edges,
+};
 pub use clearance::{ClassClearance, NetClearance};
 pub use context::{Context, Placed, Planned};
 pub use edge::CopperToEdge;
 pub use holes::{HoleToCopper, HoleToHole, Which};
 pub use isolation::Isolation;
+pub use vias::{
+    HoleToSmdPad, StackedVia, ViaAnnulusPastPad, ViaCutsPad, ViaInPad, ViaInPadFill, vias_in_pads,
+};
 
 use crate::board::Board;
 use crate::layout::LayoutNet;
@@ -55,6 +62,10 @@ pub fn check<C: Context>(cx: &C, out: &mut Vec<Violation>) {
     HoleToHole.eval(cx, out);
     IsolationClearance.eval(cx, out);
     Creepage.eval(cx, out);
+    ViaCutsPad.eval(cx, out);
+    ViaInPadFill.eval(cx, out);
+    HoleToSmdPad.eval(cx, out);
+    StackedVia.eval(cx, out);
 }
 
 pub fn legal<C: Context>(cx: &C) -> Result<(), Vec<Violation>> {

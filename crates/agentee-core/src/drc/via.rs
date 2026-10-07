@@ -1,4 +1,4 @@
-use super::{Category, Ctx, Report, Rule, Setup, edge_distance, every, is_smd, near, pads_where};
+use super::{Category, Ctx, Report, Rule, Setup, edge_distance, every};
 use crate::diag::Severity;
 use crate::geom::{self, P};
 use crate::layout::{PlacedPad, Via};
@@ -53,6 +53,13 @@ pub static RULES: &[Rule] = &[
     },
 ];
 
+fn run(cx: &Ctx, rule: impl crate::rules::Rule) -> Vec<crate::rules::Violation> {
+    let placed = crate::rules::Placed::new(cx);
+    let mut out = Vec::new();
+    rule.eval(&placed, &mut out);
+    out
+}
+
 fn with_via_in_pad(s: &Setup) -> bool {
     s.via_in_pad
 }
@@ -92,78 +99,42 @@ pub fn via_on_pad(v: &Via, q: &PlacedPad) -> Option<ViaOnPad> {
     })
 }
 
-fn at(v: &Via) -> String {
-    format!("[{:.3}, {:.3}]", v.at[0], v.at[1])
-}
-
 fn via_cuts_pad(cx: &Ctx, r: &mut Report) {
-    let pads = pads_where(cx.parts, is_smd);
-    for v in cx.vias {
-        let rad = v.diameter / 2.0;
-        for p in &pads {
-            if p.q.net != Some(v.net)
-                || !near(&p.bounds, v.at, rad)
-                || !p.q.copper.iter().any(|l| v.layers.contains(l))
-            {
-                continue;
-            }
-            let Some(ViaOnPad::Cuts { centre_inside, edge }) = via_on_pad(v, p.q) else {
-                continue;
-            };
-            let pad = cx.pad_name(p.part, p.pad);
-            let how = if centre_inside {
-                format!(
-                    "sits in {pad} {edge:.3} mm from its edge, so the {:.3} mm drill crosses it",
-                    v.drill / 2.0
-                )
-            } else if edge < rad - 1e-6 {
-                format!("cuts {:.3} mm into {pad}", rad - edge)
-            } else {
-                format!("touches the edge of {pad}")
-            };
-            r.emit(
-                format!("via {}", at(v)),
-                format!(
-                    "{} via {how}: solder wicks down the barrel and the pad is damaged; centre it in the pad (filled and capped) or move it clear",
-                    cx.nets[v.net].name
-                ),
-            );
-        }
+    for v in run(cx, crate::rules::ViaCutsPad) {
+        let net = v.nets.map(|n| cx.nets[n.0].name.clone()).unwrap_or_default();
+        r.emit(
+            v.group,
+            format!(
+                "{net} via {}: solder wicks down the barrel and the pad is damaged; centre it in the pad (filled and capped) or move it clear",
+                v.detail
+            ),
+        );
     }
 }
 
 fn via_annulus_past_pad(cx: &Ctx, r: &mut Report) {
-    for (vi, p, k) in super::vias_in_pads(cx.parts, cx.vias) {
-        let v = &cx.vias[vi];
-        if let Some(ViaOnPad::AnnulusPast { edge }) = via_on_pad(v, &cx.parts[p].pads[k]) {
-            r.emit(
-                format!("via {}", at(v)),
-                format!(
-                    "{} via sits in {} {edge:.3} mm from its edge, its {:.3} mm annulus reaches past the pad under the mask; centre it or use a smaller via",
-                    cx.nets[v.net].name,
-                    cx.pad_name(p, k),
-                    v.diameter / 2.0
-                ),
-            );
-        }
+    for v in run(cx, crate::rules::ViaAnnulusPastPad) {
+        let net = v.nets.map(|n| cx.nets[n.0].name.clone()).unwrap_or_default();
+        r.emit(
+            v.group,
+            format!(
+                "{net} via sits in {} {:.3} mm from its edge, its {:.3} mm annulus reaches past the pad under the mask; centre it or use a smaller via",
+                v.other,
+                v.gap,
+                v.need
+            ),
+        );
     }
 }
 
 fn via_in_pad(cx: &Ctx, r: &mut Report) {
-    let found = super::vias_in_pads(cx.parts, cx.vias);
+    let found = run(cx, crate::rules::ViaInPad);
     if found.is_empty() {
         return;
     }
-    let mut pads: Vec<String> = found.iter().map(|&(_, p, k)| cx.pad_name(p, k)).collect();
+    let mut pads: Vec<String> = found.iter().map(|v| v.other.clone()).collect();
     pads.dedup();
-    let mut kinds: Vec<String> = found
-        .iter()
-        .map(|&(vi, _, _)| {
-            let v = &cx.vias[vi];
-            let fill = v.fill.map(|f| f.describe()).unwrap_or("filled and capped");
-            format!("{} {fill}", v.kind.name())
-        })
-        .collect();
+    let mut kinds: Vec<String> = found.iter().map(|v| v.detail.clone()).collect();
     kinds.sort();
     kinds.dedup();
     r.emit(
@@ -179,20 +150,14 @@ fn via_in_pad(cx: &Ctx, r: &mut Report) {
 
 fn via_in_pad_fill(cx: &Ctx, r: &mut Report) {
     let max = cx.board.rules.max_filled_via_drill.to_mm();
+    let found = run(cx, crate::rules::ViaInPadFill);
     let mut big: BTreeMap<String, (usize, String)> = BTreeMap::new();
-    for (vi, p, k) in super::vias_in_pads(cx.parts, cx.vias) {
-        let v = &cx.vias[vi];
-        if v.drill > max + 1e-6 {
-            let e = big.entry(format!("{}", Length::mm(v.drill))).or_insert((0, cx.pad_name(p, k)));
-            e.0 += 1;
-        }
-    }
     let mut open: BTreeMap<String, (usize, String)> = BTreeMap::new();
-    for (vi, p, k) in super::vias_in_pads(cx.parts, cx.vias) {
-        let v = &cx.vias[vi];
-        if let Some(f) = v.fill.filter(|f| *f != crate::board::ViaFill::FilledCapped) {
-            let key = format!("`{}` is {} (IPC-4761 type {})", v.name, f.describe(), f.ipc4761());
-            open.entry(key).or_insert((0, cx.pad_name(p, k))).0 += 1;
+    for v in &found {
+        if v.group == "drill" {
+            big.entry(format!("{}", Length::mm(v.gap))).or_insert((0, v.other.clone())).0 += 1;
+        } else {
+            open.entry(v.detail.clone()).or_insert((0, v.other.clone())).0 += 1;
         }
     }
     for (what, (n, first)) in open {
@@ -216,32 +181,18 @@ fn via_in_pad_fill(cx: &Ctx, r: &mut Report) {
 
 fn hole_to_smd_pad(cx: &Ctx, r: &mut Report) {
     let need = cx.board.rules.min_hole_to_smd_pad.to_mm();
-    let pads = pads_where(cx.parts, is_smd);
-    let mut per_part: BTreeMap<usize, (usize, f64, String)> = BTreeMap::new();
-    for v in cx.vias {
-        let hole = v.drill / 2.0;
-        for p in pads.iter().filter(|p| p.q.net == Some(v.net) || p.q.net.is_none()) {
-            if !near(&p.bounds, v.at, hole + need)
-                || !p.q.copper.iter().any(|l| v.layers.contains(l))
-                || via_on_pad(v, p.q).is_some()
-            {
-                continue;
-            }
-            let gap =
-                p.q.outlines.iter().map(|o| edge_distance(o, v.at)).fold(f64::MAX, f64::min) - hole;
-            if gap + 1e-6 < need {
-                let e = per_part.entry(p.part).or_insert((0, f64::MAX, String::new()));
-                e.0 += 1;
-                if gap < e.1 {
-                    e.1 = gap;
-                    e.2 = format!("{} at {}", cx.pad_name(p.part, p.pad), at(v));
-                }
-            }
+    let mut per_part: BTreeMap<String, (usize, f64, String)> = BTreeMap::new();
+    for v in run(cx, crate::rules::HoleToSmdPad) {
+        let e = per_part.entry(v.group).or_insert((0, f64::MAX, String::new()));
+        e.0 += 1;
+        if v.gap < e.1 {
+            e.1 = v.gap;
+            e.2 = v.detail;
         }
     }
     for (part, (n, gap, first)) in per_part {
         r.emit(
-            format!("part {}", cx.parts[part].reference),
+            part,
             format!(
                 "{n} via holes closer than {} to its pads, closest {} from {first}; paste and solder can flow into the hole",
                 Length::mm(need),

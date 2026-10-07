@@ -830,5 +830,5 @@ mod signal;
 mod silk;
 mod test;
 mod track;
-mod via;
+pub(crate) mod via;
 mod zone;

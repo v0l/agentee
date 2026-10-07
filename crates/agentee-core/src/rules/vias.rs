@@ -1,0 +1,312 @@
+use super::{Context, Rule, Violation};
+use crate::board::DrillKind;
+use crate::drc::via::{ViaOnPad, via_on_pad};
+use crate::drc::{edge_distance, is_smd, near};
+use crate::geom;
+use crate::layout::{PlacedPad, Via};
+
+fn pad_name<C: Context>(cx: &C, p: usize, k: usize) -> String {
+    format!("{}.{}", cx.parts()[p].reference, cx.parts()[p].pads[k].number)
+}
+
+pub fn spot(v: &Via) -> String {
+    format!("[{:.3}, {:.3}]", v.at[0], v.at[1])
+}
+
+fn smd_pads<C: Context>(cx: &C, v: &Via, reach: f64) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for (p, part) in cx.parts().iter().enumerate() {
+        for (k, q) in part.pads.iter().enumerate() {
+            if !is_smd(q) || !q.copper.iter().any(|l| v.layers.contains(l)) {
+                continue;
+            }
+            let b = crate::drc::rings_bounds(&q.outlines);
+            if near(&b, v.at, reach) {
+                out.push((p, k));
+            }
+        }
+    }
+    out
+}
+
+fn pad<C: Context>(cx: &C, p: usize, k: usize) -> &PlacedPad {
+    &cx.parts()[p].pads[k]
+}
+
+pub struct ViaCutsPad;
+
+impl Rule for ViaCutsPad {
+    fn id(&self) -> &'static str {
+        "via-cuts-pad"
+    }
+
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
+        for vi in cx.via_subjects() {
+            let v = cx.via(vi);
+            let rad = v.diameter / 2.0;
+            for (p, k) in smd_pads(cx, v, rad) {
+                let q = pad(cx, p, k);
+                if q.net != Some(v.net) {
+                    continue;
+                }
+                let Some(ViaOnPad::Cuts { centre_inside, edge }) = via_on_pad(v, q) else {
+                    continue;
+                };
+                let name = pad_name(cx, p, k);
+                let how = if centre_inside {
+                    format!(
+                        "sits in {name} {edge:.3} mm from its edge, so the {:.3} mm drill crosses it",
+                        v.drill / 2.0
+                    )
+                } else if edge < rad - 1e-6 {
+                    format!("cuts {:.3} mm into {name}", rad - edge)
+                } else {
+                    format!("touches the edge of {name}")
+                };
+                out.push(Violation {
+                    rule: self.id(),
+                    group: format!("via {}", spot(v)),
+                    subject: format!("via {}", spot(v)),
+                    other: name,
+                    gap: edge,
+                    need: rad,
+                    at: v.at,
+                    detail: how,
+                    nets: Some((v.net, v.net)),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+}
+
+pub struct ViaAnnulusPastPad;
+
+impl Rule for ViaAnnulusPastPad {
+    fn id(&self) -> &'static str {
+        "via-annulus-past-pad"
+    }
+
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
+        for vi in cx.via_subjects() {
+            let v = cx.via(vi);
+            for (p, k) in smd_pads(cx, v, v.diameter / 2.0) {
+                let q = pad(cx, p, k);
+                if q.net != Some(v.net) {
+                    continue;
+                }
+                if let Some(ViaOnPad::AnnulusPast { edge }) = via_on_pad(v, q) {
+                    out.push(Violation {
+                        rule: self.id(),
+                        group: format!("via {}", spot(v)),
+                        subject: format!("via {}", spot(v)),
+                        other: pad_name(cx, p, k),
+                        gap: edge,
+                        need: v.diameter / 2.0,
+                        at: v.at,
+                        nets: Some((v.net, v.net)),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+}
+
+pub struct ViaInPad;
+
+pub fn vias_in_pads<C: Context>(cx: &C) -> Vec<(usize, usize, usize)> {
+    let mut out = Vec::new();
+    for vi in cx.via_subjects() {
+        let v = cx.via(vi);
+        for (p, k) in smd_pads(cx, v, v.diameter / 2.0) {
+            let q = pad(cx, p, k);
+            if q.net == Some(v.net) && via_on_pad(v, q).is_some_and(ViaOnPad::in_pad) {
+                out.push((vi, p, k));
+            }
+        }
+    }
+    out
+}
+
+impl Rule for ViaInPad {
+    fn id(&self) -> &'static str {
+        "via-in-pad"
+    }
+
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
+        for (vi, p, k) in vias_in_pads(cx) {
+            let v = cx.via(vi);
+            let fill = v.fill.map(|f| f.describe()).unwrap_or("filled and capped");
+            out.push(Violation {
+                rule: self.id(),
+                group: "vias".into(),
+                subject: format!("via {}", spot(v)),
+                other: pad_name(cx, p, k),
+                at: v.at,
+                detail: format!("{} {fill}", v.kind.name()),
+                ..Default::default()
+            });
+        }
+    }
+}
+
+pub struct ViaInPadFill;
+
+impl Rule for ViaInPadFill {
+    fn id(&self) -> &'static str {
+        "via-in-pad-fill"
+    }
+
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
+        let max = cx.board().rules.max_filled_via_drill.to_mm();
+        for (vi, p, k) in vias_in_pads(cx) {
+            let v = cx.via(vi);
+            if v.drill > max + 1e-6 {
+                out.push(Violation {
+                    rule: self.id(),
+                    group: "drill".into(),
+                    subject: format!("via {}", spot(v)),
+                    other: pad_name(cx, p, k),
+                    gap: v.drill,
+                    need: max,
+                    at: v.at,
+                    ..Default::default()
+                });
+            }
+            if let Some(f) = v.fill.filter(|f| *f != crate::board::ViaFill::FilledCapped) {
+                out.push(Violation {
+                    rule: self.id(),
+                    group: "fill".into(),
+                    subject: format!("via {}", spot(v)),
+                    other: pad_name(cx, p, k),
+                    at: v.at,
+                    detail: format!(
+                        "`{}` is {} (IPC-4761 type {})",
+                        v.name,
+                        f.describe(),
+                        f.ipc4761()
+                    ),
+                    ..Default::default()
+                });
+            }
+        }
+    }
+}
+
+pub struct HoleToSmdPad;
+
+impl Rule for HoleToSmdPad {
+    fn id(&self) -> &'static str {
+        "hole-to-smd-pad"
+    }
+
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
+        let need = cx.board().rules.min_hole_to_smd_pad.to_mm();
+        for vi in cx.via_subjects() {
+            let v = cx.via(vi);
+            let hole = v.drill / 2.0;
+            for (p, k) in smd_pads(cx, v, hole + need) {
+                let q = pad(cx, p, k);
+                if !(q.net == Some(v.net) || q.net.is_none()) || via_on_pad(v, q).is_some() {
+                    continue;
+                }
+                let gap =
+                    q.outlines.iter().map(|o| edge_distance(o, v.at)).fold(f64::MAX, f64::min)
+                        - hole;
+                if gap + 1e-6 < need {
+                    out.push(Violation {
+                        rule: self.id(),
+                        group: format!("part {}", cx.parts()[p].reference),
+                        subject: format!("via {}", spot(v)),
+                        other: pad_name(cx, p, k),
+                        gap,
+                        need,
+                        at: v.at,
+                        detail: format!("{} at {}", pad_name(cx, p, k), spot(v)),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+}
+
+pub struct StackedVia;
+
+fn out_of_build_order<C: Context>(cx: &C, a: &Via, b: &Via) -> Option<String> {
+    let st = &cx.board().stackup;
+    let copper = cx.copper();
+    let last = copper.len().checked_sub(1)?;
+    let (sa, sb) = (a.span_of(copper)?, b.span_of(copper)?);
+    let (upper, lower) = match (sa.1 == sb.0, sb.1 == sa.0) {
+        (true, _) => ((a, sa), (b, sb)),
+        (_, true) => ((b, sb), (a, sa)),
+        _ => return None,
+    };
+    let (top, under) = match upper.1.0.cmp(&(last - lower.1.1)) {
+        std::cmp::Ordering::Less => (upper.0, lower.0),
+        std::cmp::Ordering::Greater => (lower.0, upper.0),
+        std::cmp::Ordering::Equal => return None,
+    };
+    let order = |v: &Via| st.drill_order(v.hole.first()?, v.hole.last()?, v.drill_kind, v.stacked);
+    let (top_steps, under_steps) = (order(top)?, order(under)?);
+    (under_steps.1 > top_steps.0).then(|| {
+        format!(
+            "`{}` under `{}` is drilled at lamination step {}, after step {} of the via on top",
+            under.name,
+            top.name,
+            under_steps.1 + 1,
+            top_steps.0 + 1
+        )
+    })
+}
+
+impl Rule for StackedVia {
+    fn id(&self) -> &'static str {
+        "stacked-via"
+    }
+
+    fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
+        let allowed = cx.board().rules.stacked_microvias;
+        for i in cx.via_subjects() {
+            let a = cx.via(i);
+            let below: Vec<&Via> = (0..i)
+                .filter(|&j| cx.counts(cx.planned_via(i), cx.planned_via(j)))
+                .map(|j| cx.via(j))
+                .filter(|b| b.net == a.net && geom::dist(a.at, b.at) <= 1e-6)
+                .collect();
+            if below.is_empty() {
+                continue;
+            }
+            let order = below.iter().find_map(|b| out_of_build_order(cx, a, b));
+            let spot = format!("[{:.3}, {:.3}] ({})", a.at[0], a.at[1], cx.nets()[a.net].name);
+            let group = if below.iter().any(|b| a.shares_dielectric(b, cx.copper())) {
+                "doubled"
+            } else if std::iter::once(a)
+                .chain(below.iter().copied())
+                .any(|v| v.drill_kind == DrillKind::ControlledDepth)
+            {
+                "depth"
+            } else if order.is_some() {
+                "order"
+            } else if !allowed {
+                "stacked"
+            } else {
+                continue;
+            };
+            let detail = match (&order, group) {
+                (Some(o), "order") => format!("{spot} ({o})"),
+                _ => spot.clone(),
+            };
+            out.push(Violation {
+                rule: self.id(),
+                group: group.into(),
+                subject: spot,
+                at: a.at,
+                detail,
+                ..Default::default()
+            });
+        }
+    }
+}

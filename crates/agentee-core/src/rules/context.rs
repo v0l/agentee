@@ -18,6 +18,10 @@ pub trait Context {
     fn item(&self, i: usize) -> &Cu;
     fn hole(&self, i: usize) -> &Hole;
     fn hole_count(&self) -> usize;
+    fn via(&self, k: usize) -> &Via;
+    fn via_count(&self) -> usize;
+    fn via_subjects(&self) -> Vec<usize>;
+    fn planned_via(&self, k: usize) -> bool;
     fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize>;
     fn holes_near(&self, b: &Bounds, reach: f64) -> Vec<usize>;
 
@@ -81,6 +85,22 @@ impl<'a> Placed<'a> {
 }
 
 impl Context for Placed<'_> {
+    fn via(&self, k: usize) -> &Via {
+        &self.cx.vias[k]
+    }
+
+    fn via_count(&self) -> usize {
+        self.cx.vias.len()
+    }
+
+    fn via_subjects(&self) -> Vec<usize> {
+        (0..self.cx.vias.len()).collect()
+    }
+
+    fn planned_via(&self, _: usize) -> bool {
+        false
+    }
+
     fn board(&self) -> &Board {
         self.cx.board
     }
@@ -260,7 +280,7 @@ impl<'a> Planned<'a> {
         self.base.hole_count()
     }
 
-    fn via(&self, at: P) -> String {
+    fn via_name(&self, at: P) -> String {
         format!("planned via at [{:.3}, {:.3}]", at[0], at[1])
     }
 }
@@ -310,6 +330,24 @@ impl Context for Planned<'_> {
 
     fn hole_count(&self) -> usize {
         self.base_holes() + self.holes.len()
+    }
+
+    fn via(&self, k: usize) -> &Via {
+        let n = self.base.via_count();
+        if k < n { self.base.via(k) } else { &self.vias[k - n] }
+    }
+
+    fn via_count(&self) -> usize {
+        self.base.via_count() + self.vias.len()
+    }
+
+    fn via_subjects(&self) -> Vec<usize> {
+        let n = self.base.via_count();
+        (n + self.first_hole..n + self.vias.len()).collect()
+    }
+
+    fn planned_via(&self, k: usize) -> bool {
+        k >= self.base.via_count() + self.first_hole
     }
 
     fn items_near(&self, b: &Bounds, reach: f64) -> Vec<usize> {
@@ -370,7 +408,7 @@ impl Context for Planned<'_> {
         let c = &self.items[i - n];
         let net = c.net.map(|n| self.nets()[n].name.as_str()).unwrap_or("");
         match c.shape {
-            CuShape::Circle(at, _) => format!("{} ({net})", self.via(at)),
+            CuShape::Circle(at, _) => format!("{} ({net})", self.via_name(at)),
             CuShape::Seg(a, b, _) => format!(
                 "planned track [{:.3}, {:.3}] to [{:.3}, {:.3}] ({net})",
                 a[0], a[1], b[0], b[1]
@@ -381,7 +419,7 @@ impl Context for Planned<'_> {
 
     fn hole_name(&self, i: usize) -> String {
         let n = self.base_holes();
-        if i < n { self.base.hole_name(i) } else { self.via(self.holes[i - n].a) }
+        if i < n { self.base.hole_name(i) } else { self.via_name(self.holes[i - n].a) }
     }
 
     fn part_of_hole(&self, i: usize) -> Option<usize> {
