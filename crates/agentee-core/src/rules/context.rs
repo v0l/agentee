@@ -221,6 +221,7 @@ pub struct Planned<'a> {
     first_via: usize,
     first_part: usize,
     hidden: Vec<bool>,
+    replaced: Vec<bool>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -250,6 +251,7 @@ pub struct Plan {
     pub vias: Vec<Via>,
     pub pads: Vec<Pad>,
     pub parts: Vec<Move>,
+    pub replaces: Vec<usize>,
 }
 
 impl Plan {
@@ -258,6 +260,7 @@ impl Plan {
         self.vias.extend(o.vias);
         self.pads.extend(o.pads);
         self.parts.extend(o.parts);
+        self.replaces.extend(o.replaces);
     }
 }
 
@@ -275,6 +278,12 @@ impl<'a> Planned<'a> {
         for &p in hide.iter().chain(kept.parts.iter().chain(&plan.parts).map(|m| &m.part)) {
             if let Some(h) = hidden.get_mut(p) {
                 *h = true;
+            }
+        }
+        let mut replaced = vec![false; base.cx.tracks.len()];
+        for &t in kept.replaces.iter().chain(&plan.replaces) {
+            if let Some(r) = replaced.get_mut(t) {
+                *r = true;
             }
         }
         let (mut items, mut holes) = Planned::copper(base, kept, [0, 0, 0]);
@@ -298,6 +307,7 @@ impl<'a> Planned<'a> {
             first_via: kept.vias.len(),
             first_part: kept.parts.len(),
             hidden,
+            replaced,
         }
     }
 
@@ -395,7 +405,11 @@ impl<'a> Planned<'a> {
 
     fn shown_item(&self, i: usize) -> bool {
         i >= self.base_items()
-            || !matches!(self.base.item(i).owner, Owner::Pad(p, _) if self.hidden[p])
+            || match self.base.item(i).owner {
+                Owner::Pad(p, _) => !self.hidden[p],
+                Owner::Track(t) => !self.replaced[t],
+                _ => true,
+            }
     }
 
     fn shown_hole(&self, i: usize) -> bool {
@@ -578,7 +592,8 @@ impl Context for Planned<'_> {
     fn layouts(&self, f: &mut dyn FnMut(&Ctx, bool)) {
         let base = self.base.cx;
         f(base, false);
-        let tracks: Vec<Track> = base.tracks.iter().chain(&self.tracks).cloned().collect();
+        let kept = base.tracks.iter().enumerate().filter(|(t, _)| !self.replaced[*t]);
+        let tracks: Vec<Track> = kept.map(|(_, t)| t).chain(&self.tracks).cloned().collect();
         let vias: Vec<Via> = base.vias.iter().chain(&self.vias).cloned().collect();
         let merged = Ctx::new(
             base.board,

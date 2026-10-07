@@ -6,6 +6,7 @@ mod holes;
 mod isolation;
 pub mod keepout;
 mod registry;
+mod tracks;
 mod vias;
 pub mod zone;
 
@@ -20,6 +21,7 @@ pub use holes::{HoleToCopper, HoleToHole, Which};
 pub use isolation::Isolation;
 pub use keepout::Keepout;
 pub use registry::{Registered, everything};
+pub use tracks::TrackOverlap;
 pub use vias::{
     HoleToSmdPad, StackedVia, ViaAnnulusPastPad, ViaCutsPad, ViaInPad, ViaInPadFill, vias_in_pads,
 };
@@ -72,6 +74,7 @@ pub fn check<C: Context>(cx: &C, out: &mut Vec<Violation>) {
     ViaInPadFill.eval(cx, out);
     HoleToSmdPad.eval(cx, out);
     StackedVia.eval(cx, out);
+    TrackOverlap.eval(cx, out);
 }
 
 pub fn legal<C: Context>(cx: &C) -> Result<(), Vec<Violation>> {

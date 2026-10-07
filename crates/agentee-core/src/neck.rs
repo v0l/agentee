@@ -283,7 +283,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
     let mut kept = crate::rules::Plan::default();
     let min_w = board.rules.min_track_width.to_mm();
     let mut out = NeckResult::default();
-    for t in &layout.tracks {
+    for (ti, t) in layout.tracks.iter().enumerate() {
         let net = &layout.nets[t.net];
         if t.points.len() < 2 || !opts.nets.iter().any(|g| glob(g, &net.name)) {
             continue;
@@ -319,12 +319,22 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
             let rules = Rules::new(&base, t, p, reach, net.clearance);
             let path: Vec<P> =
                 if end == 0 { points.clone() } else { points.iter().rev().copied().collect() };
+            let around = |c: &Cut| {
+                let mut around = kept.clone();
+                around.tracks.push(crate::layout::Track {
+                    points: sub(&path, c.at, length(&path)),
+                    source: usize::MAX,
+                    ..t.clone()
+                });
+                around.replaces.push(ti);
+                around
+            };
             match cut(&path, outline, pad_w, &rules, t.width, floor, limit, opts.taper) {
                 Ok(None) => {}
                 Ok(Some(c))
                     if crate::rules::legal(&crate::rules::Planned::after(
                         &base,
-                        &kept,
+                        &around(&c),
                         crate::rules::Plan { tracks: as_tracks(t, &c.necks), ..Default::default() },
                     ))
                     .is_err() =>
@@ -338,6 +348,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
                 }
                 Ok(Some(c)) => {
                     kept.tracks.extend(as_tracks(t, &c.necks));
+                    kept.replaces.push(ti);
                     let why = if t.width > pad_w + 1e-6 {
                         "wider than the pad"
                     } else {
@@ -365,6 +376,11 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
             }
         }
         if !necks.is_empty() {
+            kept.tracks.push(crate::layout::Track {
+                points: points.clone(),
+                source: usize::MAX,
+                ..t.clone()
+            });
             out.edits.push(NeckEdit { track: t.source, points, necks });
         }
     }

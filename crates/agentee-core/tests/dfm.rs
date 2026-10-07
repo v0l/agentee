@@ -1613,3 +1613,13 @@ fn a_track_on_a_net_tie_bridge_is_not_a_clearance_error_to_the_other_pad() {
     let tied = diags(&jumper("net_tie_pad_groups = [[\"1\", \"2\"]]\n"));
     assert!(tied.is_empty(), "{tied:?}");
 }
+
+#[test]
+fn a_square_bend_rounded_in_the_file_is_not_acute() {
+    let pcb = track("A", "F.Cu", "[[10.0, 10.0], [10.4243, 10.4243], [9.9999, 10.8485]]");
+    let p = load(&Fixture { pcb: &pcb, ..Default::default() });
+    assert!(hits(&p, "acute-turn").is_empty(), "{:?}", hits(&p, "acute-turn"));
+    let pcb = track("A", "F.Cu", "[[10.0, 10.0], [10.4, 10.4], [10.0, 10.7]]");
+    let p = load(&Fixture { pcb: &pcb, ..Default::default() });
+    assert_eq!(hits(&p, "acute-turn").len(), 1);
+}

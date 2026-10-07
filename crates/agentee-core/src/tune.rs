@@ -171,7 +171,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
     );
     let base = crate::rules::Placed::new(&world);
     let spacing = crate::rules::Context::spacing(&base);
-    let mut kept = crate::rules::Plan::default();
+    let mut edited: Vec<usize> = Vec::new();
     let mut points: Vec<Vec<P>> = layout.tracks.iter().map(|t| t.points.clone()).collect();
     let edge = board.rules.min_copper_to_edge.to_mm();
     let floor = board.rules.min_clearance.to_mm();
@@ -256,13 +256,26 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 let on =
                     spacing.layer(layout.copper.iter().position(|c| c == &t.layer).unwrap_or(0));
                 let floor_pitch = t.width + net.clearance.max(floor);
-                let meander = |line: &[P]| crate::layout::Track {
+                let as_track = |ti: usize, line: Vec<P>| crate::layout::Track {
                     source: usize::MAX,
-                    net: t.net,
-                    layer: t.layer.clone(),
-                    width: t.width,
-                    points: line.to_vec(),
+                    points: line,
+                    ..layout.tracks[ti].clone()
                 };
+                let mut kept = crate::rules::Plan {
+                    tracks: edited
+                        .iter()
+                        .filter(|&&e| e != ti)
+                        .map(|&e| as_track(e, points[e].clone()))
+                        .collect(),
+                    replaces: edited.clone(),
+                    ..Default::default()
+                };
+                kept.replaces.push(ti);
+                for piece in [&points[ti][..=k], &points[ti][k + 1..]] {
+                    if piece.len() >= 2 {
+                        kept.tracks.push(as_track(ti, piece.to_vec()));
+                    }
+                }
                 let pitches: Vec<f64> = match opts.pitch {
                     Some(p) => vec![p],
                     None => {
@@ -291,7 +304,7 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                                 &base,
                                 &kept,
                                 crate::rules::Plan {
-                                    tracks: vec![meander(line)],
+                                    tracks: vec![as_track(ti, line.to_vec())],
                                     ..Default::default()
                                 },
                             ))
@@ -300,7 +313,9 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
                 }) else {
                     continue;
                 };
-                kept.tracks.push(meander(&pts));
+                if !edited.contains(&ti) {
+                    edited.push(ti);
+                }
                 for w in pts.windows(2) {
                     obstacles.push(Obstacle::new(
                         Some(t.net),

@@ -3,9 +3,8 @@ use crate::calc::{COPLANAR_REACH, Line, TraceGeometry};
 use crate::diag::Severity;
 use crate::geom;
 use crate::geom::P;
-use crate::layout::{NECKDOWN, class_of, parallel_overlap, unit};
+use crate::layout::{NECKDOWN, class_of, unit};
 use crate::units::Length;
-use std::collections::BTreeMap;
 
 pub static RULES: &[Rule] = &[
     Rule {
@@ -274,7 +273,7 @@ fn acute_turn(cx: &Ctx, r: &mut Report) {
         for (k, w) in t.points.windows(3).enumerate() {
             let (Some(u), Some(v)) = (unit(w[0], w[1]), unit(w[1], w[2])) else { continue };
             let turn = (u[0] * v[0] + u[1] * v[1]).clamp(-1.0, 1.0).acos().to_degrees();
-            if turn > 90.0 + 1e-6 {
+            if turn > 90.5 {
                 r.emit(
                     format!("tracks[{ti}] {}", cx.nets[t.net].name),
                     format!(
@@ -291,38 +290,10 @@ fn acute_turn(cx: &Ctx, r: &mut Report) {
 }
 
 fn track_overlap(cx: &Ctx, r: &mut Report) {
-    let tracks = cx.tracks;
-    let mut groups: BTreeMap<(usize, &str), Vec<(usize, usize)>> = BTreeMap::new();
-    for (ti, t) in tracks.iter().enumerate() {
-        for k in 0..t.points.len().saturating_sub(1) {
-            groups.entry((t.net, t.layer.as_str())).or_default().push((ti, k));
-        }
-    }
-    let mut seen: std::collections::HashSet<(usize, usize)> = Default::default();
-    for ((net, layer), segs) in groups {
-        for x in 0..segs.len() {
-            for y in x + 1..segs.len() {
-                let ((ta, ka), (tb, kb)) = (segs[x], segs[y]);
-                if ta == tb && ka.abs_diff(kb) <= 1 {
-                    continue;
-                }
-                let (a, b) = (&tracks[ta], &tracks[tb]);
-                let (a0, a1, b0, b1) =
-                    (a.points[ka], a.points[ka + 1], b.points[kb], b.points[kb + 1]);
-                let Some((overlap, sep)) = parallel_overlap(a0, a1, b0, b1) else { continue };
-                let touch = (a.width + b.width) / 2.0;
-                if sep < touch - 1e-6
-                    && overlap > a.width.max(b.width)
-                    && seen.insert((ta.min(tb), ta.max(tb)))
-                {
-                    r.emit(
-                        format!("tracks[{ta}] {}", cx.nets[net].name),
-                        format!(
-                            "runs on top of tracks[{tb}] on {layer} for {overlap:.2} mm, {sep:.3} mm apart; the copper is doubled, merge or remove one"
-                        ),
-                    );
-                }
-            }
-        }
+    let placed = crate::rules::Placed::new(cx);
+    let mut out = Vec::new();
+    crate::rules::Rule::eval(&crate::rules::TrackOverlap, &placed, &mut out);
+    for v in out {
+        r.emit(v.group, v.detail);
     }
 }
