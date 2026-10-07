@@ -220,7 +220,7 @@ impl super::zone::Constrains for HoleToCopper {
         let window = zone.window();
         for i in cx.holes_near(&window, most + t.half()) {
             let h = cx.hole(i);
-            if !self.takes(h.plated, h.of) || !(any_net || h.net.is_none() || !t.owns(h.net)) {
+            if !self.takes(h.plated, h.of) || (!any_net && t.owns(h.net)) {
                 continue;
             }
             let shared: Vec<String> =
@@ -237,7 +237,7 @@ impl super::zone::Constrains for HoleToCopper {
         let need = r.min_via_hole_to_copper.to_mm();
         for j in cx.items_near(&window, need + drill / 2.0) {
             let c = cx.item(j);
-            if !(c.net.is_none() || !t.owns(c.net)) || !c.layers.iter().any(|l| hole.contains(l)) {
+            if t.owns(c.net) || !c.layers.iter().any(|l| hole.contains(l)) {
                 continue;
             }
             zone.forbid(None, &c.shape, need + drill / 2.0);
