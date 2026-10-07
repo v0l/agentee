@@ -540,10 +540,11 @@ drc NAME` prints the layout's rule messages alone.
 The tools that add copper check it against the same rules before they write it. `tie`,
 `testpoints`, fanouts and stitching vias try each spot against `clearance`, `short`,
 `copper-to-edge`, the hole rules, `isolation-clearance`, `creepage`, `via-cuts-pad`,
-`via-in-pad-fill`, `hole-to-smd-pad` and `stacked-via`, and skip a spot that breaks one. `tune` and
-`neck` do the same for each meander and neck. `agentee route` and the layout engine drop a net's
-new copper when it breaks one, and report the rule. Pours are left out of these checks, since a
-pour refills around new copper.
+`via-in-pad-fill`, `hole-to-smd-pad`, `stacked-via` and `track-overlap`, and skip a spot that
+breaks one. `tune` and `neck` do the same for each meander and neck, judging it against the rest
+of the track it rewrites rather than the copy it replaces. `agentee route` and the layout engine
+drop a net's new copper when it breaks one, and report the rule. Pours are left out of these
+checks, since a pour refills around new copper.
 
 The distance rules (`clearance`, `isolation-clearance`, `creepage` measured straight,
 `copper-to-edge`, the hole rules and the via-in-pad rules) also say where new copper may go: for a
@@ -633,7 +634,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
 | `impedance-trace` | error | impedance classes | a track of an impedance class whose width, neck-downs included, or the copper beside it on an outer layer puts its impedance outside the class tolerance; the gap is not checked within the neck-down length of a pad or a junction |
 | `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
-| `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap |
+| `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap (half a degree is allowed for coordinates rounded in the file) |
 | `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |
 | `zone-to-zone` | error | zones | fills of two nets on one layer closer than their clearance |
 | `zone-clearance` | error | zones | a fill that covers or comes too close to copper of another net |
