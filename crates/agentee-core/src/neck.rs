@@ -1,8 +1,8 @@
 use crate::board::Board;
+use crate::drc::CuShape;
 use crate::geom::{self, P};
 use crate::layout::{DRC_EPSILON, Layout, NECKDOWN, class_of, glob};
 use crate::rules::Spacing;
-use crate::tune::{Obstacle, obstacles_of};
 use crate::units::Length;
 use serde::Serialize;
 
@@ -60,35 +60,44 @@ pub struct NeckResult {
     pub edits: Vec<NeckEdit>,
 }
 
-struct Rules<'a> {
-    net: usize,
-    layer: &'a str,
-    on: crate::rules::Layer,
-    spacing: &'a crate::rules::Spacings,
-    clearance: f64,
-    edge: f64,
-    outline: &'a [P],
-    near: Vec<&'a Obstacle>,
+struct Rules {
+    near: Vec<(CuShape, f64)>,
 }
 
-impl Rules<'_> {
+impl Rules {
+    fn new(
+        cx: &crate::rules::Placed,
+        t: &crate::layout::Track,
+        at: P,
+        reach: f64,
+        clearance: f64,
+    ) -> Rules {
+        use crate::rules::Context;
+        let spacing = cx.spacing();
+        let on = spacing.layer(cx.copper().iter().position(|c| c == &t.layer).unwrap_or(0));
+        let template = crate::rules::Template::track(t.net, &t.layer, t.width);
+        let mut window = crate::graphic::Bounds::EMPTY;
+        window.add(at);
+        let near = crate::rules::keepout::all(cx, Some(&window), reach)
+            .into_iter()
+            .filter(|k| k.layers.iter().any(|l| l == &t.layer))
+            .filter_map(|k| {
+                let need = k.need(cx, &template)?;
+                let iso = spacing.isolation.gap(Some(t.net), k.net, on);
+                let need = if k.fixed { need.max(iso) } else { need.max(iso).max(clearance) };
+                Some((k.shape, need))
+            })
+            .collect();
+        Rules { near }
+    }
+
     fn gap(&self, line: &[P]) -> f64 {
-        let n = self.outline.len();
-        let edges = (0..n).map(|i| (self.outline[i], self.outline[(i + 1) % n])).map(|(a, b)| {
-            line.windows(2)
-                .map(|w| geom::segment_segment_distance(w[0], w[1], a, b))
-                .fold(f64::MAX, f64::min)
-                - self.edge
-        });
+        let segs: Vec<CuShape> = line.windows(2).map(|w| CuShape::Seg(w[0], w[1], 0.0)).collect();
         self.near
             .iter()
-            .filter(|o| o.net != Some(self.net) && o.layers.iter().any(|l| l == self.layer))
-            .map(|o| {
-                let need = self.spacing.class.gap(Some(self.net), o.net, self.on);
-                let iso = self.spacing.isolation.gap(Some(self.net), o.net, self.on);
-                o.distance(line) - self.clearance.max(need).max(iso)
+            .map(|(shape, need)| {
+                segs.iter().map(|s| s.distance(shape)).fold(f64::MAX, f64::min) - need
             })
-            .chain(edges)
             .fold(f64::MAX, f64::min)
     }
 }
@@ -259,7 +268,6 @@ fn joined_pad<'a>(outline: &Vec<P>, others: impl Iterator<Item = &'a Vec<P>>) ->
 }
 
 pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckResult, String> {
-    let obstacles = obstacles_of(layout);
     let world = crate::drc::Ctx::new(
         board,
         &layout.copper,
@@ -272,9 +280,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
         &layout.nets,
     );
     let base = crate::rules::Placed::new(&world);
-    let spacing = crate::rules::Context::spacing(&base);
     let mut kept = crate::rules::Plan::default();
-    let edge = board.rules.min_copper_to_edge.to_mm();
     let min_w = board.rules.min_track_width.to_mm();
     let mut out = NeckResult::default();
     for t in &layout.tracks {
@@ -310,25 +316,7 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
             let joined = joined_pad(outline, same_net.iter().map(|(_, o)| *o));
             let pad_w = if joined { f64::INFINITY } else { geom::min_extent(outline) };
             let reach = limit + t.width + net.clearance + 1.0;
-            let near: Vec<&Obstacle> = obstacles
-                .iter()
-                .filter(|o| {
-                    o.lo[0] <= p[0] + reach
-                        && o.lo[1] <= p[1] + reach
-                        && o.hi[0] >= p[0] - reach
-                        && o.hi[1] >= p[1] - reach
-                })
-                .collect();
-            let rules = Rules {
-                net: t.net,
-                layer: &t.layer,
-                on: spacing.layer(layout.copper.iter().position(|c| c == &t.layer).unwrap_or(0)),
-                spacing,
-                clearance: net.clearance,
-                edge,
-                outline: &layout.outline,
-                near,
-            };
+            let rules = Rules::new(&base, t, p, reach, net.clearance);
             let path: Vec<P> =
                 if end == 0 { points.clone() } else { points.iter().rev().copied().collect() };
             match cut(&path, outline, pad_w, &rules, t.width, floor, limit, opts.taper) {

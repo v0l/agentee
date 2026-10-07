@@ -15,6 +15,10 @@ fn dir() -> PathBuf {
 }
 
 fn load(dir: &Path, pcb: &str) -> Project {
+    load_on(dir, pcb, "")
+}
+
+fn load_on(dir: &Path, pcb: &str, board: &str) -> Project {
     let _ = std::fs::remove_dir_all(dir);
     std::fs::create_dir_all(dir.join("symbols")).unwrap();
     std::fs::create_dir_all(dir.join("footprints")).unwrap();
@@ -50,7 +54,9 @@ track_width = "0.4mm"
 clearance = "0.15mm"
 neckdown = "2mm"
 via = "std"
-"#,
+"#
+        .to_string()
+            + board,
     )
     .unwrap();
     let mut sch = String::from("name = \"t\"\nboard = \"t\"\n");
@@ -205,4 +211,32 @@ fn neck_leaves_a_track_at_min_width_and_reports_it() {
     assert!(r.edits.is_empty());
     assert_eq!(r.failed.len(), 1, "{:?}", r.failed);
     assert!(r.failed[0].why.contains("min_track_width"), "{}", r.failed[0].why);
+}
+
+#[test]
+fn neck_keeps_a_track_off_another_nets_via_hole() {
+    let d = dir();
+    let board = r#"
+[[vias]]
+name = "thin"
+drill = "0.3mm"
+diameter = "0.5mm"
+[rules]
+min_via_hole_to_copper = "0.5mm"
+"#;
+    let mut pcb = track("M", "F.Cu", None, &[[7.13, 9.0], [7.13, 6.5]]);
+    pcb += "\n[[vias]]\nnet = \"C\"\nvia = \"thin\"\nat = [7.88, 8.0]\n";
+    let p = load_on(&d, &pcb, board);
+    assert_eq!(rule(&p, "clearance"), 0, "{:?}", errors(&p));
+    assert!(rule(&p, "hole-to-copper") > 0, "{:?}", errors(&p));
+    let (layout, board_item) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = neck(layout, board_item, &NeckOptions::default()).unwrap();
+    assert_eq!(r.necked.len(), 1, "{:?} {:?}", r.necked, r.failed);
+    let e = &r.edits[0];
+    let n = &e.necks[0];
+    let mut fixed = track("M", "F.Cu", None, &e.points);
+    fixed += &track("M", "F.Cu", Some(n.width), &n.points);
+    fixed += "\n[[vias]]\nnet = \"C\"\nvia = \"thin\"\nat = [7.88, 8.0]\n";
+    let p = load_on(&d, &fixed, board);
+    assert_eq!(rule(&p, "hole-to-copper"), 0, "{:?}", errors(&p));
 }
