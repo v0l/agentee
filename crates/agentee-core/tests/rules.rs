@@ -245,3 +245,28 @@ fn a_dropped_net_takes_all_its_connections_off_the_count() {
     assert!(held.tracks.is_empty());
     assert_eq!(held.routed, 1);
 }
+
+#[test]
+fn a_planned_pad_over_an_existing_via_is_judged() {
+    let p = sdr();
+    let l = &p.layouts[0].item;
+    let b = &p.boards.iter().find(|x| x.name == l.board).unwrap().item;
+    let cx = agentee_core::drc::Ctx::new(
+        b,
+        &l.copper,
+        &l.outline,
+        &l.board_cutouts,
+        &l.parts,
+        &l.tracks,
+        &l.vias,
+        &[],
+        &l.nets,
+    );
+    let base = Placed::new(&cx);
+    let v = l.vias.iter().find(|v| v.layers.contains(&"F.Cu".to_string())).unwrap();
+    let pad = rules::Pad::round(v.net, "F.Cu", [v.at[0] + 0.5, v.at[1]], 0.5);
+    let plan = rules::Plan { pads: vec![pad], ..Default::default() };
+    let mut out = Vec::new();
+    rules::check(&Planned::after(&base, &rules::Plan::default(), plan), &mut out);
+    assert!(out.iter().any(|x| x.rule == "via-cuts-pad"), "{out:?}");
+}

@@ -1,8 +1,11 @@
 use super::{Context, Rule, Violation};
 use crate::board::DrillKind;
 use crate::drc::via::{ViaOnPad, via_on_pad};
+use crate::drc::{CuShape, Owner};
 use crate::drc::{edge_distance, is_smd, near};
+use crate::footprint::PadKind;
 use crate::geom;
+use crate::graphic::Bounds;
 use crate::layout::{PlacedPad, Via};
 
 fn pad_name<C: Context>(cx: &C, p: usize, k: usize) -> String {
@@ -13,24 +16,87 @@ pub fn spot(v: &Via) -> String {
     format!("[{:.3}, {:.3}]", v.at[0], v.at[1])
 }
 
-fn smd_pads<C: Context>(cx: &C, v: &Via, reach: f64) -> Vec<(usize, usize)> {
+pub struct SmdPad {
+    pub pad: PlacedPad,
+    pub name: String,
+    pub part: Option<usize>,
+}
+
+fn as_smd<C: Context>(cx: &C, i: usize) -> Option<SmdPad> {
+    let c = cx.item(i);
+    let CuShape::Poly(rings) = &c.shape else { return None };
+    let (pad, name, part) = match c.owner {
+        Owner::Pad(p, k) => {
+            let base = &cx.parts()[p].pads[k];
+            if !is_smd(base) {
+                return None;
+            }
+            (base.clone(), pad_name(cx, p, k), Some(p))
+        }
+        Owner::Copper(_) => (
+            PlacedPad {
+                number: String::new(),
+                net: c.net,
+                kind: PadKind::Smd,
+                outlines: Vec::new(),
+                copper: Vec::new(),
+                mask: Vec::new(),
+                paste: Vec::new(),
+                drill: None,
+            },
+            cx.describe(i),
+            None,
+        ),
+        _ => return None,
+    };
+    let pad = PlacedPad { outlines: rings.clone(), copper: c.layers.clone(), ..pad };
+    Some(SmdPad { pad, name, part })
+}
+
+fn smd_near<C: Context>(cx: &C, b: &Bounds, reach: f64, layers: &[String]) -> Vec<SmdPad> {
+    cx.items_near(b, reach)
+        .into_iter()
+        .filter_map(|i| as_smd(cx, i))
+        .filter(|q| q.pad.copper.iter().any(|l| layers.contains(l)))
+        .collect()
+}
+
+fn via_pads<C: Context>(cx: &C, reach: impl Fn(&Via) -> f64) -> Vec<(usize, SmdPad)> {
     let mut out = Vec::new();
-    for (p, part) in cx.parts().iter().enumerate() {
-        for (k, q) in part.pads.iter().enumerate() {
-            if !is_smd(q) || !q.copper.iter().any(|l| v.layers.contains(l)) {
+    for vi in cx.via_subjects() {
+        let v = cx.via(vi);
+        let r = reach(v);
+        let mut b = Bounds::EMPTY;
+        b.add(v.at);
+        for q in smd_near(cx, &b, r, &v.layers) {
+            if near(&crate::drc::rings_bounds(&q.pad.outlines), v.at, r) {
+                out.push((vi, q));
+            }
+        }
+    }
+    let most = cx
+        .board()
+        .vias
+        .iter()
+        .map(|s| s.diameter.to_mm())
+        .fold(0.0, f64::max)
+        .max(cx.board().rules.min_hole_to_smd_pad.to_mm() * 2.0 + 1.0);
+    for i in cx.item_subjects(0.0).into_iter().filter(|&i| cx.planned_item(i)) {
+        let Some(q) = as_smd(cx, i) else { continue };
+        let b = crate::drc::rings_bounds(&q.pad.outlines);
+        for j in cx.items_near(&b, most) {
+            let Owner::Via(k) = cx.item(j).owner else { continue };
+            let v = cx.via(k);
+            if cx.planned_via(k) || !q.pad.copper.iter().any(|l| v.layers.contains(l)) {
                 continue;
             }
-            let b = crate::drc::rings_bounds(&q.outlines);
-            if near(&b, v.at, reach) {
-                out.push((p, k));
+            if near(&b, v.at, reach(v)) {
+                let SmdPad { pad, name, part } = &q;
+                out.push((k, SmdPad { pad: pad.clone(), name: name.clone(), part: *part }));
             }
         }
     }
     out
-}
-
-fn pad<C: Context>(cx: &C, p: usize, k: usize) -> &PlacedPad {
-    &cx.parts()[p].pads[k]
 }
 
 pub struct ViaCutsPad;
@@ -41,18 +107,18 @@ impl Rule for ViaCutsPad {
     }
 
     fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
-        for vi in cx.via_subjects() {
+        for (vi, sp) in via_pads(cx, |v| v.diameter / 2.0) {
             let v = cx.via(vi);
             let rad = v.diameter / 2.0;
-            for (p, k) in smd_pads(cx, v, rad) {
-                let q = pad(cx, p, k);
+            {
+                let q = &sp.pad;
                 if q.net != Some(v.net) {
                     continue;
                 }
                 let Some(ViaOnPad::Cuts { centre_inside, edge }) = via_on_pad(v, q) else {
                     continue;
                 };
-                let name = pad_name(cx, p, k);
+                let name = sp.name.clone();
                 let how = if centre_inside {
                     format!(
                         "sits in {name} {edge:.3} mm from its edge, so the {:.3} mm drill crosses it",
@@ -88,10 +154,10 @@ impl Rule for ViaAnnulusPastPad {
     }
 
     fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
-        for vi in cx.via_subjects() {
+        for (vi, sp) in via_pads(cx, |v| v.diameter / 2.0) {
             let v = cx.via(vi);
-            for (p, k) in smd_pads(cx, v, v.diameter / 2.0) {
-                let q = pad(cx, p, k);
+            {
+                let q = &sp.pad;
                 if q.net != Some(v.net) {
                     continue;
                 }
@@ -100,7 +166,7 @@ impl Rule for ViaAnnulusPastPad {
                         rule: self.id(),
                         group: format!("via {}", spot(v)),
                         subject: format!("via {}", spot(v)),
-                        other: pad_name(cx, p, k),
+                        other: sp.name.clone(),
                         gap: edge,
                         need: v.diameter / 2.0,
                         at: v.at,
@@ -115,18 +181,14 @@ impl Rule for ViaAnnulusPastPad {
 
 pub struct ViaInPad;
 
-pub fn vias_in_pads<C: Context>(cx: &C) -> Vec<(usize, usize, usize)> {
-    let mut out = Vec::new();
-    for vi in cx.via_subjects() {
-        let v = cx.via(vi);
-        for (p, k) in smd_pads(cx, v, v.diameter / 2.0) {
-            let q = pad(cx, p, k);
-            if q.net == Some(v.net) && via_on_pad(v, q).is_some_and(ViaOnPad::in_pad) {
-                out.push((vi, p, k));
-            }
-        }
-    }
-    out
+pub fn vias_in_pads<C: Context>(cx: &C) -> Vec<(usize, SmdPad)> {
+    via_pads(cx, |v| v.diameter / 2.0)
+        .into_iter()
+        .filter(|(vi, q)| {
+            let v = cx.via(*vi);
+            q.pad.net == Some(v.net) && via_on_pad(v, &q.pad).is_some_and(ViaOnPad::in_pad)
+        })
+        .collect()
 }
 
 impl Rule for ViaInPad {
@@ -135,14 +197,14 @@ impl Rule for ViaInPad {
     }
 
     fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
-        for (vi, p, k) in vias_in_pads(cx) {
+        for (vi, sp) in vias_in_pads(cx) {
             let v = cx.via(vi);
             let fill = v.fill.map(|f| f.describe()).unwrap_or("filled and capped");
             out.push(Violation {
                 rule: self.id(),
                 group: "vias".into(),
                 subject: format!("via {}", spot(v)),
-                other: pad_name(cx, p, k),
+                other: sp.name.clone(),
                 at: v.at,
                 detail: format!("{} {fill}", v.kind.name()),
                 ..Default::default()
@@ -160,14 +222,14 @@ impl Rule for ViaInPadFill {
 
     fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
         let max = cx.board().rules.max_filled_via_drill.to_mm();
-        for (vi, p, k) in vias_in_pads(cx) {
+        for (vi, sp) in vias_in_pads(cx) {
             let v = cx.via(vi);
             if v.drill > max + 1e-6 {
                 out.push(Violation {
                     rule: self.id(),
                     group: "drill".into(),
                     subject: format!("via {}", spot(v)),
-                    other: pad_name(cx, p, k),
+                    other: sp.name.clone(),
                     gap: v.drill,
                     need: max,
                     at: v.at,
@@ -179,7 +241,7 @@ impl Rule for ViaInPadFill {
                     rule: self.id(),
                     group: "fill".into(),
                     subject: format!("via {}", spot(v)),
-                    other: pad_name(cx, p, k),
+                    other: sp.name.clone(),
                     at: v.at,
                     detail: format!(
                         "`{}` is {} (IPC-4761 type {})",
@@ -203,11 +265,11 @@ impl Rule for HoleToSmdPad {
 
     fn eval<C: Context>(&self, cx: &C, out: &mut Vec<Violation>) {
         let need = cx.board().rules.min_hole_to_smd_pad.to_mm();
-        for vi in cx.via_subjects() {
+        for (vi, sp) in via_pads(cx, |v| v.drill / 2.0 + need) {
             let v = cx.via(vi);
             let hole = v.drill / 2.0;
-            for (p, k) in smd_pads(cx, v, hole + need) {
-                let q = pad(cx, p, k);
+            {
+                let q = &sp.pad;
                 if !(q.net == Some(v.net) || q.net.is_none()) || via_on_pad(v, q).is_some() {
                     continue;
                 }
@@ -217,13 +279,16 @@ impl Rule for HoleToSmdPad {
                 if gap + 1e-6 < need {
                     out.push(Violation {
                         rule: self.id(),
-                        group: format!("part {}", cx.parts()[p].reference),
+                        group: sp.part.map_or_else(
+                            || "planned pads".into(),
+                            |p| format!("part {}", cx.parts()[p].reference),
+                        ),
                         subject: format!("via {}", spot(v)),
-                        other: pad_name(cx, p, k),
+                        other: sp.name.clone(),
                         gap,
                         need,
                         at: v.at,
-                        detail: format!("{} at {}", pad_name(cx, p, k), spot(v)),
+                        detail: format!("{} at {}", sp.name, spot(v)),
                         ..Default::default()
                     });
                 }
@@ -315,25 +380,9 @@ fn template_pads<C: Context>(
     cx: &C,
     t: &super::zone::Template,
     reach: f64,
-    window: &crate::graphic::Bounds,
-) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
-    for (p, part) in cx.parts().iter().enumerate() {
-        for (k, q) in part.pads.iter().enumerate() {
-            if !is_smd(q) || !q.copper.iter().any(|l| t.layers.contains(l)) {
-                continue;
-            }
-            let b = crate::drc::rings_bounds(&q.outlines);
-            if b.min[0] <= window.max[0] + reach
-                && b.max[0] >= window.min[0] - reach
-                && b.min[1] <= window.max[1] + reach
-                && b.max[1] >= window.min[1] - reach
-            {
-                out.push((p, k));
-            }
-        }
-    }
-    out
+    window: &Bounds,
+) -> Vec<PlacedPad> {
+    smd_near(cx, window, reach, &t.layers).into_iter().map(|q| q.pad).collect()
 }
 
 fn edge_gap(q: &PlacedPad, p: crate::geom::P) -> f64 {
@@ -353,8 +402,7 @@ impl super::zone::Constrains for ViaCutsPad {
     ) {
         let super::zone::Kind::Via { r, .. } = t.kind else { return };
         let window = zone.window();
-        for (p, k) in template_pads(cx, t, r, &window) {
-            let q = pad(cx, p, k);
+        for q in &template_pads(cx, t, r, &window) {
             if !t.owns(q.net) {
                 continue;
             }
@@ -378,8 +426,7 @@ impl super::zone::Constrains for ViaInPadFill {
             return;
         }
         let window = zone.window();
-        for (p, k) in template_pads(cx, t, r, &window) {
-            let q = pad(cx, p, k);
+        for q in &template_pads(cx, t, r, &window) {
             if !t.owns(q.net) {
                 continue;
             }
@@ -399,8 +446,7 @@ impl super::zone::Constrains for HoleToSmdPad {
         let super::zone::Kind::Via { drill, .. } = t.kind else { return };
         let need = cx.board().rules.min_hole_to_smd_pad.to_mm();
         let window = zone.window();
-        for (p, k) in template_pads(cx, t, need + drill, &window) {
-            let q = pad(cx, p, k);
+        for q in &template_pads(cx, t, need + drill, &window) {
             if !(t.owns(q.net) || q.net.is_none()) {
                 continue;
             }
