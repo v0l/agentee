@@ -345,24 +345,6 @@ pub fn gap_to_rect(c: P, r: f64, rect: &[P]) -> f64 {
 
 const OWN_ROOM: f64 = 0.3;
 
-struct Added {
-    net: usize,
-    a: P,
-    b: P,
-    r: f64,
-    via: Option<f64>,
-}
-
-impl Added {
-    fn gap(&self, c: P, r: f64) -> f64 {
-        geom::point_segment_distance(c, self.a, self.b) - self.r - r
-    }
-
-    fn segment_gap(&self, a: P, b: P, r: f64) -> f64 {
-        geom::segment_segment_distance(self.a, self.b, a, b) - self.r - r
-    }
-}
-
 pub struct Placement {
     pub net: usize,
     pub at: Option<P>,
@@ -386,8 +368,19 @@ pub fn place(
     let spacing = pitch.max(spec.min_test_pad_pitch);
     let cu = spec.copper();
     let silk = format!("{}.SilkS", spec.side);
-    let cx = crate::drc::Ctx::of_layout(board, layout);
-    let rules = crate::rules::Spacings::new(board, &layout.nets, layout.copper.len());
+    let cx = crate::drc::Ctx::new(
+        board,
+        &layout.copper,
+        &layout.outline,
+        &layout.board_cutouts,
+        &layout.parts,
+        &layout.tracks,
+        &layout.vias,
+        &[],
+        &layout.nets,
+    );
+    let base = crate::rules::Placed::new(&cx);
+    let mut kept = crate::rules::Plan::default();
     let items = cx.copper_items();
     let holes = cx.holes();
     let hole_gap =
@@ -407,11 +400,9 @@ pub fn place(
         probes(spec, &layout.parts, &layout.nets).iter().map(|p| p.at).collect();
     let mut ob = crate::graphic::Bounds::EMPTY;
     layout.outline.iter().for_each(|p| ob.add(*p));
-    let mut added: Vec<Added> = Vec::new();
     let mut out = Vec::new();
     for &ni in nets {
         let clearance = layout.nets[ni].clearance;
-        let apart = |n: usize| rules.widest(Some(ni), Some(n)).max(clearance);
         let mut anchors: Vec<P> = Vec::new();
         for p in &layout.parts {
             for q in p.pads.iter().filter(|q| q.net == Some(ni) && !q.copper.is_empty()) {
@@ -471,12 +462,6 @@ pub fn place(
             if texts.iter().any(|b| gap_to_rect(c, 0.8, b) < 0.2) {
                 return false;
             }
-            if added.iter().any(|o| {
-                o.net != ni && o.gap(c, r) < apart(o.net)
-                    || o.via.is_some_and(|h| geom::dist(o.a, c) - h - r < hole_gap)
-            }) {
-                return false;
-            }
             let mut bb = crate::graphic::Bounds::EMPTY;
             bb.add_circle(c, r);
             let reach = r + clearance + 1.0;
@@ -485,18 +470,32 @@ pub fn place(
                 if !it.layers.contains(&cu) {
                     continue;
                 }
-                let gap = if it.net == Some(ni) {
-                    OWN_ROOM.max(clearance)
-                } else {
-                    rules.widest(Some(ni), it.net).max(clearance)
-                };
-                if it.shape.circle_gap(c, r) < gap {
+                if it.net == Some(ni) && it.shape.circle_gap(c, r) < OWN_ROOM.max(clearance) {
                     return false;
                 }
             }
-            !holes.iter().any(|h| geom::dist(h.a, c).min(geom::dist(h.b, c)) - h.r - r < hole_gap)
+            let near_hole = |a: P, h: f64| geom::dist(a, c) - h - r < hole_gap;
+            if holes.iter().any(|h| near_hole(h.a, h.r) || near_hole(h.b, h.r))
+                || kept.vias.iter().any(|v| near_hole(v.at, v.drill / 2.0))
+            {
+                return false;
+            }
+            let pad = crate::rules::Pad::round(ni, &cu, c, r);
+            let plan = crate::rules::Plan { pads: vec![pad], ..Default::default() };
+            crate::rules::legal(&crate::rules::Planned::after(&base, &kept, plan)).is_ok()
         };
         let via = class_via(board, &layout.nets[ni]);
+        let probe = |c: P, q: P, v: &crate::board::Via| crate::rules::Plan {
+            pads: vec![crate::rules::Pad::round(ni, &cu, c, r)],
+            tracks: vec![crate::layout::Track {
+                source: usize::MAX,
+                net: ni,
+                layer: cu.clone(),
+                width: layout.nets[ni].width,
+                points: vec![c, q],
+            }],
+            vias: vec![crate::layout::Via::of(v, ni, q, &layout.copper)],
+        };
         let mut found: Option<(P, P, f64, f64, f64)> = None;
         for (_, c) in candidates {
             if !clear(c, &taken) {
@@ -528,114 +527,52 @@ pub fn place(
                     [(q[0] * 1e4).round() / 1e4, (q[1] * 1e4).round() / 1e4]
                 })
                 .find(|q| {
-                    via_clear(&cx, &rules, layout, board, ni, *q, vr, dr, clearance)
-                        && stub_clear(&cx, &rules, ni, c, *q, width / 2.0, &cu)
-                        && added.iter().all(|o| {
-                            let hh = board.rules.min_hole_to_hole.to_mm();
-                            let hole = match o.via {
-                                Some(h) => geom::dist(o.a, *q) - h - dr >= hh,
-                                None => o.net == ni || o.gap(*q, dr) >= hole_gap,
-                            };
-                            hole && (o.net == ni
-                                || (o.gap(*q, vr) >= apart(o.net)
-                                    && o.segment_gap(c, *q, width / 2.0) >= apart(o.net)))
-                        })
+                    via_room(&cx, layout, ni, *q, vr)
+                        && crate::rules::legal(&crate::rules::Planned::after(
+                            &base,
+                            &kept,
+                            probe(c, *q, v),
+                        ))
+                        .is_ok()
                 });
             if let Some(q) = spot {
                 found = Some((c, q, vr, dr, width / 2.0));
                 break;
             }
         }
-        if let Some((c, q, vr, dr, half)) = found {
+        if let Some((c, q, ..)) = found {
             taken.push(c);
-            added.push(Added { net: ni, a: c, b: c, r, via: None });
-            added.push(Added { net: ni, a: c, b: q, r: half, via: None });
-            added.push(Added { net: ni, a: q, b: q, r: vr, via: Some(dr) });
+            if let Some(v) = via {
+                kept.extend(probe(c, q, v));
+            }
         }
         out.push(Placement { net: ni, at: found.map(|f| f.0), via: found.map(|f| f.1) });
     }
     out
 }
 
-#[allow(clippy::too_many_arguments)]
-fn via_clear(
+fn via_room(
     cx: &crate::drc::Ctx,
-    rules: &crate::rules::Spacings,
     layout: &crate::layout::Layout,
-    board: &Board,
     net: usize,
     at: P,
     vr: f64,
-    dr: f64,
-    clearance: f64,
 ) -> bool {
-    let edge = layout.edge();
-    if !edge.is_closed()
-        || !edge.contains(at)
-        || edge.distance(at) - vr < board.rules.min_copper_to_edge.to_mm()
-    {
-        return false;
-    }
     let items = cx.copper_items();
     let mut bb = crate::graphic::Bounds::EMPTY;
     bb.add_circle(at, vr);
-    let hole_cu = board.rules.min_via_hole_to_copper.to_mm();
-    let hole_smd = board.rules.min_hole_to_smd_pad.to_mm();
-    for k in cx.items_near(&bb, vr + clearance + 1.0) {
+    for k in cx.items_near(&bb, vr + OWN_ROOM) {
         let it = &items[k];
-        let pad = matches!(it.owner, crate::drc::Owner::Pad(..));
-        let gap = if it.net == Some(net) {
-            if !pad {
-                let g = it.shape.circle_gap(at, vr);
-                if g > -1e-3 && g < OWN_ROOM {
-                    return false;
-                }
-                continue;
+        if it.net == Some(net) && !matches!(it.owner, crate::drc::Owner::Pad(..)) {
+            let g = it.shape.circle_gap(at, vr);
+            if g > -1e-3 && g < OWN_ROOM {
+                return false;
             }
-            dr + hole_smd - vr
-        } else {
-            rules.widest(Some(net), it.net).max(clearance).max(dr + hole_cu - vr)
-        };
-        if it.shape.circle_gap(at, vr) < gap.max(0.0) + if pad { 1e-3 } else { 0.0 } {
-            return false;
         }
     }
-    if layout.silk.iter().any(|b| {
+    !layout.silk.iter().any(|b| {
         geom::point_in_polygon(at, &b.outline)
             || geom::polyline_polygon_distance(&[at, at], &b.outline) < vr
-    }) {
-        return false;
-    }
-    let hh = board.rules.min_hole_to_hole.to_mm();
-    !cx.holes().iter().any(|h| geom::point_segment_distance(at, h.a, h.b) - h.r - dr < hh)
-}
-
-fn stub_clear(
-    cx: &crate::drc::Ctx,
-    rules: &crate::rules::Spacings,
-    net: usize,
-    a: P,
-    b: P,
-    half: f64,
-    cu: &str,
-) -> bool {
-    let items = cx.copper_items();
-    let mut bb = crate::graphic::Bounds::EMPTY;
-    bb.add_circle(a, half);
-    bb.add_circle(b, half);
-    let near = cx.items_near(&bb, 2.0);
-    let steps = ((geom::dist(a, b) / 0.05).ceil() as usize).max(1);
-    near.into_iter().all(|k| {
-        let it = &items[k];
-        if it.net == Some(net) || !it.layers.iter().any(|l| l == cu) {
-            return true;
-        }
-        let gap = rules.widest(Some(net), it.net);
-        (0..=steps).all(|i| {
-            let t = i as f64 / steps as f64;
-            let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-            it.shape.circle_gap(p, half) >= gap
-        })
     })
 }
 

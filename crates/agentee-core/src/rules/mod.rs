@@ -11,7 +11,7 @@ pub use barrier::{
     ring_edges as barrier_edges,
 };
 pub use clearance::{ClassClearance, NetClearance};
-pub use context::{Context, Placed, Planned};
+pub use context::{Context, Pad, Placed, Plan, Planned};
 pub use edge::CopperToEdge;
 pub use holes::{HoleToCopper, HoleToHole, Which};
 pub use isolation::Isolation;

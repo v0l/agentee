@@ -442,6 +442,7 @@ impl<'a> Ctx<'a> {
                 "via at [{:.3}, {:.3}] ({})",
                 self.vias[v].at[0], self.vias[v].at[1], self.nets[self.vias[v].net].name
             ),
+            Owner::Copper(k) => format!("copper {k}"),
         }
     }
 }
@@ -451,6 +452,7 @@ pub enum Owner {
     Pad(usize, usize),
     Track(usize),
     Via(usize),
+    Copper(usize),
 }
 
 pub struct Cu {

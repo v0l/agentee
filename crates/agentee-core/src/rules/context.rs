@@ -193,48 +193,72 @@ pub struct Planned<'a> {
     pub base: &'a Placed<'a>,
     pub tracks: Vec<Track>,
     pub vias: Vec<Via>,
+    pub pads: Vec<Pad>,
     items: Vec<Cu>,
     holes: Vec<Hole>,
     first_item: usize,
     first_hole: usize,
 }
 
+#[derive(Clone, Debug)]
+pub struct Pad {
+    pub net: usize,
+    pub layers: Vec<String>,
+    pub outline: Vec<P>,
+}
+
+impl Pad {
+    pub fn round(net: usize, layer: &str, at: P, r: f64) -> Pad {
+        Pad { net, layers: vec![layer.to_string()], outline: geom::circle(at, r, 24) }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Plan {
+    pub tracks: Vec<Track>,
+    pub vias: Vec<Via>,
+    pub pads: Vec<Pad>,
+}
+
+impl Plan {
+    pub fn extend(&mut self, o: Plan) {
+        self.tracks.extend(o.tracks);
+        self.vias.extend(o.vias);
+        self.pads.extend(o.pads);
+    }
+}
+
 impl<'a> Planned<'a> {
     pub fn new(base: &'a Placed<'a>, tracks: Vec<Track>, vias: Vec<Via>) -> Planned<'a> {
-        Planned::after(base, &[], &[], tracks, vias)
+        Planned::after(base, &Plan::default(), Plan { tracks, vias, pads: Vec::new() })
     }
 
-    pub fn after(
-        base: &'a Placed<'a>,
-        kept_tracks: &[Track],
-        kept_vias: &[Via],
-        tracks: Vec<Track>,
-        vias: Vec<Via>,
-    ) -> Planned<'a> {
-        let (mut items, mut holes) = Planned::copper(base, kept_tracks, kept_vias, 0, 0);
+    pub fn after(base: &'a Placed<'a>, kept: &Plan, plan: Plan) -> Planned<'a> {
+        let (mut items, mut holes) = Planned::copper(base, kept, [0, 0, 0]);
         let (first_item, first_hole) = (items.len(), holes.len());
-        let (more, more_holes) =
-            Planned::copper(base, &tracks, &vias, kept_tracks.len(), kept_vias.len());
+        let from = [kept.tracks.len(), kept.vias.len(), kept.pads.len()];
+        let (more, more_holes) = Planned::copper(base, &plan, from);
         items.extend(more);
         holes.extend(more_holes);
-        let mut all_tracks = kept_tracks.to_vec();
-        all_tracks.extend(tracks);
-        let mut all_vias = kept_vias.to_vec();
-        all_vias.extend(vias);
-        Planned { base, tracks: all_tracks, vias: all_vias, items, holes, first_item, first_hole }
+        let mut all = kept.clone();
+        all.extend(plan);
+        Planned {
+            base,
+            tracks: all.tracks,
+            vias: all.vias,
+            pads: all.pads,
+            items,
+            holes,
+            first_item,
+            first_hole,
+        }
     }
 
-    fn copper(
-        base: &Placed,
-        tracks: &[Track],
-        vias: &[Via],
-        track_from: usize,
-        via_from: usize,
-    ) -> (Vec<Cu>, Vec<Hole>) {
-        let (bt, bv) = (base.cx.tracks.len() + track_from, base.cx.vias.len() + via_from);
+    fn copper(base: &Placed, plan: &Plan, from: [usize; 3]) -> (Vec<Cu>, Vec<Hole>) {
+        let (bt, bv) = (base.cx.tracks.len() + from[0], base.cx.vias.len() + from[1]);
         let mut items = Vec::new();
         let mut holes = Vec::new();
-        for (k, t) in tracks.iter().enumerate() {
+        for (k, t) in plan.tracks.iter().enumerate() {
             for w in t.points.windows(2) {
                 let mut b = Bounds::EMPTY;
                 b.add_circle(w[0], t.width / 2.0);
@@ -248,7 +272,7 @@ impl<'a> Planned<'a> {
                 });
             }
         }
-        for (k, v) in vias.iter().enumerate() {
+        for (k, v) in plan.vias.iter().enumerate() {
             let mut b = Bounds::EMPTY;
             b.add_circle(v.at, v.diameter / 2.0);
             items.push(Cu {
@@ -267,6 +291,17 @@ impl<'a> Planned<'a> {
                 plated: true,
                 net: Some(v.net),
                 layers: v.hole.clone(),
+            });
+        }
+        for (k, q) in plan.pads.iter().enumerate() {
+            let mut b = Bounds::EMPTY;
+            q.outline.iter().for_each(|p| b.add(*p));
+            items.push(Cu {
+                owner: Owner::Copper(from[2] + k),
+                net: Some(q.net),
+                layers: q.layers.clone(),
+                bounds: b,
+                shape: CuShape::Poly(vec![q.outline.clone()]),
             });
         }
         (items, holes)
@@ -413,7 +448,10 @@ impl Context for Planned<'_> {
                 "planned track [{:.3}, {:.3}] to [{:.3}, {:.3}] ({net})",
                 a[0], a[1], b[0], b[1]
             ),
-            CuShape::Poly(_) => format!("planned copper ({net})"),
+            CuShape::Poly(ref v) => {
+                let b = crate::drc::rings_bounds(v);
+                format!("planned pad at [{:.3}, {:.3}] ({net})", b.center()[0], b.center()[1])
+            }
         }
     }
 

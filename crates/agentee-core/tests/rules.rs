@@ -72,8 +72,14 @@ fn a_planned_track_is_judged_after_kept_vias_the_same_as_alone() {
     let mut alone = Vec::new();
     rules::NetClearance.eval(&Planned::new(&base, vec![crossing.clone()], vec![]), &mut alone);
     let mut after = Vec::new();
-    rules::NetClearance
-        .eval(&Planned::after(&base, &[], &[kept], vec![crossing], vec![]), &mut after);
+    rules::NetClearance.eval(
+        &Planned::after(
+            &base,
+            &rules::Plan { vias: vec![kept], ..Default::default() },
+            rules::Plan { tracks: vec![crossing], ..Default::default() },
+        ),
+        &mut after,
+    );
     assert!(!alone.is_empty());
     assert_eq!(alone, after);
 }

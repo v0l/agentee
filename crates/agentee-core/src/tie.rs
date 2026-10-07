@@ -65,8 +65,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
         &layout.nets,
     );
     let base = crate::rules::Placed::new(&world);
-    let mut planned_tracks: Vec<crate::layout::Track> = Vec::new();
-    let mut planned_vias: Vec<crate::layout::Via> = Vec::new();
+    let mut kept = crate::rules::Plan::default();
 
     let mut out = TieResult::default();
     for part in &layout.parts {
@@ -123,10 +122,8 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 let via = crate::layout::Via::of(spec, net, c, copper);
                 let plan = crate::rules::Planned::after(
                     &base,
-                    &planned_tracks,
-                    &planned_vias,
-                    vec![stub(c)],
-                    vec![via],
+                    &kept,
+                    crate::rules::Plan { tracks: vec![stub(c)], vias: vec![via], pads: Vec::new() },
                 );
                 crate::rules::legal(&plan).is_ok()
             };
@@ -191,8 +188,8 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 points: vec![pc, c],
             });
             out.vias.push(RoutedVia { net: name, at: c, via: spec.name.clone() });
-            planned_tracks.push(stub(c));
-            planned_vias.push(crate::layout::Via::of(spec, net, c, copper));
+            kept.tracks.push(stub(c));
+            kept.vias.push(crate::layout::Via::of(spec, net, c, copper));
             placed.push((net, c));
             out.tied += 1;
         }
