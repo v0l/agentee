@@ -169,7 +169,7 @@ fn build(model: &Model) -> Board {
         let flips = p.bottom && movable_bottom.contains(&p.reference);
         let mut cell = Cell {
             reference: p.reference.clone(),
-            fixed: locked.contains(&p.reference.as_str()) || mounting || (p.bottom && !flips),
+            fixed: locked.contains(&p.reference.as_str()) || mounting,
             chained: false,
             under: false,
             at,
@@ -425,12 +425,14 @@ fn global_place(
     texts: &mut Vec<place::TextMove>,
     spread: &Spread,
 ) -> Result<(String, Vec<String>), String> {
-    let free: Vec<String> = bd
-        .cells
-        .iter()
-        .filter(|c| !c.fixed && !c.chained && !c.under)
-        .map(|c| c.reference.clone())
-        .collect();
+    let free = |bottom: bool| -> Vec<String> {
+        bd.cells
+            .iter()
+            .filter(|c| !c.fixed && !c.chained && !c.under && c.bottom == bottom)
+            .map(|c| c.reference.clone())
+            .collect()
+    };
+    let sides = [(free(false), place::Sides::Top), (free(true), place::Sides::Bottom)];
     let l = &model.layout;
     let footprints: HashMap<&str, &agentee_core::footprint::Footprint> =
         l.parts.iter().map(|p| (p.footprint_name.as_str(), &p.footprint)).collect();
@@ -452,46 +454,63 @@ fn global_place(
     }
     let spec = model.file.place.clone().unwrap_or_default();
     let cutouts = l.board_cutouts.clone();
-    let input = place::PlaceInput {
-        board: model.board,
-        outline: &l.outline,
-        cutouts: &cutouts,
-        schematic: model.schematic,
-        footprints: &footprints,
-        placements: &placements,
-        spec: &spec,
-        fast_nets: fast,
-        heat: model.heat.clone(),
-        silk: place::board_silk(&l.graphics, &l.artwork),
-        texts: place::movable_texts(&l.graphics),
-        tracks: &model.file.tracks,
-        vias: &model.file.vias,
-    };
-    let opts = place::PlaceOptions {
-        parts: free.clone(),
-        seed: cfg.place.as_ref().and_then(|p| p.seed).unwrap_or(1),
-        spacing: spread.spacing,
-        standoff: spread.standoff,
-        ..Default::default()
-    };
     let before = hpwl(bd);
-    let result = place::place(&input, &opts)?;
-    for pm in &result.placements {
-        if let Some(c) = bd.cells.iter_mut().find(|c| c.reference == pm.reference) {
-            flip_cell(c, pm.rotation, pm.bottom);
-            c.at = pm.at;
+    let (mut placed, mut crossings, mut failed) = (0, 0, Vec::new());
+    texts.clear();
+    for (parts, sides) in sides {
+        if parts.is_empty() {
+            continue;
         }
+        let input = place::PlaceInput {
+            board: model.board,
+            outline: &l.outline,
+            cutouts: &cutouts,
+            schematic: model.schematic,
+            footprints: &footprints,
+            placements: &placements,
+            spec: &spec,
+            fast_nets: fast.clone(),
+            heat: model.heat.clone(),
+            silk: place::board_silk(&l.graphics, &l.artwork),
+            texts: place::movable_texts(&l.graphics),
+            tracks: &model.file.tracks,
+            vias: &model.file.vias,
+        };
+        let opts = place::PlaceOptions {
+            parts: parts.clone(),
+            sides,
+            seed: cfg.place.as_ref().and_then(|p| p.seed).unwrap_or(1),
+            spacing: spread.spacing,
+            standoff: spread.standoff,
+            ..Default::default()
+        };
+        let result = place::place(&input, &opts)?;
+        for pm in &result.placements {
+            if let Some(c) = bd.cells.iter_mut().find(|c| c.reference == pm.reference) {
+                flip_cell(c, pm.rotation, pm.bottom);
+                c.at = pm.at;
+            }
+            if let Some(f) = placements.iter_mut().find(|f| f.reference == pm.reference) {
+                f.at = agentee_core::units::Point::mm(pm.at[0], pm.at[1]);
+                f.rotation = Some(pm.rotation);
+                f.side = pm.bottom.then_some(agentee_core::layout::BoardSide::Bottom);
+            }
+        }
+        placed += parts.len();
+        crossings = result.after.crossings;
+        failed.extend(result.failed.iter().map(|f| format!("{f}: not placed")));
+        let back = sides == place::Sides::Bottom;
+        texts.extend(
+            result.texts_moved.iter().filter(|t| t.layer.starts_with("B.") == back).cloned(),
+        );
     }
     let note = format!(
-        "{} parts placed around {} chained and {} under BGAs, hpwl {before:.0} -> {:.0} mm, {} crossings",
-        free.len(),
+        "{placed} parts placed around {} chained and {} under BGAs, hpwl {before:.0} -> {:.0} mm, {crossings} crossings",
         bd.cells.iter().filter(|c| c.chained).count(),
         bd.cells.iter().filter(|c| c.under).count(),
         hpwl(bd),
-        result.after.crossings
     );
-    *texts = result.texts_moved.clone();
-    Ok((note, result.failed.iter().map(|f| format!("{f}: not placed")).collect()))
+    Ok((note, failed))
 }
 
 fn rect_of(c: &Cell, at: P, gap: f64) -> [f64; 4] {

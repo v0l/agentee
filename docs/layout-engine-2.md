@@ -120,6 +120,10 @@ passes: when global or detail report hot tiles, every part whose courtyard touch
 inflated by the overflow there (cell inflation, as RePlAce does it) and the placement is
 legalised again from where it was, not started over. At most `place_rounds` passes, default 3.
 
+Parts stay on the side the file puts them. The placer runs once for the front and once for the
+back, the back pass with the front held, so a bottom part moves and turns with the seed like a
+top one. Locked parts and mounting holes hold on either side.
+
 Bypass caps bound to a BGA's supply balls go on the back, under the package. Each one bridges a
 supply ball and a ground ball next to it, with a pad on each ball's via: the ball's own via in
 pad where `via_in_pad` holds and the via fits inside the ball, or the dog-bone site on a shared
