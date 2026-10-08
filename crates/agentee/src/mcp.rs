@@ -42,7 +42,7 @@ fn tools() -> Value {
         },
         {
             "name": "layout",
-            "description": "Run the layout engine on a layout: the configured [engine] phases in order, then the score per term with the worst offenders of each. Phases not implemented yet are listed as skipped. With search it tries many settings in parallel (placement seeds by default, or the [engine.search] knobs), screens them on the cheap stages, runs the best few in full and writes the one that routes best, with its settings pinned in [engine]. Use search instead of rerunning place and route by hand with different seeds.",
+            "description": "Run the layout engine on a layout: the configured [engine] phases in order, then the score per term with the worst offenders of each. Phases not implemented yet are listed as skipped. With search it runs a beam search over the stages in memory: each kept engine state branches into children with different values of that stage's [engine.search] knobs (placement seeds by default), the best `keep` survive each stage from the global route on, and the winner is written with its settings pinned in [engine]. Use search instead of rerunning place and route by hand with different seeds.",
             "inputSchema": s(json!({
                 "name": { "type": "string" },
                 "from": { "type": "string", "description": "start at this phase" },
@@ -50,7 +50,7 @@ fn tools() -> Value {
                 "only": { "type": "string", "description": "run one phase" },
                 "dry_run": { "type": "boolean", "description": "report without writing the plan" },
                 "search": { "type": ["boolean", "integer"], "description": "true, or how many settings to try (default 16)" },
-                "keep": { "type": "integer", "description": "with search, how many of the screen's best get the full run (default 4)" },
+                "keep": { "type": "integer", "description": "with search, how many nodes survive each stage (default 4)" },
             }), &["name"]),
         },
         {

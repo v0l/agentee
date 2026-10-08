@@ -440,10 +440,10 @@ enum Cmd {
         /// Report without writing the plan into the layout file
         #[arg(long)]
         dry_run: bool,
-        /// Try this many settings (default 16, or `[engine.search] tries`) and keep the one that routes best: placement seeds unless `[engine.search] knobs` names others
+        /// Beam search over the stages: this many children a stage (default 16, or `[engine.search] tries`), placement seeds unless `[engine.search] knobs` names others
         #[arg(long, num_args = 0..=1, default_missing_value = "0")]
         search: Option<usize>,
-        /// With --search, how many of the cheap screen's best get the full run (default 4)
+        /// With --search, how many nodes survive each stage (default 4)
         #[arg(long)]
         keep: Option<usize>,
         #[arg(long)]

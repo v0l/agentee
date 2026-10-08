@@ -155,13 +155,13 @@ Order of work, each stage passing check before the next:
    - `agentee fill NAME` fills the zones and stores the copper in the file.
    - `agentee layout NAME` runs the whole engine (place, access, route, finish) from the
      layout's `[engine]` settings; `--from`, `--to` and `--only` pick stages.
-   - `agentee layout NAME --search` is how to look for a better result. It tries 16 placement
-     seeds in parallel, screens them up to the global route, runs the best 4 in full and writes
-     the one with the fewest overlaps and unrouted connections, its seed pinned in
-     `[engine.place]`. `--search 40 --keep 8` widens it; `[engine.search] knobs` searches other
-     settings (see `docs/layout-engine.md`). Do not loop `place --seed N` and `route` by hand:
-     the placement decides most of the routing, and one search call covers what a dozen manual
-     rounds would, with every candidate starting from the same file.
+   - `agentee layout NAME --search` is how to look for a better result. It is a beam search over
+     the stages in memory: 16 placement seeds by default, the best 4 carried through routing from
+     the global route on, the winner written with its seed pinned in `[engine.place]`. Knobs of
+     later stages in `[engine.search]` (`detail.via_cost`) branch every kept placement at that
+     stage (see `docs/layout-engine-2.md`). `--search 40 --keep 8` widens it. Do not loop
+     `place --seed N` and `route` by hand: one search call covers what a dozen manual rounds
+     would.
 
    Check reports the ratsnest for every unrouted connection, so route until `unrouted` is 0 on
    every net in `show pcb:NAME`.

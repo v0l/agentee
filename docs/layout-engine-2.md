@@ -287,32 +287,47 @@ sections first.
 
 ## Search
 
-`agentee layout NAME --search [N]` runs the pipeline for N settings (16 by default) and keeps
-the best. With no `[engine.search]` it varies `[engine.place] seed`. Each candidate starts from
-the same file, so the result is a choice between placements, not a walk away from the one in
-the file.
+`agentee layout NAME --search [N]` is a beam search over the stages. The layout is loaded once
+and every node of the search is an engine state in memory: the stages run so far, their plans
+and the layout they left. Each knob belongs to the stage its path starts with
+(`detail.via_cost` to `detail`); a knob with no stage belongs to the first. At each stage every
+kept node branches into children with different values of that stage's knobs, each child runs
+only that stage on a copy of its parent, and the best `keep` (4) survive. A stage with no knobs
+does not branch: each kept node runs it once. With no `[engine.search]` the search varies
+`[engine.place] seed`, so it branches into N placements and carries the best through routing.
 
-It screens first: every candidate runs up to `global` (or `screen`) and is ranked on the score
-total, which there is mostly wirelength, crossings and overflow. The best `keep` (4) run the rest
-of the stages, and the one with the fewest copper overlaps, then the fewest unrouted
-connections, then the lowest total, is written with its knob values set in `[engine]`, so
-`agentee layout NAME` on the original file reproduces it. A knob of a stage after the screen
-(`detail.via_cost`) does not change the screen, so candidates that differ only there are screened
-once and go through together. Candidates run in parallel, a quarter of the cores at a time in
-full and half in the screen, since detail is threaded itself.
+Nodes are ranked on the score total, and from `detail` on by the fewest copper overlaps, then the
+fewest unrouted connections, then the total. The beam is not cut before the `screen` stage
+(`global` by default), since the score right after placement says little about how it routes;
+from there on it is cut after every stage. `tries` is the number of children a stage may make,
+shared among the kept nodes, so with 16 tries and 4 kept each node makes 4 children. The first
+child of a node keeps the node's own values, and the line of nodes holding the file's own
+settings survives every cut even when it ranks below the best `keep`, so it always reaches the
+end. The
+winner is written with its knob values set in `[engine]`, and the table lists every node with
+its stage, its parent and its score. Children of one stage run in parallel, half the cores at a
+time for placement and a quarter for the routing stages, which are threaded themselves.
+
+Each stage runs once on a node: the placement passes driven by hot tiles and the repeated global
+and detail rounds of a plain run are replaced by the branching, so a search result is not a plain
+run with a different seed.
 
 ```toml
 [engine.search]
-knobs = { "place.seed" = [1, 2, 3, 4, 5, 6, 7, 8], "place.density" = [0.6, 0.7], "detail.via_cost" = ["1mm", "3mm"] }
-tries = 24        # candidates; every combination when they fit, a seeded sample when not
-keep = 4          # screened candidates that get the full run
-screen = "global" # the last stage of the screen
-seed = 1          # the sample's seed
+knobs = { "place.seed" = [1, 2, 3, 4, 5, 6, 7, 8], "place.spacing" = ["0.2mm", "0.3mm"], "detail.via_cost" = ["1mm", "3mm"] }
+tries = 16        # children a stage may make, shared among the kept nodes
+keep = 4          # nodes that survive each cut
+screen = "global" # the first stage after which the beam is cut
+seed = 1          # the seed for sampling knob combinations
 ```
 
-A knob is a dotted path under `[engine]` and check refuses one the engine does not have. The
-current values are always run in full whatever their screen, so a search never writes something
-worse than a plain run of the same file.
+A knob is a dotted path under `[engine]` and check refuses one the engine does not have.
+
+On `examples/lna`, `--search 8` takes 2.4 s against 3.6 s for the screen-and-rerun search it
+replaced, and finds seed 6 at a total of 1503 against 1703: the kept placements are carried into
+routing instead of being placed again.
+On `examples/sdr`, `--search 8 --keep 2 --to global` takes 11 s against 31 s, and both pick
+seed 4.
 
 On `examples/sdr` at `e2a9020`, `--search 8 --keep 2` took 5.4 minutes on 48 threads: about 56 s
 a screen, about 260 s a full run. The file's seed 5 screened sixth. Seed 8 won with 302

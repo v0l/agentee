@@ -1,4 +1,4 @@
-use crate::{Loaded, Run, RunReport, load, run_doc};
+use crate::{Run, RunReport, load};
 use agentee_core::engine::{EngineFile, SearchFile, knob_path, stage_of};
 use agentee_core::project::LayoutInputs;
 use serde::Serialize;
@@ -16,6 +16,9 @@ pub struct Ask {
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct Tried {
+    pub stage: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<usize>,
     pub knobs: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub screen: Option<f64>,
@@ -27,6 +30,7 @@ pub struct Tried {
     pub total: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    pub kept: bool,
     pub ms: f64,
 }
 
@@ -34,7 +38,7 @@ pub struct Tried {
 pub struct SearchReport {
     pub tried: Vec<Tried>,
     pub best: usize,
-    pub screened_to: Option<String>,
+    pub width: usize,
     pub ms: f64,
     #[serde(skip)]
     pub run: RunReport,
@@ -42,8 +46,9 @@ pub struct SearchReport {
 
 impl SearchReport {
     pub fn table(&self) -> String {
-        let keys: Vec<&String> =
-            self.tried.first().map(|t| t.knobs.keys().collect()).unwrap_or_default();
+        let mut keys: Vec<&String> = self.tried.iter().flat_map(|t| t.knobs.keys()).collect();
+        keys.sort();
+        keys.dedup();
         let widths: Vec<usize> = keys
             .iter()
             .map(|k| {
@@ -51,37 +56,50 @@ impl SearchReport {
                 longest.chain([k.len()]).max().unwrap_or(0) + 2
             })
             .collect();
-        let mut t = String::new();
+        let mut t = format!("{:<5}{:<12}{:>7}  ", "node", "stage", "from");
         for (k, w) in keys.iter().zip(&widths) {
             t += &format!("{k:<w$}");
         }
-        t += &format!(
-            "{:>10}{:>10}{:>9}{:>12}{:>8}\n",
-            "screen", "unrouted", "overlap", "total", "s"
-        );
-        let mut order: Vec<usize> = (0..self.tried.len()).collect();
-        order.sort_by(|&a, &b| rank(&self.tried[a]).total_cmp_key(&rank(&self.tried[b])));
+        t += &format!("{:>10}{:>9}{:>12}{:>8}\n", "unrouted", "overlap", "total", "s");
         let n = |v: Option<f64>, w: usize, p: usize| match v {
             Some(v) => format!("{v:>w$.p$}"),
             None => format!("{:>w$}", "-"),
         };
-        for i in order {
-            let c = &self.tried[i];
-            for (k, w) in keys.iter().zip(&widths) {
-                t += &format!("{:<w$}", c.knobs.get(*k).map(String::as_str).unwrap_or("-"));
+        let mut stages: Vec<&str> = Vec::new();
+        for c in &self.tried {
+            if !stages.contains(&c.stage.as_str()) {
+                stages.push(&c.stage);
             }
-            t += &n(c.screen, 10, 1);
-            t += &n(c.unrouted, 10, 0);
-            t += &n(c.copper_overlap, 9, 0);
-            t += &n(c.total, 12, 1);
-            t += &format!("{:>8.1}", c.ms / 1000.0);
-            if i == self.best {
-                t += "  best";
+        }
+        for stage in stages {
+            let mut order: Vec<usize> =
+                (0..self.tried.len()).filter(|&i| self.tried[i].stage == stage).collect();
+            order.sort_by(|&a, &b| rank(&self.tried[a]).total_cmp_key(&rank(&self.tried[b])));
+            for i in order {
+                let c = &self.tried[i];
+                t += &format!(
+                    "{:<5}{:<12}{:>7}  ",
+                    i,
+                    c.stage,
+                    c.parent.map(|p| p.to_string()).unwrap_or_else(|| "-".into())
+                );
+                for (k, w) in keys.iter().zip(&widths) {
+                    t += &format!("{:<w$}", c.knobs.get(*k).map(String::as_str).unwrap_or("-"));
+                }
+                t += &n(c.unrouted, 10, 0);
+                t += &n(c.copper_overlap, 9, 0);
+                t += &n(c.total.or(c.screen), 12, 1);
+                t += &format!("{:>8.1}", c.ms / 1000.0);
+                if i == self.best {
+                    t += "  best";
+                } else if c.kept {
+                    t += "  kept";
+                }
+                if let Some(e) = &c.error {
+                    t += &format!("  {e}");
+                }
+                t.push('\n');
             }
-            if let Some(e) = &c.error {
-                t += &format!("  {e}");
-            }
-            t.push('\n');
         }
         t
     }
@@ -231,71 +249,24 @@ fn shown(v: &toml::Value) -> String {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Span<'a> {
-    from: Option<&'a str>,
-    to: Option<&'a str>,
-    stop: Option<&'a std::sync::atomic::AtomicBool>,
+struct Node<'l> {
+    branch: crate::Branch<'l>,
+    engine: EngineFile,
+    values: Vec<toml::Value>,
+    tried: usize,
+    own: bool,
 }
 
-fn evaluate(l: &Loaded, engine: &EngineFile, a: Span, full: bool) -> (Tried, Option<RunReport>) {
-    let t0 = std::time::Instant::now();
-    let r = Run {
-        from: a.from.map(str::to_string),
-        to: a.to.map(str::to_string),
-        only: None,
-        watch: None,
-        stop: a.stop,
-    };
-    let mut tried = Tried::default();
-    let mut doc = l.doc.clone();
-    doc.base.engine = Some(engine.clone());
-    let mut model = l.model();
-    model.file.engine = Some(engine.clone());
-    model.layout.engine = engine.clone();
-    let out = match agentee_core::layout::keeping_floating(|| run_doc(l, doc, model, &r)) {
-        Ok(out) => out,
-        Err(e) => {
-            tried.error = Some(e);
-            tried.ms = t0.elapsed().as_secs_f64() * 1e3;
-            return (tried, None);
-        }
-    };
-    let raw = |k: &str| out.score.terms.get(k).filter(|t| t.measured).map(|t| t.raw);
-    if full {
+fn measure(stage: &str, b: &crate::Branch, tried: &mut Tried) {
+    let score = b.score();
+    let raw = |k: &str| score.terms.get(k).filter(|t| t.measured).map(|t| t.raw);
+    if matches!(stage, "detail" | "finish") {
         tried.unrouted = raw("unrouted");
         tried.copper_overlap = raw("copper_overlap");
-        tried.total = Some(out.score.total);
+        tried.total = Some(score.total);
     } else {
-        tried.screen = Some(out.score.total);
+        tried.screen = Some(score.total);
     }
-    tried.ms = t0.elapsed().as_secs_f64() * 1e3;
-    (tried, Some(out))
-}
-
-fn batch(
-    l: &Loaded,
-    engines: &[EngineFile],
-    a: Span,
-    full: bool,
-    lanes: usize,
-) -> Vec<(Tried, Option<RunReport>)> {
-    let mut out = Vec::with_capacity(engines.len());
-    for chunk in engines.chunks(lanes.max(1)) {
-        let done: Vec<(Tried, Option<RunReport>)> = std::thread::scope(|scope| {
-            let hs: Vec<_> =
-                chunk.iter().map(|e| scope.spawn(move || evaluate(l, e, a, full))).collect();
-            hs.into_iter()
-                .map(|h| {
-                    h.join().unwrap_or_else(|_| {
-                        (Tried { error: Some("panicked".into()), ..Default::default() }, None)
-                    })
-                })
-                .collect()
-        });
-        out.extend(done);
-    }
-    out
 }
 
 pub fn search(
@@ -321,14 +292,13 @@ pub fn search(
     };
     let first = a.from.as_deref().map(pos).transpose()?.unwrap_or(0);
     let last = a.to.as_deref().map(pos).transpose()?.unwrap_or(wanted.len().saturating_sub(1));
-    let range: Vec<&String> =
-        wanted.get(first..=last).map(|s| s.iter().collect()).unwrap_or_default();
+    let stages: Vec<String> = wanted.get(first..=last).map(<[String]>::to_vec).unwrap_or_default();
     let tries = ask.tries.or(sf.tries).unwrap_or(DEFAULT_TRIES).max(1);
-    let keep = ask.keep.or(sf.keep).unwrap_or(DEFAULT_KEEP).max(1);
+    let width = ask.keep.or(sf.keep).unwrap_or(DEFAULT_KEEP).max(1);
     let mut knobs: Vec<(String, Vec<toml::Value>)> =
         sf.knobs.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     if knobs.is_empty() {
-        if !range.iter().any(|s| *s == "place") {
+        if !stages.iter().any(|s| s == "place") {
             return Err(
                 "with no [engine.search] knobs the search varies the placement seed, so the range has to include place; name knobs to search the later stages"
                     .into(),
@@ -345,89 +315,144 @@ pub fn search(
             agentee_core::engine::knob_fits(k, v)?;
         }
     }
+    let mut level: Vec<usize> = Vec::new();
+    for (k, _) in &knobs {
+        let head = knob_path(k).first().cloned().unwrap_or_default();
+        level.push(match stages.iter().position(|s| *s == head) {
+            Some(i) => i,
+            None if stage_of(&head).is_some() => {
+                return Err(format!("knob `{k}` belongs to `{head}`, which is outside the range"));
+            }
+            None => 0,
+        });
+    }
     let base: Vec<toml::Value> = knobs
         .iter()
         .map(|(k, pool)| current(&engine, k).unwrap_or_else(|| pool[0].clone()))
         .collect();
-    let cands = candidates(&knobs, base, tries, sf.seed.unwrap_or(1));
-    let engines: Vec<EngineFile> =
-        cands.iter().map(|c| tuned(&engine, &knobs, c)).collect::<Result<_, _>>()?;
-    let mut tried: Vec<Tried> = cands
-        .iter()
-        .map(|c| Tried {
-            knobs: knobs.iter().zip(c).map(|((k, _), v)| (k.clone(), shown(v))).collect(),
-            ..Default::default()
-        })
-        .collect();
-    let span = Span { from: a.from.as_deref(), to: a.to.as_deref(), stop: a.stop };
     let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-    let lanes = (cores / 4).max(1);
-
-    let screen_at = sf.screen.as_deref().unwrap_or(DEFAULT_SCREEN);
-    let screen_last = pos(screen_at).ok().filter(|&s| s >= first && s < last);
-    let mut finalists: Vec<usize> = (0..engines.len()).collect();
-    let mut screened_to = None;
-    if let Some(s) = screen_last {
-        let late =
-            |k: &str| knob_path(k).first().and_then(|head| pos(head).ok()).is_some_and(|i| i > s);
-        let early: Vec<usize> = (0..knobs.len()).filter(|&k| !late(&knobs[k].0)).collect();
-        let projection = |c: &Vec<toml::Value>| -> Vec<toml::Value> {
-            early.iter().map(|&k| c[k].clone()).collect()
-        };
-        let mut groups: Vec<(Vec<toml::Value>, Vec<usize>)> = Vec::new();
-        for (i, c) in cands.iter().enumerate() {
-            let p = projection(c);
-            match groups.iter_mut().find(|(q, _)| *q == p) {
-                Some((_, members)) => members.push(i),
-                None => groups.push((p, vec![i])),
-            }
+    let stop = a.stop;
+    let stopped = || stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed));
+    let screen = sf.screen.as_deref().unwrap_or(DEFAULT_SCREEN);
+    let cut_from = stage_of(screen).and_then(|s| stages.iter().position(|x| x == s)).unwrap_or(0);
+    let mut tried: Vec<Tried> = Vec::new();
+    let root = loaded.root(&stages, &engine)?;
+    let mut frontier: Vec<Node> = vec![Node {
+        branch: root,
+        engine: engine.clone(),
+        values: base,
+        tried: usize::MAX,
+        own: true,
+    }];
+    for (li, stage) in stages.iter().enumerate() {
+        if stopped() {
+            return Err("stopped".into());
         }
-        if groups.len() > keep {
-            let cheap = Span { to: Some(wanted[s].as_str()), ..span };
-            let lead: Vec<EngineFile> = groups.iter().map(|(_, m)| engines[m[0]].clone()).collect();
-            let outs = batch(&loaded, &lead, cheap, false, lanes * 2);
-            let mut scored: Vec<(Tried, Vec<usize>)> = Vec::new();
-            for ((_, members), (t, _)) in groups.into_iter().zip(outs) {
-                for &i in &members {
-                    tried[i].screen = t.screen;
-                    tried[i].error = t.error.clone();
-                    tried[i].ms = t.ms;
+        let here: Vec<usize> = (0..knobs.len()).filter(|&k| level[k] == li).collect();
+        let per = tries.div_ceil(frontier.len()).max(1);
+        let mut specs: Vec<(usize, Vec<toml::Value>, EngineFile, bool)> = Vec::new();
+        for (pi, parent) in frontier.iter().enumerate() {
+            if here.is_empty() {
+                specs.push((pi, parent.values.clone(), parent.engine.clone(), parent.own));
+                continue;
+            }
+            let pool: Vec<(String, Vec<toml::Value>)> =
+                here.iter().map(|&k| knobs[k].clone()).collect();
+            let start: Vec<toml::Value> = here.iter().map(|&k| parent.values[k].clone()).collect();
+            let seed = sf.seed.unwrap_or(1).wrapping_add(pi as u64 * 7919 + li as u64);
+            for (ci, c) in candidates(&pool, start, per, seed).into_iter().enumerate() {
+                let mut values = parent.values.clone();
+                for (x, &k) in here.iter().enumerate() {
+                    values[k] = c[x].clone();
                 }
-                scored.push((t, members));
+                let e = tuned(&parent.engine, &pool, &c)?;
+                specs.push((pi, values, e, parent.own && ci == 0));
             }
-            scored.retain(|(t, _)| t.error.is_none());
-            scored.sort_by(|a, b| rank(&a.0).total_cmp_key(&rank(&b.0)));
-            finalists = scored.into_iter().take(keep).flat_map(|(_, m)| m).collect();
-            if !finalists.contains(&0) {
-                finalists.insert(0, 0);
+        }
+        let heavy = !matches!(stage.as_str(), "constraints" | "place");
+        let lanes = if heavy { (cores / 4).max(1) } else { (cores / 2).max(1) };
+        let mut children: Vec<(Tried, Option<Node>)> = Vec::new();
+        for chunk in specs.chunks(lanes) {
+            let done: Vec<(Tried, Option<Node>)> = std::thread::scope(|scope| {
+                let hs: Vec<_> = chunk
+                    .iter()
+                    .map(|(pi, values, e, own)| {
+                        let parent = &frontier[*pi];
+                        let loaded = &loaded;
+                        let knobs = &knobs;
+                        scope.spawn(move || {
+                            let t0 = std::time::Instant::now();
+                            let mut t = Tried {
+                                stage: stage.clone(),
+                                parent: (parent.tried != usize::MAX).then_some(parent.tried),
+                                knobs: knobs
+                                    .iter()
+                                    .zip(values)
+                                    .map(|((k, _), v)| (k.clone(), shown(v)))
+                                    .collect(),
+                                ..Default::default()
+                            };
+                            let node = match loaded.advance(&parent.branch, e, stage, stop) {
+                                Ok(b) => {
+                                    measure(stage, &b, &mut t);
+                                    Some(Node {
+                                        branch: b,
+                                        engine: e.clone(),
+                                        values: values.clone(),
+                                        tried: 0,
+                                        own: *own,
+                                    })
+                                }
+                                Err(err) => {
+                                    t.error = Some(err);
+                                    None
+                                }
+                            };
+                            t.ms = t0.elapsed().as_secs_f64() * 1e3;
+                            (t, node)
+                        })
+                    })
+                    .collect();
+                hs.into_iter()
+                    .map(|h| {
+                        h.join().unwrap_or_else(|_| {
+                            (Tried { error: Some("panicked".into()), ..Default::default() }, None)
+                        })
+                    })
+                    .collect()
+            });
+            children.extend(done);
+        }
+        let mut next: Vec<Node> = Vec::new();
+        for (t, node) in children {
+            tried.push(t);
+            if let Some(mut n) = node {
+                n.tried = tried.len() - 1;
+                next.push(n);
             }
-            screened_to = Some(wanted[s].clone());
         }
-    }
-    if a.stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed)) {
-        return Err("stopped".into());
-    }
-    let picked: Vec<EngineFile> = finalists.iter().map(|&i| engines[i].clone()).collect();
-    let mut best: Option<(usize, RunReport)> = None;
-    for (&i, (t, out)) in finalists.iter().zip(batch(&loaded, &picked, span, true, lanes)) {
-        let screen = tried[i].screen;
-        let ms = tried[i].ms;
-        tried[i] = Tried { knobs: std::mem::take(&mut tried[i].knobs), screen, ms: ms + t.ms, ..t };
-        let Some(out) = out else { continue };
-        if best
-            .as_ref()
-            .is_none_or(|(b, _)| rank(&tried[i]).total_cmp_key(&rank(&tried[*b])).is_lt())
-        {
-            best = Some((i, out));
+        next.sort_by(|x, y| rank(&tried[x.tried]).total_cmp_key(&rank(&tried[y.tried])));
+        if li >= cut_from || li + 1 == stages.len() {
+            let own = next.iter().position(|n| n.own).filter(|&k| k >= width);
+            let keep_own = own.map(|k| next.swap_remove(k));
+            next.truncate(width);
+            next.extend(keep_own);
         }
+        for n in &next {
+            tried[n.tried].kept = true;
+        }
+        if next.is_empty() {
+            let why: Vec<String> = tried.iter().filter_map(|t| t.error.clone()).take(3).collect();
+            return Err(format!("every candidate at `{stage}` failed: {}", why.join("; ")));
+        }
+        frontier = next;
     }
-    let (best, mut run) = best.ok_or_else(|| {
-        let why: Vec<String> = tried.iter().filter_map(|t| t.error.clone()).take(3).collect();
-        format!("every candidate failed: {}", why.join("; "))
-    })?;
+    let best = frontier.swap_remove(0);
+    let at = best.tried;
+    let mut run = loaded.conclude(best.branch, &best.engine, started)?;
     run.text =
-        knobs.iter().zip(&cands[best]).try_fold(run.text, |t, ((k, _), v)| set_knob(&t, k, v))?;
-    Ok(SearchReport { tried, best, screened_to, ms: started.elapsed().as_secs_f64() * 1e3, run })
+        knobs.iter().zip(&best.values).try_fold(run.text, |t, ((k, _), v)| set_knob(&t, k, v))?;
+    Ok(SearchReport { tried, best: at, width, ms: started.elapsed().as_secs_f64() * 1e3, run })
 }
 
 #[cfg(test)]

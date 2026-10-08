@@ -18,7 +18,7 @@ fn copy(from: &Path, to: &Path) {
 }
 
 #[test]
-fn search_tries_seeds_and_writes_the_best() {
+fn search_branches_seeds_and_writes_the_best() {
     let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
     let dir = std::env::temp_dir().join(format!("agentee-search-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -31,10 +31,11 @@ fn search_tries_seeds_and_writes_the_best() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let tried = v["search"]["tried"].as_array().unwrap();
-    assert_eq!(tried.len(), 4, "{tried:?}");
-    let full: Vec<&serde_json::Value> = tried.iter().filter(|t| t.get("total").is_some()).collect();
-    assert!((2..=3).contains(&full.len()), "{tried:?}");
-    assert!(tried[0].get("total").is_some(), "the current settings must get a full run");
+    let at = |stage: &str| tried.iter().filter(|t| t["stage"] == stage).count();
+    assert_eq!(at("place"), 4, "{tried:?}");
+    assert!(at("finish") >= 2 && at("finish") <= 3, "{tried:?}");
+    let own = tried.iter().find(|t| t["stage"] == "finish" && t["knobs"]["place.seed"] == "1");
+    assert!(own.is_some(), "the file's own settings must reach the end: {tried:?}");
     let best = &tried[v["search"]["best"].as_u64().unwrap() as usize];
     let seed = best["knobs"]["place.seed"].as_str().unwrap().to_string();
     let pcb = std::fs::read_to_string(dir.join("lna.pcb.toml")).unwrap();

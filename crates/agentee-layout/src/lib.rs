@@ -30,6 +30,7 @@ pub const PLANES: &str = "planes";
 pub const PLACE: &str = "place";
 pub const RETIRED_PLANS: &[&str] = &["detail", "escape", "tie", "global"];
 
+#[derive(Clone)]
 pub struct Model<'a> {
     pub board: &'a Board,
     pub schematic: &'a Schematic,
@@ -44,7 +45,7 @@ pub struct Model<'a> {
     pub global: Option<global::GlobalPlan>,
     pub detail: Option<detail::DetailPlan>,
     pub hot: Vec<placement::Hot>,
-    pub base: Option<negotiate::Base>,
+    pub base: Option<std::sync::Arc<negotiate::Base>>,
     pub hist: Option<Vec<f32>>,
     pub warm: Option<negotiate::Warm>,
     pub pass: usize,
@@ -53,7 +54,8 @@ pub struct Model<'a> {
 impl Model<'_> {
     pub fn ensure_base(&mut self, opts: &negotiate::Options) -> Result<(), String> {
         if self.base.is_none() {
-            self.base = Some(negotiate::Base::new(&self.layout, self.board, opts)?);
+            self.base =
+                Some(std::sync::Arc::new(negotiate::Base::new(&self.layout, self.board, opts)?));
         }
         Ok(())
     }
@@ -263,8 +265,8 @@ pub fn score_of(model: &Model) -> Score {
 type Snapshot =
     (usize, doc::Doc, Option<detail::DetailPlan>, Option<negotiate::Warm>, Option<Vec<f32>>, u32);
 
-struct Driver<'c, 'a> {
-    cfg: &'c Config<'a>,
+#[derive(Clone)]
+struct DriverState {
     doc: doc::Doc,
     bare: Option<(u64, Layout)>,
     reports: Vec<PhaseReport>,
@@ -272,6 +274,24 @@ struct Driver<'c, 'a> {
     discarded: Vec<(String, f64)>,
     search: negotiate::Spend,
     unfilled: bool,
+}
+
+struct Driver<'c, 'a> {
+    cfg: &'c Config<'a>,
+    st: DriverState,
+}
+
+impl std::ops::Deref for Driver<'_, '_> {
+    type Target = DriverState;
+    fn deref(&self) -> &DriverState {
+        &self.st
+    }
+}
+
+impl std::ops::DerefMut for Driver<'_, '_> {
+    fn deref_mut(&mut self) -> &mut DriverState {
+        &mut self.st
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -382,6 +402,336 @@ impl Driver<'_, '_> {
     }
 }
 
+impl<'c, 'a> Driver<'c, 'a> {
+    fn new(cfg: &'c Config<'a>) -> Self {
+        Driver {
+            cfg,
+            st: DriverState {
+                doc: cfg.doc.clone(),
+                bare: None,
+                reports: Vec::new(),
+                skipped: Vec::new(),
+                discarded: Vec::new(),
+                search: negotiate::Spend::default(),
+                unfilled: false,
+            },
+        }
+    }
+}
+
+impl Driver<'_, '_> {
+    fn begin(&mut self, model: &mut Model, has: &dyn Fn(&str) -> bool) -> Result<(), String> {
+        if has("global") || has("detail") {
+            for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
+                self.doc.strip(p);
+            }
+        }
+        if has("access") {
+            self.doc.strip(PLANES);
+        }
+        if self.doc.version() != self.cfg.doc.version() {
+            self.reload(model)?;
+        }
+        if has("finish") && !has("detail") {
+            model.detail = self.doc.section(ROUTE).map(route_from_section);
+        }
+        Ok(())
+    }
+
+    fn place_stage(&mut self, model: &mut Model, pass: u32) -> Result<(), String> {
+        let d = self;
+        let cfg = d.cfg;
+        let t0 = d.start("place");
+        model.pass = pass as usize;
+        let r = placement::Place.run(model, &cfg.engine);
+        let mut reload_ms = 0;
+        if let Some(plan) = &model.placement
+            && !plan.moves.is_empty()
+        {
+            d.doc.moves(&plan.moves);
+            if plan.under.is_empty() {
+                d.doc.strip(PLACE);
+            } else {
+                let mut s = doc::Section::default();
+                for u in &plan.under {
+                    if let Some((layer, from, width)) = &u.stub {
+                        s.track(&u.net, layer, Some(*width), &[*from, u.at]);
+                    }
+                    s.via(&u.net, u.at, &u.via);
+                }
+                d.doc.set(PLACE, s);
+            }
+            d.doc.board_texts(&plan.texts);
+            reload_ms = d.reload_unfilled(model)?;
+            let (moved, _) = model.layout.settle_labels(model.board);
+            if !moved.is_empty() {
+                d.doc.labels(&moved);
+                model.layout.apply_labels(&moved);
+                model.file = d.doc.file();
+            }
+        }
+        model.hot.clear();
+        d.done(model, r, t0, reload_ms);
+
+        Ok(())
+    }
+
+    fn access_stage(
+        &mut self,
+        model: &mut Model,
+        dopts: &negotiate::Options,
+    ) -> Result<(), String> {
+        let d = self;
+        let cfg = d.cfg;
+        let t0 = d.start("access");
+        let mut r = access::Access.run(model, &cfg.engine);
+        let mut reload_ms = 0;
+        if let Some(section) = planes_section(model) {
+            d.doc.set(PLANES, section);
+            reload_ms = d.reload(model)?;
+        } else if d.unfilled {
+            reload_ms = d.reload(model)?;
+        }
+        match model.ensure_base(dopts) {
+            Ok(()) => access::pin_access(model, &mut r, dopts),
+            Err(e) => r.failed.push(e),
+        }
+        d.done(model, r, t0, reload_ms);
+        Ok(())
+    }
+
+    fn global_stage(
+        &mut self,
+        model: &mut Model,
+        dopts: &negotiate::Options,
+    ) -> Result<(), String> {
+        if self.unfilled {
+            self.reload(model)?;
+        }
+        let t0 = self.start("global");
+        let r = match model.ensure_base(dopts) {
+            Ok(()) => global::Global.run(model, &self.cfg.engine),
+            Err(e) => PhaseReport { phase: "global".into(), failed: vec![e], ..Default::default() },
+        };
+        self.done(model, r, t0, 0);
+        Ok(())
+    }
+
+    fn detail_stage(
+        &mut self,
+        model: &mut Model,
+        dopts: &negotiate::Options,
+    ) -> Result<(), String> {
+        if self.unfilled {
+            self.reload(model)?;
+        }
+        self.step(model, &detail::Detail);
+        if let Some(x) = &model.detail {
+            self.search.absorb(&x.spend);
+        }
+        self.close_route(model, dopts)
+    }
+
+    fn close_route(&mut self, model: &mut Model, dopts: &negotiate::Options) -> Result<(), String> {
+        self.write_route(model)?;
+        for _ in 0..2 {
+            if self.stopped() || !repair(self, model, dopts)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn finish_stage(
+        &mut self,
+        model: &mut Model,
+        dopts: &negotiate::Options,
+    ) -> Result<(), String> {
+        let d = self;
+        let cfg = d.cfg;
+        agentee_core::layout::drop_floating();
+        let t0 = d.start("finish");
+        let mut reload_ms = d.reload(model)?;
+        let mut r = finish::Finish.run(model, &cfg.engine);
+        if r.changed {
+            reload_ms += d.write_route(model)?;
+            if finish::check_spread(model, &cfg.engine, &mut r) {
+                reload_ms += d.write_route(model)?;
+            }
+        }
+        let before = r.changed;
+        r.changed = false;
+        finish::tune(model, &mut r);
+        if r.changed {
+            reload_ms += d.write_route(model)?;
+        }
+        let tuned = r.changed;
+        r.changed = false;
+        finish::neck(model, &mut r);
+        finish::dedouble(model, &mut r);
+        finish::trim_pours(model, &mut r);
+        if r.changed {
+            reload_ms += d.write_route(model)?;
+        }
+        let mut joined = finish::close_joints(model, &cfg.engine, &mut r);
+        finish::drop_fragments(model, &mut r);
+        joined |= finish::close_joints(model, &cfg.engine, &mut r);
+        if joined || r.changed {
+            finish::dedouble(model, &mut r);
+            r.changed = true;
+            reload_ms += d.write_route(model)?;
+        }
+        if finish::sink_into_pours(model, &cfg.engine, &mut r) {
+            r.changed = true;
+            reload_ms += d.write_route(model)?;
+        }
+        let mut last = finish::widen(model, &cfg.engine, &mut r);
+        last |= finish::tidy_tracks(model, &mut r);
+        let kept = r.changed;
+        r.changed = false;
+        finish::drop_fragments(model, &mut r);
+        last |= r.changed;
+        r.changed |= kept;
+        if last {
+            r.changed = true;
+            reload_ms += d.write_route(model)?;
+        }
+        r.changed |= before || tuned;
+        d.done(model, r, t0, reload_ms);
+        for _ in 0..2 {
+            if d.stopped() || !repair(d, model, dopts)? {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn report(
+        mut self,
+        model: &mut Model,
+        started: std::time::Instant,
+    ) -> Result<RunReport, String> {
+        if self.unfilled {
+            self.reload(model)?;
+        }
+        let Driver { cfg, st: d } = self;
+        let score = score_of(model);
+        let mut stages: Vec<(String, f64)> = Vec::new();
+        for r in &d.reports {
+            match stages.iter_mut().find(|x| x.0 == r.phase) {
+                Some(x) => x.1 += r.ms as f64,
+                None => stages.push((r.phase.clone(), r.ms as f64)),
+            }
+        }
+        let time = TimeReport {
+            total_ms: ms_since(started),
+            reload_ms: d.reports.iter().map(|r| r.reload_ms as f64).sum(),
+            stages,
+            discarded: d.discarded,
+            search: d.search,
+        };
+        Ok(RunReport {
+            time,
+            phases: d.reports,
+            score,
+            skipped: d.skipped,
+            text: d.doc.write(&cfg.text)?,
+            constraints: model.constraints.clone(),
+            placement: model.placement.clone(),
+            access: model.access.clone(),
+            planes: model.planes.clone(),
+            global: model.global.clone(),
+            detail: model.detail.clone(),
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct Branch<'l> {
+    pub model: Model<'l>,
+    st: DriverState,
+}
+
+fn branch_config<'a>(
+    l: &Loaded,
+    engine: &EngineFile,
+    resolve: &'a dyn Fn(&LayoutFile) -> Layout,
+    stop: Option<&'a std::sync::atomic::AtomicBool>,
+) -> Config<'a> {
+    Config {
+        engine: engine.clone(),
+        from: None,
+        to: None,
+        only: None,
+        text: l.text.clone(),
+        doc: l.doc.clone(),
+        resolve,
+        watch: None,
+        stop,
+    }
+}
+
+impl<'l> Loaded<'l> {
+    pub fn root(&'l self, stages: &[String], engine: &EngineFile) -> Result<Branch<'l>, String> {
+        let resolve = |f: &LayoutFile| self.resolve(f);
+        let cfg = branch_config(self, engine, &resolve, None);
+        let mut model = self.model();
+        model.file.engine = Some(engine.clone());
+        model.layout.engine = engine.clone();
+        let mut d = Driver::new(&cfg);
+        let has = |s: &str| stages.iter().any(|x| x == s);
+        d.begin(&mut model, &has)?;
+        Ok(Branch { model, st: d.st })
+    }
+
+    pub fn advance(
+        &'l self,
+        parent: &Branch<'l>,
+        engine: &EngineFile,
+        stage: &str,
+        stop: Option<&std::sync::atomic::AtomicBool>,
+    ) -> Result<Branch<'l>, String> {
+        agentee_core::layout::keeping_floating(|| {
+            let resolve = |f: &LayoutFile| self.resolve(f);
+            let cfg = branch_config(self, engine, &resolve, stop);
+            let mut model = parent.model.clone();
+            model.file.engine = Some(engine.clone());
+            model.layout.engine = engine.clone();
+            let mut d = Driver { cfg: &cfg, st: parent.st.clone() };
+            let dopts = detail::options(engine);
+            match stage {
+                "constraints" => d.step(&mut model, &constraints::Constraints),
+                "place" => d.place_stage(&mut model, 0)?,
+                "access" => d.access_stage(&mut model, &dopts)?,
+                "global" => d.global_stage(&mut model, &dopts)?,
+                "detail" => d.detail_stage(&mut model, &dopts)?,
+                "finish" => d.finish_stage(&mut model, &dopts)?,
+                other => return Err(format!("no stage `{other}`")),
+            }
+            Ok(Branch { model, st: d.st })
+        })
+    }
+
+    pub fn conclude(
+        &'l self,
+        mut b: Branch<'l>,
+        engine: &EngineFile,
+        started: std::time::Instant,
+    ) -> Result<RunReport, String> {
+        let resolve = |f: &LayoutFile| self.resolve(f);
+        let cfg = branch_config(self, engine, &resolve, None);
+        let d = Driver { cfg: &cfg, st: b.st };
+        d.report(&mut b.model, started)
+    }
+}
+
+impl Branch<'_> {
+    pub fn score(&self) -> Score {
+        score_of(&self.model)
+    }
+}
+
 fn selected(cfg: &Config) -> Result<Vec<String>, String> {
     let wanted = cfg.engine.phases();
     let pick = |n: &str| -> Result<usize, String> {
@@ -408,30 +758,8 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let has = |s: &str| chosen.iter().any(|x| x == s);
     let routes = has("global") || has("detail");
     let started = std::time::Instant::now();
-    let mut d = Driver {
-        cfg,
-        doc: cfg.doc.clone(),
-        bare: None,
-        reports: Vec::new(),
-        skipped: Vec::new(),
-        discarded: Vec::new(),
-        search: negotiate::Spend::default(),
-        unfilled: false,
-    };
-    if routes {
-        for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
-            d.doc.strip(p);
-        }
-    }
-    if has("access") {
-        d.doc.strip(PLANES);
-    }
-    if d.doc.version() != cfg.doc.version() {
-        d.reload(model)?;
-    }
-    if has("finish") && !has("detail") {
-        model.detail = d.doc.section(ROUTE).map(route_from_section);
-    }
+    let mut d = Driver::new(cfg);
+    d.begin(model, &has)?;
     let dopts = detail::options(&cfg.engine);
     if has("constraints") {
         d.step(model, &constraints::Constraints);
@@ -451,53 +779,10 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             if pass > 0 && model.hot.is_empty() {
                 break;
             }
-            let t0 = d.start("place");
-            model.pass = pass as usize;
-            let r = placement::Place.run(model, &cfg.engine);
-            let mut reload_ms = 0;
-            if let Some(plan) = &model.placement
-                && !plan.moves.is_empty()
-            {
-                d.doc.moves(&plan.moves);
-                if plan.under.is_empty() {
-                    d.doc.strip(PLACE);
-                } else {
-                    let mut s = doc::Section::default();
-                    for u in &plan.under {
-                        if let Some((layer, from, width)) = &u.stub {
-                            s.track(&u.net, layer, Some(*width), &[*from, u.at]);
-                        }
-                        s.via(&u.net, u.at, &u.via);
-                    }
-                    d.doc.set(PLACE, s);
-                }
-                d.doc.board_texts(&plan.texts);
-                reload_ms = d.reload_unfilled(model)?;
-                let (moved, _) = model.layout.settle_labels(model.board);
-                if !moved.is_empty() {
-                    d.doc.labels(&moved);
-                    model.layout.apply_labels(&moved);
-                    model.file = d.doc.file();
-                }
-            }
-            model.hot.clear();
-            d.done(model, r, t0, reload_ms);
+            d.place_stage(model, pass)?;
         }
         if has("access") && !d.stopped() {
-            let t0 = d.start("access");
-            let mut r = access::Access.run(model, &cfg.engine);
-            let mut reload_ms = 0;
-            if let Some(section) = planes_section(model) {
-                d.doc.set(PLANES, section);
-                reload_ms = d.reload(model)?;
-            } else if d.unfilled {
-                reload_ms = d.reload(model)?;
-            }
-            match model.ensure_base(&dopts) {
-                Ok(()) => access::pin_access(model, &mut r, &dopts),
-                Err(e) => r.failed.push(e),
-            }
-            d.done(model, r, t0, reload_ms);
+            d.access_stage(model, &dopts)?;
         }
         if routes {
             if d.unfilled {
@@ -564,100 +849,12 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         }
     }
     if has("detail") {
-        d.write_route(model)?;
-        for _ in 0..2 {
-            if d.stopped() || !repair(&mut d, model, &dopts)? {
-                break;
-            }
-        }
+        d.close_route(model, &dopts)?;
     }
     if has("finish") && !d.stopped() {
-        agentee_core::layout::drop_floating();
-        let t0 = d.start("finish");
-        let mut reload_ms = d.reload(model)?;
-        let mut r = finish::Finish.run(model, &cfg.engine);
-        if r.changed {
-            reload_ms += d.write_route(model)?;
-            if finish::check_spread(model, &cfg.engine, &mut r) {
-                reload_ms += d.write_route(model)?;
-            }
-        }
-        let before = r.changed;
-        r.changed = false;
-        finish::tune(model, &mut r);
-        if r.changed {
-            reload_ms += d.write_route(model)?;
-        }
-        let tuned = r.changed;
-        r.changed = false;
-        finish::neck(model, &mut r);
-        finish::dedouble(model, &mut r);
-        finish::trim_pours(model, &mut r);
-        if r.changed {
-            reload_ms += d.write_route(model)?;
-        }
-        let mut joined = finish::close_joints(model, &cfg.engine, &mut r);
-        finish::drop_fragments(model, &mut r);
-        joined |= finish::close_joints(model, &cfg.engine, &mut r);
-        if joined || r.changed {
-            finish::dedouble(model, &mut r);
-            r.changed = true;
-            reload_ms += d.write_route(model)?;
-        }
-        if finish::sink_into_pours(model, &cfg.engine, &mut r) {
-            r.changed = true;
-            reload_ms += d.write_route(model)?;
-        }
-        let mut last = finish::widen(model, &cfg.engine, &mut r);
-        last |= finish::tidy_tracks(model, &mut r);
-        let kept = r.changed;
-        r.changed = false;
-        finish::drop_fragments(model, &mut r);
-        last |= r.changed;
-        r.changed |= kept;
-        if last {
-            r.changed = true;
-            reload_ms += d.write_route(model)?;
-        }
-        r.changed |= before || tuned;
-        d.done(model, r, t0, reload_ms);
-        for _ in 0..2 {
-            if d.stopped() || !repair(&mut d, model, &dopts)? {
-                break;
-            }
-        }
+        d.finish_stage(model, &dopts)?;
     }
-    if d.unfilled {
-        d.reload(model)?;
-    }
-    let score = score_of(model);
-    let mut stages: Vec<(String, f64)> = Vec::new();
-    for r in &d.reports {
-        match stages.iter_mut().find(|x| x.0 == r.phase) {
-            Some(x) => x.1 += r.ms as f64,
-            None => stages.push((r.phase.clone(), r.ms as f64)),
-        }
-    }
-    let time = TimeReport {
-        total_ms: ms_since(started),
-        reload_ms: d.reports.iter().map(|r| r.reload_ms as f64).sum(),
-        stages,
-        discarded: d.discarded,
-        search: d.search,
-    };
-    Ok(RunReport {
-        time,
-        phases: d.reports,
-        score,
-        skipped: d.skipped,
-        text: d.doc.write(&cfg.text)?,
-        constraints: model.constraints.clone(),
-        placement: model.placement.clone(),
-        access: model.access.clone(),
-        planes: model.planes.clone(),
-        global: model.global.clone(),
-        detail: model.detail.clone(),
-    })
+    d.report(model, started)
 }
 
 fn route_reps(
