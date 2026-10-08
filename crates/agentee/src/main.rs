@@ -449,6 +449,32 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Find the smallest rectangular board the layout fits on: tries outlines of several aspect ratios in memory (the current placement scaled, edge parts slid along their edge, the rest legalised, routing demand estimated), then checks the smallest with the global router
+    Fit {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// tight, balanced or spread: the gap between parts and the routing room to keep
+        #[arg(long, default_value = "balanced")]
+        strategy: String,
+        /// Width over height to try, repeatable; default the current one and 13 from 0.42 to 2.38
+        #[arg(long)]
+        aspect: Vec<f64>,
+        /// Hold the width at this many mm
+        #[arg(long)]
+        width: Option<f64>,
+        /// Hold the height at this many mm
+        #[arg(long)]
+        height: Option<f64>,
+        /// How many of the smallest sizes to check with the global router, 0 to skip
+        #[arg(long, default_value_t = 3)]
+        verify: usize,
+        /// Write the size into the board's [outline] and the placement into the layout
+        #[arg(long)]
+        write: bool,
+        #[arg(long)]
+        json: bool,
+    },
     /// Reassign a chip's swappable I/O (same bank, pairs as pairs, clock pins kept on clock pins) to untangle the ratsnest
     Pinswap {
         name: String,
@@ -1014,6 +1040,25 @@ fn run(cli: Cli) -> Result<bool, String> {
                 print!("{}", r["time_table"].as_str().unwrap_or(""));
             }
             Ok(true)
+        }
+        Cmd::Fit { name, project, strategy, aspect, width, height, verify, write, json } => {
+            let ask = agentee_layout::fit::Ask {
+                strategy: agentee_layout::fit::Strategy::parse(&strategy)?,
+                verify,
+                aspects: aspect,
+                width,
+                height,
+            };
+            let r = ops::fit(&project, &name, &ops::FitArgs { ask, write })?;
+            if json {
+                print_json(&r);
+            } else {
+                print!("{}", r["table"].as_str().unwrap_or(""));
+                for f in r["written"].as_array().into_iter().flatten() {
+                    println!("wrote {}", f.as_str().unwrap_or(""));
+                }
+            }
+            Ok(r.get("best").is_some_and(|b| !b.is_null()))
         }
         Cmd::Pinswap { name, part, project, seed, write } => {
             print_json(&ops::pinswap(&project, &name, &part, seed, write)?);

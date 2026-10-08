@@ -54,6 +54,19 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "fit",
+            "description": "Find the smallest rectangular board a layout fits on. Loads the layout once and tries outlines of many aspect ratios in memory: the current placement scaled to the new size, edge connectors slid along their edge, holes kept in their corners, the rest legalised, routing demand estimated per tile; then checks the smallest sizes with the global router. strategy tight, balanced or spread sets the gap between parts and the routing room kept. width or height holds one side. write sets the board's [outline] size and writes the placement. Place the layout first: the search starts from its current arrangement.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout" },
+                "strategy": { "type": "string", "enum": ["tight", "balanced", "spread"] },
+                "aspects": { "type": "array", "items": { "type": "number" }, "description": "width over height ratios to try" },
+                "width": { "type": "number", "description": "hold the width, mm" },
+                "height": { "type": "number", "description": "hold the height, mm" },
+                "verify": { "type": "integer", "description": "how many of the smallest sizes to check with the global router (default 3, 0 skips)" },
+                "write": { "type": "boolean" },
+            }), &["name"]),
+        },
+        {
             "name": "stackups",
             "description": "Stackup presets for a board's `stackup.preset`: JLCPCB and PCBWay builds and generic HDI builds with layer thicknesses and er. Filter the list, or give name to get one preset's layers.",
             "inputSchema": s(json!({
@@ -408,6 +421,27 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 },
             )?;
             Ok(ok(vec![text(pretty(&r))]))
+        }
+        "fit" => {
+            let ask = agentee_layout::fit::Ask {
+                strategy: agentee_layout::fit::Strategy::parse(
+                    arg(a, "strategy").unwrap_or("balanced"),
+                )?,
+                verify: a.get("verify").and_then(Value::as_u64).map_or(3, |n| n as usize),
+                aspects: a
+                    .get("aspects")
+                    .and_then(Value::as_array)
+                    .map(|v| v.iter().filter_map(Value::as_f64).collect())
+                    .unwrap_or_default(),
+                width: a.get("width").and_then(Value::as_f64),
+                height: a.get("height").and_then(Value::as_f64),
+            };
+            let r = ops::fit(
+                root,
+                arg(a, "name").ok_or("name is required")?,
+                &ops::FitArgs { ask, write: flag(a, "write") },
+            )?;
+            Ok(ok(vec![text(r["table"].as_str().unwrap_or("").to_string())]))
         }
         "stackups" => {
             if let Some(n) = arg(a, "name") {

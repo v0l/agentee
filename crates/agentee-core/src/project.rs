@@ -1072,6 +1072,7 @@ fn push<T>(e: &mut Entry<T>, severity: Severity, at: &str, message: String) {
     });
 }
 
+#[derive(Clone)]
 pub struct LayoutInputs {
     pub path: PathBuf,
     pub board: Board,

@@ -1969,6 +1969,52 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
     Ok(v)
 }
 
+pub struct FitArgs {
+    pub ask: agentee_layout::fit::Ask,
+    pub write: bool,
+}
+
+pub fn fit(root: &Path, name: &str, a: &FitArgs) -> Result<Value, String> {
+    let p = load(root)?;
+    let i = layout_index(&p, name)?;
+    let path = p.layouts[i].path.clone();
+    let inputs = p.layout_inputs(i)?;
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let r = agentee_layout::fit::fit(&inputs, &text, &a.ask)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut v = serde_json::to_value(&r).unwrap_or_default();
+    v["table"] = json!(r.table());
+    if a.write
+        && let Some(best) = r.best_trial()
+    {
+        let board = &p.layouts[i].item.board;
+        let entry = p.boards.iter().find(|b| &b.name == board).ok_or("board is missing")?;
+        let src = std::fs::read_to_string(&entry.path)
+            .map_err(|e| format!("{}: {e}", entry.path.display()))?;
+        let mut doc: toml_edit::DocumentMut = src.parse().map_err(|e| format!("{e}"))?;
+        let outline = doc
+            .get_mut("outline")
+            .and_then(|o| o.as_table_like_mut())
+            .filter(|o| o.get("size").is_some())
+            .ok_or("only a board with an [outline] size can be resized, edit the points by hand")?;
+        let mut size = toml_edit::Array::new();
+        size.push(best.width);
+        size.push(best.height);
+        outline.insert("size", toml_edit::value(size));
+        std::fs::write(&entry.path, doc.to_string())
+            .map_err(|e| format!("{}: {e}", entry.path.display()))?;
+        let bare = agentee_layout::start::reset(
+            &text,
+            &agentee_layout::start::Reset { routing: true, ..Default::default() },
+        )?;
+        let placed = agentee_layout::write_moves(&bare, &best.moves)?;
+        std::fs::write(&path, placed).map_err(|e| format!("{}: {e}", path.display()))?;
+        silk(root, name, false, true)?;
+        v["written"] = json!([entry.path.display().to_string(), path.display().to_string()]);
+    }
+    Ok(v)
+}
+
 pub fn pinswap(
     root: &Path,
     name: &str,

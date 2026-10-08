@@ -34,38 +34,40 @@ pub struct PlacePlan {
 }
 
 #[derive(Clone, Debug)]
-struct Cell {
-    reference: String,
-    fixed: bool,
-    chained: bool,
-    under: bool,
-    at: P,
-    rotation: f64,
-    bottom: bool,
-    through: bool,
-    box_off: P,
-    half: [f64; 2],
-    area: f64,
-    pins: Vec<(usize, P)>,
-    numbers: Vec<String>,
-    pin_count: usize,
+pub(crate) struct Cell {
+    pub(crate) reference: String,
+    pub(crate) fixed: bool,
+    pub(crate) chained: bool,
+    pub(crate) under: bool,
+    pub(crate) at: P,
+    pub(crate) rotation: f64,
+    pub(crate) bottom: bool,
+    pub(crate) through: bool,
+    pub(crate) box_off: P,
+    pub(crate) half: [f64; 2],
+    pub(crate) area: f64,
+    pub(crate) pins: Vec<(usize, P)>,
+    pub(crate) numbers: Vec<String>,
+    pub(crate) pin_count: usize,
 }
 
-struct Net {
-    weight: f64,
-    pins: Vec<(usize, P)>,
+#[derive(Clone)]
+pub(crate) struct Net {
+    pub(crate) weight: f64,
+    pub(crate) pins: Vec<(usize, P)>,
 }
 
-struct Board {
-    cells: Vec<Cell>,
-    nets: Vec<Net>,
-    weight: HashMap<usize, f64>,
-    outline: Vec<P>,
-    bounds: Bounds,
-    keepouts: Vec<Vec<P>>,
+#[derive(Clone)]
+pub(crate) struct Board {
+    pub(crate) cells: Vec<Cell>,
+    pub(crate) nets: Vec<Net>,
+    pub(crate) weight: HashMap<usize, f64>,
+    pub(crate) outline: Vec<P>,
+    pub(crate) bounds: Bounds,
+    pub(crate) keepouts: Vec<Vec<P>>,
 }
 
-fn rotate_cell(c: &mut Cell, delta: f64) {
+pub(crate) fn rotate_cell(c: &mut Cell, delta: f64) {
     if delta.rem_euclid(360.0).abs() < 1e-9 {
         return;
     }
@@ -121,7 +123,7 @@ fn bga_decaps<'a>(model: &'a Model) -> Vec<&'a crate::constraints::Decap> {
         .collect()
 }
 
-fn build(model: &Model) -> Board {
+pub(crate) fn build(model: &Model) -> Board {
     let movable_bottom: Vec<String> = bga_decaps(model).iter().map(|d| d.cap.clone()).collect();
     let l = &model.layout;
     let b = model.board;
@@ -248,7 +250,7 @@ fn build(model: &Model) -> Board {
     }
 }
 
-fn moves_of(bd: &Board) -> Vec<Move> {
+pub(crate) fn moves_of(bd: &Board) -> Vec<Move> {
     bd.cells
         .iter()
         .filter(|c| !c.fixed)
@@ -277,7 +279,7 @@ fn apply_plan(bd: &mut Board, plan: &PlacePlan) {
     }
 }
 
-fn hpwl(bd: &Board) -> f64 {
+pub(crate) fn hpwl(bd: &Board) -> f64 {
     bd.nets
         .iter()
         .map(|n| {
@@ -513,13 +515,13 @@ fn global_place(
     Ok((note, failed))
 }
 
-fn rect_of(c: &Cell, at: P, gap: f64) -> [f64; 4] {
+pub(crate) fn rect_of(c: &Cell, at: P, gap: f64) -> [f64; 4] {
     let cx = at[0] + c.box_off[0];
     let cy = at[1] + c.box_off[1];
     [cx - c.half[0] - gap, cy - c.half[1] - gap, cx + c.half[0] + gap, cy + c.half[1] + gap]
 }
 
-fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
+pub(crate) fn overlaps(a: [f64; 4], b: [f64; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
@@ -927,11 +929,46 @@ fn face(bd: &mut Board) -> usize {
     turned
 }
 
-fn legalise(
+const BIN: f64 = 2.0;
+const NEAR_RINGS: usize = 15;
+const CONTACTS: usize = 24;
+
+#[derive(Default)]
+struct Taken {
+    rects: Vec<([f64; 4], u8)>,
+    bins: HashMap<(i64, i64), Vec<usize>>,
+}
+
+impl Taken {
+    fn span(r: [f64; 4]) -> impl Iterator<Item = (i64, i64)> {
+        let b = |v: f64| (v / BIN).floor() as i64;
+        let (x0, y0, x1, y1) = (b(r[0]), b(r[1]), b(r[2]), b(r[3]));
+        (y0..=y1).flat_map(move |y| (x0..=x1).map(move |x| (x, y)))
+    }
+
+    fn add(&mut self, r: [f64; 4], side: u8) {
+        let k = self.rects.len();
+        self.rects.push((r, side));
+        for c in Self::span(r) {
+            self.bins.entry(c).or_default().push(k);
+        }
+    }
+
+    fn hits(&self, r: [f64; 4], side: u8) -> bool {
+        Self::span(r).any(|c| {
+            self.bins.get(&c).is_some_and(|v| {
+                v.iter().any(|&k| self.rects[k].1 & side != 0 && overlaps(r, self.rects[k].0))
+            })
+        })
+    }
+}
+
+pub(crate) fn legalise(
     model: &Model,
     bd: &mut Board,
     grow: &HashMap<usize, f64>,
     spacing: f64,
+    first_failure: bool,
 ) -> (String, Vec<String>) {
     let edge = model.board.rules.min_copper_to_edge.to_mm().max(0.3);
     let keep: Vec<Bounds> = bd
@@ -966,18 +1003,34 @@ fn legalise(
             1
         }
     };
-    let mut placed: Vec<([f64; 4], u8)> = (0..bd.cells.len())
-        .filter(|&i| held(&bd.cells[i]))
-        .map(|i| (rect_of(&bd.cells[i], bd.cells[i].at, gap_of(i)), side(&bd.cells[i])))
-        .collect();
+    let mut placed = Taken::default();
+    for i in (0..bd.cells.len()).filter(|&i| held(&bd.cells[i])) {
+        placed.add(rect_of(&bd.cells[i], bd.cells[i].at, gap_of(i)), side(&bd.cells[i]));
+    }
     let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !held(&bd.cells[i])).collect();
     order.sort_by(|&a, &b| {
         let (ca, cb) = (&bd.cells[a], &bd.cells[b]);
         cb.chained.cmp(&ca.chained).then(cb.area.total_cmp(&ca.area))
     });
+    let o = &bd.outline;
+    let boxed = (o.len() == 4
+        && (0..4).all(|k| {
+            let (a, b) = (o[k], o[(k + 1) % 4]);
+            (a[0] - b[0]).abs() < 1e-9 || (a[1] - b[1]).abs() < 1e-9
+        }))
+    .then(|| {
+        let mut b = Bounds::EMPTY;
+        o.iter().for_each(|q| b.add(*q));
+        b
+    });
     let inside = |r: [f64; 4]| {
+        if let Some(b) = boxed {
+            return r[0] >= b.min[0] + edge
+                && r[1] >= b.min[1] + edge
+                && r[2] <= b.max[0] - edge
+                && r[3] <= b.max[1] - edge;
+        }
         let corners = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
-        let o = &bd.outline;
         corners.iter().all(|q| geom::point_in_polygon(*q, o))
             && (0..o.len()).all(|e| {
                 let (a, b) = (o[e], o[(e + 1) % o.len()]);
@@ -990,31 +1043,68 @@ fn legalise(
     let mut moved = 0.0;
     for &i in &order {
         let want = bd.cells[i].at;
+        let rots: &[f64] = if bd.cells[i].chained { &[0.0] } else { &[0.0, 90.0] };
+        let turned: Vec<Cell> = rots
+            .iter()
+            .map(|&rot| {
+                let mut c = bd.cells[i].clone();
+                rotate_cell(&mut c, rot);
+                c
+            })
+            .collect();
+        let fits = |c: &Cell, at: P, gap: f64| {
+            let rc = rect_of(c, at, gap);
+            let bare = rect_of(c, at, 0.0);
+            (inside(bare)
+                && !placed.hits(rc, side(c))
+                && !keep.iter().any(|k| overlaps(bare, [k.min[0], k.min[1], k.max[0], k.max[1]])))
+            .then_some(rc)
+        };
         let mut found = None;
-        'search: for (ring, gap) in (0..400)
-            .map(|r| (r, gap_of(i) + spacing))
-            .chain((0..400).map(|r| (r, spacing.min(SPACING))))
-        {
-            let r = ring as f64 * 0.1;
-            let steps = if ring == 0 { 1 } else { (ring * 8).min(160) };
-            for k in 0..steps {
-                let a = k as f64 / steps as f64 * std::f64::consts::TAU;
-                let at = [want[0] + r * a.cos(), want[1] + r * a.sin()];
-                let rots: &[f64] = if bd.cells[i].chained { &[0.0] } else { &[0.0, 90.0] };
-                for &rot in rots {
-                    let mut c = bd.cells[i].clone();
-                    rotate_cell(&mut c, rot);
-                    let rc = rect_of(&c, at, gap);
-                    let bare = rect_of(&c, at, 0.0);
-                    if !inside(bare)
-                        || placed.iter().any(|p| p.1 & side(&c) != 0 && overlaps(rc, p.0))
-                        || keep
-                            .iter()
-                            .any(|k| overlaps(bare, [k.min[0], k.min[1], k.max[0], k.max[1]]))
-                    {
-                        continue;
+        'search: for gap in [gap_of(i) + spacing, spacing.min(SPACING)] {
+            for ring in 0..NEAR_RINGS {
+                let r = ring as f64 * 0.1;
+                let steps = if ring == 0 { 1 } else { (ring * 8).min(160) };
+                for k in 0..steps {
+                    let a = k as f64 / steps as f64 * std::f64::consts::TAU;
+                    let at = [want[0] + r * a.cos(), want[1] + r * a.sin()];
+                    for (c, &rot) in turned.iter().zip(rots) {
+                        if let Some(rc) = fits(c, at, gap) {
+                            found = Some((at, rot, rc));
+                            break 'search;
+                        }
                     }
-                    found = Some((at, rot, rc));
+                }
+            }
+            let mut near: Vec<&[f64; 4]> = placed.rects.iter().map(|r| &r.0).collect();
+            let mid = |r: &[f64; 4]| [(r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0];
+            near.sort_by(|a, b| geom::dist(mid(a), want).total_cmp(&geom::dist(mid(b), want)));
+            near.truncate(CONTACTS);
+            let mut spots: Vec<(f64, P, usize)> = Vec::new();
+            for (ti, c) in turned.iter().enumerate() {
+                let (hw, hh) = (c.half[0] + gap + 1e-3, c.half[1] + gap + 1e-3);
+                let box_want = [want[0] + c.box_off[0], want[1] + c.box_off[1]];
+                let mut xs = vec![box_want[0]];
+                let mut ys = vec![box_want[1]];
+                if let Some(b) = boxed {
+                    xs.extend([b.min[0] + edge + c.half[0], b.max[0] - edge - c.half[0]]);
+                    ys.extend([b.min[1] + edge + c.half[1], b.max[1] - edge - c.half[1]]);
+                }
+                for r in &near {
+                    xs.extend([r[0] - hw, r[2] + hw]);
+                    ys.extend([r[1] - hh, r[3] + hh]);
+                }
+                for &x in &xs {
+                    for &y in &ys {
+                        let at = [x - c.box_off[0], y - c.box_off[1]];
+                        spots.push((geom::dist(at, want), at, ti));
+                    }
+                }
+            }
+            spots.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for (_, at, ti) in spots {
+                if let Some(rc) = fits(&turned[ti], at, gap) {
+                    found = Some((at, rots[ti], rc));
                     break 'search;
                 }
             }
@@ -1024,9 +1114,14 @@ fn legalise(
                 moved += geom::dist(at, want);
                 rotate_cell(&mut bd.cells[i], rot);
                 bd.cells[i].at = at;
-                placed.push((rc, side(&bd.cells[i])));
+                placed.add(rc, side(&bd.cells[i]));
             }
-            None => failed.push(format!("{}: no free spot", bd.cells[i].reference)),
+            None => {
+                failed.push(format!("{}: no free spot", bd.cells[i].reference));
+                if first_failure {
+                    break;
+                }
+            }
         }
     }
     (
@@ -1127,7 +1222,7 @@ impl Phase for Place {
         if turned > 0 {
             report.notes.push(format!("{turned} parts turned to face what they connect to"));
         }
-        let (note, failed) = legalise(model, &mut bd, &grow, spread.spacing);
+        let (note, failed) = legalise(model, &mut bd, &grow, spread.spacing, false);
         report.notes.push(note);
         report.failed.extend(failed);
         report.changed = true;

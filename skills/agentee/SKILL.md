@@ -140,6 +140,10 @@ Order of work, each stage passing check before the next:
    for anything with many connections, and each takes `--dry-run`:
    - `agentee place NAME` places every part (`--parts 'U*'`, `--keep-placed`, `--seed N`). It keeps
      parts in different domains a barrier apart and clear of copper it is not moving.
+   - `agentee fit NAME` finds the smallest board the placed layout fits on, per aspect ratio,
+     checked with the global router; `--strategy tight|balanced|spread` trades size for routing
+     room, `--width` or `--height` holds a side, `--write` resizes the board and writes the
+     placement. Use it instead of shrinking the outline by hand and replacing.
    - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
    - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via. A pad with a
      via close by, or whose pour already joins a plated hole of its net beside it, is left alone.
@@ -384,7 +388,7 @@ and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas
 `list_items`, `show_item`, `render_item` (returns the PNG inline, takes `focus`, `context`,
 `region` and `rulers`), `stackups`, `run_sim`, `sparam`, `field_solve`, `impedance`,
 `trace_width`, `serpentine`, `place`, `route`, `tie`, `fill`, `tune`, `neck`, `silk`,
-`testpoints`, `layout`, `parts`, `kicad_search`, `import_kicad_symbol`,
+`testpoints`, `layout`, `fit`, `parts`, `kicad_search`, `import_kicad_symbol`,
 `import_kicad_footprint`, `new_item`, `models`, `fab`, `export`, `edit`. `edit` takes `target`
 (`sch`, `pcb` or `board`), `item`, and `commands`: the same batch as `agentee edit`, one command
 per line. Send `commands = "help"` for the list.

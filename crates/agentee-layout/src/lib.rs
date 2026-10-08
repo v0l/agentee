@@ -3,6 +3,7 @@ pub mod constraints;
 pub mod detail;
 pub mod escape;
 pub mod finish;
+pub mod fit;
 pub mod flow;
 pub mod global;
 pub mod negotiate;
@@ -106,18 +107,14 @@ pub fn run_text(
     agentee_core::layout::keeping_floating(|| run_loaded(inputs, text, a))
 }
 
-fn run_loaded(
-    inputs: &agentee_core::project::LayoutInputs,
-    text: &str,
-    a: &Run,
-) -> Result<RunReport, String> {
+pub(crate) fn resolver<'a>(
+    inputs: &'a agentee_core::project::LayoutInputs,
+    heat: Vec<(String, f64)>,
+) -> impl Fn(&str) -> Result<(LayoutFile, Layout), String> + 'a {
     let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
         inputs.footprints.iter().map(|(n, f)| (n.as_str(), f)).collect();
     let dir = inputs.path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
-    let first: LayoutFile =
-        agentee_core::project::parse(text).map_err(|(at, m)| format!("{at}: {m}"))?;
-    let heat = agentee_core::place::thermal_heat(&inputs.sims, &first.name);
-    let resolve = |t: &str| -> Result<(LayoutFile, Layout), String> {
+    move |t: &str| -> Result<(LayoutFile, Layout), String> {
         let f: LayoutFile =
             agentee_core::project::parse(t).map_err(|(at, m)| format!("{at}: {m}"))?;
         let cx = agentee_core::layout::Context {
@@ -130,7 +127,25 @@ fn run_loaded(
         let mut d = agentee_core::diag::Diags::new(&f.name);
         let resolved = agentee_core::layout::without_checks(|| f.resolve(&cx, &mut d));
         Ok((f, resolved))
-    };
+    }
+}
+
+pub(crate) fn heat_of(
+    inputs: &agentee_core::project::LayoutInputs,
+    text: &str,
+) -> Result<Vec<(String, f64)>, String> {
+    let first: LayoutFile =
+        agentee_core::project::parse(text).map_err(|(at, m)| format!("{at}: {m}"))?;
+    Ok(agentee_core::place::thermal_heat(&inputs.sims, &first.name))
+}
+
+fn run_loaded(
+    inputs: &agentee_core::project::LayoutInputs,
+    text: &str,
+    a: &Run,
+) -> Result<RunReport, String> {
+    let heat = heat_of(inputs, text)?;
+    let resolve = resolver(inputs, heat.clone());
     let (file, layout) = resolve(text)?;
     let keepouts: Vec<Vec<P>> = file
         .place
