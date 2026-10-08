@@ -1,6 +1,5 @@
-use crate::{Run, RunReport, run_text};
+use crate::{Loaded, Run, RunReport, load, run_doc};
 use agentee_core::engine::{EngineFile, SearchFile, knob_path, stage_of};
-use agentee_core::layout::LayoutFile;
 use agentee_core::project::LayoutInputs;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -131,6 +130,28 @@ fn set_knob(text: &str, key: &str, value: &toml::Value) -> Result<String, String
     Ok(doc.to_string())
 }
 
+fn tuned(
+    engine: &EngineFile,
+    knobs: &[(String, Vec<toml::Value>)],
+    c: &[toml::Value],
+) -> Result<EngineFile, String> {
+    let mut v = toml::Value::try_from(engine).map_err(|e| e.to_string())?;
+    for ((key, _), value) in knobs.iter().zip(c) {
+        let path = knob_path(key);
+        let (last, parents) = path.split_last().ok_or("an empty knob")?;
+        let mut node = &mut v;
+        for k in parents {
+            let table =
+                node.as_table_mut().ok_or_else(|| format!("`{key}` runs through a value"))?;
+            node = table.entry(k.clone()).or_insert_with(|| toml::Value::Table(Default::default()));
+        }
+        node.as_table_mut()
+            .ok_or_else(|| format!("`{key}` runs through a value"))?
+            .insert(last.clone(), value.clone());
+    }
+    v.try_into().map_err(|e: toml::de::Error| format!("engine settings: {}", e.message()))
+}
+
 fn edit_value(v: &toml::Value) -> Result<toml_edit::Value, String> {
     Ok(match v {
         toml::Value::String(s) => s.as_str().into(),
@@ -217,7 +238,7 @@ struct Span<'a> {
     stop: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
-fn evaluate(inputs: &LayoutInputs, text: &str, a: Span, full: bool) -> (Tried, Option<RunReport>) {
+fn evaluate(l: &Loaded, engine: &EngineFile, a: Span, full: bool) -> (Tried, Option<RunReport>) {
     let t0 = std::time::Instant::now();
     let r = Run {
         from: a.from.map(str::to_string),
@@ -227,7 +248,12 @@ fn evaluate(inputs: &LayoutInputs, text: &str, a: Span, full: bool) -> (Tried, O
         stop: a.stop,
     };
     let mut tried = Tried::default();
-    let out = match run_text(inputs, text, &r) {
+    let mut doc = l.doc.clone();
+    doc.base.engine = Some(engine.clone());
+    let mut model = l.model();
+    model.file.engine = Some(engine.clone());
+    model.layout.engine = engine.clone();
+    let out = match agentee_core::layout::keeping_floating(|| run_doc(l, doc, model, &r)) {
         Ok(out) => out,
         Err(e) => {
             tried.error = Some(e);
@@ -248,17 +274,17 @@ fn evaluate(inputs: &LayoutInputs, text: &str, a: Span, full: bool) -> (Tried, O
 }
 
 fn batch(
-    inputs: &LayoutInputs,
-    texts: &[String],
+    l: &Loaded,
+    engines: &[EngineFile],
     a: Span,
     full: bool,
     lanes: usize,
 ) -> Vec<(Tried, Option<RunReport>)> {
-    let mut out = Vec::with_capacity(texts.len());
-    for chunk in texts.chunks(lanes.max(1)) {
+    let mut out = Vec::with_capacity(engines.len());
+    for chunk in engines.chunks(lanes.max(1)) {
         let done: Vec<(Tried, Option<RunReport>)> = std::thread::scope(|scope| {
             let hs: Vec<_> =
-                chunk.iter().map(|t| scope.spawn(move || evaluate(inputs, t, a, full))).collect();
+                chunk.iter().map(|e| scope.spawn(move || evaluate(l, e, a, full))).collect();
             hs.into_iter()
                 .map(|h| {
                     h.join().unwrap_or_else(|_| {
@@ -282,9 +308,8 @@ pub fn search(
         return Err("search runs a range of stages, not --only".into());
     }
     let started = std::time::Instant::now();
-    let file: LayoutFile =
-        agentee_core::project::parse(text).map_err(|(at, m)| format!("{at}: {m}"))?;
-    let engine = file.engine.clone().unwrap_or_default();
+    let loaded = load(inputs, text)?;
+    let engine = loaded.file.engine.clone().unwrap_or_default();
     let sf: SearchFile = engine.search.clone().unwrap_or_default();
     let wanted = engine.phases();
     let pos = |n: &str| -> Result<usize, String> {
@@ -325,12 +350,8 @@ pub fn search(
         .map(|(k, pool)| current(&engine, k).unwrap_or_else(|| pool[0].clone()))
         .collect();
     let cands = candidates(&knobs, base, tries, sf.seed.unwrap_or(1));
-    let texts: Vec<String> = cands
-        .iter()
-        .map(|c| {
-            knobs.iter().zip(c).try_fold(text.to_string(), |t, ((k, _), v)| set_knob(&t, k, v))
-        })
-        .collect::<Result<_, _>>()?;
+    let engines: Vec<EngineFile> =
+        cands.iter().map(|c| tuned(&engine, &knobs, c)).collect::<Result<_, _>>()?;
     let mut tried: Vec<Tried> = cands
         .iter()
         .map(|c| Tried {
@@ -344,7 +365,7 @@ pub fn search(
 
     let screen_at = sf.screen.as_deref().unwrap_or(DEFAULT_SCREEN);
     let screen_last = pos(screen_at).ok().filter(|&s| s >= first && s < last);
-    let mut finalists: Vec<usize> = (0..texts.len()).collect();
+    let mut finalists: Vec<usize> = (0..engines.len()).collect();
     let mut screened_to = None;
     if let Some(s) = screen_last {
         let late =
@@ -363,8 +384,8 @@ pub fn search(
         }
         if groups.len() > keep {
             let cheap = Span { to: Some(wanted[s].as_str()), ..span };
-            let lead: Vec<String> = groups.iter().map(|(_, m)| texts[m[0]].clone()).collect();
-            let outs = batch(inputs, &lead, cheap, false, lanes * 2);
+            let lead: Vec<EngineFile> = groups.iter().map(|(_, m)| engines[m[0]].clone()).collect();
+            let outs = batch(&loaded, &lead, cheap, false, lanes * 2);
             let mut scored: Vec<(Tried, Vec<usize>)> = Vec::new();
             for ((_, members), (t, _)) in groups.into_iter().zip(outs) {
                 for &i in &members {
@@ -386,9 +407,9 @@ pub fn search(
     if a.stop.is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed)) {
         return Err("stopped".into());
     }
-    let picked: Vec<String> = finalists.iter().map(|&i| texts[i].clone()).collect();
+    let picked: Vec<EngineFile> = finalists.iter().map(|&i| engines[i].clone()).collect();
     let mut best: Option<(usize, RunReport)> = None;
-    for (&i, (t, out)) in finalists.iter().zip(batch(inputs, &picked, span, true, lanes)) {
+    for (&i, (t, out)) in finalists.iter().zip(batch(&loaded, &picked, span, true, lanes)) {
         let screen = tried[i].screen;
         let ms = tried[i].ms;
         tried[i] = Tried { knobs: std::mem::take(&mut tried[i].knobs), screen, ms: ms + t.ms, ..t };
@@ -400,10 +421,12 @@ pub fn search(
             best = Some((i, out));
         }
     }
-    let (best, run) = best.ok_or_else(|| {
+    let (best, mut run) = best.ok_or_else(|| {
         let why: Vec<String> = tried.iter().filter_map(|t| t.error.clone()).take(3).collect();
         format!("every candidate failed: {}", why.join("; "))
     })?;
+    run.text =
+        knobs.iter().zip(&cands[best]).try_fold(run.text, |t, ((k, _), v)| set_knob(&t, k, v))?;
     Ok(SearchReport { tried, best, screened_to, ms: started.elapsed().as_secs_f64() * 1e3, run })
 }
 

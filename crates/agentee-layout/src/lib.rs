@@ -1,6 +1,7 @@
 pub mod access;
 pub mod constraints;
 pub mod detail;
+pub mod doc;
 pub mod escape;
 pub mod finish;
 pub mod fit;
@@ -47,7 +48,6 @@ pub struct Model<'a> {
     pub hist: Option<Vec<f32>>,
     pub warm: Option<negotiate::Warm>,
     pub pass: usize,
-    pub text: String,
 }
 
 impl Model<'_> {
@@ -81,7 +81,8 @@ pub struct Config<'a> {
     pub to: Option<String>,
     pub only: Option<String>,
     pub text: String,
-    pub resolve: &'a dyn Fn(&str) -> Result<(LayoutFile, Layout), String>,
+    pub doc: doc::Doc,
+    pub resolve: &'a dyn Fn(&LayoutFile) -> Layout,
     pub watch: Option<&'a dyn Fn(Event)>,
     pub stop: Option<&'a std::sync::atomic::AtomicBool>,
 }
@@ -104,81 +105,107 @@ pub fn run_text(
     text: &str,
     a: &Run,
 ) -> Result<RunReport, String> {
-    agentee_core::layout::keeping_floating(|| run_loaded(inputs, text, a))
+    let loaded = load(inputs, text)?;
+    run_loaded(&loaded, a)
 }
 
-pub(crate) fn resolver<'a>(
-    inputs: &'a agentee_core::project::LayoutInputs,
-    heat: Vec<(String, f64)>,
-) -> impl Fn(&str) -> Result<(LayoutFile, Layout), String> + 'a {
-    let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
-        inputs.footprints.iter().map(|(n, f)| (n.as_str(), f)).collect();
-    let dir = inputs.path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
-    move |t: &str| -> Result<(LayoutFile, Layout), String> {
-        let f: LayoutFile =
-            agentee_core::project::parse(t).map_err(|(at, m)| format!("{at}: {m}"))?;
-        let cx = agentee_core::layout::Context {
-            dir: dir.clone(),
-            board: &inputs.board,
-            schematic: &inputs.schematic,
-            footprints: footprints.clone(),
-            heat: heat.clone(),
-        };
-        let mut d = agentee_core::diag::Diags::new(&f.name);
-        let resolved = agentee_core::layout::without_checks(|| f.resolve(&cx, &mut d));
-        Ok((f, resolved))
+pub struct Loaded<'a> {
+    pub inputs: &'a agentee_core::project::LayoutInputs,
+    pub text: String,
+    pub doc: doc::Doc,
+    pub file: LayoutFile,
+    pub layout: Layout,
+    pub heat: Vec<(String, f64)>,
+    footprints: std::collections::HashMap<&'a str, &'a agentee_core::footprint::Footprint>,
+    dir: std::path::PathBuf,
+}
+
+fn resolve_file(
+    inputs: &agentee_core::project::LayoutInputs,
+    footprints: &std::collections::HashMap<&str, &agentee_core::footprint::Footprint>,
+    dir: &std::path::Path,
+    heat: &[(String, f64)],
+    f: &LayoutFile,
+) -> Layout {
+    let cx = agentee_core::layout::Context {
+        dir: dir.to_path_buf(),
+        board: &inputs.board,
+        schematic: &inputs.schematic,
+        footprints: footprints.clone(),
+        heat: heat.to_vec(),
+    };
+    let mut d = agentee_core::diag::Diags::new(&f.name);
+    agentee_core::layout::without_checks(|| f.resolve(&cx, &mut d))
+}
+
+impl Loaded<'_> {
+    pub fn resolve(&self, f: &LayoutFile) -> Layout {
+        resolve_file(self.inputs, &self.footprints, &self.dir, &self.heat, f)
+    }
+
+    pub fn model(&self) -> Model<'_> {
+        let keepouts: Vec<Vec<P>> = self
+            .file
+            .place
+            .as_ref()
+            .map(|s| s.keepouts.iter().map(|k| k.iter().map(|q| q.to_mm()).collect()).collect())
+            .unwrap_or_default();
+        Model {
+            board: &self.inputs.board,
+            schematic: &self.inputs.schematic,
+            layout: self.layout.clone(),
+            file: self.file.clone(),
+            keepouts,
+            heat: self.heat.clone(),
+            constraints: None,
+            placement: None,
+            access: None,
+            planes: None,
+            global: None,
+            detail: None,
+            hot: Vec::new(),
+            base: None,
+            hist: None,
+            warm: None,
+            pass: 0,
+        }
     }
 }
 
-pub(crate) fn heat_of(
-    inputs: &agentee_core::project::LayoutInputs,
+pub fn load<'a>(
+    inputs: &'a agentee_core::project::LayoutInputs,
     text: &str,
-) -> Result<Vec<(String, f64)>, String> {
-    let first: LayoutFile =
-        agentee_core::project::parse(text).map_err(|(at, m)| format!("{at}: {m}"))?;
-    Ok(agentee_core::place::thermal_heat(&inputs.sims, &first.name))
+) -> Result<Loaded<'a>, String> {
+    let doc = doc::Doc::new(text)?;
+    let file = doc.file();
+    let heat = agentee_core::place::thermal_heat(&inputs.sims, &file.name);
+    let footprints: std::collections::HashMap<&str, &agentee_core::footprint::Footprint> =
+        inputs.footprints.iter().map(|(n, f)| (n.as_str(), f)).collect();
+    let dir = inputs.path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+    let layout = agentee_core::layout::keeping_floating(|| {
+        resolve_file(inputs, &footprints, &dir, &heat, &file)
+    });
+    Ok(Loaded { inputs, text: text.to_string(), doc, file, layout, heat, footprints, dir })
 }
 
-fn run_loaded(
-    inputs: &agentee_core::project::LayoutInputs,
-    text: &str,
+pub fn run_loaded(l: &Loaded, a: &Run) -> Result<RunReport, String> {
+    run_doc(l, l.doc.clone(), l.model(), a)
+}
+
+pub(crate) fn run_doc(
+    l: &Loaded,
+    doc: doc::Doc,
+    mut model: Model,
     a: &Run,
 ) -> Result<RunReport, String> {
-    let heat = heat_of(inputs, text)?;
-    let resolve = resolver(inputs, heat.clone());
-    let (file, layout) = resolve(text)?;
-    let keepouts: Vec<Vec<P>> = file
-        .place
-        .as_ref()
-        .map(|s| s.keepouts.iter().map(|k| k.iter().map(|q| q.to_mm()).collect()).collect())
-        .unwrap_or_default();
-    let engine = file.engine.clone().unwrap_or_default();
-    let mut model = Model {
-        board: &inputs.board,
-        schematic: &inputs.schematic,
-        layout,
-        file,
-        keepouts,
-        heat: heat.clone(),
-        constraints: None,
-        placement: None,
-        access: None,
-        planes: None,
-        global: None,
-        detail: None,
-        hot: Vec::new(),
-        base: None,
-        hist: None,
-        warm: None,
-        pass: 0,
-        text: String::new(),
-    };
+    let resolve = |f: &LayoutFile| l.resolve(f);
     let cfg = Config {
-        engine,
+        engine: doc.base.engine.clone().unwrap_or_default(),
         from: a.from.clone(),
         to: a.to.clone(),
         only: a.only.clone(),
-        text: text.to_string(),
+        text: l.text.clone(),
+        doc,
         resolve: &resolve,
         watch: a.watch,
         stop: a.stop,
@@ -234,11 +261,12 @@ pub fn score_of(model: &Model) -> Score {
 }
 
 type Snapshot =
-    (usize, String, Option<detail::DetailPlan>, Option<negotiate::Warm>, Option<Vec<f32>>, u32);
+    (usize, doc::Doc, Option<detail::DetailPlan>, Option<negotiate::Warm>, Option<Vec<f32>>, u32);
 
 struct Driver<'c, 'a> {
     cfg: &'c Config<'a>,
-    text: String,
+    doc: doc::Doc,
+    bare: Option<(u64, Layout)>,
     reports: Vec<PhaseReport>,
     skipped: Vec<String>,
     discarded: Vec<(String, f64)>,
@@ -289,8 +317,8 @@ impl Driver<'_, '_> {
 
     fn reload_unfilled(&mut self, model: &mut Model) -> Result<u128, String> {
         let t = std::time::Instant::now();
-        (model.file, model.layout) =
-            agentee_core::layout::without_fills(|| (self.cfg.resolve)(&self.text))?;
+        model.file = self.doc.file();
+        model.layout = agentee_core::layout::without_fills(|| (self.cfg.resolve)(&model.file));
         model.base = None;
         model.hist = None;
         model.warm = None;
@@ -301,7 +329,8 @@ impl Driver<'_, '_> {
     fn reload(&mut self, model: &mut Model) -> Result<u128, String> {
         let t = std::time::Instant::now();
         self.unfilled = false;
-        (model.file, model.layout) = (self.cfg.resolve)(&self.text)?;
+        model.file = self.doc.file();
+        model.layout = (self.cfg.resolve)(&model.file);
         model.base = None;
         model.hist = None;
         model.warm = None;
@@ -327,16 +356,20 @@ impl Driver<'_, '_> {
 
     fn step(&mut self, model: &mut Model, p: &dyn Phase) {
         let t0 = self.start(p.name());
-        model.text = self.text.clone();
         let r = p.run(model, &self.cfg.engine);
         self.done(model, r, t0, 0);
     }
 
     fn write_route(&mut self, model: &mut Model) -> Result<u128, String> {
         let Some(d) = model.detail.as_ref() else { return Ok(0) };
-        let (_, bare) = (self.cfg.resolve)(&strip_plan(&self.text, ROUTE))?;
+        let key = self.doc.version_except(ROUTE);
+        if self.bare.as_ref().is_none_or(|b| b.0 != key) {
+            let f = self.doc.file_without(Some(ROUTE));
+            self.bare = Some((key, (self.cfg.resolve)(&f)));
+        }
+        let bare = &self.bare.as_ref().expect("resolved above").1;
         let held = agentee_core::route::hold_to_rules(
-            &bare,
+            bare,
             model.board,
             agentee_core::route::RouteResult {
                 tracks: d.tracks.clone(),
@@ -344,7 +377,7 @@ impl Driver<'_, '_> {
                 ..Default::default()
             },
         );
-        self.text = write_plan(&self.text, ROUTE, &route_toml(&held.tracks, &held.vias));
+        self.doc.set(ROUTE, route_section(&held.tracks, &held.vias));
         self.reload(model)
     }
 }
@@ -377,7 +410,8 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let started = std::time::Instant::now();
     let mut d = Driver {
         cfg,
-        text: cfg.text.clone(),
+        doc: cfg.doc.clone(),
+        bare: None,
         reports: Vec::new(),
         skipped: Vec::new(),
         discarded: Vec::new(),
@@ -386,17 +420,17 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     };
     if routes {
         for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
-            d.text = strip_plan(&d.text, p);
+            d.doc.strip(p);
         }
     }
     if has("access") {
-        d.text = strip_plan(&d.text, PLANES);
+        d.doc.strip(PLANES);
     }
-    if d.text != cfg.text {
+    if d.doc.version() != cfg.doc.version() {
         d.reload(model)?;
     }
     if has("finish") && !has("detail") {
-        model.detail = route_from_text(&d.text);
+        model.detail = d.doc.section(ROUTE).map(route_from_section);
     }
     let dopts = detail::options(&cfg.engine);
     if has("constraints") {
@@ -418,42 +452,33 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                 break;
             }
             let t0 = d.start("place");
-            model.text = d.text.clone();
             model.pass = pass as usize;
             let r = placement::Place.run(model, &cfg.engine);
             let mut reload_ms = 0;
             if let Some(plan) = &model.placement
                 && !plan.moves.is_empty()
             {
-                d.text = write_moves(&d.text, &plan.moves)?;
-                d.text = if plan.under.is_empty() {
-                    strip_plan(&d.text, PLACE)
+                d.doc.moves(&plan.moves);
+                if plan.under.is_empty() {
+                    d.doc.strip(PLACE);
                 } else {
-                    let mut t = String::new();
+                    let mut s = doc::Section::default();
                     for u in &plan.under {
                         if let Some((layer, from, width)) = &u.stub {
-                            t += &track_toml(&u.net, layer, Some(*width), &[*from, u.at]);
+                            s.track(&u.net, layer, Some(*width), &[*from, u.at]);
                         }
-                        t += &via_toml(&u.net, u.at, &u.via);
+                        s.via(&u.net, u.at, &u.via);
                     }
-                    write_plan(&d.text, PLACE, &t)
-                };
-                if !plan.texts.is_empty() {
-                    let mut doc: toml_edit::DocumentMut =
-                        d.text.parse().map_err(|e| format!("{e}"))?;
-                    start::move_board_texts(&mut doc, &plan.texts);
-                    d.text = doc.to_string();
+                    d.doc.set(PLACE, s);
                 }
+                d.doc.board_texts(&plan.texts);
                 reload_ms = d.reload_unfilled(model)?;
                 for _ in 0..3 {
                     let (moved, _) = model.layout.settle_labels(model.board);
                     if moved.is_empty() {
                         break;
                     }
-                    let mut doc: toml_edit::DocumentMut =
-                        d.text.parse().map_err(|e| format!("{e}"))?;
-                    start::write_labels(&mut doc, &moved)?;
-                    d.text = doc.to_string();
+                    d.doc.labels(&moved);
                     reload_ms += d.reload_unfilled(model)?;
                 }
             }
@@ -462,11 +487,10 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         }
         if has("access") && !d.stopped() {
             let t0 = d.start("access");
-            model.text = d.text.clone();
             let mut r = access::Access.run(model, &cfg.engine);
             let mut reload_ms = 0;
-            if let Some(section) = planes_toml(model) {
-                d.text = write_plan(&d.text, PLANES, &section);
+            if let Some(section) = planes_section(model) {
+                d.doc.set(PLANES, section);
                 reload_ms = d.reload(model)?;
             } else if d.unfilled {
                 reload_ms = d.reload(model)?;
@@ -505,7 +529,7 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         if best_pass.as_ref().is_none_or(|b| missing < b.0) {
             best_pass = Some((
                 missing,
-                d.text.clone(),
+                d.doc.clone(),
                 model.detail.clone(),
                 model.warm.clone(),
                 model.hist.clone(),
@@ -527,9 +551,9 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             break;
         }
     }
-    if let Some((_, text, plan, warm, hist, pass)) = best_pass {
-        if text != d.text {
-            d.text = text;
+    if let Some((_, doc, plan, warm, hist, pass)) = best_pass {
+        if doc.version() != d.doc.version() {
+            d.doc = doc;
             d.reload(model)?;
             model.detail = plan.clone();
             model.warm = warm;
@@ -628,7 +652,7 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
         phases: d.reports,
         score,
         skipped: d.skipped,
-        text: d.text,
+        text: d.doc.write(&cfg.text)?,
         constraints: model.constraints.clone(),
         placement: model.placement.clone(),
         access: model.access.clone(),
@@ -748,50 +772,103 @@ fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Resul
     Ok(gained)
 }
 
-fn stitching_toml(model: &Model) -> String {
+fn stitching_of(model: &Model) -> Option<agentee_core::layout::StitchFile> {
     if !model.file.stitching.is_empty() {
-        return String::new();
+        return None;
     }
     let b = model.board;
     let outer = [model.layout.copper.first(), model.layout.copper.last()];
-    let Some(ground) = model
+    let ground = model
         .file
         .zones
         .iter()
         .filter(|z| z.layers.iter().any(|l| outer.contains(&Some(l))))
         .map(|z| z.net.as_str())
-        .find(|n| agentee_core::place::is_ground(n))
-    else {
-        return String::new();
-    };
+        .find(|n| agentee_core::place::is_ground(n))?;
     let rf: Vec<String> = model
         .layout
         .nets
         .iter()
         .filter(|n| agentee_core::place::is_rf_class(b, &n.class))
         .filter(|n| b.netclasses.iter().any(|c| c.name == n.class && c.coplanar_gap.is_some()))
-        .map(|n| format!("\"{}\"", n.name))
+        .map(|n| n.name.clone())
         .collect();
-    if rf.is_empty() {
-        return String::new();
-    }
-    format!("\n[[stitching]]\nnet = \"{ground}\"\nfence = [{}]\n", rf.join(", "))
+    (!rf.is_empty()).then(|| agentee_core::layout::StitchFile {
+        net: ground.to_string(),
+        via: None,
+        pitch: None,
+        outline: None,
+        margin: None,
+        fence: rf,
+        offset: None,
+        skip_at: Vec::new(),
+    })
 }
 
-fn planes_toml(model: &Model) -> Option<String> {
+fn planes_section(model: &Model) -> Option<doc::Section> {
     let zones = model.planes.as_ref().map(|p| p.zones.as_slice()).unwrap_or_default();
-    let mut t = stitching_toml(model);
+    let mut s = doc::Section::default();
+    s.stitching.extend(stitching_of(model));
     for z in zones {
-        let pts: Vec<String> = z.outline.iter().map(|q| pt(*q)).collect();
-        t += &format!(
-            "\n[[zones]]\nnet = \"{}\"\nlayers = [\"{}\"]\npriority = {}\noutline = [{}]\n",
-            z.net,
-            z.layer,
-            z.priority,
-            pts.join(", ")
-        );
+        s.zones.push(agentee_core::layout::ZoneFile {
+            net: z.net.clone(),
+            layers: vec![z.layer.clone()],
+            outline: Some(
+                z.outline
+                    .iter()
+                    .map(|q| {
+                        let r = |v: f64| (v * 1e4).round() / 1e4;
+                        agentee_core::units::Point::mm(r(q[0]), r(q[1]))
+                    })
+                    .collect(),
+            ),
+            clearance: None,
+            min_width: None,
+            priority: Some(z.priority),
+            min_island_area: None,
+            pad_connection: None,
+            relief_gap: None,
+            spoke_width: None,
+            relief_tht_only: false,
+        });
     }
-    (!t.is_empty()).then_some(t)
+    (!s.is_empty()).then_some(s)
+}
+
+fn round4(v: f64) -> f64 {
+    (v * 1e4).round() / 1e4
+}
+
+pub fn route_section(tracks: &[RoutedTrack], vias: &[RoutedVia]) -> doc::Section {
+    let mut s = doc::Section::default();
+    for tr in tracks {
+        let pts: Vec<P> = tr.points.iter().map(|q| [round4(q[0]), round4(q[1])]).collect();
+        s.track(&tr.net, &tr.layer, tr.width.map(round4), &pts);
+    }
+    for v in vias {
+        s.via(&v.net, [round4(v.at[0]), round4(v.at[1])], &v.via);
+    }
+    s
+}
+
+fn route_from_section(s: &doc::Section) -> detail::DetailPlan {
+    let mut plan = detail::DetailPlan::default();
+    for t in &s.tracks {
+        plan.tracks.push(RoutedTrack {
+            net: t.net.clone(),
+            layer: t.layer.clone(),
+            width: t.width.map(|w| w.to_mm()),
+            points: t.points.iter().map(|q| q.to_mm()).collect(),
+        });
+    }
+    for v in &s.vias {
+        plan.vias.push(RoutedVia {
+            net: v.net.clone(),
+            at: v.at.to_mm(),
+            via: v.via.clone().unwrap_or_default(),
+        });
+    }
+    plan
 }
 
 pub fn route_toml(tracks: &[RoutedTrack], vias: &[RoutedVia]) -> String {
@@ -805,45 +882,13 @@ pub fn route_toml(tracks: &[RoutedTrack], vias: &[RoutedVia]) -> String {
     t
 }
 
-fn route_from_text(text: &str) -> Option<detail::DetailPlan> {
-    let start = format!("# plan {ROUTE}\n");
-    let end = format!("# end plan {ROUTE}\n");
-    let a = text.find(&start)? + start.len();
-    let b = text[a..].find(&end)? + a;
-    let doc: toml::Table = text[a..b].parse().ok()?;
-    let point = |v: &toml::Value| -> Option<P> {
-        let q = v.as_array()?;
-        let num = |x: &toml::Value| x.as_float().or_else(|| x.as_integer().map(|i| i as f64));
-        Some([num(q.first()?)?, num(q.get(1)?)?])
-    };
-    let mut plan = detail::DetailPlan::default();
-    for t in doc.get("tracks").and_then(|v| v.as_array()).into_iter().flatten() {
-        let t = t.as_table()?;
-        plan.tracks.push(RoutedTrack {
-            net: t.get("net")?.as_str()?.to_string(),
-            layer: t.get("layer")?.as_str()?.to_string(),
-            width: t.get("width").and_then(|w| w.as_float()),
-            points: t.get("points")?.as_array()?.iter().filter_map(point).collect(),
-        });
-    }
-    for v in doc.get("vias").and_then(|v| v.as_array()).into_iter().flatten() {
-        let v = v.as_table()?;
-        plan.vias.push(RoutedVia {
-            net: v.get("net")?.as_str()?.to_string(),
-            at: point(v.get("at")?)?,
-            via: v.get("via")?.as_str()?.to_string(),
-        });
-    }
-    Some(plan)
-}
-
 fn fmt(v: f64) -> String {
     let s = format!("{:.4}", v);
     let s = s.trim_end_matches('0');
     if s.ends_with('.') { format!("{s}0") } else { s.to_string() }
 }
 
-fn pt(q: P) -> String {
+pub(crate) fn pt(q: P) -> String {
     format!("[{}, {}]", fmt(q[0]), fmt(q[1]))
 }
 

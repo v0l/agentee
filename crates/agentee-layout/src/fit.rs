@@ -488,32 +488,11 @@ fn parts_area(bd: &Board) -> f64 {
 
 pub fn fit(inputs: &LayoutInputs, text: &str, ask: &Ask) -> Result<FitReport, String> {
     let t0 = std::time::Instant::now();
-    let heat = crate::heat_of(inputs, text)?;
-    let resolve = crate::resolver(inputs, heat.clone());
-    let (file, layout) = resolve(text)?;
-    if layout.outline.len() < 3 {
+    let loaded = crate::load(inputs, text)?;
+    if loaded.layout.outline.len() < 3 {
         return Err("the board has no outline to start from".into());
     }
-    let model = Model {
-        board: &inputs.board,
-        schematic: &inputs.schematic,
-        layout,
-        file,
-        keepouts: Vec::new(),
-        heat,
-        constraints: None,
-        placement: None,
-        access: None,
-        planes: None,
-        global: None,
-        detail: None,
-        hot: Vec::new(),
-        base: None,
-        hist: None,
-        warm: None,
-        pass: 0,
-        text: String::new(),
-    };
+    let model = loaded.model();
     let mut seed = placement::build(&model);
     for c in &mut seed.cells {
         c.fixed = false;
