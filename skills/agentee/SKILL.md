@@ -360,6 +360,8 @@ and OIP3. Change the board, rerun the FDTD; change a part, rerun only the cascad
 ## Parts and prices
 
 ```sh
+agentee bom NAME                       # cost table at 1, 10 and 100 boards, total and per board
+agentee bom NAME --boards 5,50 --json
 agentee parts NAME --boards 5          # stock, price and cheaper drop-ins per BOM line
 agentee parts NAME --refs C11 --json
 agentee parts NAME --boards 2 --spares --order docs/   # order sheets per distributor

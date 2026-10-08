@@ -645,3 +645,50 @@ fn order_sheets_put_what_each_site_lacks_last() {
     let second = sheet.lines().nth(1).unwrap();
     assert!(second.starts_with("CAP,CAP,m-cap,Maker,order: 100n C1,10,"), "{second}");
 }
+
+#[test]
+fn the_cost_table_prices_each_board_count_from_the_breaks() {
+    let resistor =
+        offer("Mouser", "603-R", "RC0603", 1_000, &[(1, 0.10), (10, 0.02), (100, 0.005)], &[]);
+    let mut scarce = offer("Mouser", "595-U", "CHIP", 15, &[(1, 2.00), (10, 1.50)], &[]);
+    scarce.manufacturer = "TI".into();
+    let mut farnell = offer("Farnell", "123", "CHIP", 5_000, &[(1, 2.50), (100, 1.00)], &[]);
+    farnell.manufacturer = "TI".into();
+    let mouser = Fake { name: "Mouser", parts: vec![resistor, scarce], search: vec![] };
+    let farnell = Fake { name: "Farnell", parts: vec![farnell], search: vec![] };
+    let line = |refs: &[&str], mpn: Option<&str>| BomLine {
+        refs: refs.iter().map(|r| r.to_string()).collect(),
+        value: "x".into(),
+        footprint: "f".into(),
+        mpn: mpn.map(String::from),
+        ..Default::default()
+    };
+    let lines = vec![
+        line(&["R1", "R2", "R3"], Some("RC0603")),
+        line(&["U1"], Some("CHIP")),
+        line(&["J1"], None),
+    ];
+    let r = report(
+        &lines,
+        &[&mouser, &farnell],
+        &Options { boards: 100, alternatives: false, max_alternatives: 0 },
+    );
+    let c = agentee_parts::cost::of("t", &[100, 1, 10, 10], &r);
+    assert_eq!(c.boards, vec![1, 10, 100]);
+    let cost = |row: usize, k: usize| {
+        c.rows[row].costs[k].as_ref().map(|b| (b.distributor.clone(), b.buy, b.total))
+    };
+    assert_eq!(cost(0, 0).map(|x| x.1), Some(10), "three resistors cost less as ten");
+    assert!((cost(0, 0).unwrap().2 - 0.2).abs() < 1e-9);
+    assert_eq!(cost(1, 1).map(|x| x.0), Some("Mouser".to_string()));
+    assert_eq!(cost(1, 2).map(|x| x.0), Some("Farnell".to_string()), "Mouser holds 15");
+    assert!(c.rows[2].costs.iter().all(Option::is_none));
+    assert!(c.rows[2].notes.contains(&"no mpn".to_string()));
+    let total = |b: u32| c.totals.iter().find(|t| t.boards == b).unwrap();
+    assert_eq!((total(1).priced, total(1).unpriced), (2, 1));
+    assert!((total(100).total - (1.5 + 100.0)).abs() < 1e-9, "{}", total(100).total);
+    assert!((total(100).per_board - 1.015).abs() < 1e-9);
+    let t = agentee_parts::cost::text(&c);
+    assert!(t.contains("per board EUR"), "{t}");
+    assert!(t.contains("* bought from another distributor"), "{t}");
+}

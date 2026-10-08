@@ -251,6 +251,29 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// BOM cost table: each line priced at Mouser and Farnell for 1, 10 and 100 boards (or --boards), with totals and the cost per board
+    Bom {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Board counts to price, comma separated
+        #[arg(long, value_delimiter = ',', default_values_t = [1u32, 10, 100])]
+        boards: Vec<u32>,
+        /// Distributors to ask, comma separated (mouser, farnell), default every one with a key
+        #[arg(long, value_delimiter = ',')]
+        distributor: Vec<String>,
+        /// Farnell store, e.g. uk.farnell.com, ie.farnell.com, de.farnell.com, www.newark.com
+        #[arg(long)]
+        farnell_store: Option<String>,
+        /// Only these references, comma separated
+        #[arg(long, value_delimiter = ',')]
+        refs: Vec<String>,
+        /// Key file instead of ~/.config/agentee/distributors.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Fill the zones of a layout and store the copper in its file, so loads skip the fill
     Fill {
         name: String,
@@ -858,6 +881,24 @@ fn run(cli: Cli) -> Result<bool, String> {
                 print!("{}", ops::parts_text(&r));
             }
             Ok(r.errors.is_empty())
+        }
+        Cmd::Bom { name, project, boards, distributor, farnell_store, refs, config, json } => {
+            let p = ops::load(&project)?;
+            let q = ops::PartsQuery {
+                boards: 1,
+                alternatives: false,
+                distributors: &distributor,
+                farnell_store: farnell_store.as_deref(),
+                refs: &refs,
+                config: config.as_deref(),
+            };
+            let c = ops::bom_cost(&p, &name, &boards, &q)?;
+            if json {
+                print_json(&serde_json::to_value(&c).map_err(|e| e.to_string())?);
+            } else {
+                print!("{}", agentee_parts::cost::text(&c));
+            }
+            Ok(c.errors.is_empty())
         }
         Cmd::Fill { name, project } => {
             let p = ops::load(&project)?;

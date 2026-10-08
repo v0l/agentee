@@ -2217,3 +2217,15 @@ pub fn parts_text(r: &agentee_parts::Report) -> String {
     }
     s
 }
+
+pub fn bom_cost(
+    p: &Project,
+    name: &str,
+    boards: &[u32],
+    q: &PartsQuery,
+) -> Result<agentee_parts::cost::BomCost, String> {
+    let counts = agentee_parts::cost::counts(boards);
+    let most = *counts.last().unwrap_or(&1);
+    let r = parts(p, name, &PartsQuery { boards: most, alternatives: false, ..*q })?;
+    Ok(agentee_parts::cost::of(name, &counts, &r))
+}

@@ -2372,6 +2372,15 @@ Alternatives, at most three per line, cheapest saving first, in the chosen offer
 | indicator LED, `D` on an `LED_0603...` footprint | colour and size | the colour and the case code |
 | anything else | nothing | only the same part at the other distributor, and the distributor's suggested replacement |
 
+`agentee bom NAME` (MCP `bom`) prints the cost as a table: one row per BOM line with its
+quantity per board, part number, the distributor and SKU it comes from, and its line total at
+each board count (`--boards`, default 1, 10 and 100), then the total, the cost per board and the
+number of lines it could not price. Each count picks the cheapest offer in stock for that
+quantity, so a line can come from another distributor at 100 boards than at one; those cells
+carry a `*`. It looks every part up once at the largest count and prices the smaller ones from
+the same price breaks, so the table costs the same API calls as one `parts` run. It does not
+search for alternatives; `parts` does that.
+
 Case codes are read from the imperial attribute (`Case Code - in`) or the part of a Farnell value
 before its `[... Metric]`, so a 0201 listed as `0201 [0603 Metric]` is not taken for an 0603.
 The report ends with the total per currency as chosen and with every cheaper pick, and the

@@ -1,4 +1,5 @@
 pub mod config;
+pub mod cost;
 pub mod farnell;
 pub mod mouser;
 pub mod offer;
@@ -131,6 +132,21 @@ pub struct Priced {
 }
 
 impl Priced {
+    pub fn at(&self, need: u32) -> Option<Cost> {
+        let o = Offer {
+            distributor: self.distributor.clone(),
+            sku: self.sku.clone(),
+            stock: self.stock,
+            lifecycle: self.lifecycle.clone(),
+            currency: self.currency.clone(),
+            breaks: self.breaks.clone(),
+            min: self.min,
+            mult: self.mult,
+            ..Default::default()
+        };
+        o.cost(need).filter(|c| o.active() && o.stock >= c.qty as u64)
+    }
+
     fn new(o: &Offer, c: Cost) -> Self {
         Self {
             distributor: o.distributor.clone(),

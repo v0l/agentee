@@ -292,6 +292,18 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "bom",
+            "description": "BOM cost table of a layout or schematic: every line priced at Mouser and Farnell at each board count (default 1, 10 and 100), buying up to a price break when that is cheaper, with the total and the cost per board, and the lines that could not be priced and why. Use parts to look for cheaper equivalents.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout or schematic" },
+                "boards": { "type": "array", "items": { "type": "integer" }, "description": "board counts, default [1, 10, 100]" },
+                "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell; default every one with a key" },
+                "farnell_store": { "type": "string" },
+                "refs": { "type": "array", "items": { "type": "string" } },
+                "json": { "type": "boolean", "description": "return the rows as JSON instead of the table" },
+            }), &["name"]),
+        },
+        {
             "name": "field_solve",
             "description": "Solve a trace cross-section with the GPU field solver: impedance, effective permittivity, C and L per metre, delay. Includes solder mask, thickness, coplanar grounds and differential pairs. Within 0.5% of exact references with fine = true.",
             "inputSchema": s(json!({
@@ -758,6 +770,31 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             }
             let r = ops::parts(&p, name, &q)?;
             Ok(ok(vec![text(pretty(&serde_json::to_value(&r).map_err(|e| e.to_string())?))]))
+        }
+        "bom" => {
+            let p = ops::load(root)?;
+            let distributors = strings(a, "distributors");
+            let refs = strings(a, "refs");
+            let boards: Vec<u32> = a
+                .get("boards")
+                .and_then(Value::as_array)
+                .map(|v| v.iter().filter_map(Value::as_u64).map(|n| n as u32).collect())
+                .unwrap_or_else(|| vec![1, 10, 100]);
+            let q = ops::PartsQuery {
+                boards: 1,
+                alternatives: false,
+                distributors: &distributors,
+                farnell_store: arg(a, "farnell_store"),
+                refs: &refs,
+                config: None,
+            };
+            let c = ops::bom_cost(&p, arg(a, "name").ok_or("name is required")?, &boards, &q)?;
+            if flag(a, "json") {
+                return Ok(ok(vec![text(pretty(
+                    &serde_json::to_value(&c).map_err(|e| e.to_string())?,
+                ))]));
+            }
+            Ok(ok(vec![text(agentee_parts::cost::text(&c))]))
         }
         "field_solve" => {
             let p = ops::load(root)?;
