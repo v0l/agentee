@@ -1004,10 +1004,23 @@ pub(crate) fn legalise(
         }
     };
     let mut placed = Taken::default();
-    for i in (0..bd.cells.len()).filter(|&i| held(&bd.cells[i])) {
-        placed.add(rect_of(&bd.cells[i], bd.cells[i].at, gap_of(i)), side(&bd.cells[i]));
+    let mut held_at: Vec<usize> = (0..bd.cells.len()).filter(|&i| held(&bd.cells[i])).collect();
+    held_at.sort_by_key(|&i| {
+        let c = &bd.cells[i];
+        let anchor = anchored.contains(&c.reference.as_str());
+        (!c.fixed, !anchor, !c.chained)
+    });
+    let mut bumped = Vec::new();
+    for i in held_at {
+        let c = &bd.cells[i];
+        if !c.fixed && placed.hits(rect_of(c, c.at, 0.0), side(c)) {
+            bumped.push(i);
+            continue;
+        }
+        placed.add(rect_of(c, c.at, gap_of(i)), side(c));
     }
     let mut order: Vec<usize> = (0..bd.cells.len()).filter(|&i| !held(&bd.cells[i])).collect();
+    order.extend(bumped);
     order.sort_by(|&a, &b| {
         let (ca, cb) = (&bd.cells[a], &bd.cells[b]);
         cb.chained.cmp(&ca.chained).then(cb.area.total_cmp(&ca.area))

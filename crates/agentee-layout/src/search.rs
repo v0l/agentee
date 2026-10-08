@@ -27,6 +27,8 @@ pub struct Tried {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub copper_overlap: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub courtyard: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub total: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -122,8 +124,14 @@ impl Key {
 fn rank(t: &Tried) -> Key {
     let or_max = |v: Option<f64>| v.unwrap_or(f64::MAX);
     match t.total {
-        Some(total) => Key(vec![0.0, or_max(t.copper_overlap), or_max(t.unrouted), total]),
-        None => Key(vec![1.0, 0.0, 0.0, or_max(t.screen)]),
+        Some(total) => Key(vec![
+            0.0,
+            t.courtyard.unwrap_or(0.0),
+            or_max(t.copper_overlap),
+            or_max(t.unrouted),
+            total,
+        ]),
+        None => Key(vec![1.0, t.courtyard.unwrap_or(0.0), 0.0, 0.0, or_max(t.screen)]),
     }
 }
 
@@ -260,6 +268,7 @@ struct Node<'l> {
 fn measure(stage: &str, b: &crate::Branch, tried: &mut Tried) {
     let score = b.score();
     let raw = |k: &str| score.terms.get(k).filter(|t| t.measured).map(|t| t.raw);
+    tried.courtyard = raw("overlap");
     if matches!(stage, "detail" | "finish") {
         tried.unrouted = raw("unrouted");
         tried.copper_overlap = raw("copper_overlap");
