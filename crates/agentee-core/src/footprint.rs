@@ -601,7 +601,13 @@ impl Footprint {
             for j in i + 1..self.pads.len() {
                 let (a, b) = (&self.pads[i], &self.pads[j]);
                 let shared = ["F.Cu", "B.Cu"].iter().any(|l| a.on_layer(l) && b.on_layer(l));
-                if !shared || a.number == b.number || a.number.is_empty() || b.number.is_empty() {
+                let stacked = outlines[i] == outlines[j] && a.layers == b.layers;
+                if !shared
+                    || stacked
+                    || a.number == b.number
+                    || a.number.is_empty()
+                    || b.number.is_empty()
+                {
                     continue;
                 }
                 let (ba, bb) = (a.bounds(), b.bounds());
@@ -840,6 +846,31 @@ pitch = [0.8, 0]
         let mut d = Diags::new("bad");
         f.resolve(&mut d).check(&fab_rules("generic").unwrap(), &mut d);
         assert!(d.list.iter().any(|x| x.message.contains("overlap")), "{:?}", d.list);
+    }
+
+    #[test]
+    fn stacked_pads_of_one_contact_are_not_overlaps() {
+        let f: FootprintFile = toml::from_str(
+            r#"
+name = "usb"
+[[pads]]
+number = "A1"
+kind = "smd"
+shape = "roundrect"
+at = [-3.2, -3.685]
+size = [0.6, 1.14]
+[[pads]]
+number = "B12"
+kind = "smd"
+shape = "roundrect"
+at = [-3.2, -3.685]
+size = [0.6, 1.14]
+"#,
+        )
+        .unwrap();
+        let mut d = Diags::new("usb");
+        f.resolve(&mut d).check(&fab_rules("generic").unwrap(), &mut d);
+        assert!(!d.list.iter().any(|x| x.message.contains("overlap")), "{:?}", d.list);
     }
 
     #[test]
