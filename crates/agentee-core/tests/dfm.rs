@@ -1623,3 +1623,87 @@ fn a_square_bend_rounded_in_the_file_is_not_acute() {
     let p = load(&Fixture { pcb: &pcb, ..Default::default() });
     assert_eq!(hits(&p, "acute-turn").len(), 1);
 }
+
+const SLOTTED: &str = r#"
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "oval"
+at = [0, 0]
+size = [1.0, 2.1]
+drill = [0.6, 1.7]
+"#;
+
+#[test]
+fn a_via_beside_a_slot_of_its_own_net_keeps_the_hole_gap() {
+    let slot = |at: [f64; 2]| {
+        load(&Fixture {
+            footprints: &[("SLOTTED", SLOTTED)],
+            parts: &[("J1", "SLOTTED", [10.0, 10.0])],
+            nets: &[("GND", &["J1.1"])],
+            pcb: &via("GND", at),
+            ..Default::default()
+        })
+    };
+    let need = slot([12.0, 10.0]).boards[0].item.rules.min_hole_to_hole.to_mm();
+    let beside = 0.3 + 0.15 + need * 0.6;
+    let p = slot([10.0 + beside, 10.5]);
+    let h = hits(&p, "hole-to-hole");
+    assert_eq!(h.len(), 1, "{h:?}");
+    let p = slot([10.0 + 0.3 + 0.15 + need + 0.05, 10.5]);
+    assert!(hits(&p, "hole-to-hole").is_empty(), "{:?}", hits(&p, "hole-to-hole"));
+}
+
+const SHELL: &str = r#"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [0, 0]
+size = [0.6, 1.2]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "oval"
+at = [0.9, 0]
+size = [1.0, 2.1]
+drill = [0.6, 1.7]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "rect"
+at = [-3, 0]
+size = [0.6, 1.2]
+"#;
+
+#[test]
+fn tie_keeps_off_a_slot_and_skips_a_pad_its_pour_already_joins() {
+    let shell = |zones: &str| {
+        load(&Fixture {
+            footprints: &[("SHELL", SHELL)],
+            parts: &[("J1", "SHELL", [10.0, 10.0])],
+            nets: &[("GND", &["J1.1", "J1.2"])],
+            pcb: zones,
+            ..Default::default()
+        })
+    };
+    let p = shell("\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n");
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!(r.tied, 1, "{:?}", r.failed);
+    let need = b.rules.min_hole_to_hole.to_mm();
+    let slot =
+        agentee_core::geom::point_segment_distance(r.vias[0].at, [10.9, 9.45], [10.9, 10.55]);
+    assert!(
+        slot - 0.3 - 0.15 >= need - 1e-6,
+        "via at {:?} is {slot:.3} mm from the slot",
+        r.vias[0].at
+    );
+
+    let p = shell("\n[[zones]]\nnet = \"GND\"\nlayers = [\"F.Cu\", \"B.Cu\"]\n");
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!((r.tied, r.already), (0, 1), "{:?}", r.vias);
+}

@@ -139,7 +139,8 @@ Order of work, each stage passing check before the next:
    - `agentee place NAME` places every part (`--parts 'U*'`, `--keep-placed`, `--seed N`). It keeps
      parts in different domains a barrier apart and clear of copper it is not moving.
    - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
-   - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via.
+   - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via. A pad with a
+     via close by, or whose pour already joins a plated hole of its net beside it, is left alone.
    - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`). Each track
      ends on its pad centre, and a run across an inner-layer pour of another net costs five times
      as much, so planes are slotted only where no other layer fits.

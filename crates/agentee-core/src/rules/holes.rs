@@ -180,9 +180,9 @@ impl Rule for HoleToHole {
                 if same_part || sa.0.max(sb.0) >= sa.1.min(sb.1) {
                     continue;
                 }
-                let centres = geom::dist(a.a, b.a);
-                let gap = centres - a.r - b.r;
-                if gap + 1e-6 < need && centres > 1e-6 {
+                let stacked = !a.slot() && !b.slot() && geom::dist(a.a, b.a) <= 1e-6;
+                let gap = geom::segment_segment_distance(a.a, a.b, b.a, b.b) - a.r - b.r;
+                if gap + 1e-6 < need && !stacked {
                     out.push(Violation {
                         rule: self.id(),
                         group: "drills".into(),

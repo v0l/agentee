@@ -2,7 +2,7 @@ use crate::board::Board;
 use crate::footprint::PadKind;
 use crate::geom::{self, P};
 use crate::graphic::Bounds;
-use crate::layout::{Layout, glob};
+use crate::layout::{Layout, ZoneFill, glob};
 use crate::route::{RoutedTrack, RoutedVia};
 use serde::Serialize;
 
@@ -29,6 +29,69 @@ pub fn plane_nets(layout: &Layout) -> Vec<usize> {
 
 fn is_bga(fp_name: &str, pads: usize) -> bool {
     fp_name.to_ascii_lowercase().contains("bga") || pads >= 64
+}
+
+fn islands(z: &ZoneFill) -> Vec<u32> {
+    let (w, h) = (z.width, z.height);
+    let mut label = vec![0u32; w * h];
+    let mut next = 0;
+    let mut stack = Vec::new();
+    for start in 0..w * h {
+        if z.mask[start] == 0 || label[start] != 0 {
+            continue;
+        }
+        next += 1;
+        label[start] = next;
+        stack.push(start);
+        while let Some(i) = stack.pop() {
+            let (x, y) = (i % w, i / w);
+            let around = [
+                (x > 0).then(|| i - 1),
+                (x + 1 < w).then(|| i + 1),
+                (y > 0).then(|| i - w),
+                (y + 1 < h).then(|| i + w),
+            ];
+            for j in around.into_iter().flatten() {
+                if z.mask[j] != 0 && label[j] == 0 {
+                    label[j] = next;
+                    stack.push(j);
+                }
+            }
+        }
+    }
+    label
+}
+
+fn filled_cells(z: &ZoneFill, b: Bounds, inside: impl Fn(P) -> bool) -> Vec<usize> {
+    let mut out = Vec::new();
+    if b.is_empty() {
+        return out;
+    }
+    let cell = |v: f64, o: f64| ((v - o) / z.cell).floor();
+    let (x0, y0) = (cell(b.min[0], z.origin[0]).max(0.0), cell(b.min[1], z.origin[1]).max(0.0));
+    let (x1, y1) = (cell(b.max[0], z.origin[0]), cell(b.max[1], z.origin[1]));
+    if x1 < 0.0 || y1 < 0.0 {
+        return out;
+    }
+    let x1 = (x1 as usize).min(z.width.saturating_sub(1));
+    let y1 = (y1 as usize).min(z.height.saturating_sub(1));
+    for y in y0 as usize..=y1 {
+        for x in x0 as usize..=x1 {
+            let i = y * z.width + x;
+            let c =
+                [z.origin[0] + (x as f64 + 0.5) * z.cell, z.origin[1] + (y as f64 + 0.5) * z.cell];
+            if z.mask[i] != 0 && inside(c) {
+                out.push(i);
+            }
+        }
+    }
+    out
+}
+
+fn on_pad(z: &ZoneFill, outlines: &[Vec<P>]) -> Vec<usize> {
+    let mut b = Bounds::EMPTY;
+    outlines.iter().flatten().for_each(|q| b.add(*q));
+    filled_cells(z, b, |c| outlines.iter().any(|o| geom::point_in_polygon(c, o)))
 }
 
 pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult, String> {
@@ -68,6 +131,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
     let mut kept = crate::rules::Plan::default();
 
     let mut out = TieResult::default();
+    let mut labels: std::collections::HashMap<usize, Vec<u32>> = std::collections::HashMap::new();
     for part in &layout.parts {
         if is_bga(&part.footprint_name, part.pads.len()) {
             continue;
@@ -81,6 +145,38 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 continue;
             }
             let Some(layer) = pad.copper.first().cloned() else { continue };
+            let mut pb = Bounds::EMPTY;
+            pad.outlines.iter().flatten().for_each(|q| pb.add(*q));
+            let pc = pb.center();
+            let reach = pb.size()[0].max(pb.size()[1]) / 2.0 + NEAR_VIA;
+            let holes: Vec<&crate::layout::PlacedPad> = layout
+                .parts
+                .iter()
+                .flat_map(|p| &p.pads)
+                .filter(|q| q.net == Some(net) && q.drill.is_some() && q.kind != PadKind::Npth)
+                .filter(|q| crate::drc::rings_point_gap(&q.outlines, pc) <= reach)
+                .collect();
+            let joined = !holes.is_empty()
+                && layout.zones.iter().enumerate().any(|(zi, z)| {
+                    if z.net != net || z.layer != layer {
+                        return false;
+                    }
+                    let cells = on_pad(z, &pad.outlines);
+                    if cells.is_empty() {
+                        return false;
+                    }
+                    let label = labels.entry(zi).or_insert_with(|| islands(z));
+                    let mine: std::collections::HashSet<u32> =
+                        cells.iter().map(|&i| label[i]).collect();
+                    holes
+                        .iter()
+                        .filter(|q| q.copper.contains(&layer))
+                        .any(|q| on_pad(z, &q.outlines).iter().any(|&i| mine.contains(&label[i])))
+                });
+            if joined {
+                out.already += 1;
+                continue;
+            }
             let zone_layers: Vec<&String> = layout
                 .zones
                 .iter()
@@ -92,10 +188,6 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             let Some(target) = zone_layers.iter().min_by_key(|l| at_layer(l).abs_diff(here)) else {
                 continue;
             };
-            let mut pb = Bounds::EMPTY;
-            pad.outlines.iter().flatten().for_each(|q| pb.add(*q));
-            let pc = pb.center();
-            let reach = pb.size()[0].max(pb.size()[1]) / 2.0 + NEAR_VIA;
             if placed.iter().any(|(n, at)| *n == net && geom::dist(*at, pc) <= reach) {
                 out.already += 1;
                 continue;
@@ -123,7 +215,11 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 let plan = crate::rules::Planned::after(
                     &base,
                     &kept,
-                    crate::rules::Plan { tracks: vec![stub(c)], vias: vec![via], ..Default::default() },
+                    crate::rules::Plan {
+                        tracks: vec![stub(c)],
+                        vias: vec![via],
+                        ..Default::default()
+                    },
                 );
                 crate::rules::legal(&plan).is_ok()
             };
