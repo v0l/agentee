@@ -703,6 +703,17 @@ impl Layout {
         (moved.into_values().collect(), failing)
     }
 
+    pub fn apply_labels(&mut self, fixes: &[LabelFix]) {
+        for f in fixes {
+            let Some(at) = f.at else { continue };
+            let Some(p) = self.parts.iter_mut().find(|p| p.reference == f.reference) else {
+                continue;
+            };
+            let size = p.label.as_ref().map_or(1.0, |l| l.size);
+            p.label = Some(Label { at, rotation: f.rotation, size, hide: false, moved: true });
+        }
+    }
+
     pub fn unrouted(&self) -> usize {
         self.nets.iter().map(|n| n.unrouted).sum()
     }
@@ -2423,6 +2434,7 @@ fn check_silk(
     texts.extend(board_texts(graphics));
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
     let spans = part_spans(parts);
+    let idx = SilkIndex::new(&boxes, &spans, vias, tracks, parts);
     for a in artwork.iter().filter(|a| artwork_on && a.layer.ends_with(".SilkS")) {
         let at = format!("silk {}", a.name);
         let cu = format!("{}.Cu", a.layer.trim_end_matches(".SilkS"));
@@ -2477,7 +2489,9 @@ fn check_silk(
         if !texts_on {
             continue;
         }
-        let found = silk_issues(t, &boxes[i], i, &texts, &boxes, parts, &spans, vias, board_edge);
+        let found = silk_issues(
+            t, &boxes[i], i, &texts, &boxes, parts, &spans, vias, board_edge, &idx, false,
+        );
         if found.is_empty() {
             continue;
         }
@@ -2487,7 +2501,7 @@ fn check_silk(
                     None
                 } else {
                     let scene = (parts, spans.as_slice(), vias, tracks);
-                    free_spot(t, p, &texts, &boxes, i, scene, board_edge)
+                    free_spot(t, p, &texts, &boxes, i, scene, board_edge, &idx)
                 };
                 fixes.push(LabelFix {
                     reference: p.reference.clone(),
@@ -2526,9 +2540,16 @@ fn silk_issues(
     spans: &[Bounds],
     vias: &[Via],
     board_edge: geom::BoardEdge,
+    idx: &SilkIndex,
+    quick: bool,
 ) -> Vec<(bool, String)> {
     let mut out = Vec::new();
+    if quick && board_edge.is_closed() && !board_edge.holds(bx) {
+        out.push((true, "runs off the board".into()));
+        return out;
+    }
     let reach = ring_bounds(std::slice::from_ref(&bx.to_vec()));
+    let near_parts = idx.parts.near(&reach, idx.reach);
     let near = |pts: &mut dyn Iterator<Item = P>, gap: f64| {
         let mut b = Bounds::EMPTY;
         pts.for_each(|q| b.add(q));
@@ -2538,13 +2559,17 @@ fn silk_issues(
             && b.max[1] + gap >= reach.min[1]
             && b.min[1] - gap <= reach.max[1]
     };
-    for (j, u) in texts.iter().enumerate() {
+    for j in idx.texts.near(&reach, idx.reach) {
+        let u = &texts[j];
         if j != me
             && u.layer == t.layer
             && near(&mut boxes[j].iter().copied(), SILK_GAP)
             && geom::polygon_distance(bx, &boxes[j]) < SILK_GAP
         {
             out.push((true, format!("crowds `{}` of {}", u.text, u.owner)));
+            if quick {
+                return out;
+            }
         }
     }
     let close = |k: usize| {
@@ -2558,11 +2583,11 @@ fn silk_issues(
     };
     let side = t.layer.trim_end_matches(".SilkS");
     let cu = format!("{side}.Cu");
-    let pads: Vec<String> = parts
+    let pads: Vec<String> = near_parts
         .iter()
-        .enumerate()
-        .filter(|(k, _)| close(*k))
-        .flat_map(|(_, p)| p.pads.iter().map(move |q| (p, q)))
+        .filter(|&&k| close(k))
+        .map(|&k| &parts[k])
+        .flat_map(|p| p.pads.iter().map(move |q| (p, q)))
         .filter(|(_, q)| {
             (q.copper.contains(&cu) || q.drill.is_some())
                 && q.outlines.iter().any(|o| {
@@ -2573,10 +2598,16 @@ fn silk_issues(
         .collect();
     if !pads.is_empty() {
         out.push((true, format!("sits on pads {}, it will be clipped", pads.join(", "))));
+        if quick {
+            return out;
+        }
     }
     let face = if t.layer.starts_with("B.") { "B.Cu" } else { "F.Cu" };
-    let on_vias = vias
-        .iter()
+    let on_vias = idx
+        .vias
+        .near(&reach, idx.reach)
+        .into_iter()
+        .map(|k| &vias[k])
         .filter(|v| {
             v.hole.iter().any(|l| l == face)
                 && near(&mut std::iter::once(v.at), v.diameter / 2.0)
@@ -2589,51 +2620,45 @@ fn silk_issues(
             true,
             format!("prints over {on_vias} via{}", if on_vias == 1 { "" } else { "s" }),
         ));
+        if quick {
+            return out;
+        }
     }
     let flipped = flip(&t.layer, true);
-    let crossed: Vec<&str> = parts
+    let crossed: Vec<&str> = near_parts
         .iter()
-        .enumerate()
-        .filter(|(k, _)| close(*k))
-        .map(|(_, p)| p)
-        .filter(|p| {
-            let tf = p.transform();
+        .filter(|&&k| close(k))
+        .filter(|&&k| {
+            let p = &parts[k];
             let layer = if p.bottom { &flipped } else { &t.layer };
-            p.footprint.graphics.iter().any(|g| {
-                g.layer == *layer && !matches!(g.shape, crate::graphic::Shape::Text { .. }) && {
-                    let reach = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
-                    let b = g.bounds();
-                    let corners = [b.min, [b.max[0], b.min[1]], b.max, [b.min[0], b.max[1]]];
-                    near(&mut corners.map(|q| tf.apply(q)).into_iter(), reach) && {
-                        let path: Vec<P> = crate::footprint::graphic_path(g)
-                            .into_iter()
-                            .map(|q| tf.apply(q))
-                            .collect();
-                        let gap = g.width.to_mm() / 2.0 + SILK_GAP / 2.0;
-                        path.len() >= 2
-                            && near(&mut path.iter().copied(), gap)
-                            && geom::polyline_polygon_distance(&path, bx)
-                                < g.width.to_mm() / 2.0 + SILK_GAP / 2.0
-                    }
-                }
+            idx.lines[k].iter().any(|l| {
+                l.layer == *layer
+                    && l.b.max[0] + l.gap >= reach.min[0]
+                    && l.b.min[0] - l.gap <= reach.max[0]
+                    && l.b.max[1] + l.gap >= reach.min[1]
+                    && l.b.min[1] - l.gap <= reach.max[1]
+                    && geom::polyline_polygon_distance(&l.path, bx) < l.gap
             })
         })
-        .map(|p| p.reference.as_str())
+        .map(|&k| parts[k].reference.as_str())
         .collect();
     if !crossed.is_empty() {
         out.push((true, format!("crosses the silk outline of {}", crossed.join(", "))));
+        if quick {
+            return out;
+        }
     }
     if board_edge.is_closed() && !board_edge.holds(bx) {
         out.push((true, "runs off the board".into()));
     }
     let side = if t.layer.starts_with("B.") { "B" } else { "F" };
-    let hidden: Vec<&str> = parts
+    let hidden: Vec<&str> = near_parts
         .iter()
-        .enumerate()
-        .filter(|(k, p)| {
+        .map(|&k| (k, &parts[k]))
+        .filter(|(k, _)| {
             *k != t.part
                 && close(*k)
-                && body_box(p, side).is_some_and(|b| {
+                && idx.bodies[*k][usize::from(side == "B")].as_ref().is_some_and(|b| {
                     near(&mut b.iter().copied(), 0.0) && geom::polygon_distance(&b, bx) <= 0.0
                 })
         })
@@ -2700,6 +2725,7 @@ fn free_spot(
     me: usize,
     scene: (&[Placed], &[Bounds], &[Via], &[Track]),
     board_edge: geom::BoardEdge,
+    idx: &SilkIndex,
 ) -> Option<(P, f64)> {
     let (parts, spans, vias, tracks) = scene;
     let mut b = Bounds::EMPTY;
@@ -2758,11 +2784,17 @@ fn free_spot(
             ..t.clone()
         };
         let bx = trial.outline();
-        silk_issues(&trial, &bx, me, texts, boxes, parts, spans, vias, board_edge).is_empty()
-            && !tracks.iter().any(|tr| {
-                tr.layer == cu
-                    && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
-            })
+        silk_issues(&trial, &bx, me, texts, boxes, parts, spans, vias, board_edge, idx, true)
+            .is_empty()
+            && !idx
+                .tracks
+                .near(&ring_bounds(std::slice::from_ref(&bx)), idx.reach)
+                .into_iter()
+                .map(|k| &tracks[k])
+                .any(|tr| {
+                    tr.layer == cu
+                        && geom::polyline_polygon_distance(&tr.points, &bx) < tr.width / 2.0 + 0.1
+                })
     })
 }
 
@@ -3053,6 +3085,7 @@ fn place_mark(
     texts.extend(avoid.iter().cloned());
     let boxes: Vec<Vec<P>> = texts.iter().map(|t| t.outline()).collect();
     let spans = part_spans(parts);
+    let idx = SilkIndex::new(&boxes, &spans, vias, &[], parts);
     let make = |at: P, rotation: f64, layer: &str, size: f64| SilkText {
         owner: mark.owner.into(),
         part: usize::MAX,
@@ -3065,11 +3098,22 @@ fn place_mark(
     };
     let problems = |t: &SilkText| -> Vec<String> {
         let bx = t.outline();
-        let mut out: Vec<String> =
-            silk_issues(t, &bx, usize::MAX, &texts, &boxes, parts, &spans, vias, board_edge)
-                .into_iter()
-                .map(|(_, s)| s)
-                .collect();
+        let mut out: Vec<String> = silk_issues(
+            t,
+            &bx,
+            usize::MAX,
+            &texts,
+            &boxes,
+            parts,
+            &spans,
+            vias,
+            board_edge,
+            &idx,
+            false,
+        )
+        .into_iter()
+        .map(|(_, s)| s)
+        .collect();
         let lines = graphics.iter().any(|g| {
             g.layer == t.layer && !matches!(g.shape, crate::graphic::Shape::Text { .. }) && {
                 let path = crate::footprint::graphic_path(g);
@@ -4269,6 +4313,117 @@ pub(crate) fn parallel_overlap(a0: P, a1: P, b0: P, b1: P) -> Option<(f64, f64)>
     }
     let mid = [b0[0] - a0[0], b0[1] - a0[1]];
     Some((overlap, (u[0] * mid[1] - u[1] * mid[0]).abs()))
+}
+
+const SILK_BIN: f64 = 2.0;
+
+struct Bins {
+    map: HashMap<(i64, i64), Vec<usize>>,
+}
+
+impl Bins {
+    fn new(items: impl Iterator<Item = Bounds>) -> Bins {
+        let mut map: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for (i, b) in items.enumerate() {
+            if b.is_empty() {
+                continue;
+            }
+            for c in Self::cells(&b, 0.0) {
+                map.entry(c).or_default().push(i);
+            }
+        }
+        Bins { map }
+    }
+
+    fn cells(b: &Bounds, margin: f64) -> impl Iterator<Item = (i64, i64)> {
+        let f = |v: f64| (v / SILK_BIN).floor() as i64;
+        let (x0, y0) = (f(b.min[0] - margin), f(b.min[1] - margin));
+        let (x1, y1) = (f(b.max[0] + margin), f(b.max[1] + margin));
+        (y0..=y1).flat_map(move |y| (x0..=x1).map(move |x| (x, y)))
+    }
+
+    fn near(&self, b: &Bounds, margin: f64) -> Vec<usize> {
+        let mut out: Vec<usize> =
+            Self::cells(b, margin).filter_map(|c| self.map.get(&c)).flatten().copied().collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
+
+struct SilkLine {
+    layer: String,
+    path: Vec<P>,
+    gap: f64,
+    b: Bounds,
+}
+
+struct SilkIndex {
+    texts: Bins,
+    parts: Bins,
+    vias: Bins,
+    tracks: Bins,
+    reach: f64,
+    lines: Vec<Vec<SilkLine>>,
+    bodies: Vec<[Option<Vec<P>>; 2]>,
+}
+
+impl SilkIndex {
+    fn new(
+        boxes: &[Vec<P>],
+        spans: &[Bounds],
+        vias: &[Via],
+        tracks: &[Track],
+        parts: &[Placed],
+    ) -> SilkIndex {
+        let lines = parts
+            .iter()
+            .map(|p| {
+                let tf = p.transform();
+                p.footprint
+                    .graphics
+                    .iter()
+                    .filter(|g| !matches!(g.shape, crate::graphic::Shape::Text { .. }))
+                    .filter_map(|g| {
+                        let path: Vec<P> = crate::footprint::graphic_path(g)
+                            .into_iter()
+                            .map(|q| tf.apply(q))
+                            .collect();
+                        (path.len() >= 2).then(|| {
+                            let mut b = Bounds::EMPTY;
+                            path.iter().for_each(|q| b.add(*q));
+                            SilkLine {
+                                layer: g.layer.clone(),
+                                gap: g.width.to_mm() / 2.0 + SILK_GAP / 2.0,
+                                path,
+                                b,
+                            }
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        let bodies = parts.iter().map(|p| [body_box(p, "F"), body_box(p, "B")]).collect();
+        let via_r = vias.iter().map(|v| v.diameter / 2.0).fold(0.0, f64::max);
+        let track_r = tracks.iter().map(|t| t.width / 2.0).fold(0.0, f64::max);
+        SilkIndex {
+            texts: Bins::new(boxes.iter().map(|b| ring_bounds(std::slice::from_ref(b)))),
+            parts: Bins::new(spans.iter().copied()),
+            vias: Bins::new(vias.iter().map(|v| {
+                let mut b = Bounds::EMPTY;
+                b.add(v.at);
+                b
+            })),
+            tracks: Bins::new(tracks.iter().map(|t| {
+                let mut b = Bounds::EMPTY;
+                t.points.iter().for_each(|q| b.add(*q));
+                b
+            })),
+            reach: SILK_GAP + 0.2 + via_r.max(track_r),
+            lines,
+            bodies,
+        }
+    }
 }
 
 fn ring_bounds(rings: &[Vec<P>]) -> Bounds {

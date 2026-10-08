@@ -473,13 +473,11 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
                 }
                 d.doc.board_texts(&plan.texts);
                 reload_ms = d.reload_unfilled(model)?;
-                for _ in 0..3 {
-                    let (moved, _) = model.layout.settle_labels(model.board);
-                    if moved.is_empty() {
-                        break;
-                    }
+                let (moved, _) = model.layout.settle_labels(model.board);
+                if !moved.is_empty() {
                     d.doc.labels(&moved);
-                    reload_ms += d.reload_unfilled(model)?;
+                    model.layout.apply_labels(&moved);
+                    model.file = d.doc.file();
                 }
             }
             model.hot.clear();

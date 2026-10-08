@@ -1460,6 +1460,11 @@ impl<'a> Placer<'a> {
         false
     }
 
+    fn legal_shape(&self, i: usize, st: St, skip: &[usize]) -> bool {
+        let sh = self.shapes(i, st);
+        self.inside(i, st, &sh) && !self.clashes(i, &sh, skip) && !self.too_hot(i, &sh, skip)
+    }
+
     fn legal(&self, i: usize, st: St, skip: &[usize]) -> bool {
         let sh = self.shapes(i, st);
         self.inside(i, st, &sh)
@@ -1484,8 +1489,15 @@ impl<'a> Placer<'a> {
             min: [own.min[0] - reach, own.min[1] - reach],
             max: [own.max[0] + reach, own.max[1] + reach],
         };
-        if !cu.separates && !cu.fixed_near(&own, reach) {
-            return true;
+        if !cu.separates {
+            let t = st.transform();
+            let mut pads = Bounds::EMPTY;
+            for q in &self.parts[i].pads {
+                q.outline.iter().flatten().for_each(|p| pads.add(t.apply(*p)));
+            }
+            if pads.is_empty() || !cu.fixed_near(&pads, self.reach) {
+                return true;
+            }
         }
         let mut kept = crate::rules::Plan::default();
         let mut seen = Vec::new();
@@ -2208,7 +2220,9 @@ fn place_once(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, St
         footprints: input.footprints.clone(),
         heat: Vec::new(),
     };
-    let layout = file.resolve(&cx, &mut crate::diag::Diags::new(""));
+    let layout = crate::layout::without_checks(|| {
+        crate::layout::without_fills(|| file.resolve(&cx, &mut crate::diag::Diags::new("")))
+    });
     let hidden: Vec<usize> = (0..layout.parts.len())
         .filter(|&i| moving(input, opts, &layout.parts[i].reference))
         .collect();
@@ -4446,7 +4460,7 @@ impl<'a> Placer<'a> {
             }
             let mut ok = true;
             for (x, &m) in set.iter().enumerate() {
-                if !self.legal(m, new[x], &set) {
+                if !self.legal_shape(m, new[x], &set) {
                     ok = false;
                     break;
                 }
@@ -4485,7 +4499,13 @@ impl<'a> Placer<'a> {
                 }
                 continue;
             }
-            if delta <= 0.0 || rng.unit() < (-delta / cur_t).exp() {
+            let take = delta <= 0.0 || rng.unit() < (-delta / cur_t).exp();
+            let copper = take
+                && set.iter().enumerate().all(|(x, &m)| {
+                    let sh = self.shapes(m, new[x]);
+                    self.copper_ok(m, new[x], &sh, &set)
+                });
+            if copper {
                 accepted += 1;
             } else {
                 for &m in &set {
