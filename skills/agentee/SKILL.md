@@ -145,8 +145,10 @@ Order of work, each stage passing check before the next:
      room, `--width` or `--height` holds a side, `--write` resizes the board and writes the
      placement. Use it instead of shrinking the outline by hand and replacing.
    - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
-   - `agentee tie NAME` stubs every SMD pad of a plane net to its plane with a via. A pad with a
-     via close by, or whose pour already joins a plated hole of its net beside it, is left alone.
+   - `agentee tie NAME` stubs each SMD pad of a plane net that does not yet reach its plane to
+     the plane with a via. A pad that its pour, tracks or vias already join to the plane is left
+     alone, except decap and RF part grounds, which each get a via unless one is within 0.8 mm.
+     A second run adds nothing.
    - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`). Each track
      ends on its pad centre, and a run across an inner-layer pour of another net costs five times
      as much, so planes are slotted only where no other layer fits.

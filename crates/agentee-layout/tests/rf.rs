@@ -104,7 +104,7 @@ fn ground_pads_get_a_via_and_the_router_leaves_the_plane_alone() {
     let (text, l) = placed(&dir, &p);
     let board = &p.boards[0].item;
     let t = agentee_core::tie::tie(&l, board, &[]).unwrap();
-    assert!(t.tied >= 8, "{t:?}");
+    assert!(t.tied >= 6, "the RF part and the decaps get a via beside each ground pad: {t:?}");
     let mut with = text.clone();
     for (tr, v) in t.tracks.iter().zip(&t.vias) {
         assert!(dist(tr.points[1], v.at) < 1e-6);

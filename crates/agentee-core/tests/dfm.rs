@@ -1707,3 +1707,55 @@ fn tie_keeps_off_a_slot_and_skips_a_pad_its_pour_already_joins() {
     let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
     assert_eq!((r.tied, r.already), (0, 1), "{:?}", r.vias);
 }
+
+const ONE_PAD: &str = r#"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [0, 0]
+size = [0.6, 0.6]
+"#;
+
+#[test]
+fn tie_skips_a_pad_its_pour_joins_to_the_plane_far_away_and_ties_nothing_twice() {
+    let board = |pcb: &str| {
+        load(&Fixture {
+            footprints: &[("SHELL", SHELL), ("ONE", ONE_PAD)],
+            parts: &[("J1", "SHELL", [22.0, 10.0]), ("R1", "ONE", [5.0, 5.0])],
+            nets: &[("GND", &["J1.1", "J1.2", "R1.1"])],
+            pcb,
+            ..Default::default()
+        })
+    };
+    let p = board("\n[[zones]]\nnet = \"GND\"\nlayers = [\"F.Cu\", \"B.Cu\"]\n");
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!(r.tied, 0, "R1.1 reaches B.Cu through the F.Cu pour and J1.2: {:?}", r.vias);
+
+    let p = board("\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n");
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!(r.tied, 2, "{:?}", r.failed);
+    let mut pcb = "\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n".to_string();
+    for t in &r.tracks {
+        let pts: Vec<String> = t.points.iter().map(|q| format!("[{}, {}]", q[0], q[1])).collect();
+        let w = t.width.map(|w| format!("width = {w}\n")).unwrap_or_default();
+        pcb += &format!(
+            "\n[[tracks]]\nnet = \"{}\"\nlayer = \"{}\"\n{w}points = [{}]\n",
+            t.net,
+            t.layer,
+            pts.join(", ")
+        );
+    }
+    for v in &r.vias {
+        pcb += &format!(
+            "\n[[vias]]\nnet = \"{}\"\nat = [{}, {}]\nvia = \"{}\"\n",
+            v.net, v.at[0], v.at[1], v.via
+        );
+    }
+    let p = board(&pcb);
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!(r.tied, 0, "a second tie adds nothing: {:?}", r.vias);
+}

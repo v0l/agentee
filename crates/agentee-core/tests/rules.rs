@@ -8,7 +8,11 @@ fn sdr() -> agentee_core::Project {
 #[test]
 fn what_tie_plans_passes_the_rules_the_check_runs() {
     let p = sdr();
-    let l = &p.layouts[0].item;
+    let mut bare = p.layouts[0].item.clone();
+    let gnd = bare.nets.iter().position(|n| n.name == "GND").unwrap();
+    bare.vias.retain(|v| v.net != gnd);
+    bare.tracks.retain(|t| t.net != gnd);
+    let l = &bare;
     let b = &p.boards.iter().find(|x| x.name == l.board).unwrap().item;
     let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
     assert!(r.tied >= 5, "{}", r.tied);

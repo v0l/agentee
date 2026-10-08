@@ -1448,8 +1448,13 @@ away from the part's centre, as close as it can: its copper clear of every SMD p
 so no via-in-pad), its hole `min_hole_to_smd_pad` from them, `min_hole_to_hole` from other holes,
 `min_via_hole_to_copper` and the class clearance from other nets, `min_copper_to_edge` in from
 the outline, and the stub clear of other nets on the pad's layer. It tries 16 directions, nearest
-the outward one first, up to 1.2 mm past the pad. A pad that already has a via of its net within
-0.8 mm of its edge is left alone, through-hole pads and BGA balls (`escape` handles those) are
+the outward one first, up to 1.2 mm past the pad. A pad already joined to the main body of
+its net's zone on another layer is left alone, through whatever copper of its net does it: the
+pour on its own layer, tracks, vias and plated holes, so a pad in a ground pour that reaches the
+plane anywhere needs nothing, and running `tie` again adds nothing. Pads of a decoupling
+capacitor (a capacitor with a pin on a supply net) and of a part on an RF class net are the
+exception: they want the short return path, so each gets its own via unless a via or plated hole
+of its net is within 0.8 mm of its edge. Through-hole pads and BGA balls (`escape` handles those) are
 skipped, and a pad with no legal spot is listed under `failed`. The stubs and vias are appended
 as ordinary `[[tracks]]` and `[[vias]]`.
 
