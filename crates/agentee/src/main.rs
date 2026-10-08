@@ -16,7 +16,7 @@ pub const FORMAT: &str = include_str!("../../../docs/format.md");
 #[derive(Parser)]
 #[command(
     name = "agentee",
-    version,
+    version = concat!(env!("CARGO_PKG_VERSION"), " ", env!("AGENTEE_BUILD_ID")),
     about = "Electronic design for agents: board spec, symbols and footprints as TOML"
 )]
 struct Cli {

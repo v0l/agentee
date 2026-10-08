@@ -807,7 +807,7 @@ fn handle(root: &Path, msg: &Value) -> Option<Value> {
             Ok(json!({
                 "protocolVersion": asked,
                 "capabilities": { "tools": { "listChanged": false } },
-                "serverInfo": { "name": "agentee", "version": env!("CARGO_PKG_VERSION") },
+                "serverInfo": { "name": "agentee", "version": concat!(env!("CARGO_PKG_VERSION"), " ", env!("AGENTEE_BUILD_ID")) },
                 "instructions": INSTRUCTIONS,
             }))
         }
