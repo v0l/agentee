@@ -2371,7 +2371,9 @@ fn search(
     let cells = search_between(grid, net, a, b, &from.cells, &to.cells, ctx, soft, attract, None)?;
     let (a, na) = from.start(cells[0], a);
     let (b, nb) = to.start(cells[cells.len() - 1], b);
-    Ok(Found { cells, a, b, necks: na.into_iter().chain(nb).collect() })
+    let mut necks: Vec<Neck> = na.into_iter().collect();
+    necks.extend(nb.filter(|n| !necks.contains(n)));
+    Ok(Found { cells, a, b, necks })
 }
 
 struct End {
@@ -2874,7 +2876,7 @@ fn geometry(grid: &Grid, path: &[usize], a: P, b: P, net: usize) -> Geometry {
             .iter()
             .find(|(n, layers, v)| *n == net && layers.contains(&l) && on_pad(v, c))?;
         let to = if on_pad(pad, q) { q } else { bbox_center(pad) };
-        within(pad, c, to).then_some(to)
+        (within(pad, c, to) && clear_line(grid, l, c, to, net)).then_some(to)
     };
     let mut run: Vec<P> = land(path[0], a).into_iter().collect();
     let mut layer = unpack(path[0]).0;

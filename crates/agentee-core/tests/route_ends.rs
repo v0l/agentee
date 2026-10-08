@@ -211,3 +211,119 @@ fn routes_keep_off_an_inner_plane_of_another_net() {
     assert_eq!(on("In1.Cu"), 0, "{:?}", r.tracks);
     assert!(on("In2.Cu") > 0, "{:?}", r.tracks);
 }
+
+const DUP: &str = r#"name = "Dup"
+mount = "smd"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [0.3, 0.9]
+layers = ["F.Cu", "F.Paste", "F.Mask"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.0]
+size = [0.3, 0.9]
+layers = ["F.Cu", "F.Paste", "F.Mask"]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "rect"
+at = [-0.5, 0.2]
+size = [0.3, 0.5]
+layers = ["F.Cu", "F.Paste", "F.Mask"]
+
+[[pads]]
+number = "4"
+kind = "smd"
+shape = "rect"
+at = [0.5, 0.2]
+size = [0.3, 0.5]
+layers = ["F.Cu", "F.Paste", "F.Mask"]
+
+[[pads]]
+number = "5"
+kind = "smd"
+shape = "rect"
+at = [0.0, 0.85]
+size = [1.3, 0.3]
+layers = ["F.Cu", "F.Paste", "F.Mask"]
+"#;
+
+#[test]
+fn pads_stacked_on_one_spot_neck_once() {
+    let dir = std::env::temp_dir().join(format!("agentee-route-dup-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("symbols")).unwrap();
+    std::fs::create_dir_all(dir.join("footprints")).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    for f in ["symbols/R.sym.toml", "footprints/R_0402_1005Metric.fp.toml"] {
+        std::fs::copy(lna.join(f), dir.join(f)).unwrap();
+    }
+    std::fs::write(dir.join("footprints/Dup.fp.toml"), DUP).unwrap();
+    std::fs::write(
+        dir.join("t.board.toml"),
+        "name = \"t\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\n\
+         preset = \"jlcpcb-2l-1.6mm\"\n[[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\n\
+         diameter = \"0.6mm\"\n[[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\n\
+         clearance = \"0.15mm\"\nvia = \"std\"\n[[netclasses]]\nname = \"Power\"\n\
+         track_width = \"0.5mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
+    )
+    .unwrap();
+    let parts = [
+        ("J1", "Dup", [15.0, 12.0]),
+        ("C1", "R_0402_1005Metric", [11.0, 7.0]),
+        ("C2", "R_0402_1005Metric", [19.0, 7.0]),
+    ];
+    let mut sch = String::from("name = \"t\"\nboard = \"t\"\n");
+    let mut pcb = String::from("name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n");
+    for (i, (r, fp, at)) in parts.iter().enumerate() {
+        sch += &format!(
+            "\n[[parts]]\nref = \"{r}\"\nsymbol = \"R\"\nvalue = \"x\"\nfootprint = \"{fp}\"\nat = [{}, 20.32]\n",
+            10.16 * (i + 1) as f64
+        );
+        pcb += &format!(
+            "\n[[footprints]]\nref = \"{r}\"\nat = [{}, {}]\nlabel = {{ hide = true }}\n",
+            at[0], at[1]
+        );
+    }
+    for (n, class, pins) in [
+        ("VBUS", "Power", "\"J1.1\", \"J1.2\", \"C1.1\", \"C2.1\""),
+        ("A", "Default", "\"J1.3\""),
+        ("B", "Default", "\"J1.4\""),
+        ("C", "Default", "\"J1.5\""),
+        ("D", "Default", "\"C1.2\", \"C2.2\""),
+    ] {
+        sch += &format!("\n[[nets]]\nname = \"{n}\"\nclass = \"{class}\"\npins = [{pins}]\n");
+    }
+    std::fs::write(dir.join("t.sch.toml"), sch).unwrap();
+    std::fs::write(dir.join("t.pcb.toml"), pcb).unwrap();
+    let p = Project::load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let (layout, board) = (&p.layouts[0].item, &p.boards[0].item);
+    let stacked = layout.ratsnest.iter().filter(|(a, b, _)| dist(*a, *b) < 1e-6).count();
+    assert_eq!(stacked, 0, "touching pads of one net count as one terminal: {:?}", layout.ratsnest);
+    let opts = RouteOptions { nets: vec!["VBUS".into()], ..Default::default() };
+    let r = route(layout, board, &opts).unwrap();
+    assert_eq!(r.routed, r.connections, "{:?}", r.failed);
+    let mut segs: Vec<(String, [i64; 4])> = Vec::new();
+    for t in &r.tracks {
+        for w in t.points.windows(2) {
+            let k = |v: f64| (v * 1e3).round() as i64;
+            let (a, b) = if (k(w[0][0]), k(w[0][1])) <= (k(w[1][0]), k(w[1][1])) {
+                (w[0], w[1])
+            } else {
+                (w[1], w[0])
+            };
+            let key = (t.layer.clone(), [k(a[0]), k(a[1]), k(b[0]), k(b[1])]);
+            assert!(!segs.contains(&key), "{key:?} planned twice: {:?}", r.tracks);
+            segs.push(key);
+        }
+    }
+}

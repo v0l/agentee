@@ -1542,7 +1542,10 @@ impl LayoutFile {
                 {
                     let number = |k: usize| parts[p1].pads[k].number.as_str();
                     if a.net.is_some() && a.net == b.net {
-                        if !number(k1).is_empty() && number(k1) == number(k2) {
+                        let numbered = !number(k1).is_empty() && number(k1) == number(k2);
+                        let touching = a.layers.iter().any(|l| b.layers.contains(l))
+                            && a.shape.distance(&b.shape) <= 1e-6;
+                        if numbered || touching {
                             uf.union(i, j);
                         }
                         continue;
