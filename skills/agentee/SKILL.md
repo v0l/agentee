@@ -117,11 +117,13 @@ Order of work, each stage passing check before the next:
    preset from `agentee stackups --fab jlcpcb --layers 4` (or `pcbway`, `generic`) rather than
    typing layers in. Define `Default` and one net class per kind of net (RF, power, pairs). Put
    impedance and current targets on the class and let check solve the widths; `agentee show
-   board:NAME` prints them per layer. Give every class that carries more than logic levels a
-   `voltage` (`"48VDC"`, `"230VAC"`): it sets the clearance and creepage to every other class
-   (reinforced from SELV), defaults DC sim supplies and logic rails, and checks capacitor ratings.
-   One class per conductor that can differ: `DC+`/`DC-` with signed voltages, `L1`, `L2`, `L3`
-   each `"230VAC"`, never two phases in one class. Do not write `[[domains]]` or `[[barriers]]`
+   board:NAME` prints them per layer. Give every class a `voltage`, the highest its nets reach
+   (`"0VDC"` for ground, `"3.3VDC"` for 3.3 V logic, `"48VDC"`, `"230VAC"`); a class without one
+   is a warning. It sets the clearance and creepage to every other class (reinforced from SELV),
+   defaults DC sim supplies, makes the power nets of the class rails for the level check (a rail
+   named for its voltage, `1V8`, `3V3_PLL`, takes that voltage instead) and checks capacitor
+   ratings. Above SELV, one class per conductor that can differ: `DC+`/`DC-` with signed
+   voltages, `L1`, `L2`, `L3` each `"230VAC"`, never two phases in one class. Do not write `[[domains]]` or `[[barriers]]`
    for what a voltage already covers.
    `agentee edit board` does all of this, and check names the width a class needs.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same

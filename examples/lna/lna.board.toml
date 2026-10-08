@@ -18,12 +18,14 @@ diameter = "0.6mm"
 
 [[netclasses]]
 name = "Default"
+voltage = "5VDC"
 track_width = "0.2mm"
 clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
 name = "Signal"
+voltage = "5VDC"
 description = "LED_A: the power LED's anode"
 track_width = "0.2mm"
 clearance = "0.2mm"
@@ -31,6 +33,7 @@ via = "std"
 
 [[netclasses]]
 name = "Ground"
+voltage = "0VDC"
 description = "GND, the In1.Cu plane and the F.Cu pour"
 track_width = "0.2mm"
 clearance = "0.2mm"
@@ -38,6 +41,7 @@ via = "std"
 
 [[netclasses]]
 name = "RF"
+voltage = "5VDC"
 description = "RF_IN, RF_AMP_IN, RF_AMP_OUT, RF_OUT: grounded coplanar over the In1.Cu plane, stitch the pour every 2 mm"
 impedance = "50ohm"
 impedance_tolerance = "5%"
@@ -50,6 +54,7 @@ via = "std"
 
 [[netclasses]]
 name = "Power"
+voltage = "5VDC"
 description = "VBIAS, VEXT, VCC: 90 mA typical, 105 mA max for the SPF5189Z plus 2 mA for the LED"
 track_width = "0.4mm"
 clearance = "0.2mm"

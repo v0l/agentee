@@ -194,6 +194,30 @@ fn rail_token(tok: &str) -> bool {
         && tail.chars().all(|c| c.is_ascii_digit())
 }
 
+pub fn rail_volts(name: &str) -> Option<f64> {
+    name.to_ascii_uppercase().split(['_', '-', '/']).find_map(|tok| {
+        let t = tok.strip_prefix('+').unwrap_or(tok);
+        let (lead, tail) = match t.strip_prefix('V') {
+            Some(r) if r.starts_with(|c: char| c.is_ascii_digit()) => (r, ""),
+            _ => t.split_at(t.find('V')?),
+        };
+        let tail = tail.strip_prefix('V').unwrap_or(tail);
+        let digits = |s: &str| s.chars().all(|c| c.is_ascii_digit() || c == '.' || c == 'P');
+        let lead: String = if tail.is_empty() {
+            lead.chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == 'P').collect()
+        } else {
+            lead.to_string()
+        };
+        if lead.is_empty() || !lead.starts_with(|c: char| c.is_ascii_digit()) || !digits(&lead) {
+            return None;
+        }
+        let frac: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let whole = lead.replace('P', ".");
+        let text = if frac.is_empty() { whole } else { format!("{whole}.{frac}") };
+        text.parse().ok()
+    })
+}
+
 pub fn is_rail(name: &str) -> bool {
     let up = name.to_ascii_uppercase();
     RAIL_PREFIXES.iter().any(|p| up.starts_with(p)) || up.split(['_', '-', '/']).any(rail_token)
@@ -644,6 +668,31 @@ mod tests {
         }
         for n in ["RF_OUT", "LED_DV2", "USB_DP", "SPI_MOSI", "V_SENSE"] {
             assert!(!is_rail(n), "{n}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod rail_volts_tests {
+    use super::rail_volts;
+
+    #[test]
+    fn reads_the_voltage_in_a_rail_name() {
+        for (name, v) in [
+            ("1V8", Some(1.8)),
+            ("3V3_PLL", Some(3.3)),
+            ("1V3A", Some(1.3)),
+            ("TX_VCO_1V1", Some(1.1)),
+            ("+5V", Some(5.0)),
+            ("V5", Some(5.0)),
+            ("V3P3", Some(3.3)),
+            ("12V", Some(12.0)),
+            ("GND", None),
+            ("VBUS", None),
+            ("VDD_GPO", None),
+            ("AD_P0_D5", None),
+        ] {
+            assert_eq!(rail_volts(name), v, "{name}");
         }
     }
 }

@@ -20,24 +20,28 @@ diameter = "0.6mm"
 
 [[netclasses]]
 name = "Default"
+voltage = "3.3VDC"
 track_width = "0.2mm"
 clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
 name = "Signal"
+voltage = "3.3VDC"
 track_width = "0.2mm"
 clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
 name = "Ground"
+voltage = "0VDC"
 track_width = "0.4mm"
 clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
 name = "Power"
+voltage = "3.3VDC"
 track_width = "0.6mm"
 clearance = "0.2mm"
 current = "1A"

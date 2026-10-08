@@ -36,12 +36,14 @@ cost = 3.0
 
 [[netclasses]]
 name = "Default"
+voltage = "3.3VDC"
 track_width = "0.1mm"
 clearance = "0.1mm"
 via = ["uv-top", "core", "std"]
 
 [[netclasses]]
 name = "Signal"
+voltage = "3.3VDC"
 description = "The coupon's test signals"
 track_width = "0.1mm"
 clearance = "0.1mm"
@@ -49,6 +51,7 @@ via = ["uv-top", "core", "std"]
 
 [[netclasses]]
 name = "Ground"
+voltage = "0VDC"
 track_width = "0.1mm"
 clearance = "0.1mm"
 via = ["uv-top", "core", "std"]

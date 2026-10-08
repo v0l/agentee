@@ -445,9 +445,16 @@ impl Schematic {
             if self.rails.contains_key(&n.name) {
                 continue;
             }
-            if let Some(v) = board.voltage_of(&n.class).filter(|v| v.ac == 0.0) {
-                self.rails.insert(n.name.clone(), [v.dc, v.dc]);
+            let named = crate::testpoint::rail_volts(&n.name);
+            if named.is_none() && !crate::place::is_power_net(board, &n.name, &n.class) {
+                continue;
             }
+            let Some(class) = board.voltage_of(&n.class).filter(|v| v.ac == 0.0).map(|v| v.dc)
+            else {
+                continue;
+            };
+            let v = named.map_or(class, |v| v.min(class.abs()).copysign(class));
+            self.rails.insert(n.name.clone(), [v, v]);
         }
     }
 

@@ -134,6 +134,7 @@ diameter = 0.7
 
 [[netclasses]]
 name = "Default"
+voltage = "5VDC"
 track_width = 0.127
 clearance = 0.127
 via = "v0.3-0.45"
@@ -141,6 +142,7 @@ diff_gap = 0.175
 
 [[netclasses]]
 name = "diff100"
+voltage = "3.3VDC"
 description = "KiCad diff100, 0.3 mm; narrowed to the narrowest routed track 0.25 mm"
 track_width = 0.25
 clearance = 0.127
@@ -149,6 +151,7 @@ diff_gap = 0.4
 
 [[netclasses]]
 name = "diff90"
+voltage = "3.3VDC"
 description = "KiCad diff90, 0.25 mm; narrowed to the narrowest routed track 0.127 mm"
 track_width = 0.127
 clearance = 0.127
@@ -157,6 +160,7 @@ diff_gap = 0.127
 
 [[netclasses]]
 name = "Ground"
+voltage = "0VDC"
 description = "Ground nets by name; the rules of the KiCad Default class"
 track_width = 0.127
 clearance = 0.127
@@ -165,6 +169,7 @@ diff_gap = 0.175
 
 [[netclasses]]
 name = "Power"
+voltage = "5VDC"
 description = "Supply rails by name and nets that own a pour; the rules of the KiCad Default class"
 track_width = 0.127
 clearance = 0.127
@@ -173,6 +178,7 @@ diff_gap = 0.175
 
 [[netclasses]]
 name = "Signal"
+voltage = "3.3VDC"
 description = "Nets KiCad leaves in Default that are not ground or supply; the rules of the KiCad Default class"
 track_width = 0.127
 clearance = 0.127

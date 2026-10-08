@@ -77,6 +77,16 @@ name = "Mains"
 track_width = "0.5mm"
 via = "std"
 voltage = "230VAC"
+[[netclasses]]
+name = "Logic"
+track_width = "0.2mm"
+via = "std"
+voltage = "3.3VDC"
+[[netclasses]]
+name = "Rails"
+track_width = "0.3mm"
+via = "std"
+voltage = "3.3VDC"
 "#,
     )
     .unwrap();
@@ -95,11 +105,14 @@ voltage = "230VAC"
         part("C1", "C", "100n/6.3V", 30.48),
         part("C2", "C", "10n/250V", 40.64),
         part("C3", "C", "10n/450V", 50.8),
+        part("J3", "P", "IO", 55.88),
         net("V5", "Rail", "\"J1.1\", \"C1.1\""),
         net("GND", "Ground", "\"J1.2\", \"C1.2\", \"C2.2\", \"C3.2\""),
         net("HV", "Hv", "\"C2.1\", \"C3.1\""),
         net("L", "Mains", "\"J2.1\""),
         net("N", "Mains", "\"J2.2\""),
+        net("EN", "Logic", "\"J3.1\""),
+        net("1V8", "Rails", "\"J3.2\""),
     ]
     .concat();
     std::fs::write(dir.join("t.sch.toml"), sch).unwrap();
@@ -111,6 +124,7 @@ voltage = "230VAC"
         at("C1", 15.0),
         at("C2", 25.0),
         at("C3", 35.0),
+        at("J3", 42.0),
     ]
     .concat();
     std::fs::write(dir.join("t.pcb.toml"), pcb).unwrap();
@@ -160,6 +174,21 @@ fn dc_classes_become_rails_for_the_level_check() {
     assert_eq!(rails.get("V5"), Some(&[4.8, 4.8]));
     assert_eq!(rails.get("GND"), Some(&[0.0, 0.0]));
     assert!(rails.get("L").is_none(), "an AC net is no logic rail");
+    assert!(rails.get("EN").is_none(), "a logic signal is no rail");
+    assert_eq!(rails.get("1V8"), Some(&[1.8, 1.8]), "a named rail in a shared class");
+}
+
+#[test]
+fn a_class_without_a_voltage_is_a_warning() {
+    let p = project(DC);
+    let w: Vec<&str> = p.boards[0]
+        .diags
+        .iter()
+        .filter(|d| d.severity == Severity::Warning)
+        .map(|d| d.message.as_str())
+        .collect();
+    assert!(w.iter().any(|m| m.contains("netclass `Default` has no `voltage`")), "{w:?}");
+    assert!(!w.iter().any(|m| m.contains("netclass `Rail` has no")), "{w:?}");
 }
 
 #[test]

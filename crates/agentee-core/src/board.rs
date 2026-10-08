@@ -1291,6 +1291,15 @@ impl BoardFile {
                 if n.track_width.is_none() && n.impedance.is_none() {
                     d.error(&at, format!("netclass `{}` needs `track_width`", n.name));
                 }
+                if n.voltage.is_none() {
+                    d.warn(
+                        &at,
+                        format!(
+                            "netclass `{}` has no `voltage`: give it the highest voltage its nets reach (`3.3VDC` for 3.3 V logic, `0VDC` for ground); it sets the spacing to other classes, the rails of power nets and the capacitor ratings",
+                            n.name
+                        ),
+                    );
+                }
                 let layers = if n.layers.is_empty() { copper.clone() } else { n.layers.clone() };
                 let track_width = n.track_width.unwrap_or_else(|| {
                     n.impedance

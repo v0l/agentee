@@ -797,6 +797,7 @@ fn netclasses(ui: &mut Ui, b: &Board) {
         ("layer", 62.0),
         ("width", 62.0),
         ("clear", 56.0),
+        ("voltage", 70.0),
         ("target", 70.0),
         ("z", 66.0),
         ("fit w", 62.0),
@@ -811,6 +812,10 @@ fn netclasses(ui: &mut Ui, b: &Board) {
             cell(p, r, at(0), cols[0].1, &n.name, VALUE);
             cell(p, r, at(2), cols[2].1, &mm(n.track_width), READOUT);
             cell(p, r, at(3), cols[3].1, &mm(n.clearance), READOUT);
+            match n.voltage {
+                Some(v) => cell(p, r, at(4), cols[4].1, &v.to_string(), READOUT),
+                None => cell(p, r, at(4), cols[4].1, "none", FAULT),
+            }
         }
         cell(p, r, at(1), cols[1].1, &a.layer, LEGEND);
         let kind = match (n.diff_gap, n.coplanar_gap) {
@@ -819,28 +824,28 @@ fn netclasses(ui: &mut Ui, b: &Board) {
             _ => "",
         };
         if let Some(t) = n.impedance {
-            cell(p, r, at(4), cols[4].1, &format!("{}{kind}", trim(t.0, 1)), READOUT);
+            cell(p, r, at(5), cols[5].1, &format!("{}{kind}", trim(t.0, 1)), READOUT);
         }
         let zc = match a.impedance_ok {
             Some(true) => TRACE,
             Some(false) => FAULT,
             None => TRACE.gamma_multiply(0.6),
         };
-        cell(p, r, at(5), cols[5].1, &format!("{:.1}{kind}", a.impedance), zc);
+        cell(p, r, at(6), cols[6].1, &format!("{:.1}{kind}", a.impedance), zc);
         if let Some(w) = a.width_for_impedance {
-            cell(p, r, at(6), cols[6].1, &mm(w), TRACE);
+            cell(p, r, at(7), cols[7].1, &mm(w), TRACE);
         }
         cell(
             p,
             r,
-            at(7),
-            cols[7].1,
+            at(8),
+            cols[8].1,
             &format!("{:.2}A", a.current_capacity.0),
             TRACE.gamma_multiply(0.8),
         );
         if let (Some(need), Some(i)) = (a.width_for_current, n.current) {
             let ok = need <= n.track_width;
-            cell(p, r, at(8), cols[8].1, &format!("{}", i), if ok { OK } else { FAULT });
+            cell(p, r, at(9), cols[9].1, &format!("{}", i), if ok { OK } else { FAULT });
         }
     });
     if analysis.is_empty() {

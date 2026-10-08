@@ -23,12 +23,14 @@ diameter = "0.8mm"
 
 [[netclasses]]
 name = "Default"
+voltage = "3.3VDC"
 track_width = "0.2mm"
 clearance = "0.2mm"
 via = "std"
 
 [[netclasses]]
 name = "Power"
+voltage = "5VDC"
 track_width = "0.8mm"
 clearance = "0.25mm"
 current = "2A"
@@ -37,6 +39,7 @@ layers = ["F.Cu", "B.Cu"]
 
 [[netclasses]]
 name = "USB"
+voltage = "3.3VDC"
 impedance = "90ohm"
 diff_gap = "0.15mm"
 layers = ["F.Cu"]
@@ -44,5 +47,6 @@ via = "std"
 
 [[netclasses]]
 name = "RF"
+voltage = "3.3VDC"
 impedance = "50ohm"
 layers = ["F.Cu"]

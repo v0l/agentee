@@ -84,6 +84,7 @@ diameter = "0.6mm"
 
 [[netclasses]]
 name = "Default"               # always define Default
+voltage = "3.3VDC"             # every class, see Net class voltage
 track_width = "0.2mm"
 clearance = "0.2mm"
 via = "std"                    # or a list the router picks from: ["std", "uvia-top"]
@@ -437,8 +438,9 @@ In1.Cu or In4.Cu (0.123 mm deep), not In2.Cu.
 
 ### Net class voltage
 
-Give a class the voltage its nets carry, `voltage = "48VDC"`, `"-12VDC"` or `"230VAC"` (AC is
-rms against 0 V), and agentee works out the spacing from it:
+Give every class the highest voltage its nets carry, `voltage = "3.3VDC"`, `"0VDC"` for ground,
+`"48VDC"`, `"-12VDC"` or `"230VAC"` (AC is rms against 0 V); a class without one is a warning.
+agentee works out the spacing from it:
 
 - **Its own clearance.** A class with a `voltage` and no `clearance` gets the IPC-2221B table 6-1
   spacing for its peak voltage on an outer uncoated layer (column B2), and never less than the
@@ -474,8 +476,10 @@ line to line voltage. Two AC classes are taken as in antiphase (L1 to L2 at 460 
 The voltage reaches further than spacing:
 
 - A DC sim `[[supplies]]` pad with no `voltage` is held at its net's class voltage.
-- Every net of a DC class that `rails` does not list becomes a rail at that voltage for the
-  signal level check.
+- Every power net of a DC class that `rails` does not list (ground, a net of a class with a
+  `current`, or a net named like a rail) becomes a rail for the signal level check, at the class
+  voltage, or at the voltage in its name when that is lower (`1V8` in a `3.3VDC` class is a 1.8 V
+  rail). Signal nets of the class are not rails.
 - A capacitor's rating (`100n/50V`, `10u 25V`, or a `voltage` field) and any part's
   `rated_voltage` field are checked against the peak voltage between the classes of its nets, with
   a class without `voltage` taken as 0 V: under it is an error, under 1.25 times it a warning.

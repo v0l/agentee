@@ -34,6 +34,7 @@ fill = "filled_capped"
 
 [[netclasses]]
 name = "Default"
+voltage = "3.3VDC"
 description = "Fallback only, every net names a class. Layers: F signal, In1 ground, In2 signal, In3 power (1V0, 1V8, 3V3, 2V5, 1V3A, VSYS split), In4 ground, B signal"
 track_width = "0.1mm"
 clearance = "0.1mm"
@@ -41,6 +42,7 @@ via = "bga"
 
 [[netclasses]]
 name = "Signal"
+voltage = "3.3VDC"
 description = "Control and low speed logic: SPI, JTAG, SWD, resets, enables, power good, LEDs, GPIO, front end and PLL controls"
 track_width = "0.1mm"
 clearance = "0.1mm"
@@ -48,6 +50,7 @@ via = "bga"
 
 [[netclasses]]
 name = "Data"
+voltage = "3.3VDC"
 description = "Source synchronous CMOS buses: the AD9364 P0/P1 ports at 61.44 MHz DDR, the FX5 GPIF bus, the config flash"
 track_width = "0.1mm"
 clearance = "0.1mm"
@@ -55,6 +58,7 @@ via = "bga"
 
 [[netclasses]]
 name = "Clock"
+voltage = "3.3VDC"
 description = "Clocks and oscillator nodes: bus clocks, SYSCLK, the 40 MHz TCXO and its PLL tap, the 10 MHz reference, crystals. Kept apart from neighbours"
 track_width = "0.1mm"
 clearance = "0.2mm"
@@ -63,6 +67,7 @@ layers = ["F.Cu", "In2.Cu", "In3.Cu", "B.Cu"]
 
 [[netclasses]]
 name = "Analog"
+voltage = "5VDC"
 description = "Quiet analog nodes: regulator feedback, noise reduction and soft start, PLL loop filter, TCXO tuning, bias and reference resistors"
 track_width = "0.15mm"
 clearance = "0.2mm"
@@ -71,6 +76,7 @@ layers = ["F.Cu", "In2.Cu", "In3.Cu", "B.Cu"]
 
 [[netclasses]]
 name = "Ground"
+voltage = "0VDC"
 description = "GND, carried by the In1 and In4 planes and the outer pours; tracks are pad to via stubs"
 track_width = "0.25mm"
 clearance = "0.1mm"
@@ -78,6 +84,7 @@ via = "bga"
 
 [[netclasses]]
 name = "Power"
+voltage = "5VDC"
 description = "Rails up to 1 A: 1V8, 2V5, 3V3, 1V3 and their branches"
 track_width = "0.4mm"
 clearance = "0.15mm"
@@ -89,6 +96,7 @@ via = "std"
 
 [[netclasses]]
 name = "PowerHi"
+voltage = "5VDC"
 description = "VBUS, VSYS and the 1V0 core rail: up to 2 A, carried by the In3.Cu plane and short outer runs"
 track_width = "0.9mm"
 clearance = "0.2mm"
@@ -100,6 +108,7 @@ via = "std"
 
 [[netclasses]]
 name = "USB_SS"
+voltage = "3.3VDC"
 description = "USB 3.2 Gen 1 lanes, 5 Gbps, the FX5 muxes them by plug orientation: 85 ohm pairs on F.Cu over In1.Cu, or B.Cu over In4.Cu for the connector's back row, same geometry"
 impedance = "85ohm"
 impedance_tolerance = "10%"
@@ -114,6 +123,7 @@ via = "bga"
 
 [[netclasses]]
 name = "USB_HS"
+voltage = "3.3VDC"
 description = "USB 2.0 D+/D-, 90 ohm on F.Cu or B.Cu"
 impedance = "90ohm"
 impedance_tolerance = "10%"
@@ -126,6 +136,7 @@ via = "bga"
 
 [[netclasses]]
 name = "LVDS"
+voltage = "2.5VDC"
 description = "FPGA to FX5 LVDS receive link, 100 ohm pairs on In2.Cu, 0.1 mm over the In1 ground, via in pad at both ends"
 impedance = "100ohm"
 impedance_tolerance = "10%"
@@ -139,6 +150,7 @@ via = "bga"
 
 [[netclasses]]
 name = "RF"
+voltage = "5VDC"
 description = "50 ohm on F.Cu over In1.Cu: SMA to balun, and each balun leg to the AD9364 (two loosely coupled 50 ohm lines make the 100 ohm differential port)"
 impedance = "50ohm"
 impedance_tolerance = "5%"
