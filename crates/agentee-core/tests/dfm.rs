@@ -1759,3 +1759,143 @@ fn tie_skips_a_pad_its_pour_joins_to_the_plane_far_away_and_ties_nothing_twice()
     let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
     assert_eq!(r.tied, 0, "a second tie adds nothing: {:?}", r.vias);
 }
+
+#[test]
+fn tie_skips_a_decap_pad_whose_stub_already_runs_to_a_via() {
+    let p = load(&Fixture {
+        parts: &[("C1", "TWO", [10.0, 10.0])],
+        nets: &[("VCC", &["C1.1"]), ("GND", &["C1.2"])],
+        pcb: &format!(
+            "\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n{}{}",
+            track("GND", "F.Cu", "[[11.0, 10.0], [12.9, 10.0]]"),
+            via("GND", [12.9, 10.0])
+        ),
+        ..Default::default()
+    });
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!((r.tied, r.already), (0, 1), "{:?}", r.vias);
+}
+
+const ROW: &str = r#"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [0, -0.635]
+size = [1.5, 0.6]
+count = 2
+pitch = [0, 1.27]
+
+[[pads]]
+number = "3"
+kind = "smd"
+shape = "rect"
+at = [5.4, 0]
+size = [1.5, 0.6]
+"#;
+
+#[test]
+fn tie_lines_up_the_vias_of_a_row_of_pins() {
+    let p = load(&Fixture {
+        footprints: &[("ROW", ROW)],
+        parts: &[("Q1", "ROW", [12.0, 10.0])],
+        nets: &[("GND", &["Q1.1", "Q1.2"])],
+        pcb: "\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n",
+        ..Default::default()
+    });
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!(r.tied, 2, "{:?}", r.failed);
+    let pads = [9.365, 10.635];
+    for (v, y) in r.vias.iter().zip(pads) {
+        assert!((v.at[0] - r.vias[0].at[0]).abs() < 1e-6, "{:?}", r.vias);
+        assert!((v.at[1] - y).abs() < 1e-6, "{:?}", r.vias);
+    }
+}
+
+fn two_resistors(pcb: &str) -> Project {
+    load(&Fixture {
+        parts: &[("R1", "TWO", [5.0, 10.0]), ("R2", "TWO", [20.0, 10.0])],
+        nets: &[("A", &["R1.1", "R2.1"]), ("B", &["R1.2"]), ("C", &["R2.2"])],
+        pcb,
+        ..Default::default()
+    })
+}
+
+fn pruned(p: &Project) -> (Vec<[f64; 2]>, Vec<Vec<[f64; 2]>>) {
+    let l = &p.layouts[0].item;
+    let r = agentee_core::prune::prune(l, &|_| true, &|_| true);
+    (
+        r.vias.iter().map(|&k| l.vias[k].at).collect(),
+        r.tracks.iter().map(|&k| l.tracks[k].points.clone()).collect(),
+    )
+}
+
+#[test]
+fn a_second_via_onto_a_track_the_first_already_joins_is_dropped_with_its_stub() {
+    let route = [
+        track("A", "F.Cu", "[[4.0, 10.0], [10.0, 10.0]]"),
+        via("A", [10.0, 10.0]),
+        track("A", "B.Cu", "[[10.0, 10.0], [14.0, 12.0]]"),
+        via("A", [14.0, 12.0]),
+        track("A", "F.Cu", "[[19.0, 10.0], [16.0, 10.0], [14.0, 12.0]]"),
+    ]
+    .concat();
+    let p = two_resistors(&route);
+    assert_eq!(pruned(&p), (vec![], vec![]));
+
+    let spare = [route, track("A", "B.Cu", "[[14.0, 12.0], [17.0, 10.0]]"), via("A", [17.0, 10.0])]
+        .concat();
+    let p = two_resistors(&spare);
+    assert_eq!(pruned(&p), (vec![[17.0, 10.0]], vec![vec![[14.0, 12.0], [17.0, 10.0]]]));
+}
+
+#[test]
+fn a_via_with_nothing_on_it_is_dropped_and_a_pad_drop_to_a_pour_is_kept() {
+    let p = two_resistors(
+        &[track("A", "F.Cu", "[[4.0, 10.0], [19.0, 10.0]]"), via("A", [12.0, 14.0])].concat(),
+    );
+    assert_eq!(pruned(&p).0, vec![[12.0, 14.0]]);
+
+    let p = two_resistors(
+        &[
+            "\n[[zones]]\nnet = \"A\"\nlayers = [\"B.Cu\"]\n".to_string(),
+            track("A", "F.Cu", "[[4.0, 10.0], [19.0, 10.0]]"),
+            track("A", "F.Cu", "[[4.0, 10.0], [4.0, 12.0]]"),
+            via("A", [4.0, 12.0]),
+            track("A", "F.Cu", "[[19.0, 10.0], [19.0, 12.0]]"),
+            via("A", [19.0, 12.0]),
+        ]
+        .concat(),
+    );
+    assert_eq!(pruned(&p), (vec![], vec![]));
+}
+
+#[test]
+fn a_routed_via_onto_copper_the_net_already_joins_is_not_kept() {
+    let p = two_resistors(
+        &[
+            track("A", "F.Cu", "[[4.0, 10.0], [10.0, 10.0]]"),
+            via("A", [10.0, 10.0]),
+            track("A", "B.Cu", "[[10.0, 10.0], [14.0, 12.0]]"),
+            via("A", [14.0, 12.0]),
+            track("A", "F.Cu", "[[19.0, 10.0], [16.0, 10.0], [14.0, 12.0]]"),
+        ]
+        .concat(),
+    );
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    use agentee_core::route::{RouteResult, RoutedTrack, RoutedVia};
+    let r = RouteResult {
+        tracks: vec![RoutedTrack {
+            net: "A".into(),
+            layer: "B.Cu".into(),
+            width: None,
+            points: vec![[14.0, 12.0], [17.0, 10.0]],
+        }],
+        vias: vec![RoutedVia { net: "A".into(), at: [17.0, 10.0], via: "std".into() }],
+        ..Default::default()
+    };
+    let r = agentee_core::route::drop_spare_vias(l, b, r);
+    assert!(r.vias.is_empty() && r.tracks.is_empty(), "{:?} {:?}", r.vias, r.tracks);
+}

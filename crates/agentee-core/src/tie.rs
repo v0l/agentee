@@ -31,7 +31,7 @@ fn is_bga(fp_name: &str, pads: usize) -> bool {
     fp_name.to_ascii_lowercase().contains("bga") || pads >= 64
 }
 
-fn islands(z: &ZoneFill) -> Vec<u32> {
+pub(crate) fn islands(z: &ZoneFill) -> Vec<u32> {
     let (w, h) = (z.width, z.height);
     let mut label = vec![0u32; w * h];
     let mut next = 0;
@@ -62,7 +62,7 @@ fn islands(z: &ZoneFill) -> Vec<u32> {
     label
 }
 
-fn filled_cells(z: &ZoneFill, b: Bounds, inside: impl Fn(P) -> bool) -> Vec<usize> {
+pub(crate) fn filled_cells(z: &ZoneFill, b: Bounds, inside: impl Fn(P) -> bool) -> Vec<usize> {
     let mut out = Vec::new();
     if b.is_empty() {
         return out;
@@ -88,7 +88,7 @@ fn filled_cells(z: &ZoneFill, b: Bounds, inside: impl Fn(P) -> bool) -> Vec<usiz
     out
 }
 
-fn on_pad(z: &ZoneFill, outlines: &[Vec<P>]) -> Vec<usize> {
+pub(crate) fn on_pad(z: &ZoneFill, outlines: &[Vec<P>]) -> Vec<usize> {
     let mut b = Bounds::EMPTY;
     outlines.iter().flatten().for_each(|q| b.add(*q));
     filled_cells(z, b, |c| outlines.iter().any(|o| geom::point_in_polygon(c, o)))
@@ -114,7 +114,7 @@ impl Joins {
     }
 }
 
-fn track_gap(points: &[P], c: P) -> f64 {
+pub(crate) fn track_gap(points: &[P], c: P) -> f64 {
     points.windows(2).map(|w| geom::point_segment_distance(c, w[0], w[1])).fold(f64::MAX, f64::min)
 }
 
@@ -267,6 +267,84 @@ fn reaches_plane(
     out
 }
 
+fn reached_by_tracks(
+    tracks: &[&crate::layout::Track],
+    vias: &[&crate::layout::Via],
+    pad: &crate::layout::PlacedPad,
+) -> Vec<usize> {
+    let mut seen_track = vec![false; tracks.len()];
+    let mut seen_via = vec![false; vias.len()];
+    let mut open: Vec<(bool, usize)> = Vec::new();
+    for (k, t) in tracks.iter().enumerate() {
+        let ends = [t.points[0], *t.points.last().unwrap_or(&t.points[0])];
+        if pad.copper.contains(&t.layer)
+            && ends.iter().any(|&e| crate::drc::rings_point_gap(&pad.outlines, e) <= t.width / 2.0)
+        {
+            seen_track[k] = true;
+            open.push((true, k));
+        }
+    }
+    for (k, v) in vias.iter().enumerate() {
+        if pad.copper.iter().any(|l| v.layers.contains(l))
+            && crate::drc::rings_point_gap(&pad.outlines, v.at) <= v.diameter / 2.0
+        {
+            seen_via[k] = true;
+            open.push((false, k));
+        }
+    }
+    while let Some((is_track, k)) = open.pop() {
+        if is_track {
+            let t = tracks[k];
+            for (vk, v) in vias.iter().enumerate() {
+                if !seen_via[vk]
+                    && v.layers.contains(&t.layer)
+                    && track_gap(&t.points, v.at) <= t.width / 2.0 + v.diameter / 2.0
+                {
+                    seen_via[vk] = true;
+                    open.push((false, vk));
+                }
+            }
+            let ends = [t.points[0], *t.points.last().unwrap_or(&t.points[0])];
+            for (o, other) in tracks.iter().enumerate() {
+                let reach = t.width / 2.0 + other.width / 2.0;
+                let other_ends =
+                    [other.points[0], *other.points.last().unwrap_or(&other.points[0])];
+                if !seen_track[o]
+                    && other.layer == t.layer
+                    && (ends.iter().any(|&e| track_gap(&other.points, e) <= reach)
+                        || other_ends.iter().any(|&e| track_gap(&t.points, e) <= reach))
+                {
+                    seen_track[o] = true;
+                    open.push((true, o));
+                }
+            }
+        } else {
+            let v = vias[k];
+            for (o, t) in tracks.iter().enumerate() {
+                if !seen_track[o]
+                    && v.layers.contains(&t.layer)
+                    && track_gap(&t.points, v.at) <= t.width / 2.0 + v.diameter / 2.0
+                {
+                    seen_track[o] = true;
+                    open.push((true, o));
+                }
+            }
+        }
+    }
+    (0..vias.len()).filter(|&k| seen_via[k]).collect()
+}
+
+fn side_of(pad: P, body: P) -> P {
+    let d = [pad[0] - body[0], pad[1] - body[1]];
+    if d[0].abs() < 1e-6 && d[1].abs() < 1e-6 {
+        [0.0, -1.0]
+    } else if d[0].abs() >= d[1].abs() {
+        [d[0].signum(), 0.0]
+    } else {
+        [0.0, d[1].signum()]
+    }
+}
+
 pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult, String> {
     let planes: Vec<usize> = plane_nets(layout)
         .into_iter()
@@ -368,7 +446,33 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             let Some(target) = zone_layers.iter().min_by_key(|l| at_layer(l).abs_diff(here)) else {
                 continue;
             };
-            if placed.iter().any(|(n, at)| *n == net && geom::dist(*at, pc) <= reach) {
+            let own_tracks: Vec<&crate::layout::Track> =
+                layout.tracks.iter().filter(|t| t.net == net).collect();
+            let own_vias: Vec<&crate::layout::Via> =
+                layout.vias.iter().filter(|v| v.net == net && !stitched(v)).collect();
+            let stubbed = reached_by_tracks(&own_tracks, &own_vias, pad).into_iter().any(|k| {
+                own_vias[k].layers.contains(target)
+                    && geom::dist(own_vias[k].at, pc) <= reach + REACH + own_vias[k].diameter
+            });
+            let mut pour_island = |at: P| {
+                layout.zones.iter().enumerate().any(|(zi, z)| {
+                    if z.net != net || z.layer != layer {
+                        return false;
+                    }
+                    let label = labels.entry(zi).or_insert_with(|| islands(z));
+                    let mine: Vec<u32> =
+                        on_pad(z, &pad.outlines).into_iter().map(|c| label[c]).collect();
+                    let b = Bounds {
+                        min: [at[0] - 0.05, at[1] - 0.05],
+                        max: [at[0] + 0.05, at[1] + 0.05],
+                    };
+                    filled_cells(z, b, |_| true).into_iter().any(|c| mine.contains(&label[c]))
+                })
+            };
+            let near = placed
+                .iter()
+                .any(|(n, at)| *n == net && geom::dist(*at, pc) <= reach && pour_island(*at));
+            if stubbed || near {
                 out.already += 1;
                 continue;
             }
@@ -415,11 +519,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 })
             };
             let legal = |c: P| -> bool { !in_a_pad(c) && follows_rules(c) };
-            let out_dir = {
-                let d = [pc[0] - centre[0], pc[1] - centre[1]];
-                let n = (d[0] * d[0] + d[1] * d[1]).sqrt();
-                if n < 1e-6 { [0.0, -1.0] } else { [d[0] / n, d[1] / n] }
-            };
+            let out_dir = side_of(pc, centre);
             let mut dirs: Vec<P> = (0..16)
                 .map(|k| {
                     let a = std::f64::consts::TAU * k as f64 / 16.0;

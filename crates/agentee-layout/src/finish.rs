@@ -152,6 +152,51 @@ fn folds(points: &[agentee_core::geom::P], width: f64) -> bool {
     })
 }
 
+pub fn drop_vias(model: &mut Model, report: &mut PhaseReport) -> bool {
+    let l = &model.layout;
+    let Some(plan) = model.detail.as_ref() else { return false };
+    let net_of = |name: &str| l.nets.iter().position(|n| n.name == name);
+    let same = |a: &[P], b: &[P]| {
+        a.len() == b.len() && a.iter().zip(b).all(|(p, q)| geom::dist(*p, *q) < 1e-3)
+    };
+    let planned_via = |k: usize| {
+        let v = &l.vias[k];
+        plan.vias.iter().any(|p| net_of(&p.net) == Some(v.net) && geom::dist(p.at, v.at) < 1e-3)
+    };
+    let planned_track = |k: usize| {
+        let t = &l.tracks[k];
+        plan.tracks.iter().any(|p| {
+            net_of(&p.net) == Some(t.net) && p.layer == t.layer && same(&p.points, &t.points)
+        })
+    };
+    let pruned = agentee_core::prune::prune(l, &planned_via, &planned_track);
+    if pruned.vias.is_empty() {
+        return false;
+    }
+    let vias: Vec<(usize, P)> =
+        pruned.vias.iter().map(|&k| (l.vias[k].net, l.vias[k].at)).collect();
+    let tracks: Vec<(usize, String, Vec<P>)> = pruned
+        .tracks
+        .iter()
+        .map(|&k| (l.tracks[k].net, l.tracks[k].layer.clone(), l.tracks[k].points.clone()))
+        .collect();
+    let plan = model.detail.as_mut().expect("checked above");
+    plan.vias.retain(|p| {
+        !vias.iter().any(|(n, at)| net_of(&p.net) == Some(*n) && geom::dist(p.at, *at) < 1e-3)
+    });
+    plan.tracks.retain(|p| {
+        !tracks.iter().any(|(n, layer, pts)| {
+            net_of(&p.net) == Some(*n) && &p.layer == layer && same(&p.points, pts)
+        })
+    });
+    report.notes.push(format!(
+        "{} vias and {} tracks dropped, the net was joined without them",
+        vias.len(),
+        tracks.len()
+    ));
+    true
+}
+
 pub fn dedouble(model: &mut Model, report: &mut PhaseReport) {
     let Some(plan) = model.detail.as_mut() else { return };
     let nets = &model.layout.nets;

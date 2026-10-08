@@ -647,7 +647,51 @@ pub fn route(layout: &Layout, board: &Board, opts: &RouteOptions) -> Result<Rout
     if let Some((first, avoid)) = redo {
         best = route_once(layout, board, opts, &first, &avoid, true)?.0;
     }
-    Ok(hold_to_rules(layout, board, best))
+    Ok(drop_spare_vias(layout, board, hold_to_rules(layout, board, best)))
+}
+
+pub fn drop_spare_vias(layout: &Layout, board: &Board, mut r: RouteResult) -> RouteResult {
+    let mut with = layout.clone();
+    let (old_tracks, old_vias) = (with.tracks.len(), with.vias.len());
+    let net_of = |name: &str| layout.nets.iter().position(|n| n.name == name);
+    let mut track_of = Vec::new();
+    for (k, t) in r.tracks.iter().enumerate() {
+        let Some(net) = net_of(&t.net) else { continue };
+        with.tracks.push(crate::layout::Track {
+            source: usize::MAX,
+            net,
+            layer: t.layer.clone(),
+            width: t.width.unwrap_or(layout.nets[net].width),
+            points: t.points.clone(),
+        });
+        track_of.push(k);
+    }
+    let mut via_of = Vec::new();
+    for (k, v) in r.vias.iter().enumerate() {
+        let (Some(net), Some(spec)) = (net_of(&v.net), board.vias.iter().find(|s| s.name == v.via))
+        else {
+            continue;
+        };
+        with.vias.push(crate::layout::Via::of(spec, net, v.at, &layout.copper));
+        via_of.push(k);
+    }
+    let pruned = crate::prune::prune(&with, &|k| k >= old_vias, &|k| k >= old_tracks);
+    if pruned.vias.is_empty() {
+        return r;
+    }
+    let gone_vias: Vec<usize> = pruned.vias.iter().map(|&k| via_of[k - old_vias]).collect();
+    let gone_tracks: Vec<usize> = pruned.tracks.iter().map(|&k| track_of[k - old_tracks]).collect();
+    let mut k = 0;
+    r.vias.retain(|_| {
+        k += 1;
+        !gone_vias.contains(&(k - 1))
+    });
+    let mut k = 0;
+    r.tracks.retain(|_| {
+        k += 1;
+        !gone_tracks.contains(&(k - 1))
+    });
+    r
 }
 
 pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> RouteResult {

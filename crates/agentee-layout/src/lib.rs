@@ -596,6 +596,10 @@ impl Driver<'_, '_> {
             r.changed = true;
             reload_ms += d.write_route(model)?;
         }
+        if finish::drop_vias(model, &mut r) {
+            r.changed = true;
+            reload_ms += d.write_route(model)?;
+        }
         r.changed |= before || tuned;
         d.done(model, r, t0, reload_ms);
         for _ in 0..2 {
@@ -603,7 +607,14 @@ impl Driver<'_, '_> {
                 break;
             }
         }
-
+        let t0 = d.start("finish");
+        let mut r = PhaseReport { phase: "finish".into(), ..Default::default() };
+        let mut ms = 0;
+        if finish::drop_vias(model, &mut r) {
+            r.changed = true;
+            ms = d.write_route(model)?;
+        }
+        d.done(model, r, t0, ms);
         Ok(())
     }
 
