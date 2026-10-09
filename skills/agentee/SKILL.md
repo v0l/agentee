@@ -51,6 +51,26 @@ distributor search. Ask the user before using a part outside the library for a r
 and offer to add a new choice with `agentee library add`. `check` warns (rule `library`) when a
 design strays from it.
 
+Managing it, only when the user asks or agrees:
+
+```sh
+agentee library add S2B-PH-K-S --name JST-PH-2 --role connector \
+    --symbol Connector_Generic:Conn_01x02 \
+    --footprint Connector_JST:JST_PH_S2B-PH-K_1x02_P2.00mm_Horizontal \
+    --manufacturer JST --rating "2 A, 100 V" --preferred
+agentee library show JST-PH-2      # files, where they came from, datasheet, stock
+agentee library refresh            # stock and price of every part, one lookup each
+agentee library verify             # symbol vs footprint vs datasheet, model vs footprint, hashes
+```
+
+`add` copies the symbol, footprint and 3D model in, sets the footprint `height` from the model,
+fetches and pins the datasheet and records stock. Give it the real part number and the
+datasheet's rating; `--datasheet URL|PDF` when the distributors have none. `--preferred` marks
+the first choice for a role, `--generic` makes a resistor or capacitor series cover any value on
+that footprint, `--local` adds to the project's `.agentee/library` instead of the user's
+`~/.config/agentee/library`. Fix what `verify` reports before using the part: a pin that does not
+match the datasheet, or a model that does not fit the footprint.
+
 ## Datasheets, never guesses
 
 Every number and pin that describes a real part comes from that part's datasheet: pinout and
@@ -466,7 +486,7 @@ agentee parts NAME --boards 2 --spares --order docs/   # order sheets per distri
 
 Give every part `mfr` and `mpn` fields first; lines without an `mpn` are not looked up. Keys
 go in `~/.config/agentee/distributors.toml` (`[mouser] api_key`, `[farnell] api_key` and
-`store`), never in the project. Alternatives keep value, package and ratings for resistors,
+`store`, `[digikey] client_id`, `client_secret` and `site`), never in the project. Alternatives keep value, package and ratings for resistors,
 ceramics, generic discretes and LEDs; ICs and connectors only get the same part elsewhere or the
 distributor's suggested replacement. Write the swap into the part's `mpn`, not the BOM.
 `--order` writes `NAME-order.csv` and a sheet per distributor with the lines to buy there on top
