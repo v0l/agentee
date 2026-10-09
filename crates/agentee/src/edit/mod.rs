@@ -256,6 +256,8 @@ pub fn tokens(line: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+const POINT_LISTS: &[&str] = &["outline", "point"];
+
 pub struct Opts {
     pub pos: Vec<String>,
     pub flags: Vec<(String, String)>,
@@ -291,6 +293,16 @@ impl Opts {
                     .get(i + 1)
                     .filter(|v| !v.starts_with("--"))
                     .ok_or(format!("--{name} wants a value"))?;
+                if POINT_LISTS.contains(&name) {
+                    let mut all = vec![v.clone()];
+                    i += 2;
+                    while let Some(w) = words.get(i).filter(|w| !w.starts_with("--")) {
+                        all.push(w.clone());
+                        i += 1;
+                    }
+                    flags.push((name.to_string(), all.join(" ")));
+                    continue;
+                }
                 flags.push((name.to_string(), v.clone()));
                 i += 2;
             } else {
@@ -334,6 +346,10 @@ impl Opts {
             Some(v) => Ok(Some(point(&v, &format!("--{key} X,Y"))?)),
             None => Ok(None),
         }
+    }
+
+    pub fn point_list(&mut self, key: &str) -> Vec<String> {
+        self.take(key).map(|v| v.split_whitespace().map(String::from).collect()).unwrap_or_default()
     }
 
     pub fn words(&mut self, key: &str) -> Result<Vec<String>, String> {

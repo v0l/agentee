@@ -333,7 +333,7 @@ fn shape(o: &mut Opts, cmd: &str) -> Result<(Table, Vec<String>), String> {
     let size = o.at("size")?;
     let origin = o.at("origin")?;
     let radius = o.typed("corner-radius")?;
-    let pts = o.words("point")?;
+    let pts = o.point_list("point");
     o.done(cmd, 0)?;
     if size.is_none() && pts.is_empty() && radius.is_none() && origin.is_none() {
         return Err(format!("{cmd}: give --size W,H or --point X,Y ..."));
@@ -366,19 +366,9 @@ fn outline(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> 
 }
 
 fn cutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
-    let layers = o.words("layers")?;
-    let (t, mut log) = shape(&mut o, "cutout")?;
-    if layers.is_empty() {
-        return Err("cutout: --layers F.Cu,In1.Cu".into());
-    }
+    let (table, mut log) = shape(&mut o, "cutout")?;
     let doc = s.doc(path)?;
     let mut outline = table_of(doc.get("outline"))?;
-    let mut table = t;
-    let mut a = Array::new();
-    for l in &layers {
-        a.push(l.as_str());
-    }
-    set(&mut table, "layers", TValue::Array(a));
     match outline.get_mut("cutouts").and_then(|v: &mut Item| v.as_array_of_tables_mut()) {
         Some(list) => list.push(table),
         None => {
@@ -388,7 +378,7 @@ fn cutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         }
     }
     s.doc(path)?["outline"] = Item::Table(outline);
-    log.push(format!("cutout kept off {}", layers.join(", ")));
+    log.push("cutout milled through the board".into());
     Ok(Report { log, facts: Vec::new() })
 }
 

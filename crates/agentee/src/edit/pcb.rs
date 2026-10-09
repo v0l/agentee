@@ -10,6 +10,7 @@ pub const COMMANDS: &[&str] = &[
     "unvia",
     "zone",
     "unzone",
+    "cutout",
     "pair",
     "text",
     "fanout",
@@ -31,6 +32,7 @@ pub fn command(name: &str) -> Option<Cmd> {
         "unvia" => unvia,
         "zone" => zone,
         "unzone" => unzone,
+        "cutout" => cutout,
         "pair" => pair,
         "text" => text_cmd,
         "fanout" => fanout,
@@ -68,6 +70,7 @@ pub fn usage(name: &str) -> &'static str {
             "zone NET [--layers F.Cu,In1.Cu] [--outline X,Y ...] [--priority 1] [--clearance 0.25] [--min-width 0.15mm] [--min-island-area 2.0] [--pad-connection solid|relief|none] [--relief-gap 0.3mm] [--spoke-width 0.3mm] [--relief-tht-only]"
         }
         "unzone" => "unzone NET ...",
+        "cutout" => "cutout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu]",
         "pair" => "pair NET+ NET- [--max-skew 1mm]",
         "text" => {
             "text STRING [--layer F.SilkS] [--at X,Y] [--size 1.0] [--rotation 90] [--locked]"
@@ -514,7 +517,7 @@ fn zone(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     let net = o.word("a net name")?;
     let mut layers = o.words("layers")?;
     layers.extend(o.rest());
-    let outline = o.words("outline")?;
+    let outline = o.point_list("outline");
     let priority = o.take("priority");
     let clearance = o.typed("clearance")?;
     let min_width = o.typed("min-width")?;
@@ -613,6 +616,31 @@ fn unzone(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         log.push(format!("{net} unpoured"));
     }
     Ok(Report { log, facts: Vec::new() })
+}
+
+fn cutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let mut layers = o.words("layers")?;
+    let pts = o.point_list("point");
+    o.done("cutout", 0)?;
+    if pts.len() < 3 {
+        return Err("cutout: give at least three --point X,Y".into());
+    }
+    let board = board_name(s, path)?;
+    if layers.is_empty() {
+        layers = s.layers(Some(&board))?;
+    }
+    for l in &layers {
+        s.check_layer(Some(&board), l)?;
+    }
+    let mut t = Table::new();
+    let mut a = Array::new();
+    for l in &layers {
+        a.push(l.as_str());
+    }
+    set(&mut t, "layers", TValue::Array(a));
+    set(&mut t, "points", points(&pts, "--point")?);
+    insert(s.doc(path)?, "cutouts", t);
+    Ok(Report::log(format!("zones kept off a cutout on {}", layers.join(", "))))
 }
 
 fn pair(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
@@ -752,7 +780,7 @@ fn stitch(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     let net = o.word("a net name")?;
     let via = o.take("via");
     let pitch = o.typed("pitch")?;
-    let outline = o.words("outline")?;
+    let outline = o.point_list("outline");
     let margin = o.typed("margin")?;
     let fence = o.words("fence")?;
     let offset = o.typed("offset")?;

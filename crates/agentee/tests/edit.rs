@@ -278,6 +278,71 @@ fn board_and_layout_edits_write_the_keys() {
 }
 
 #[test]
+fn a_zone_outline_and_a_cutout_take_every_point_after_the_flag() {
+    let d = dir("outline");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[vias]]\nname = \"std\"\ndrill = \"0.3mm\"\ndiameter = \"0.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\nvia = \"std\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.sch.toml"),
+        "name = \"t\"\nboard = \"b\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n\
+         footprint = \"R_0402_1005Metric\"\n\
+         [[nets]]\nname = \"GND\"\nclass = \"Default\"\nstyle = \"power\"\npins = [\"R1.1\", \"R1.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.pcb.toml"),
+        "name = \"t\"\nboard = \"b\"\nschematic = \"t\"\n[[footprints]]\nref = \"R1\"\nat = [20, 10]\n",
+    )
+    .unwrap();
+
+    run(
+        &d,
+        &[
+            "edit",
+            "pcb",
+            "t",
+            "zone",
+            "GND",
+            "--outline",
+            "1,1",
+            "9,1",
+            "9,6",
+            "1,6",
+            "--layers",
+            "F.Cu",
+            "--priority",
+            "2",
+        ],
+    );
+    let pcb = sch(&d, "t.pcb.toml");
+    assert!(pcb.contains("outline = [[1.0, 1.0], [9.0, 1.0], [9.0, 6.0], [1.0, 6.0]]"), "{pcb}");
+    assert!(pcb.contains("layers = [\"F.Cu\"]"), "{pcb}");
+
+    run(&d, &["edit", "pcb", "t", "zone", "GND", "--layers", "B.Cu", "--outline", "2,2 8,2 8,5"]);
+    assert!(sch(&d, "t.pcb.toml").contains("outline = [[2.0, 2.0], [8.0, 2.0], [8.0, 5.0]]"));
+
+    run(&d, &["edit", "board", "b", "cutout", "--point", "12,4", "16,4", "16,8"]);
+    let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();
+    assert!(board.contains("points = [[12.0, 4.0], [16.0, 4.0], [16.0, 8.0]]"), "{board}");
+
+    run(
+        &d,
+        &[
+            "edit", "pcb", "t", "cutout", "--point", "20,2", "26,2", "26,6", "20,6", "--layers",
+            "B.Cu",
+        ],
+    );
+    let pcb = sch(&d, "t.pcb.toml");
+    assert!(pcb.contains("[[cutouts]]"), "{pcb}");
+    assert!(pcb.contains("points = [[20.0, 2.0], [26.0, 2.0], [26.0, 6.0], [20.0, 6.0]]"), "{pcb}");
+}
+
+#[test]
 fn bad_input_is_refused_and_nothing_is_written() {
     let d = dir("bad");
     std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
@@ -429,8 +494,18 @@ fn help_lists_the_commands() {
         assert!(out.contains(want), "sch help misses {want}: {out}");
     }
     let (out, _, _) = run(&d, &["edit", "pcb", "help"]);
-    for want in ["place", "track", "via", "zone", "pair", "stitch", "fanout", "watermark", "title"]
-    {
+    for want in [
+        "place",
+        "track",
+        "via",
+        "zone",
+        "cutout",
+        "pair",
+        "stitch",
+        "fanout",
+        "watermark",
+        "title",
+    ] {
         assert!(out.contains(want), "pcb help misses {want}: {out}");
     }
     let (out, _, _) = run(&d, &["edit", "board", "help"]);
