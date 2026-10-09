@@ -324,7 +324,20 @@ fn a_zone_outline_and_a_cutout_take_every_point_after_the_flag() {
     assert!(pcb.contains("layers = [\"F.Cu\"]"), "{pcb}");
 
     run(&d, &["edit", "pcb", "t", "zone", "GND", "--layers", "B.Cu", "--outline", "2,2 8,2 8,5"]);
-    assert!(sch(&d, "t.pcb.toml").contains("outline = [[2.0, 2.0], [8.0, 2.0], [8.0, 5.0]]"));
+    let pcb = sch(&d, "t.pcb.toml");
+    assert!(pcb.contains("outline = [[2.0, 2.0], [8.0, 2.0], [8.0, 5.0]]"), "{pcb}");
+    assert!(
+        pcb.contains("outline = [[1.0, 1.0], [9.0, 1.0], [9.0, 6.0], [1.0, 6.0]]"),
+        "a second outline is a second pour\n{pcb}"
+    );
+
+    run(
+        &d,
+        &["edit", "pcb", "t", "zone", "GND", "--layers", "F.Cu,B.Cu", "--outline", "2,2 8,2 8,5"],
+    );
+    let pcb = sch(&d, "t.pcb.toml");
+    assert_eq!(pcb.matches("[[zones]]").count(), 2, "the same outline replaces its pour\n{pcb}");
+    assert!(pcb.contains("layers = [\"F.Cu\", \"B.Cu\"]"), "{pcb}");
 
     run(&d, &["edit", "board", "b", "cutout", "--point", "12,4", "16,4", "16,8"]);
     let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();

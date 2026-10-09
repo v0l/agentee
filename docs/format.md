@@ -1202,6 +1202,9 @@ A fill piece is kept only if it touches two items of its net, or one and is at l
 other nets: a fill that overlaps another net's zone, track, via or pad, or comes closer than the
 clearance, is an error, and copper tips sharper than 30 degrees are flagged.
 
+`agentee edit pcb zone NET` with an `--outline` adds a pour of that net, or replaces the one with
+the same outline (or none), so one net can have several pours.
+
 Zones on the same layer fill in order of `priority`, then smallest first, and each keeps its
 clearance from the fills already placed, so a small switch-node or supply pour inside a
 board-wide ground pour is poured around rather than shorted to it.

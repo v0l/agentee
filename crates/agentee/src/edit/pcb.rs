@@ -575,11 +575,11 @@ fn zone(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         set(&mut t, "relief_tht_only", true);
     }
     let doc = s.doc(path)?;
-    match doc
-        .get("zones")
-        .and_then(|v| v.as_array_of_tables())
-        .and_then(|a| a.iter().position(|z| text(z, "net").as_deref() == Some(net.as_str())))
-    {
+    match doc.get("zones").and_then(|v| v.as_array_of_tables()).and_then(|a| {
+        let shape = |z: &Table| z.get("outline").map(|v| v.to_string().replace(' ', ""));
+        let mine = shape(&t);
+        a.iter().position(|z| text(z, "net").as_deref() == Some(net.as_str()) && shape(z) == mine)
+    }) {
         Some(i) => {
             if let Some(a) = doc.get_mut("zones").and_then(|v| v.as_array_of_tables_mut())
                 && let Some(slot) = a.get_mut(i)
