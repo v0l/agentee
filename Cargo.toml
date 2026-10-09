@@ -28,6 +28,3 @@ egui = "0.35"
 eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 egui_bench = "0.2"
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }
-
-[patch.crates-io]
-egui_bench = { path = "../egui_bench" }
