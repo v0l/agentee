@@ -1,0 +1,62 @@
+# imported from KiCad Connector:Conn_ARM_SWD_TagConnect_TC2030-NL
+name = "Conn_ARM_SWD_TagConnect_TC2030-NL"
+reference = "J"
+description = "Tag-Connect ARM Cortex SWD JTAG connector, 6 pin, no legs"
+datasheet = "https://www.tag-connect.com/wp-content/uploads/bsk-pdf-manager/TC2030-CTX_1.pdf"
+keywords = ["Cortex", "Debug", "Connector", "ARM", "SWD", "JTAG"]
+footprint = "Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical"
+footprint_filters = ["*TC2030*"]
+
+[[graphics]]
+kind = "rect"
+start = [-5.08, -7.62]
+end = [5.08, 7.62]
+fill = "background"
+
+[[pins]]
+number = "1"
+name = "VCC"
+type = "power_in"
+at = [-2.54, -10.16]
+side = "top"
+length = 2.54
+
+[[pins]]
+number = "5"
+name = "GND"
+type = "power_in"
+at = [-2.54, 10.16]
+side = "bottom"
+length = 2.54
+
+[[pins]]
+number = "3"
+name = "~{RESET}"
+type = "open_collector"
+at = [7.62, -5.08]
+side = "right"
+length = 2.54
+
+[[pins]]
+number = "4"
+name = "SWCLK"
+type = "output"
+at = [7.62, 0.0]
+side = "right"
+length = 2.54
+
+[[pins]]
+number = "2"
+name = "SWDIO"
+type = "bidirectional"
+at = [7.62, 2.54]
+side = "right"
+length = 2.54
+
+[[pins]]
+number = "6"
+name = "SWO"
+type = "input"
+at = [7.62, 5.08]
+side = "right"
+length = 2.54

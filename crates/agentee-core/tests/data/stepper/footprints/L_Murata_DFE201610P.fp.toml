@@ -1,0 +1,116 @@
+# imported from KiCad Inductor_SMD:L_Murata_DFE201610P
+name = "L_Murata_DFE201610P"
+description = "Inductor, Murata, DFE201610P, 2.0x1.6x1.0mm, (https://www.murata.com/~/media/webrenewal/products/inductor/chip/tokoproducts/wirewoundmetalalloychiptype/m_dfe201610p.ashx), generated with kicad-footprint-generator gen_inductor.py"
+tags = ["Inductor", "power", "chip", "flatwire"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Inductor_SMD.3dshapes/L_Murata_DFE201610P.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-0.725, 0.0]
+size = [0.55, 1.6]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [0.725, 0.0]
+size = [0.55, 1.6]
+roundrect_ratio = 0.25
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 1.8]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -1.8]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.26, -1.06]
+end = [1.26, -1.06]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.26, 1.06]
+end = [1.26, 1.06]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, -1.05]
+end = [-1.25, 1.05]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.25, 1.05]
+end = [1.25, 1.05]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, -1.05]
+end = [-1.25, -1.05]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [1.25, 1.05]
+end = [1.25, -1.05]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, -0.8]
+end = [-1.0, 0.8]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.0, 0.8]
+end = [1.0, 0.8]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.0, -0.8]
+end = [-1.0, -0.8]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.0, 0.8]
+end = [1.0, -0.8]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.5
+rotation = 90.0

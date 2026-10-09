@@ -1,0 +1,4 @@
+name = "stepper"
+board = "stepper"
+schematic = "stepper"
+title = "stepper placement fixture"

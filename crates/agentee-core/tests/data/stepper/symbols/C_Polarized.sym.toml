@@ -1,0 +1,44 @@
+# imported from KiCad Device:C_Polarized
+name = "C_Polarized"
+reference = "C"
+description = "Polarized capacitor"
+keywords = ["cap", "capacitor"]
+footprint = "CP_Elec_10x10.5"
+footprint_filters = ["CP_*"]
+pin_name_offset = 0.254
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "rect"
+start = [-2.286, -0.508]
+end = [2.286, -1.016]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.778, -2.286], [-0.762, -2.286]]
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -2.794], [-1.27, -1.778]]
+
+[[graphics]]
+kind = "rect"
+start = [2.286, 0.508]
+end = [-2.286, 1.016]
+fill = "solid"
+
+[[pins]]
+number = "1"
+type = "passive"
+at = [0.0, -3.81]
+side = "top"
+length = 2.794
+unit = 1
+
+[[pins]]
+number = "2"
+type = "passive"
+at = [0.0, 3.81]
+side = "bottom"
+length = 2.794
+unit = 1

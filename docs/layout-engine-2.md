@@ -345,6 +345,21 @@ What the `layout-engine` branch measured on `examples/sdr`, and why the search i
 - Any-angle part turns (`turn`) and the smooth-score descent (`descend`) lowered the tangle but
   never routed better than the plain placer, so neither came across.
 
+## Placement rules
+
+`cargo test -p agentee-core --release --test place_rules` places
+`crates/agentee-core/tests/data/stepper` (24 V in, an AP63203 buck, an STM32H563, two TMC2209
+drivers with their motor connectors) from scratch with seeds 1 to 10 and checks each result
+against what the parts' datasheets ask, measured pad edge to pad edge: the TMC2209 filter caps
+within 4 mm of their pins and its sense resistors within 7 mm (datasheet 21), its VS electrolytic
+within 8 mm, each driver within 18 mm of its motor connector and nearer it than the other one,
+the buck's input cap, boost cap, inductor and output caps on its switch loop (AP63203 layout
+guide), a small cap on every STM32 supply pin and 2.2 uF on each VCAP (AN5711), and the crystal
+and its load caps at OSC32. The placer before power-aware weighting broke about fifty of these
+over the ten seeds; the drivers landed 20 to 40 mm from their connectors, beside the MCU. A new
+rule goes in `stepper_rules` with the datasheet section it comes from, and a new fixture gets
+its own rules function. `AGENTEE_PLACE_KEEP=dir` keeps each placed copy for `agentee render`.
+
 ## Benchmarks
 
 `cargo test -p agentee-layout --release --test bench -- --nocapture` runs the `lna` cases;

@@ -1,0 +1,600 @@
+name = "stepper"
+description = "Two-axis stepper controller. TMC2209 support parts from its datasheet (rev 1.09, 2.2 and 21): 22 nF CPO-CPI, 100 nF VCP-VS, 4.7 uF on 5VOUT, 100 nF plus 100 uF electrolytic on VS, 0.11 ohm sense resistors, CLK tied to GND for the internal clock, VREF to GND with GCONF.I_scale_analog cleared over UART, MS1 high on U4 for UART address 1. AP63203 values from its datasheet table 2: 10 uF in, 100 nF BST-SW, 3.9 uH, 2 x 22 uF out. STM32H563 decoupling from AN5711: 100 nF per VDD, 4.7 uF bulk, 1 uF + 100 nF on VDDA, 2.2 uF per VCAP."
+board = "stepper"
+no_connect = ["U2.5", "U2.6", "U2.54", "U2.8", "U2.9", "U2.10", "U2.11", "U2.24", "U2.25", "U2.37", "U2.38", "U2.39", "U2.40", "U2.51", "U2.52", "U2.53", "U2.2", "U2.16", "U2.17", "U2.22", "U2.23", "U2.41", "U2.44", "U2.45", "U2.50", "U2.28", "U2.56", "U2.57", "U2.58", "U2.59", "U2.61", "U2.29", "U2.35", "U2.36", "H1.1", "H2.1", "H3.1", "H4.1", "U3.7", "U3.12", "U3.20", "U3.25", "U4.7", "U4.12", "U4.20", "U4.25"]
+
+[[parts]]
+ref = "H1"
+symbol = "MountingHole_Pad"
+at = [12.70, 12.70]
+value = "M3"
+
+[[parts]]
+ref = "H2"
+symbol = "MountingHole_Pad"
+at = [38.10, 12.70]
+value = "M3"
+
+[[parts]]
+ref = "H3"
+symbol = "MountingHole_Pad"
+at = [63.50, 12.70]
+value = "M3"
+
+[[parts]]
+ref = "H4"
+symbol = "MountingHole_Pad"
+at = [88.90, 12.70]
+value = "M3"
+
+[[parts]]
+ref = "J1"
+symbol = "Conn_01x02"
+at = [25.40, 63.50]
+value = "24V_IN"
+fields = { mpn = "B2B-PH-K-S", mfr = "JST" }
+
+[[parts]]
+ref = "U1"
+symbol = "AP63203WU"
+at = [63.50, 63.50]
+value = "AP63203WU"
+fields = { mpn = "AP63203WU-7", mfr = "Diodes" }
+
+[[parts]]
+ref = "C1"
+symbol = "C"
+at = [50.80, 82.55]
+value = "10u/50V"
+footprint = "C_1206_3216Metric"
+
+[[parts]]
+ref = "C2"
+symbol = "C"
+at = [76.20, 50.80]
+value = "100n/50V"
+
+[[parts]]
+ref = "L1"
+symbol = "L"
+at = [88.90, 63.50]
+value = "3.9u"
+footprint = "L_Bourns-SRN4018"
+fields = { mpn = "SRN4018-3R9M", mfr = "Bourns" }
+
+[[parts]]
+ref = "C3"
+symbol = "C"
+at = [101.60, 82.55]
+value = "22u/10V"
+footprint = "C_0805_2012Metric"
+
+[[parts]]
+ref = "C4"
+symbol = "C"
+at = [114.30, 82.55]
+value = "22u/10V"
+footprint = "C_0805_2012Metric"
+
+[[parts]]
+ref = "U2"
+symbol = "STM32H563RITx"
+at = [165.10, 114.30]
+value = "STM32H563RIT6"
+fields = { mpn = "STM32H563RIT6", mfr = "ST" }
+
+[[parts]]
+ref = "C10"
+symbol = "C"
+at = [139.70, 165.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "C11"
+symbol = "C"
+at = [149.86, 165.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "C12"
+symbol = "C"
+at = [160.02, 165.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "C13"
+symbol = "C"
+at = [170.18, 165.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "C14"
+symbol = "C"
+at = [180.34, 165.10]
+value = "4.7u/10V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C15"
+symbol = "C"
+at = [190.50, 165.10]
+value = "1u/10V"
+
+[[parts]]
+ref = "C16"
+symbol = "C"
+at = [200.66, 165.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "C17"
+symbol = "C"
+at = [210.82, 165.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "C18"
+symbol = "C"
+at = [139.70, 184.15]
+value = "2.2u/10V"
+
+[[parts]]
+ref = "C19"
+symbol = "C"
+at = [149.86, 184.15]
+value = "2.2u/10V"
+
+[[parts]]
+ref = "C20"
+symbol = "C"
+at = [127.00, 114.30]
+value = "100n/10V"
+
+[[parts]]
+ref = "R1"
+symbol = "R"
+at = [127.00, 133.35]
+value = "10k"
+
+[[parts]]
+ref = "Y1"
+symbol = "Crystal"
+at = [127.00, 88.90]
+value = "32.768k"
+fields = { mpn = "ABS07-32.768KHZ-7-T", mfr = "Abracon" }
+
+[[parts]]
+ref = "C21"
+symbol = "C"
+at = [116.84, 95.25]
+value = "10p/50V"
+
+[[parts]]
+ref = "C22"
+symbol = "C"
+at = [137.16, 95.25]
+value = "10p/50V"
+
+[[parts]]
+ref = "J4"
+symbol = "Conn_ARM_SWD_TagConnect_TC2030-NL"
+at = [203.20, 76.20]
+value = "TC2030"
+
+[[parts]]
+ref = "R2"
+symbol = "R"
+at = [215.90, 114.30]
+value = "1k"
+
+[[parts]]
+ref = "R3"
+symbol = "R"
+at = [222.25, 127.00]
+value = "10k"
+
+[[parts]]
+ref = "R4"
+symbol = "R"
+at = [222.25, 139.70]
+value = "10k"
+
+[[parts]]
+ref = "U3"
+symbol = "TMC2209-LA"
+at = [292.10, 50.80]
+value = "TMC2209-LA"
+fields = { mpn = "TMC2209-LA-T", mfr = "ADI" }
+
+[[parts]]
+ref = "J2"
+symbol = "Conn_01x04"
+at = [355.60, 50.80]
+value = "MOTOR_A"
+fields = { mpn = "B4B-XH-A", mfr = "JST" }
+
+[[parts]]
+ref = "C30"
+symbol = "C"
+at = [254.00, 88.90]
+value = "100n/50V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C31"
+symbol = "C"
+at = [264.16, 88.90]
+value = "22n/50V"
+
+[[parts]]
+ref = "C32"
+symbol = "C"
+at = [274.32, 88.90]
+value = "100n/50V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C33"
+symbol = "C"
+at = [284.48, 88.90]
+value = "4.7u/10V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C34"
+symbol = "C"
+at = [294.64, 88.90]
+value = "100n/10V"
+
+[[parts]]
+ref = "C35"
+symbol = "C_Polarized"
+at = [304.80, 88.90]
+value = "100u/35V"
+footprint = "CP_Elec_6.3x7.7"
+fields = { mpn = "EEE-FK1V101P", mfr = "Panasonic" }
+
+[[parts]]
+ref = "R30"
+symbol = "R"
+at = [317.50, 88.90]
+value = "0.11"
+footprint = "R_1206_3216Metric"
+fields = { power = "0.5W" }
+
+[[parts]]
+ref = "R31"
+symbol = "R"
+at = [327.66, 88.90]
+value = "0.11"
+footprint = "R_1206_3216Metric"
+fields = { power = "0.5W" }
+
+[[parts]]
+ref = "U4"
+symbol = "TMC2209-LA"
+at = [292.10, 177.80]
+value = "TMC2209-LA"
+fields = { mpn = "TMC2209-LA-T", mfr = "ADI" }
+
+[[parts]]
+ref = "J3"
+symbol = "Conn_01x04"
+at = [355.60, 177.80]
+value = "MOTOR_B"
+fields = { mpn = "B4B-XH-A", mfr = "JST" }
+
+[[parts]]
+ref = "C40"
+symbol = "C"
+at = [254.00, 215.90]
+value = "100n/50V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C41"
+symbol = "C"
+at = [264.16, 215.90]
+value = "22n/50V"
+
+[[parts]]
+ref = "C42"
+symbol = "C"
+at = [274.32, 215.90]
+value = "100n/50V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C43"
+symbol = "C"
+at = [284.48, 215.90]
+value = "4.7u/10V"
+footprint = "C_0603_1608Metric"
+
+[[parts]]
+ref = "C44"
+symbol = "C"
+at = [294.64, 215.90]
+value = "100n/10V"
+
+[[parts]]
+ref = "C45"
+symbol = "C_Polarized"
+at = [304.80, 215.90]
+value = "100u/35V"
+footprint = "CP_Elec_6.3x7.7"
+fields = { mpn = "EEE-FK1V101P", mfr = "Panasonic" }
+
+[[parts]]
+ref = "R40"
+symbol = "R"
+at = [317.50, 215.90]
+value = "0.11"
+footprint = "R_1206_3216Metric"
+fields = { power = "0.5W" }
+
+[[parts]]
+ref = "R41"
+symbol = "R"
+at = [327.66, 215.90]
+value = "0.11"
+footprint = "R_1206_3216Metric"
+fields = { power = "0.5W" }
+
+[[nets]]
+name = "V24"
+class = "Power24"
+style = "power"
+pins = ["J1.1", "U1.3", "U1.2", "C1.1", "U3.22", "U3.28", "C30.1", "C32.2", "C35.1", "U4.22", "U4.28", "C40.1", "C42.2", "C45.1"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["J1.2", "U1.4", "C1.2", "C3.2", "C4.2", "U2.12", "U2.18", "U2.31", "U2.47", "U2.63", "C10.2", "C11.2", "C12.2", "C13.2", "C14.2", "C15.2", "C16.2", "C17.2", "C18.2", "C19.2", "C20.2", "C21.2", "C22.2", "R1.2", "J4.5", "U3.3", "U3.18", "U3.29", "U3.13", "U3.17", "U3.10", "C30.2", "C33.2", "C34.2", "C35.2", "R30.2", "R31.2", "U4.3", "U4.18", "U4.29", "U4.13", "U4.17", "U4.10", "C40.2", "C43.2", "C44.2", "C45.2", "R40.2", "R41.2", "U3.9"]
+
+[[nets]]
+name = "3V3"
+class = "Power3V3"
+style = "power"
+pins = ["U1.1", "L1.2", "C3.1", "C4.1", "U2.1", "U2.13", "U2.19", "U2.32", "U2.48", "U2.64", "C10.1", "C11.1", "C12.1", "C13.1", "C14.1", "C15.1", "C16.1", "C17.1", "J4.1", "U3.15", "C34.1", "U4.15", "C44.1", "U4.9", "R3.1", "R4.1"]
+
+[[nets]]
+name = "SW_3V3"
+class = "Switch"
+style = "label"
+pins = ["U1.5", "L1.1", "C2.2"]
+
+[[nets]]
+name = "BST_3V3"
+class = "Switch"
+style = "label"
+pins = ["U1.6", "C2.1"]
+
+[[nets]]
+name = "VCAP"
+class = "Rail"
+style = "label"
+pins = ["U2.30", "U2.62", "C18.1", "C19.1"]
+
+[[nets]]
+name = "NRST"
+class = "Signal"
+style = "label"
+pins = ["U2.7", "C20.1", "J4.3"]
+
+[[nets]]
+name = "BOOT0"
+class = "Signal"
+style = "label"
+pins = ["U2.60", "R1.1"]
+
+[[nets]]
+name = "LSE_IN"
+class = "Clock"
+style = "label"
+pins = ["U2.3", "Y1.1", "C21.1"]
+
+[[nets]]
+name = "LSE_OUT"
+class = "Clock"
+style = "label"
+pins = ["U2.4", "Y1.2", "C22.1"]
+
+[[nets]]
+name = "SWDIO"
+class = "Signal"
+style = "label"
+pins = ["U2.46", "J4.2"]
+
+[[nets]]
+name = "SWCLK"
+class = "Signal"
+style = "label"
+pins = ["U2.49", "J4.4"]
+
+[[nets]]
+name = "SWO"
+class = "Signal"
+style = "label"
+pins = ["U2.55", "J4.6"]
+
+[[nets]]
+name = "UART_TX"
+class = "Signal"
+style = "label"
+pins = ["U2.42", "R2.1"]
+
+[[nets]]
+name = "DRV_UART"
+class = "Signal"
+style = "label"
+pins = ["R2.2", "U3.14", "U4.14", "U2.43"]
+
+[[nets]]
+name = "CPO_A"
+class = "Rail"
+style = "label"
+pins = ["U3.4", "C31.1"]
+
+[[nets]]
+name = "CPI_A"
+class = "Rail"
+style = "label"
+pins = ["U3.5", "C31.2"]
+
+[[nets]]
+name = "VCP_A"
+class = "Rail"
+style = "label"
+pins = ["U3.6", "C32.1"]
+
+[[nets]]
+name = "5VOUT_A"
+class = "Rail"
+style = "label"
+pins = ["U3.8", "C33.1"]
+
+[[nets]]
+name = "BRA_A"
+class = "Motor"
+style = "label"
+pins = ["U3.23", "R30.1"]
+
+[[nets]]
+name = "BRB_A"
+class = "Motor"
+style = "label"
+pins = ["U3.27", "R31.1"]
+
+[[nets]]
+name = "A_OA1"
+class = "Motor"
+style = "label"
+pins = ["U3.24", "J2.1"]
+
+[[nets]]
+name = "A_OA2"
+class = "Motor"
+style = "label"
+pins = ["U3.21", "J2.2"]
+
+[[nets]]
+name = "A_OB1"
+class = "Motor"
+style = "label"
+pins = ["U3.26", "J2.3"]
+
+[[nets]]
+name = "A_OB2"
+class = "Motor"
+style = "label"
+pins = ["U3.1", "J2.4"]
+
+[[nets]]
+name = "STEP_A"
+class = "Signal"
+style = "label"
+pins = ["U3.16", "U2.14"]
+
+[[nets]]
+name = "DIR_A"
+class = "Signal"
+style = "label"
+pins = ["U3.19", "U2.15"]
+
+[[nets]]
+name = "EN_A"
+class = "Signal"
+style = "label"
+pins = ["U3.2", "U2.20", "R3.2"]
+
+[[nets]]
+name = "DIAG_A"
+class = "Signal"
+style = "label"
+pins = ["U3.11", "U2.21"]
+
+[[nets]]
+name = "CPO_B"
+class = "Rail"
+style = "label"
+pins = ["U4.4", "C41.1"]
+
+[[nets]]
+name = "CPI_B"
+class = "Rail"
+style = "label"
+pins = ["U4.5", "C41.2"]
+
+[[nets]]
+name = "VCP_B"
+class = "Rail"
+style = "label"
+pins = ["U4.6", "C42.1"]
+
+[[nets]]
+name = "5VOUT_B"
+class = "Rail"
+style = "label"
+pins = ["U4.8", "C43.1"]
+
+[[nets]]
+name = "BRA_B"
+class = "Motor"
+style = "label"
+pins = ["U4.23", "R40.1"]
+
+[[nets]]
+name = "BRB_B"
+class = "Motor"
+style = "label"
+pins = ["U4.27", "R41.1"]
+
+[[nets]]
+name = "B_OA1"
+class = "Motor"
+style = "label"
+pins = ["U4.24", "J3.1"]
+
+[[nets]]
+name = "B_OA2"
+class = "Motor"
+style = "label"
+pins = ["U4.21", "J3.2"]
+
+[[nets]]
+name = "B_OB1"
+class = "Motor"
+style = "label"
+pins = ["U4.26", "J3.3"]
+
+[[nets]]
+name = "B_OB2"
+class = "Motor"
+style = "label"
+pins = ["U4.1", "J3.4"]
+
+[[nets]]
+name = "STEP_B"
+class = "Signal"
+style = "label"
+pins = ["U4.16", "U2.26"]
+
+[[nets]]
+name = "DIR_B"
+class = "Signal"
+style = "label"
+pins = ["U4.19", "U2.27"]
+
+[[nets]]
+name = "EN_B"
+class = "Signal"
+style = "label"
+pins = ["U4.2", "U2.33", "R4.2"]
+
+[[nets]]
+name = "DIAG_B"
+class = "Signal"
+style = "label"
+pins = ["U4.11", "U2.34"]

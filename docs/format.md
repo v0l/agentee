@@ -1302,16 +1302,30 @@ What goes where, strongest first, and why:
   mounting holes, where handling and depaneling bend the board and crack BGA joints
   (IPC/JEDEC-9704A strain guidelines).
 - Clusters come from the netlist: each IC takes the passives whose signal nets reach it alone,
-  the capacitors between a supply it uses and ground (the nearest IC in the schematic when
-  several share the supply, spread over its supply pins), and its crystal. A cluster's decoupling
-  caps sit next to the supply pin they serve (Analog Devices MT-101, Decoupling Techniques; TI
-  SCAA082, High-Speed Layout Guidelines), or under it on the back with `--side both` (Xilinx UG483,
-  7 Series PCB Design Guide, puts the small caps under the BGA); the crystal next to its clock
-  pins (ST AN2867, Oscillator design guide). Clusters are placed to minimise weighted HPWL:
-  nets of an impedance or pair class, `[[pairs]]` and `[[interfaces]]` count three times, supply
-  and ground nets not at all (they are planes).
+  the capacitors and resistors between one of its supply or power nets and ground or a second
+  such net (the nearest IC in the schematic when several share the supply), and its crystal. The
+  smallest capacitors are given a supply pin first, one per pin before any pin gets a second, and
+  only pins the symbol types `power_in` or `power_out` (or that share a name with one) take them
+  when the IC has any, so a strap pin tied to the rail never takes a decap. A cluster's
+  decoupling caps sit next to the supply pin they serve with their other pad toward the IC's
+  nearest pin on that net (Analog Devices MT-101, Decoupling Techniques; TI SCAA082, High-Speed
+  Layout Guidelines), or under it on the back with `--side both` (Xilinx UG483, 7 Series PCB
+  Design Guide, puts the small caps under the BGA); the crystal next to its clock pins and its
+  load caps next to the crystal (ST AN2867, Oscillator design guide). A capacitor over 10 uF is
+  bulk and may sit 2.5 times as far. The pull of each grows with the `current` of the class of
+  the net it serves, so a sense resistor or a motor supply cap holds harder than a logic decap.
+  After annealing, every such part is lifted and put back in the best free spot within 5 mm of
+  its pin, the regulator outputs (`power_out` pins: VCAP, an internal LDO) first, then by the
+  current of the net, then smallest first. Clusters are placed to minimise weighted HPWL: nets
+  of an impedance or pair class, `[[pairs]]` and `[[interfaces]]` count three times, ground and
+  supply nets that reach more than four parts not at all (they are planes), and a net in a class
+  with `current` that reaches four parts or fewer (a motor coil, a switch node, a sense
+  resistor's node) counts 1 + 1.5 per amp. That keeps a power stage beside its load: a stepper
+  driver goes next to its motor connector, not next to the MCU its step and direction lines come
+  from, since a logic line can run across the board and a 2 A coil loop should not.
 - A switcher (an IC with an inductor on one of its pins whose other end is a supply) keeps its
-  inductor and input caps tight against it, and switchers keep 8 mm (centre to centre) from
+  inductor and input caps tight against it, its output caps against the inductor's output pad,
+  and switchers keep 8 mm (centre to centre) from
   sensitive parts:
   crystals and parts on single-ended impedance (RF) nets (TI SNVA021, AN-1149 Layout Guidelines
   for Switching Power Supplies; Linear Technology AN139, Power Supply Layout and EMI).

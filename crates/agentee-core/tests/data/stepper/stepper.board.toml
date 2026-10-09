@@ -1,0 +1,100 @@
+name = "stepper"
+description = "Two-axis stepper controller: 24 V in, AP63203 buck to 3V3, STM32H563, two TMC2209 drivers on one UART. A placement fixture: every support part sits where its datasheet asks"
+fab = "jlcpcb"
+
+[outline]
+size = [64, 50]
+corner_radius = 1
+
+[stackup]
+preset = "JLC041611-7628"
+finish = "ENIG"
+
+[[vias]]
+name = "std"
+drill = "0.3mm"
+diameter = "0.6mm"
+
+[[vias]]
+name = "small"
+drill = "0.2mm"
+diameter = "0.4mm"
+
+[[netclasses]]
+name = "Default"
+voltage = "3.3VDC"
+track_width = "0.15mm"
+clearance = "0.15mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "Signal"
+voltage = "3.3VDC"
+description = "Step, dir, enables, diagnostics, UART, SWD, straps"
+track_width = "0.15mm"
+clearance = "0.15mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "Clock"
+voltage = "3.3VDC"
+description = "The 32.768 kHz LSE crystal"
+track_width = "0.15mm"
+clearance = "0.25mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "Ground"
+voltage = "0VDC"
+track_width = "0.3mm"
+clearance = "0.15mm"
+via = ["std", "small"]
+
+[[netclasses]]
+name = "Power3V3"
+voltage = "3.3VDC"
+description = "3V3 from the AP63203"
+track_width = "0.5mm"
+clearance = "0.15mm"
+current = "0.8A"
+via = ["std", "small"]
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Rail"
+voltage = "3.3VDC"
+description = "VCAP core, driver 5VOUT and charge pump"
+track_width = "0.4mm"
+clearance = "0.15mm"
+current = "0.5A"
+via = ["std", "small"]
+
+[[netclasses]]
+name = "Power24"
+voltage = "24VDC"
+description = "24 V from J1 to the drivers and the buck"
+track_width = "1mm"
+clearance = "0.2mm"
+current = "2A"
+via = "std"
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Switch"
+voltage = "24VDC"
+description = "Buck switch node and boost, short and wide"
+track_width = "0.6mm"
+clearance = "0.2mm"
+current = "1.5A"
+via = "std"
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Motor"
+voltage = "24VDC"
+description = "Coil outputs and sense resistor nodes"
+track_width = "0.8mm"
+clearance = "0.2mm"
+current = "2A"
+via = "std"
+layers = ["F.Cu", "B.Cu"]

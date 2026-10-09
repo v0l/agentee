@@ -1,0 +1,279 @@
+# imported from KiCad Driver_Motor:TMC2209-LA
+name = "TMC2209-LA"
+reference = "U"
+description = "2-phase stepper motor driver, 256 µSteps, 2.8A peak, 2.0A RMS, VS = 4.75..29V, STEP/DIR and UART interface, VQFN-28"
+datasheet = "https://www.analog.com/media/en/technical-documentation/data-sheets/TMC2209_datasheet_rev1.09.pdf"
+keywords = ["ADI-Trinamic", "Analog-Devices"]
+footprint = "VQFN-28-1EP_5x5mm_P0.5mm_EP3.7x3.7mm_ThermalVias"
+footprint_filters = ["*VQFN*5x5mm*P0.5mm*EP3.7*3.7*"]
+
+[[graphics]]
+kind = "rect"
+start = [-12.7, -25.4]
+end = [12.7, 22.86]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "16"
+name = "STEP"
+type = "input"
+at = [-15.24, -20.32]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "19"
+name = "DIR"
+type = "input"
+at = [-15.24, -17.78]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "13"
+name = "CLK"
+type = "input"
+at = [-15.24, -12.7]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "14"
+name = "~{PD}/UART"
+type = "bidirectional"
+at = [-15.24, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "9"
+name = "MS1/AD0"
+type = "input"
+at = [-15.24, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "10"
+name = "MS2/AD1"
+type = "input"
+at = [-15.24, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "7"
+name = "SPREAD"
+type = "input"
+at = [-15.24, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "~{EN}"
+type = "input"
+at = [-15.24, 7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "20"
+name = "STDBY"
+type = "input"
+at = [-15.24, 10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "DIAG"
+type = "output"
+at = [-15.24, 15.24]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "12"
+name = "INDEX"
+type = "output"
+at = [-15.24, 17.78]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "15"
+name = "VCC_IO"
+type = "power_in"
+at = [-2.54, -27.94]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "22"
+name = "VS"
+type = "power_in"
+at = [0.0, -27.94]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "28"
+name = "VS"
+type = "passive"
+at = [0.0, -27.94]
+side = "top"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "18"
+name = "GND"
+type = "passive"
+at = [0.0, 25.4]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "29"
+name = "GND"
+type = "passive"
+at = [0.0, 25.4]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "3"
+name = "GND"
+type = "power_in"
+at = [0.0, 25.4]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "25"
+name = "NC"
+type = "passive"
+at = [2.54, 25.4]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "VCP"
+type = "output"
+at = [5.08, -27.94]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "5VOUT"
+type = "power_out"
+at = [15.24, -20.32]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "17"
+name = "VREF"
+type = "passive"
+at = [15.24, -15.24]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "CPO"
+type = "input"
+at = [15.24, -10.16]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "CPI"
+type = "input"
+at = [15.24, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "24"
+name = "OA1"
+type = "output"
+at = [15.24, 0.0]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "21"
+name = "OA2"
+type = "output"
+at = [15.24, 2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "26"
+name = "OB1"
+type = "output"
+at = [15.24, 7.62]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "OB2"
+type = "output"
+at = [15.24, 10.16]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "23"
+name = "BRA"
+type = "input"
+at = [15.24, 15.24]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "27"
+name = "BRB"
+type = "input"
+at = [15.24, 17.78]
+side = "right"
+length = 2.54
+unit = 1

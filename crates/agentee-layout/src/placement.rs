@@ -200,10 +200,16 @@ pub(crate) fn build(model: &Model) -> Board {
     let mut weights = HashMap::new();
     for (n, pins) in by_net {
         let net = &l.nets[n];
-        if pins.len() < 2 || place::is_power_net(b, &net.name, &net.class) {
+        if pins.len() < 2 {
             continue;
         }
-        let weight = if place::is_fast_class(b, &net.class) || place::is_rf_class(b, &net.class) {
+        let weight = if place::is_power_net(b, &net.name, &net.class) {
+            let parts: std::collections::HashSet<usize> = pins.iter().map(|p| p.0).collect();
+            if place::is_ground(&net.name) || parts.len() > place::LOOP_PARTS {
+                continue;
+            }
+            place::loop_weight(b, &net.class)
+        } else if place::is_fast_class(b, &net.class) || place::is_rf_class(b, &net.class) {
             3.0
         } else {
             1.0

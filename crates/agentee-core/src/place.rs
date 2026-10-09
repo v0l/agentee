@@ -30,6 +30,7 @@ const QUENCH_PER_PART: f64 = 500.0;
 const QUENCH_HEAT: f64 = 0.03;
 const CROSSING_WEIGHT: f64 = 4.0;
 const SILK_ROOM: f64 = 0.2;
+const TEXT_GAP: f64 = 0.4;
 const LABEL_SHARE: f64 = 0.25;
 const LABEL_REACH: usize = 60;
 const LABEL_WEIGHT: f64 = 0.2;
@@ -481,6 +482,21 @@ pub fn is_power_net(board: &Board, name: &str, class: &str) -> bool {
     is_ground(name) || c.is_some_and(|c| c.current.is_some()) || crate::testpoint::is_rail(name)
 }
 
+pub const LOOP_PARTS: usize = 4;
+const BULK_FARADS: f64 = 10.1e-6;
+const HUG_REACH: f64 = 5.0;
+const HUG_STEP: f64 = 0.25;
+const LOOP_WEIGHT_PER_AMP: f64 = 1.5;
+const LOOP_AMPS: f64 = 0.5;
+
+fn class_amps(board: &Board, class: &str) -> Option<f64> {
+    board.netclasses.iter().find(|c| c.name == class).and_then(|c| c.current.map(|a| a.0))
+}
+
+pub fn loop_weight(board: &Board, class: &str) -> f64 {
+    1.0 + LOOP_WEIGHT_PER_AMP * class_amps(board, class).unwrap_or(LOOP_AMPS)
+}
+
 pub fn is_fast_class(board: &Board, class: &str) -> bool {
     board
         .netclasses
@@ -498,6 +514,7 @@ pub fn is_rf_class(board: &Board, class: &str) -> bool {
 }
 
 pub fn cap_farads(value: &str) -> Option<f64> {
+    let value = value.split(['/', ',']).next().unwrap_or(value);
     let v: String = value.trim().replace('\u{b5}', "u").chars().filter(|c| *c != ' ').collect();
     let v = v.trim_end_matches(['F', 'f']);
     let pos = v.find(['p', 'n', 'u', 'm'])?;
@@ -750,6 +767,8 @@ struct LPad {
     outline: Vec<Vec<P>>,
     net: Option<usize>,
     edge: bool,
+    supply: bool,
+    regulated: bool,
 }
 
 #[derive(Clone)]
@@ -802,6 +821,7 @@ struct NetInfo {
     power: bool,
     ground: bool,
     rf: bool,
+    amps: f64,
 }
 
 type Target = (usize, P, Option<(usize, P)>);
@@ -1816,7 +1836,7 @@ impl<'a> Placer<'a> {
                 }
                 self.net_stamp[n] = s;
                 let net = &self.nets[n];
-                if net.power || net.weight == 0.0 {
+                if net.weight == 0.0 {
                     continue;
                 }
                 cost += net.weight * self.net_hpwl(n);
@@ -2350,6 +2370,24 @@ fn place_with<'a>(
                         .position(|n| n.number == pad.number)
                         .and_then(|ni| sch.net_of(PinRef { part: *pi, pin: ni }))
                 });
+                let regulated = units.iter().any(|(_, p)| {
+                    p.symbol.pins.iter().any(|n| {
+                        n.number == pad.number && n.kind == crate::symbol::PinType::PowerOut
+                    })
+                });
+                let supply = units.iter().any(|(_, p)| {
+                    let power = |n: &crate::symbol::Pin| {
+                        matches!(
+                            n.kind,
+                            crate::symbol::PinType::PowerIn | crate::symbol::PinType::PowerOut
+                        )
+                    };
+                    p.symbol.pins.iter().any(|n| {
+                        n.number == pad.number
+                            && (power(n)
+                                || p.symbol.pins.iter().any(|m| power(m) && m.name == n.name))
+                    })
+                });
                 let outline = if pad.is_copper() || pad.kind == PadKind::Npth {
                     pad.outlines()
                 } else {
@@ -2358,7 +2396,7 @@ fn place_with<'a>(
                 let mut bb = Bounds::EMPTY;
                 outline.iter().flatten().for_each(|q| bb.add(*q));
                 let c = if bb.is_empty() { pad.at.to_mm() } else { bb.center() };
-                LPad { c, outline, net, edge: pad.edge }
+                LPad { c, outline, net, edge: pad.edge, supply, regulated }
             })
             .collect();
         let mut loops: Vec<(bool, Vec<P>)> = Vec::new();
@@ -2496,6 +2534,7 @@ fn place_with<'a>(
                 power,
                 ground: is_ground(&n.name),
                 rf: is_rf_class(board, &n.class),
+                amps: class_amps(board, &n.class).unwrap_or(0.0),
             }
         })
         .collect();
@@ -2522,6 +2561,11 @@ fn place_with<'a>(
                 true
             }
         });
+    }
+    for (ni, n) in nets.iter_mut().enumerate() {
+        if n.power && !n.ground && n.pins.len() >= 2 && n.pins.len() <= LOOP_PARTS {
+            n.weight = loop_weight(board, &sch.nets[ni].class);
+        }
     }
     let two_pin: Vec<usize> =
         (0..nets.len()).filter(|n| !nets[*n].power && nets[*n].pins.len() == 2).collect();
@@ -2589,7 +2633,7 @@ fn place_with<'a>(
     };
     let label_room = label_area <= LABEL_SHARE * (room - used);
     let soft_labels = !label_room && label_area <= room - used;
-    for p in parts.iter_mut().filter(|p| !p.active || !(label_room || soft_labels)) {
+    for p in parts.iter_mut().filter(|p| (!p.active && !p.fixed) || !(label_room || soft_labels)) {
         p.label = None;
         p.label_inward = None;
     }
@@ -2685,6 +2729,7 @@ fn place_with<'a>(
         let mut moves = cand.refine(&mut rng, MOVES_PER_PART, ANNEAL_HEAT);
         cand.share_rotation();
         moves += cand.refine(&mut rng, QUENCH_PER_PART, QUENCH_HEAT);
+        cand.hug();
         cand.clear_flex_zone();
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
@@ -2809,7 +2854,12 @@ impl<'a> Placer<'a> {
         let mut served: HashMap<usize, (usize, usize)> = HashMap::new();
         let mut load: HashMap<(usize, usize), usize> = HashMap::new();
         let followers = |r: Role| matches!(r, Role::Passive | Role::Crystal | Role::TestPoint);
-        for i in 0..n {
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by(|a, b| {
+            let f = |i: usize| cap_farads(&self.parts[i].value).unwrap_or(f64::MAX);
+            f(*a).total_cmp(&f(*b))
+        });
+        for i in order {
             if !followers(self.parts[i].role) {
                 continue;
             }
@@ -2838,12 +2888,15 @@ impl<'a> Placer<'a> {
                 let Some(k) = self.parts[i].pads.iter().position(|q| q.net == Some(rail)) else {
                     continue;
                 };
-                let pins: Vec<usize> = (0..self.parts[best].pads.len())
+                let mut pins: Vec<usize> = (0..self.parts[best].pads.len())
                     .filter(|k| {
                         self.parts[best].pads[*k].net == Some(rail)
                             && !self.parts[best].pads[*k].outline.is_empty()
                     })
                     .collect();
+                if pins.iter().any(|k| self.parts[best].pads[*k].supply) {
+                    pins.retain(|k| self.parts[best].pads[*k].supply);
+                }
                 if let Some(&pin) =
                     pins.iter().min_by_key(|p| load.get(&(best, **p)).copied().unwrap_or(0))
                 {
@@ -2912,20 +2965,28 @@ impl<'a> Placer<'a> {
             for &m in &c.members {
                 let p = &self.parts[m];
                 if let Some(&(k, pin)) = c.served.get(&m) {
-                    let bulk = cap_farads(&p.value).is_some_and(|f| f > 1.1e-6);
-                    let w = if self.parts[c.anchor].switcher {
+                    let bulk = cap_farads(&p.value).is_some_and(|f| f > BULK_FARADS);
+                    let base = if self.parts[c.anchor].switcher {
                         4.0
                     } else if bulk {
-                        0.5
+                        1.5
                     } else {
                         2.0
                     };
+                    let rail = p.pads[k].net;
+                    let w = base * rail.map_or(1.0, |n| 1.0 + self.nets[n].amps);
                     let thr = if bulk { self.b.decap * 2.5 } else { self.b.decap };
-                    links.push((
-                        End::Pad(m, k),
-                        End::Pad(c.anchor, pin),
-                        LinkKind::Pull { w, thr, extra: 5.0, near: self.b.standoff },
-                    ));
+                    let pull = LinkKind::Pull { w, thr, extra: 5.0, near: self.b.standoff };
+                    let to = self.coil_end(c.anchor, rail, m).unwrap_or(End::Pad(c.anchor, pin));
+                    links.push((End::Pad(m, k), to, pull));
+                    if let Some((g, gp)) = is_capacitor(&p.reference, "")
+                        .then(|| self.return_pins(m, k, c.anchor, pin))
+                        .flatten()
+                    {
+                        let pull =
+                            LinkKind::Pull { w: w / 2.0, thr, extra: 2.0, near: self.b.standoff };
+                        links.push((End::Pad(m, g), End::Pad(c.anchor, gp), pull));
+                    }
                 } else if p.role == Role::Crystal {
                     for n in self.signal_nets(m) {
                         let (Some(k), Some(pin)) = (
@@ -2947,6 +3008,18 @@ impl<'a> Placer<'a> {
                         End::Centre(c.anchor),
                         LinkKind::Pull { w, thr: self.b.spread / 2.0, extra: 1.0, near: 0.0 },
                     ));
+                    for (k, x, q) in self.crystal_pads(m) {
+                        links.push((
+                            End::Pad(m, k),
+                            End::Pad(x, q),
+                            LinkKind::Pull {
+                                w: 3.0,
+                                thr: self.b.decap,
+                                extra: 5.0,
+                                near: self.b.standoff,
+                            },
+                        ));
+                    }
                 }
             }
         }
@@ -2976,6 +3049,55 @@ impl<'a> Placer<'a> {
         }
     }
 
+    fn coil_end(&self, anchor: usize, rail: Option<usize>, me: usize) -> Option<End> {
+        let rail = rail?;
+        if !self.parts[anchor].switcher || self.nets[rail].pins.len() <= LOOP_PARTS {
+            return None;
+        }
+        self.nets[rail].pins.iter().find_map(|&(j, q)| {
+            (j != me && self.parts[j].switcher && self.parts[j].role == Role::Passive)
+                .then_some(End::Pad(j, q))
+        })
+    }
+
+    fn return_pins(&self, m: usize, k: usize, anchor: usize, pin: usize) -> Option<(usize, usize)> {
+        let g = (0..self.parts[m].pads.len()).find(|&g| {
+            g != k
+                && self.parts[m].pads[g].net.is_some_and(|n| {
+                    n != self.parts[m].pads[k].net.unwrap_or(usize::MAX)
+                        && self.parts[anchor].pads.iter().any(|q| q.net == Some(n))
+                })
+        })?;
+        let net = self.parts[m].pads[g].net;
+        let at = self.parts[anchor].pads[pin].c;
+        let gp = (0..self.parts[anchor].pads.len())
+            .filter(|q| {
+                let pad = &self.parts[anchor].pads[*q];
+                !pad.outline.is_empty() && pad.net == net
+            })
+            .min_by(|a, b| {
+                let d = |q: usize| geom::dist(self.parts[anchor].pads[q].c, at);
+                d(*a).total_cmp(&d(*b))
+            })?;
+        Some((g, gp))
+    }
+
+    fn crystal_pads(&self, m: usize) -> Vec<(usize, usize, usize)> {
+        let mut out = Vec::new();
+        for (k, pad) in self.parts[m].pads.iter().enumerate() {
+            let Some(n) = pad.net else { continue };
+            if self.nets[n].power {
+                continue;
+            }
+            for &(x, q) in &self.nets[n].pins {
+                if x != m && self.parts[x].role == Role::Crystal {
+                    out.push((k, x, q));
+                }
+            }
+        }
+        out
+    }
+
     fn mark_switchers(&mut self) {
         let n = self.parts.len();
         for i in 0..n {
@@ -2993,7 +3115,15 @@ impl<'a> Placer<'a> {
                 continue;
             }
             let mut found = Vec::new();
-            for &net in &self.signal_nets(i) {
+            let own: Vec<usize> = self.part_nets[i]
+                .iter()
+                .copied()
+                .filter(|n| {
+                    !self.nets[*n].ground
+                        && (!self.nets[*n].power || self.nets[*n].pins.len() <= LOOP_PARTS)
+                })
+                .collect();
+            for &net in &own {
                 for &(j, _) in &self.nets[net].pins {
                     let q = &self.parts[j];
                     if j == i || q.role != Role::Passive || ref_prefix(&q.reference) != "L" {
@@ -3120,7 +3250,7 @@ impl<'a> Placer<'a> {
         let mut g =
             MacroGraph { adj: vec![Vec::new(); m], pairs: Vec::new(), fixed: vec![Vec::new(); m] };
         for net in &self.nets {
-            if net.power || net.weight == 0.0 {
+            if net.weight == 0.0 {
                 continue;
             }
             let mut ms: Vec<(usize, Option<usize>)> = Vec::new();
@@ -3731,7 +3861,7 @@ impl<'a> Placer<'a> {
             if !self.on_parts(sd, &taken[k]) {
                 continue;
             }
-            let base = grow(&t.outline(), SILK_ROOM);
+            let base = grow(&t.outline(), TEXT_GAP);
             let clear = |poly: &[P]| {
                 let b = poly_bounds(poly);
                 poly.iter().all(|v| self.edge_clear(edge, *v, 0.0))
@@ -4027,7 +4157,7 @@ impl<'a> Placer<'a> {
         let mut cost = 0.0;
         for n in nets {
             let net = &self.nets[n];
-            if net.power || net.weight == 0.0 {
+            if net.weight == 0.0 {
                 continue;
             }
             let mut b = Bounds::EMPTY;
@@ -4432,14 +4562,21 @@ impl<'a> Placer<'a> {
                     new.push(St { at: [s.at[0] + off[0], s.at[1] + off[1]], ..s });
                 }
             } else if pick < 0.3 {
-                let shared = self.parts[i].role == Role::Passive && self.cluster_of[i].is_some();
+                let shared = self.parts[i].role == Role::Passive
+                    && self.cluster_of[i].is_some()
+                    && !self.serves(i);
                 let turn = if shared { 180.0 } else { [90.0, 180.0, 270.0][rng.below(3)] };
                 let flip = self.sides == Sides::Both
                     && self.parts[i].role == Role::Passive
                     && !self.parts[i].through
                     && rng.unit() < 0.3;
                 let rot = (st.rot + if flip { 0.0 } else { turn }).rem_euclid(360.0);
-                new.push(St { rot, bottom: st.bottom != flip, ..st });
+                let at = if self.serves(i) && rng.unit() < 0.5 {
+                    snap_p([st.at[0] + off[0] / 4.0, st.at[1] + off[1] / 4.0])
+                } else {
+                    st.at
+                };
+                new.push(St { at, rot, bottom: st.bottom != flip });
             } else if pick < 0.45 {
                 let j = movable[rng.below(movable.len())];
                 let (sa, sb) = (self.parts[i].local.size(), self.parts[j].local.size());
@@ -4520,13 +4657,113 @@ impl<'a> Placer<'a> {
         accepted
     }
 
+    fn hug(&mut self) {
+        let mut order: Vec<(usize, usize, usize)> = Vec::new();
+        for c in &self.clusters {
+            for (&m, &(_, pin)) in &c.served {
+                if self.movable(m) && self.parts[m].placed {
+                    order.push((m, c.anchor, pin));
+                }
+            }
+        }
+        let farads = |i: usize| cap_farads(&self.parts[i].value).unwrap_or(0.0);
+        let amps = |i: usize, pin: usize| {
+            let pad = &self.parts[i].pads[pin];
+            let a = pad.net.map_or(0.0, |n| self.nets[n].amps);
+            -(a * 100.0).round() - if pad.regulated { 1e6 } else { 0.0 }
+        };
+        order.sort_by(|a, b| {
+            amps(a.1, a.2)
+                .total_cmp(&amps(b.1, b.2))
+                .then(farads(a.0).total_cmp(&farads(b.0)))
+                .then(a.0.cmp(&b.0))
+        });
+        let all: Vec<usize> = (0..self.parts.len()).collect();
+        let before = self.local_cost(&all);
+        let kept: Vec<(usize, St)> = order.iter().map(|o| (o.0, self.parts[o.0].st)).collect();
+        let crowding: Vec<f64> = order
+            .iter()
+            .map(|o| if self.soft_labels { self.label_overlap(o.0) } else { 0.0 })
+            .collect();
+        for &(m, _, _) in &order {
+            self.remove(m);
+        }
+        let steps = (HUG_REACH / HUG_STEP) as i32;
+        let mut stuck = false;
+        for (x, &(m, anchor, pin)) in order.iter().enumerate() {
+            let rail = self.clusters[self.cluster_of[m].expect("served part has a cluster")]
+                .served
+                .get(&m)
+                .and_then(|&(k, _)| self.parts[m].pads[k].net);
+            let target = match self.coil_end(anchor, rail, m) {
+                Some(e) => self.end_pos(e),
+                None => self.pad_pos(anchor, pin),
+            };
+            let st = self.parts[m].st;
+            let mut best: Option<(f64, St)> = None;
+            for dx in -steps..=steps {
+                for dy in -steps..=steps {
+                    let at = snap_p([
+                        target[0] + dx as f64 * HUG_STEP,
+                        target[1] + dy as f64 * HUG_STEP,
+                    ]);
+                    for rot in [0.0, 90.0, 180.0, 270.0] {
+                        let cand = St { at, rot, bottom: st.bottom };
+                        if !self.legal(m, cand, &[]) {
+                            continue;
+                        }
+                        self.parts[m].st = cand;
+                        self.insert(m);
+                        let c = self.local_cost(&[m]);
+                        let crowds = self.soft_labels && self.label_overlap(m) > crowding[x] + EPS;
+                        self.remove(m);
+                        if !crowds && best.as_ref().is_none_or(|b| c < b.0 - 1e-9) {
+                            best = Some((c, cand));
+                        }
+                    }
+                }
+            }
+            let found = best.map(|b| b.1).or_else(|| {
+                self.parts[m].st = st;
+                if self.legal(m, st, &[]) {
+                    Some(st)
+                } else {
+                    self.nearest(m, st.at, st.rot, st.bottom, f64::MAX, &|_| 0.0)
+                }
+            });
+            match found {
+                Some(f) => self.parts[m].st = f,
+                None => {
+                    self.parts[m].st = st;
+                    stuck = true;
+                }
+            }
+            self.insert(m);
+        }
+        if stuck || self.local_cost(&all) > before {
+            for &(m, _, _) in &order {
+                self.remove(m);
+            }
+            for &(m, st) in &kept {
+                self.parts[m].st = st;
+                self.insert(m);
+            }
+        }
+    }
+
+    fn serves(&self, i: usize) -> bool {
+        self.cluster_of[i].is_some_and(|c| self.clusters[c].served.contains_key(&i))
+    }
+
     fn share_rotation(&mut self) {
         for c in 0..self.clusters.len() {
             let members: Vec<usize> = self.clusters[c]
                 .members
                 .iter()
                 .copied()
-                .filter(|m| self.movable(*m) && self.parts[*m].role == Role::Passive)
+                .filter(|m| {
+                    self.movable(*m) && self.parts[*m].role == Role::Passive && !self.serves(*m)
+                })
                 .collect();
             let mut votes = 0i32;
             for &m in &members {
