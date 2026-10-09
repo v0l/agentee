@@ -357,9 +357,9 @@ time. `AGENTEE_BENCH_OUT=dir` keeps the result files.
 |---|---|---|---|
 | `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.4 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
 | `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 0.6 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
-| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 402 of 498, 57 to 64 unrouted, 78 to 93 s | 0 unrouted, under 60 s |
+| `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 530 of 593, 75 to 80 unrouted, 108 to 118 DRC errors (90 silk), 250 to 310 s | 0 unrouted, under 60 s |
 | `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 442 of 499, 37 to 50 unrouted, 138 errors (117 silk), 184 to 204 s | 0 unrouted, decap term under 20, under 120 s |
-| `praline` route only, hand placement | | 1248 to 1250 of 1296, 46 to 48 unrouted, 28 DRC errors, 245 to 254 s | 0 unrouted |
+| `praline` route only, hand placement | | 1249 of 1296, 45 unrouted, 23 DRC errors, 505 s | 0 unrouted |
 
 Connection counts went up because plane and ground pads are now routed connections. The
 committed `sdr` layout itself leaves 59 connections unrouted, 34 of them power and 12 LVDS, so
@@ -367,9 +367,19 @@ its power plan cannot close; the committed `praline` layout routes everything, b
 its 0.3 mm dog-bone vias sit 0.18 mm from the neighbouring balls, so the `praline` case sets
 `min_via_hole_to_copper = 0.18` in its copy of the board instead of the 0.25 mm default.
 
-Negotiation is chaotic: a small change moves the `sdr` unrouted count by up to seven. To judge a
+Negotiation is chaotic: a small change moves the `sdr` unrouted count by a few pads. To judge a
 change, run the `sdr` harness three times with `AGENTEE_BATCH` at 24, 32 and 40, which changes
-how nets are grouped in a round, and compare the means.
+how nets are grouped in a round, and compare the means. The unrouted count is pads, not
+connections, so one cut pour neck or one dropped ground stub can strand dozens. Two things
+used to let that happen and no longer do. Writing the route held each net to the rules as a
+whole, so one bad stub dropped every track of the net, often an innocent net checked after the
+real culprit; it now bisects the net's new copper and drops only the tracks and vias that break
+a rule. And the finish steps judged connectivity on the pours before they refilled (via
+dropping cut 3V3 apart on every `sdr` run); every finish step is now checked after the refill,
+and a net left with more pads unjoined gets its copper from before the step back, or the whole
+step is undone when the damage came through a pour. Together they took the `sdr` spread from
+68 to 212 unrouted pads to 75 to 80, and `praline` from 519 to 45. `AGENTEE_UNROUTED_DEBUG=1`
+prints the unrouted total, the worst nets and what the rules dropped at every write.
 
 On `sdr` the only clearance errors are the two from the committed `[[fanouts]]`; the rest are
 pair and interface timing and the silk the placer leaves. On

@@ -547,7 +547,8 @@ The tools that add copper check it against the same rules before they write it. 
 `via-in-pad-fill`, `hole-to-smd-pad`, `stacked-via` and `track-overlap`, and skip a spot that
 breaks one. `tune` and `neck` do the same for each meander and neck, judging it against the rest
 of the track it rewrites rather than the copy it replaces. `agentee route` and the layout engine
-drop a net's new copper when it breaks one, and report the rule. Pours are left out of these
+drop the new tracks and vias that break one, found by halving the net's new copper until the
+pieces that fail are left, keep the rest, and report the rule. Pours are left out of these
 checks, since a pour refills around new copper.
 
 The distance rules (`clearance`, `isolation-clearance`, `creepage` measured straight,
@@ -1408,8 +1409,9 @@ ripping up only the pieces that overlap, so the order they are named in does not
 `--layers` keeps tracks to those layers, apart from a short stub out of a pad that sits on none of
 them; `--via` limits layer changes to the named vias, otherwise a net takes its class vias first
 and the board's others after. `--via-cost`, `--bend-cost` and `--via-in-pad` work as below. Each
-net's new copper is checked against the rules before it is written, and dropped with the broken
-rule named under `failed`; a via the net is joined without is dropped.
+net's new copper is checked against the rules before it is written; the tracks and vias that
+break one are dropped with the rule named under `failed`, and the rest of the net is kept. A via
+the net is joined without is dropped.
 
 A pair whose class has a `diff_gap` at least its clearance, with one connection per net, is routed
 coupled: a centreline as wide as both tracks and the gap is searched on one layer from near the

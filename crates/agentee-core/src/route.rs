@@ -720,55 +720,134 @@ pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> Rout
             nets.push(n.clone());
         }
     }
+    let mut drop_tracks = vec![false; r.tracks.len()];
+    let mut drop_vias = vec![false; r.vias.len()];
     for name in nets {
         let Some(net) = layout.nets.iter().position(|n| n.name == name) else { continue };
-        let tracks: Vec<crate::layout::Track> = r
-            .tracks
-            .iter()
-            .filter(|t| t.net == name)
-            .map(|t| crate::layout::Track {
-                source: usize::MAX,
-                net,
-                layer: t.layer.clone(),
-                width: t.width.unwrap_or(layout.nets[net].width),
-                points: t.points.clone(),
-            })
-            .collect();
-        let vias: Vec<crate::layout::Via> = r
-            .vias
-            .iter()
-            .filter(|v| v.net == name)
-            .filter_map(|v| {
-                let spec = board.vias.iter().find(|s| s.name == v.via)?;
-                Some(crate::layout::Via::of(spec, net, v.at, &layout.copper))
-            })
-            .collect();
-        let plan = crate::rules::Plan { tracks, vias, ..Default::default() };
-        match crate::rules::legal(&crate::rules::Planned::after(&base, &kept, plan.clone())) {
-            Ok(()) => kept.extend(plan),
-            Err(broken) => {
-                let first = r.tracks.iter().find(|t| t.net == name);
-                let ends = first
-                    .map(|t| (t.points[0], *t.points.last().unwrap()))
-                    .unwrap_or(([0.0, 0.0], [0.0, 0.0]));
-                let v = &broken[0];
-                r.failed.push(Unrouted {
-                    net: name.clone(),
-                    from: ends.0,
-                    to: ends.1,
-                    reason: format!(
-                        "the route broke [{}]: {} is {:.3} mm from {}, needs {:.3} mm; it was dropped",
-                        v.rule, v.subject, v.gap, v.other, v.need
-                    ),
-                });
-                r.tracks.retain(|t| t.net != name);
-                r.vias.retain(|v| v.net != name);
-                let lost = r.per_net.remove(&name).unwrap_or(1);
-                r.routed = r.routed.saturating_sub(lost);
+        let mut pieces: Vec<Piece> = Vec::new();
+        for (k, t) in r.tracks.iter().enumerate().filter(|(_, t)| t.net == name) {
+            pieces.push(Piece::Track(
+                k,
+                crate::layout::Track {
+                    source: usize::MAX,
+                    net,
+                    layer: t.layer.clone(),
+                    width: t.width.unwrap_or(layout.nets[net].width),
+                    points: t.points.clone(),
+                },
+            ));
+        }
+        for (k, v) in r.vias.iter().enumerate().filter(|(_, v)| v.net == name) {
+            match board.vias.iter().find(|s| s.name == v.via) {
+                Some(spec) => pieces
+                    .push(Piece::Via(k, crate::layout::Via::of(spec, net, v.at, &layout.copper))),
+                None => drop_vias[k] = true,
             }
         }
+        let mut first: Option<crate::rules::Violation> = None;
+        let mut dropped = Vec::new();
+        admit(&base, &mut kept, &pieces, &mut dropped, &mut first);
+        if dropped.is_empty() {
+            continue;
+        }
+        for &i in &dropped {
+            match &pieces[i] {
+                Piece::Track(k, _) => drop_tracks[*k] = true,
+                Piece::Via(k, _) => drop_vias[*k] = true,
+            }
+        }
+        let at = match &pieces[dropped[0]] {
+            Piece::Track(_, t) => (t.points[0], *t.points.last().unwrap_or(&t.points[0])),
+            Piece::Via(_, v) => (v.at, v.at),
+        };
+        let reason = match first {
+            Some(v) => format!(
+                "the route broke [{}]: {} is {:.3} mm from {}, needs {:.3} mm; {} of its {} new tracks and vias were dropped",
+                v.rule,
+                v.subject,
+                v.gap,
+                v.other,
+                v.need,
+                dropped.len(),
+                pieces.len()
+            ),
+            None => "a via of an unknown type was dropped".to_string(),
+        };
+        r.failed.push(Unrouted { net: name.clone(), from: at.0, to: at.1, reason });
+        if dropped.len() == pieces.len() {
+            let lost = r.per_net.remove(&name).unwrap_or(1);
+            r.routed = r.routed.saturating_sub(lost);
+        } else {
+            r.routed = r.routed.saturating_sub(1);
+        }
     }
+    let mut k = 0;
+    r.tracks.retain(|_| {
+        k += 1;
+        !drop_tracks[k - 1]
+    });
+    let mut k = 0;
+    r.vias.retain(|_| {
+        k += 1;
+        !drop_vias[k - 1]
+    });
     r
+}
+
+enum Piece {
+    Track(usize, crate::layout::Track),
+    Via(usize, crate::layout::Via),
+}
+
+fn plan_of(pieces: &[Piece], which: &[usize]) -> crate::rules::Plan {
+    let mut plan = crate::rules::Plan::default();
+    for &i in which {
+        match &pieces[i] {
+            Piece::Track(_, t) => plan.tracks.push(t.clone()),
+            Piece::Via(_, v) => plan.vias.push(v.clone()),
+        }
+    }
+    plan
+}
+
+fn admit(
+    base: &crate::rules::Placed,
+    kept: &mut crate::rules::Plan,
+    pieces: &[Piece],
+    dropped: &mut Vec<usize>,
+    first: &mut Option<crate::rules::Violation>,
+) {
+    let all: Vec<usize> = (0..pieces.len()).collect();
+    split(base, kept, pieces, &all, dropped, first);
+    dropped.sort_unstable();
+}
+
+fn split(
+    base: &crate::rules::Placed,
+    kept: &mut crate::rules::Plan,
+    pieces: &[Piece],
+    which: &[usize],
+    dropped: &mut Vec<usize>,
+    first: &mut Option<crate::rules::Violation>,
+) {
+    if which.is_empty() {
+        return;
+    }
+    let plan = plan_of(pieces, which);
+    match crate::rules::legal(&crate::rules::Planned::after(base, kept, plan.clone())) {
+        Ok(()) => kept.extend(plan),
+        Err(broken) if which.len() == 1 => {
+            dropped.push(which[0]);
+            if first.is_none() {
+                *first = broken.into_iter().next();
+            }
+        }
+        Err(_) => {
+            let (a, b) = which.split_at(which.len() / 2);
+            split(base, kept, pieces, a, dropped, first);
+            split(base, kept, pieces, b, dropped, first);
+        }
+    }
 }
 
 #[derive(Clone)]

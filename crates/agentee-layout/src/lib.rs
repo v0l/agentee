@@ -381,7 +381,9 @@ impl Driver<'_, '_> {
         self.done(model, r, t0, 0);
     }
 
+    #[track_caller]
     fn write_route(&mut self, model: &mut Model) -> Result<u128, String> {
+        let site = std::panic::Location::caller().line();
         let Some(d) = model.detail.as_ref() else { return Ok(0) };
         let key = self.doc.version_except(ROUTE);
         if self.bare.as_ref().is_none_or(|b| b.0 != key) {
@@ -399,7 +401,24 @@ impl Driver<'_, '_> {
             },
         );
         self.doc.set(ROUTE, route_section(&held.tracks, &held.vias));
-        self.reload(model)
+        let ms = self.reload(model)?;
+        if std::env::var("AGENTEE_UNROUTED_DEBUG").is_ok() {
+            let mut worst: Vec<(usize, &str)> = model
+                .layout
+                .nets
+                .iter()
+                .filter(|n| n.unrouted > 0)
+                .map(|n| (n.unrouted, n.name.as_str()))
+                .collect();
+            worst.sort_by(|a, b| b.0.cmp(&a.0));
+            let total: usize = worst.iter().map(|w| w.0).sum();
+            eprintln!(
+                "write at {site}: {total} unrouted, dropped by rules: {:?}, worst {:?}",
+                held.failed.iter().map(|f| (&f.net, &f.reason)).collect::<Vec<_>>(),
+                &worst[..worst.len().min(5)]
+            );
+        }
+        Ok(ms)
     }
 }
 
@@ -553,27 +572,34 @@ impl Driver<'_, '_> {
         agentee_core::layout::drop_floating();
         let t0 = d.start("finish");
         let mut reload_ms = d.reload(model)?;
+        let snap = Snap::of(model);
         let mut r = finish::Finish.run(model, &cfg.engine);
         if r.changed {
             reload_ms += d.write_route(model)?;
             if finish::check_spread(model, &cfg.engine, &mut r) {
                 reload_ms += d.write_route(model)?;
             }
+            reload_ms += d.held(model, &snap, "spread", &mut r)?;
         }
         let before = r.changed;
         r.changed = false;
+        let snap = Snap::of(model);
         finish::tune(model, &mut r);
         if r.changed {
             reload_ms += d.write_route(model)?;
+            reload_ms += d.held(model, &snap, "tune", &mut r)?;
         }
         let tuned = r.changed;
         r.changed = false;
+        let snap = Snap::of(model);
         finish::neck(model, &mut r);
         finish::dedouble(model, &mut r);
         finish::trim_pours(model, &mut r);
         if r.changed {
             reload_ms += d.write_route(model)?;
+            reload_ms += d.held(model, &snap, "neck, dedouble and pour trim", &mut r)?;
         }
+        let snap = Snap::of(model);
         let mut joined = finish::close_joints(model, &cfg.engine, &mut r);
         finish::drop_fragments(model, &mut r);
         joined |= finish::close_joints(model, &cfg.engine, &mut r);
@@ -581,11 +607,15 @@ impl Driver<'_, '_> {
             finish::dedouble(model, &mut r);
             r.changed = true;
             reload_ms += d.write_route(model)?;
+            reload_ms += d.held(model, &snap, "joint closing", &mut r)?;
         }
+        let snap = Snap::of(model);
         if finish::sink_into_pours(model, &cfg.engine, &mut r) {
             r.changed = true;
             reload_ms += d.write_route(model)?;
+            reload_ms += d.held(model, &snap, "sinking into pours", &mut r)?;
         }
+        let snap = Snap::of(model);
         let mut last = finish::widen(model, &cfg.engine, &mut r);
         last |= finish::tidy_tracks(model, &mut r);
         let kept = r.changed;
@@ -596,10 +626,13 @@ impl Driver<'_, '_> {
         if last {
             r.changed = true;
             reload_ms += d.write_route(model)?;
+            reload_ms += d.held(model, &snap, "widening and tidying", &mut r)?;
         }
+        let snap = Snap::of(model);
         if finish::drop_vias(model, &mut r) {
             r.changed = true;
             reload_ms += d.write_route(model)?;
+            reload_ms += d.held(model, &snap, "via dropping", &mut r)?;
         }
         r.changed |= before || tuned;
         d.done(model, r, t0, reload_ms);
@@ -611,12 +644,56 @@ impl Driver<'_, '_> {
         let t0 = d.start("finish");
         let mut r = PhaseReport { phase: "finish".into(), ..Default::default() };
         let mut ms = 0;
+        let snap = Snap::of(model);
         if finish::drop_vias(model, &mut r) {
             r.changed = true;
             ms = d.write_route(model)?;
+            ms += d.held(model, &snap, "via dropping", &mut r)?;
         }
         d.done(model, r, t0, ms);
         Ok(())
+    }
+
+    fn held(
+        &mut self,
+        model: &mut Model,
+        s: &Snap,
+        step: &str,
+        r: &mut PhaseReport,
+    ) -> Result<u128, String> {
+        let now = unrouted_by_net(model);
+        let worse: Vec<String> = now
+            .iter()
+            .zip(&s.unrouted)
+            .enumerate()
+            .filter(|(_, (n, w))| n > w)
+            .map(|(i, _)| model.layout.nets[i].name.clone())
+            .collect();
+        if worse.is_empty() {
+            return Ok(0);
+        }
+        let Some(plan) = model.detail.as_mut() else { return Ok(0) };
+        plan.tracks.retain(|t| !worse.contains(&t.net));
+        plan.tracks.extend(s.tracks.iter().filter(|t| worse.contains(&t.net)).cloned());
+        plan.vias.retain(|v| !worse.contains(&v.net));
+        plan.vias.extend(s.vias.iter().filter(|v| worse.contains(&v.net)).cloned());
+        let mut ms = self.write_route(model)?;
+        let was: usize = s.unrouted.iter().sum();
+        let after: usize = unrouted_by_net(model).iter().sum();
+        if after > was {
+            let plan = model.detail.as_mut().expect("detail plan");
+            plan.tracks = s.tracks.clone();
+            plan.vias = s.vias.clone();
+            ms += self.write_route(model)?;
+            r.notes
+                .push(format!("{step} undone: it left more pads unjoined once the pours refilled"));
+        } else {
+            r.notes.push(format!(
+                "{step} undone on {}: they had more pads unjoined once the pours refilled",
+                worse.join(", ")
+            ));
+        }
+        Ok(ms)
     }
 
     fn report(
@@ -934,6 +1011,24 @@ fn route_reps(
     if kept.is_some() {
         model.detail = kept;
     }
+}
+
+struct Snap {
+    tracks: Vec<RoutedTrack>,
+    vias: Vec<RoutedVia>,
+    unrouted: Vec<usize>,
+}
+
+impl Snap {
+    fn of(model: &Model) -> Snap {
+        let (tracks, vias) =
+            model.detail.as_ref().map(|d| (d.tracks.clone(), d.vias.clone())).unwrap_or_default();
+        Snap { tracks, vias, unrouted: unrouted_by_net(model) }
+    }
+}
+
+fn unrouted_by_net(model: &Model) -> Vec<usize> {
+    model.layout.nets.iter().map(|n| n.unrouted).collect()
 }
 
 fn repair(d: &mut Driver, model: &mut Model, opts: &negotiate::Options) -> Result<bool, String> {
