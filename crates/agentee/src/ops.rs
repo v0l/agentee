@@ -17,6 +17,7 @@ pub fn load_checked(path: &Path) -> Result<Project, String> {
     let mut p = load(path)?;
     agentee_sim::checks::apply(&mut p);
     crate::datasheets::apply_checks(&mut p);
+    crate::library::apply_checks(&mut p);
     Ok(p)
 }
 

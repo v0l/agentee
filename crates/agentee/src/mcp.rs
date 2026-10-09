@@ -14,7 +14,8 @@ const INSTRUCTIONS: &str = "agentee is an electronic design package for agents. 
 (footprints). Change schematics, layouts and board specs with the edit tool, all the commands of one change in \
 one call. Write symbols and footprints directly, reading format_reference first. Then call check and fix every \
 error. Never rewrite the TOML from a script. Use render_item to see what you made. Prefer importing KiCad parts (kicad_search, then \
-import_kicad_symbol / import_kicad_footprint) over drawing them by hand.";
+import_kicad_symbol / import_kicad_footprint) over drawing them by hand. When a design needs a part, look in the user's \
+parts library first (library_list) and use its parts (library_use); read every part's datasheet with datasheet_text.";
 
 fn tools() -> Value {
     let s = |props: Value, required: &[&str]| json!({ "type": "object", "properties": props, "required": required });
@@ -344,6 +345,27 @@ fn tools() -> Value {
                 "manufacturer": { "type": "string" },
                 "url": { "type": "string", "description": "where it came from" },
             }), &["mpn", "path"]),
+        },
+        {
+            "name": "library_list",
+            "description": "The user's parts library: the connectors, regulators, passives and other parts they have chosen, each with its role, part number, rating, pin count, notes, whether it is preferred for its role, and its last checked stock and price. Look here first whenever a design needs a part, and use what is here before searching for anything new; ask the user before using a part outside the library for a role it covers.",
+            "inputSchema": s(json!({
+                "role": { "type": "string", "description": "connector, rf connector, usb connector, regulator, resistor, capacitor, led, diode, crystal ..." },
+                "words": { "type": "array", "items": { "type": "string" }, "description": "words that must all match, e.g. [\"2-pin\", \"power\"]" },
+            }), &[]),
+        },
+        {
+            "name": "library_show",
+            "description": "One library part in full: its symbol, footprint and model files and where each came from, its pinned datasheet file, and its stock and price at each distributor with the date checked.",
+            "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
+        },
+        {
+            "name": "library_use",
+            "description": "Copy a library part's symbol, footprint and 3D model into this project and return the edit command that places it with its mpn, mfr and library fields.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "force": { "type": "boolean", "description": "replace project files that differ from the library copy" },
+            }), &["name"]),
         },
         {
             "name": "field_solve",
@@ -893,6 +915,32 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 &args,
             )?;
             Ok(ok(vec![text(crate::datasheets::text_render(&v))]))
+        }
+        "library_list" => {
+            let lib = crate::library::open(Some(root));
+            let found = lib.filter(arg(a, "role"), &strings(a, "words"));
+            let mut t = crate::library::list_text(&found);
+            for e in &lib.errors {
+                t += &format!("error: {e}\n");
+            }
+            Ok(ok(vec![text(t)]))
+        }
+        "library_show" => {
+            let lib = crate::library::open(Some(root));
+            Ok(ok(vec![text(pretty(&crate::library::show(
+                &lib,
+                arg(a, "name").ok_or("name is required")?,
+            )?))]))
+        }
+        "library_use" => {
+            let lib = crate::library::open(Some(root));
+            let v = crate::library::use_part(
+                &lib,
+                arg(a, "name").ok_or("name is required")?,
+                root,
+                flag(a, "force"),
+            )?;
+            Ok(ok(vec![text(pretty(&v))]))
         }
         "datasheet_add" => {
             let path = under(root, arg(a, "path"), "");

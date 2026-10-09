@@ -21,13 +21,13 @@ fetched = "2026-10-09"
 key = "AD9364BBCZ"
 manufacturer = "Analog Devices"
 refs = ["U2"]
-missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/ad9364.pdf: timeout: receive response; https://4donline.ihs.com/images/VipMasterIC/IC/ANDI/ANDI-S-A0002159342/ANDI-S-A0002159342-1.pdf?hkey=52A5661711E402568146F3353EA87419: HTTP 403"
+missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/ad9364.pdf: timeout: receive response; https://www.mouser.com/datasheet/3/1014/1/4233323335384344433533394130423932373534313643463235324434334141.pdf: an HTML page, not a PDF (Access to this page has been denied.); https://4donline.ihs.com/images/VipMasterIC/IC/ANDI/ANDI-S-A0002159342/ANDI-S-A0002159342-1.pdf?hkey=52A5661711E402568146F3353EA87419: HTTP 403"
 
 [[parts]]
 key = "ADF4002BCPZ"
 manufacturer = "Analog Devices"
 refs = ["U21"]
-missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/ADF4002.pdf: skipped, www.analog.com timed out earlier; https://4donline.ihs.com/images/VipMasterIC/IC/ANDI/ANDI-S-A0001403752/ANDI-S-A0001403752-1.pdf?hkey=52A5661711E402568146F3353EA87419: HTTP 403"
+missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/ADF4002.pdf: skipped, www.analog.com timed out earlier; https://www.mouser.com/datasheet/3/1014/1/4238394332444339463945384430343838424645303346373132383641333831.pdf: an HTML page, not a PDF (Access to this page has been denied.); https://4donline.ihs.com/images/VipMasterIC/IC/ANDI/ANDI-S-A0001403752/ANDI-S-A0001403752-1.pdf?hkey=52A5661711E402568146F3353EA87419: HTTP 403"
 
 [[parts]]
 key = "AP2112K-2.5TRG1"
@@ -158,7 +158,7 @@ missing = "https://www.murata.com/en-global/api/pdfdownloadapi?cate=cgInductors&
 key = "LTC6957IDD-3#PBF"
 manufacturer = "Analog Devices"
 refs = ["U20"]
-missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/6957fb.pdf: skipped, www.analog.com timed out earlier"
+missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/6957fb.pdf: skipped, www.analog.com timed out earlier; https://www.mouser.com/datasheet/3/1014/1/E5071753683E6CF12BC8457B731456A3056728AF063BDF207C4B885F65F5929D.pdf: an HTML page, not a PDF (Access to this page has been denied.)"
 
 [[parts]]
 key = "PESD5V0S1UL"
@@ -173,7 +173,7 @@ fetched = "2026-10-09"
 key = "QPL9547TR7"
 manufacturer = "Qorvo"
 refs = ["U16"]
-missing = "https://www.qorvo.com/products/d/da007268: HTTP 429"
+missing = "https://www.qorvo.com/products/d/da007268: HTTP 429; https://www.mouser.com/datasheet/3/1081/1/QPL9547_Data_Sheet.pdf: an HTML page, not a PDF (Access to this page has been denied.)"
 
 [[parts]]
 key = "SMF12A"

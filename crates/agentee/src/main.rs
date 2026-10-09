@@ -2,6 +2,7 @@
 
 mod datasheets;
 mod edit;
+mod library;
 mod mcp;
 mod ops;
 mod templates;
@@ -538,8 +539,113 @@ enum Cmd {
         #[command(subcommand)]
         cmd: DatasheetCmd,
     },
+    /// The parts library: the user's chosen parts with their symbols, footprints, models, datasheets and stock, in ~/.config/agentee/library and .agentee/library
+    Library {
+        #[command(subcommand)]
+        cmd: LibraryCmd,
+    },
     /// Print the file format reference
     Docs,
+}
+
+#[derive(clap::Args)]
+struct LibraryAdd {
+    mpn: String,
+    /// What it is for: connector, regulator, resistor, capacitor, led, diode, crystal ...
+    #[arg(long)]
+    role: String,
+    /// A .sym.toml file, a project symbol or a KiCad Library:Name
+    #[arg(long)]
+    symbol: String,
+    /// A .fp.toml file, a project footprint or a KiCad Library:Name; default the symbol's footprint
+    #[arg(long)]
+    footprint: Option<String>,
+    /// A STEP or VRML file or URL; default the footprint's model
+    #[arg(long)]
+    model: Option<String>,
+    /// A datasheet URL or PDF; default the symbol's URL, then the distributors'
+    #[arg(long)]
+    datasheet: Option<String>,
+    /// Library name, default the part number
+    #[arg(long)]
+    name: Option<String>,
+    #[arg(long)]
+    manufacturer: Option<String>,
+    #[arg(long)]
+    value: Option<String>,
+    /// e.g. "2 A, 100 V"
+    #[arg(long)]
+    rating: Option<String>,
+    /// Pin count, default the symbol's
+    #[arg(long)]
+    pins: Option<u32>,
+    #[arg(long, value_delimiter = ',')]
+    tags: Vec<String>,
+    #[arg(long)]
+    notes: Option<String>,
+    /// The first choice for its role
+    #[arg(long)]
+    preferred: bool,
+    /// Any value on this footprint is this part, for resistor and capacitor series
+    #[arg(long)]
+    generic: bool,
+    /// Into the project's .agentee/library instead of ~/.config/agentee/library
+    #[arg(long)]
+    local: bool,
+    #[arg(short, long, default_value = ".")]
+    project: PathBuf,
+    /// Do not ask the distributors for stock or a datasheet
+    #[arg(long)]
+    no_distributors: bool,
+    #[arg(long)]
+    force: bool,
+}
+
+#[derive(Subcommand)]
+enum LibraryCmd {
+    /// Library parts, by role and words, with their last checked stock and price
+    List {
+        /// Words that must all match the name, role, tags, part number, value, rating, footprint or notes
+        words: Vec<String>,
+        #[arg(long)]
+        role: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// One library part: its files, where they came from, datasheet and stock
+    Show {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+    },
+    /// Add a part: its symbol, footprint and 3D model copied in, its datasheet fetched and pinned, its stock and price checked
+    Add(Box<LibraryAdd>),
+    /// Copy a library part's symbol, footprint and model into a project and print the edit that places it
+    Use {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        force: bool,
+    },
+    /// Check stock and price of every library part, or one, at the distributors
+    Refresh {
+        name: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
+    /// Check each part's symbol against its footprint and pinned datasheet, its model against its footprint, and its files against their recorded hashes
+    Verify {
+        name: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -992,6 +1098,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             Ok(c.errors.is_empty())
         }
         Cmd::Datasheet { cmd } => datasheet_cmd(cmd),
+        Cmd::Library { cmd } => library_cmd(cmd),
         Cmd::Fill { name, project } => {
             let p = ops::load(&project)?;
             print_json(&ops::write_fills(&p, &name)?);
@@ -1186,6 +1293,99 @@ fn run(cli: Cli) -> Result<bool, String> {
         Cmd::Docs => {
             print!("{FORMAT}");
             Ok(true)
+        }
+    }
+}
+
+fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
+    match cmd {
+        LibraryCmd::List { words, role, project, json } => {
+            let lib = library::open(Some(&project));
+            let found = lib.filter(role.as_deref(), &words);
+            if json {
+                print_json(&serde_json::json!({ "parts": found, "errors": lib.errors }));
+            } else {
+                print!("{}", library::list_text(&found));
+                for e in &lib.errors {
+                    eprintln!("error: {e}");
+                }
+            }
+            Ok(true)
+        }
+        LibraryCmd::Show { name, project } => {
+            print_json(&library::show(&library::open(Some(&project)), &name)?);
+            Ok(true)
+        }
+        LibraryCmd::Add(add) => {
+            let LibraryAdd {
+                mpn,
+                role,
+                symbol,
+                footprint,
+                model,
+                datasheet,
+                name,
+                manufacturer,
+                value,
+                rating,
+                pins,
+                tags,
+                notes,
+                preferred,
+                generic,
+                local,
+                project,
+                no_distributors,
+                force,
+            } = *add;
+            let p = match datasheets::project_for(&project) {
+                None if local => Some(ops::load(&project)?),
+                p => p,
+            };
+            let v = library::add(
+                p.as_ref(),
+                &library::AddArgs {
+                    mpn: &mpn,
+                    name: name.as_deref(),
+                    role: &role,
+                    manufacturer: manufacturer.as_deref(),
+                    symbol: &symbol,
+                    footprint: footprint.as_deref(),
+                    model: model.as_deref(),
+                    datasheet: datasheet.as_deref(),
+                    value: value.as_deref(),
+                    rating: rating.as_deref(),
+                    pins,
+                    tags: &tags,
+                    notes: notes.as_deref(),
+                    preferred,
+                    generic,
+                    local,
+                    force,
+                    distributors: !no_distributors,
+                    config: None,
+                },
+            )?;
+            print_json(&v);
+            Ok(true)
+        }
+        LibraryCmd::Use { name, project, force } => {
+            print_json(&library::use_part(&library::open(Some(&project)), &name, &project, force)?);
+            Ok(true)
+        }
+        LibraryCmd::Refresh { name, project, config } => {
+            let lib = library::open(Some(&project));
+            print_json(&library::refresh(&lib, name.as_deref(), config.as_deref())?);
+            Ok(true)
+        }
+        LibraryCmd::Verify { name, project, json } => {
+            let (text, v, ok) = library::verify(&library::open(Some(&project)), name.as_deref())?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{text}");
+            }
+            Ok(ok)
         }
     }
 }

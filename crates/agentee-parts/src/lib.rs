@@ -3,6 +3,7 @@ pub mod cost;
 pub mod datasheet;
 pub mod digikey;
 pub mod farnell;
+pub mod library;
 pub mod mouser;
 pub mod offer;
 pub mod order;

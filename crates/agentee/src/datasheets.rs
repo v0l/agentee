@@ -350,8 +350,6 @@ pub struct Fetched {
 }
 
 pub fn fetch(project: Option<&Project>, name: &str, a: &FetchArgs) -> Result<Fetched, String> {
-    let cache = Cache::open(a.cache)?;
-    let fetcher = Fetcher::default();
     let (mut wants, is_design) = match target(project, name) {
         Target::Design(w) => (w, true),
         Target::One(w) => (vec![w], false),
@@ -363,12 +361,42 @@ pub fn fetch(project: Option<&Project>, name: &str, a: &FetchArgs) -> Result<Fet
         wants[0].urls = vec![("given".into(), datasheet::with_scheme(u))];
     }
     let sidecar = project.map(|p| Sidecar::load(&p.root));
+    let (out, errors) = fetch_wants(&mut wants, a, sidecar.as_ref())?;
+    let written = match (project, is_design || out.iter().any(|g| !g.refs.is_empty())) {
+        (Some(p), true) => {
+            let mut s = sidecar.unwrap_or_default();
+            s.merge(
+                wants
+                    .iter()
+                    .zip(&out)
+                    .filter(|(w, g)| g.sha256.is_some() || w.mpn.is_some() || !w.urls.is_empty())
+                    .map(|(w, g)| g.record(w))
+                    .collect(),
+            );
+            s.parts.retain(|r| {
+                r.sha256.is_some()
+                    || !r.missing.as_deref().is_some_and(|m| m.starts_with("no part number"))
+            });
+            Some(s.save(&p.root)?)
+        }
+        _ => None,
+    };
+    Ok(Fetched { parts: out, errors, recorded: written })
+}
+
+pub fn fetch_wants(
+    wants: &mut [Want],
+    a: &FetchArgs,
+    sidecar: Option<&Sidecar>,
+) -> Result<(Vec<Got>, Vec<String>), String> {
+    let cache = Cache::open(a.cache)?;
+    let fetcher = Fetcher::default();
     let mut got: Vec<Option<Got>> = Vec::new();
     let mut tried: Vec<Vec<String>> = vec![Vec::new(); wants.len()];
     for (i, w) in wants.iter().enumerate() {
         if !a.refresh
             && a.url.is_none()
-            && let Some((e, c)) = cached(&cache, w, sidecar.as_ref())
+            && let Some((e, c)) = cached(&cache, w, sidecar)
         {
             got.push(Some(Got::found(w, "cached", &e, &c)));
             continue;
@@ -434,26 +462,7 @@ pub fn fetch(project: Option<&Project>, name: &str, a: &FetchArgs) -> Result<Fet
             })
         })
         .collect();
-    let written = match (project, is_design || out.iter().any(|g| !g.refs.is_empty())) {
-        (Some(p), true) => {
-            let mut s = sidecar.unwrap_or_default();
-            s.merge(
-                wants
-                    .iter()
-                    .zip(&out)
-                    .filter(|(w, g)| g.sha256.is_some() || w.mpn.is_some() || !w.urls.is_empty())
-                    .map(|(w, g)| g.record(w))
-                    .collect(),
-            );
-            s.parts.retain(|r| {
-                r.sha256.is_some()
-                    || !r.missing.as_deref().is_some_and(|m| m.starts_with("no part number"))
-            });
-            Some(s.save(&p.root)?)
-        }
-        _ => None,
-    };
-    Ok(Fetched { parts: out, errors, recorded: written })
+    Ok((out, errors))
 }
 
 pub fn fetch_text(f: &Fetched) -> String {
@@ -541,6 +550,11 @@ pub fn locate(
     a: &TextArgs,
 ) -> Result<(Want, Entry, Copy), String> {
     let cache = Cache::open(a.cache)?;
+    if let Some(sha) = crate::library::datasheet_of(project.map(|p| p.root.as_path()), name)
+        && let Some((e, c)) = cache.by_hash(&sha)
+    {
+        return Ok((Want { key: name.to_string(), ..Default::default() }, e, c));
+    }
     let w = match target(project, name) {
         Target::One(w) => w,
         Target::Design(_) => {

@@ -41,6 +41,16 @@ To use it over MCP instead of the shell:
 { "mcpServers": { "agentee": { "command": "agentee", "args": ["mcp", "/path/to/project"] } } }
 ```
 
+## The parts library first
+
+The user keeps the parts they want reused in a parts library: connectors, regulators, passives.
+Before picking any part, run `agentee library list` (MCP `library_list`, with a role or words such
+as `--role connector 2-pin power`) and use what is there with `agentee library use NAME` (MCP
+`library_use`). Its listing shows the last checked stock and price, so a library part needs no
+distributor search. Ask the user before using a part outside the library for a role it covers,
+and offer to add a new choice with `agentee library add`. `check` warns (rule `library`) when a
+design strays from it.
+
 ## Datasheets, never guesses
 
 Every number and pin that describes a real part comes from that part's datasheet: pinout and
