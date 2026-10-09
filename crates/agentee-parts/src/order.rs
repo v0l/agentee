@@ -252,6 +252,18 @@ const MOUSER_COLUMNS: [&str; 28] = [
     "Design Risk",
 ];
 
+const DIGIKEY_COLUMNS: [&str; 9] = [
+    "Quantity",
+    "Digi-Key Part Number",
+    "Manufacturer Part Number",
+    "Manufacturer",
+    "Customer Reference",
+    "Status",
+    "Stock",
+    "Unit Price",
+    "Extended Price",
+];
+
 pub fn sorted_for<'a>(rows: &'a [Ordered], site: &str) -> Vec<&'a Ordered> {
     let mut v: Vec<&Ordered> = rows.iter().collect();
     v.sort_by_key(|r| (r.band(site), r.item.refs.first().map(|f| ref_key(f))));
@@ -260,8 +272,11 @@ pub fn sorted_for<'a>(rows: &'a [Ordered], site: &str) -> Vec<&'a Ordered> {
 
 pub fn site_sheet(rows: &[Ordered], site: &str) -> String {
     let mouser = site.eq_ignore_ascii_case("mouser");
+    let digikey = site.eq_ignore_ascii_case("digikey");
     let mut out = if mouser {
         row(&MOUSER_COLUMNS.map(String::from))
+    } else if digikey {
+        row(&DIGIKEY_COLUMNS.map(String::from))
     } else {
         row(&[
             "Order Code",
@@ -293,6 +308,18 @@ pub fn site_sheet(rows: &[Ordered], site: &str) -> String {
             cells[15] = qty;
             cells[18] = stock;
             cells
+        } else if digikey {
+            vec![
+                qty,
+                sku,
+                mpn,
+                r.manufacturer(),
+                r.note(site).chars().take(48).collect(),
+                r.status(site),
+                stock,
+                pick.map(|p| format!("{:.4}", p.unit)).unwrap_or_default(),
+                pick.map(|p| format!("{:.2}", p.total)).unwrap_or_default(),
+            ]
         } else {
             vec![
                 sku,

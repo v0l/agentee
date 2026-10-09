@@ -219,7 +219,7 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
-    /// Stock, price and cheaper equivalents for a layout's or schematic's BOM from Mouser and Farnell, with keys in ~/.config/agentee/distributors.toml
+    /// Stock, price and cheaper equivalents for a layout's or schematic's BOM from Mouser, Farnell and DigiKey, with keys in ~/.config/agentee/distributors.toml
     Parts {
         name: String,
         #[arg(short, long, default_value = ".")]
@@ -227,7 +227,7 @@ enum Cmd {
         /// Boards to buy for
         #[arg(long, default_value_t = 1)]
         boards: u32,
-        /// Distributors to ask, comma separated (mouser, farnell), default every one with a key
+        /// Distributors to ask, comma separated (mouser, farnell, digikey), default every one with a key
         #[arg(long, value_delimiter = ',')]
         distributor: Vec<String>,
         /// Farnell store, e.g. uk.farnell.com, ie.farnell.com, de.farnell.com, www.newark.com
@@ -236,7 +236,7 @@ enum Cmd {
         /// Only these references, comma separated
         #[arg(long, value_delimiter = ',')]
         refs: Vec<String>,
-        /// Write order sheets to this directory instead: NAME-order.csv and one NAME-<distributor>.csv per distributor, each with the lines to buy there first, then the lines bought at the other one, then what it lacks
+        /// Write order sheets to this directory instead: NAME-order.csv and one NAME-<distributor>.csv per distributor, each with the lines to buy there first, then the lines bought at another, then what it lacks
         #[arg(long)]
         order: Option<PathBuf>,
         /// With --order, add the hand assembly allowance: 0402/0603 resistors and capacitors to the next 10 above need + 5, one spare per D, Q, U and F line, or the part's `spares` field
@@ -251,7 +251,7 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// BOM cost table: each line priced at Mouser and Farnell for 1, 10 and 100 boards (or --boards), with totals and the cost per board
+    /// BOM cost table: each line priced at Mouser, Farnell and DigiKey for 1, 10 and 100 boards (or --boards), with totals and the cost per board
     Bom {
         name: String,
         #[arg(short, long, default_value = ".")]
@@ -259,7 +259,7 @@ enum Cmd {
         /// Board counts to price, comma separated
         #[arg(long, value_delimiter = ',', default_values_t = [1u32, 10, 100])]
         boards: Vec<u32>,
-        /// Distributors to ask, comma separated (mouser, farnell), default every one with a key
+        /// Distributors to ask, comma separated (mouser, farnell, digikey), default every one with a key
         #[arg(long, value_delimiter = ',')]
         distributor: Vec<String>,
         /// Farnell store, e.g. uk.farnell.com, ie.farnell.com, de.farnell.com, www.newark.com

@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Distributor stock, price and cheaper alternatives for agentee BOMs (Mouser, Farnell)"
+description = "Distributor stock, price and cheaper alternatives for agentee BOMs (Mouser, Farnell, DigiKey)"
 
 [dependencies]
 agentee-core.workspace = true

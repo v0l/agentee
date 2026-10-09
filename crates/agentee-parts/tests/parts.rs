@@ -692,3 +692,124 @@ fn the_cost_table_prices_each_board_count_from_the_breaks() {
     assert!(t.contains("per board EUR"), "{t}");
     assert!(t.contains("* bought from another distributor"), "{t}");
 }
+
+#[test]
+fn parses_a_digikey_keyword_search_into_one_offer_per_packaging() {
+    let v = json!({
+        "Products": [{
+            "Description": {
+                "ProductDescription": "CAP CER 0.1UF 50V X7R 0603",
+                "DetailedDescription": "0.1 µF ±10% 50V Ceramic Capacitor X7R 0603 (1608 Metric)"
+            },
+            "Manufacturer": { "Id": 13, "Name": "KEMET" },
+            "ManufacturerProductNumber": "C0603C104K5RACTU",
+            "ProductUrl": "https://www.digikey.ie/en/products/detail/kemet/C0603C104K5RACTU/411106",
+            "DatasheetUrl": "https://content.kemet.com/datasheets/KEM_C1002_X7R_SMD.pdf",
+            "QuantityAvailable": 3000000,
+            "ProductStatus": { "Id": 0, "Status": "Active" },
+            "Discontinued": false,
+            "EndOfLife": false,
+            "Category": { "Name": "Capacitors", "ChildCategories": [{ "Name": "Ceramic Capacitors", "ChildCategories": [] }] },
+            "Parameters": [
+                { "ParameterText": "Capacitance", "ValueText": "0.1 µF" },
+                { "ParameterText": "Tolerance", "ValueText": "±10%" },
+                { "ParameterText": "Voltage - Rated", "ValueText": "50V" },
+                { "ParameterText": "Temperature Coefficient", "ValueText": "X7R" },
+                { "ParameterText": "Package / Case", "ValueText": "0603 (1608 Metric)" }
+            ],
+            "ProductVariations": [
+                {
+                    "DigiKeyProductNumber": "399-1095-1-ND",
+                    "PackageType": { "Id": 2, "Name": "Cut Tape (CT)" },
+                    "StandardPricing": [
+                        { "BreakQuantity": 10, "UnitPrice": 0.032, "TotalPrice": 0.32 },
+                        { "BreakQuantity": 1, "UnitPrice": 0.1, "TotalPrice": 0.1 }
+                    ],
+                    "QuantityAvailableforPackageType": 2500000,
+                    "MinimumOrderQuantity": 1,
+                    "MarketPlace": false
+                },
+                {
+                    "DigiKeyProductNumber": "399-1095-6-ND",
+                    "PackageType": { "Id": 243, "Name": "Digi-Reel®" },
+                    "StandardPricing": [{ "BreakQuantity": 1, "UnitPrice": 0.1 }],
+                    "QuantityAvailableforPackageType": 2500000,
+                    "MinimumOrderQuantity": 1
+                },
+                {
+                    "DigiKeyProductNumber": "399-1095-2-ND",
+                    "PackageType": { "Id": 1, "Name": "Tape & Reel (TR)" },
+                    "StandardPricing": [{ "BreakQuantity": 4000, "UnitPrice": 0.008 }],
+                    "QuantityAvailableforPackageType": 500000,
+                    "MinimumOrderQuantity": 4000
+                }
+            ]
+        }],
+        "ExactMatches": [],
+        "SearchLocaleUsed": { "Site": "IE", "Language": "en", "Currency": "EUR" }
+    });
+    let parts = agentee_parts::digikey::parse(&v, "USD");
+    let skus: Vec<&str> = parts.iter().map(|p| p.sku.as_str()).collect();
+    assert_eq!(skus, ["399-1095-1-ND", "399-1095-2-ND"]);
+    let cut = &parts[0];
+    assert_eq!(cut.currency, "EUR");
+    assert_eq!(cut.stock, 2_500_000);
+    assert_eq!(cut.breaks[0], Break { qty: 1, price: 0.1 });
+    assert_eq!(cut.attributes["Package / Case"], "0603");
+    assert_eq!(cut.attributes["Dielectric"], "X7R");
+    assert!(cut.datasheet.as_deref().unwrap().ends_with(".pdf"));
+    assert_eq!(parts[1].min, 4000);
+    let wanted = Spec::Capacitor {
+        farads: 1e-7,
+        volts: Some(25.0),
+        dielectric: Some("X7R".into()),
+        tolerance: Some(10.0),
+        package: "0603".into(),
+    };
+    assert!(spec::matches(&wanted, cut));
+    let smaller = Spec::Capacitor {
+        farads: 1e-7,
+        volts: Some(25.0),
+        dielectric: Some("X7R".into()),
+        tolerance: Some(10.0),
+        package: "1608".into(),
+    };
+    assert!(!spec::matches(&smaller, cut));
+}
+
+#[test]
+fn a_digikey_part_going_obsolete_is_not_chosen() {
+    let v = json!({ "Products": [{
+        "ManufacturerProductNumber": "OLD1",
+        "Discontinued": true,
+        "ProductStatus": { "Status": "Active" },
+        "ProductVariations": [{ "DigiKeyProductNumber": "1-ND", "StandardPricing": [{ "BreakQuantity": 1, "UnitPrice": 1.0 }], "QuantityAvailableforPackageType": 5 }]
+    }]});
+    let parts = agentee_parts::digikey::parse(&v, "USD");
+    assert_eq!(parts[0].currency, "USD");
+    assert!(!parts[0].active());
+    assert_eq!(agentee_parts::digikey::site_currency("ie"), "EUR");
+    assert_eq!(agentee_parts::digikey::site_currency("UK"), "GBP");
+}
+
+#[test]
+fn the_digikey_sheet_leads_with_quantity_and_part_number() {
+    let lines = vec![BomLine {
+        refs: vec!["C1".into(), "C2".into()],
+        value: "100n".into(),
+        footprint: "C_0603_1608Metric".into(),
+        mpn: Some("CAP".into()),
+        ..Default::default()
+    }];
+    let dk = Fake {
+        name: "DigiKey",
+        parts: vec![offer("DigiKey", "399-1-ND", "CAP", 1000, &[(1, 0.10)], &[])],
+        search: vec![],
+    };
+    let (rows, _) =
+        agentee_parts::order::plan(agentee_parts::order::items(&lines, 1, false), &[&dk]);
+    let sheet = agentee_parts::order::site_sheet(&rows, "DigiKey");
+    let mut it = sheet.lines();
+    assert!(it.next().unwrap().starts_with("Quantity,Digi-Key Part Number,"));
+    assert_eq!(it.next().unwrap(), "2,399-1-ND,CAP,Maker,order: 100n C1 C2,order,1000,0.1000,0.20");
+}
