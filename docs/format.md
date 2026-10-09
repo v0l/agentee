@@ -1432,7 +1432,10 @@ partner at the pair gap; `--pairs` tries to route both halves together as one co
 first. When connections fail, the whole route runs again, up to four times in all, with the
 failed nets first in their class and their class first, and a cost on the path they would take
 through the copper of earlier classes so those classes leave it free; the run with the fewest
-failures, then the fewest vias, then the least track is written. When a few connections fail, route them again together with the nets around them and
+failures, then the fewest vias, then the least track is written. A new via the net is joined
+without (its pads stay together through the other copper and the pours) is dropped with the
+stub that only led to it before anything is written; a via that drops a track to a pour on a
+layer the track does not reach stays. When a few connections fail, route them again together with the nets around them and
 `--reroute`, so the router can rip up and reorder the whole area, or drop to `--grid 0.025`. `--dry-run` reports without writing. Route the nets that matter by hand
 first, then let the router fill in the rest, a class at a time.
 
@@ -1443,8 +1446,8 @@ obstacles to the router: the rule places them again around the new copper.
 
 `agentee tie NAME [--nets GND] [--dry-run]` (MCP `tie`) connects each SMD pad of a plane net to
 the nearest layer its zone covers with a short stub and a via beside the pad, which is how ground
-and supply pads join a plane instead of tracks between them. The via goes on the side of the pad
-away from the part's centre, as close as it can: its copper clear of every SMD pad (its own too,
+and supply pads join a plane instead of tracks between them. The via goes straight out from the side of
+the part the pad sits on, so a row of pins gets a row of vias, as close as it can: its copper clear of every SMD pad (its own too,
 so no via-in-pad), its hole `min_hole_to_smd_pad` from them, `min_hole_to_hole` from other holes,
 `min_via_hole_to_copper` and the class clearance from other nets, `min_copper_to_edge` in from
 the outline, and the stub clear of other nets on the pad's layer. It tries 16 directions, nearest
@@ -1453,8 +1456,9 @@ its net's zone on another layer is left alone, through whatever copper of its ne
 pour on its own layer, tracks, vias and plated holes, so a pad in a ground pour that reaches the
 plane anywhere needs nothing, and running `tie` again adds nothing. Pads of a decoupling
 capacitor (a capacitor with a pin on a supply net) and of a part on an RF class net are the
-exception: they want the short return path, so each gets its own via unless a via or plated hole
-of its net is within 0.8 mm of its edge. Through-hole pads and BGA balls (`escape` handles those) are
+exception: they want the short return path, so each gets its own via unless a plated hole of its
+net is within 0.8 mm of its edge, a via of its net within 0.8 mm sits in the same pour island, or
+its own tracks already run to a via on the plane layer within reach of a tie. Through-hole pads and BGA balls (`escape` handles those) are
 skipped, and a pad with no legal spot is listed under `failed`. The stubs and vias are appended
 as ordinary `[[tracks]]` and `[[vias]]`.
 

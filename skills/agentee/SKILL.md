@@ -135,38 +135,8 @@ Order of work, each stage passing check before the next:
    limits, leakage) and the schematic a `rails` table, and check flags dividers that land between
    VIL and VIH, floating inputs, pulls too weak for the leakage, and overdriven pins. List ADC
    inputs in `analog`.
-4. **Layout.** Place footprints, add zones, then tracks and vias net by net. `agentee edit pcb`
-   writes a placement, a track, a via or a zone by hand. The automatic tools are usually better
-   for anything with many connections, and each takes `--dry-run`:
-   - `agentee place NAME` places every part (`--parts 'U*'`, `--keep-placed`, `--seed N`). It keeps
-     parts in different domains a barrier apart and clear of copper it is not moving.
-   - `agentee fit NAME` finds the smallest board the placed layout fits on, per aspect ratio,
-     checked with the global router; `--strategy tight|balanced|spread` trades size for routing
-     room, `--width` or `--height` holds a side, `--write` resizes the board and writes the
-     placement. Use it instead of shrinking the outline by hand and replacing.
-   - `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
-   - `agentee tie NAME` stubs each SMD pad of a plane net that does not yet reach its plane to
-     the plane with a via. A pad that its pour, tracks or vias already join to the plane is left
-     alone, except decap and RF part grounds, which each get a via unless one is within 0.8 mm.
-     A second run adds nothing.
-   - `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`). Each track
-     ends on its pad centre, and a run across an inner-layer pour of another net costs five times
-     as much, so planes are slotted only where no other layer fits.
-   - `agentee tune NAME` meanders pairs over their skew and match groups short of their length.
-   - `agentee neck NAME` necks tracks down where they enter a narrower pad.
-   - `agentee fill NAME` fills the zones and stores the copper in the file.
-   - `agentee layout NAME` runs the whole engine (place, access, route, finish) from the
-     layout's `[engine]` settings; `--from`, `--to` and `--only` pick stages.
-   - `agentee layout NAME --search` is how to look for a better result. It is a beam search over
-     the stages in memory: 16 placement seeds by default, the best 4 carried through routing from
-     the global route on, the winner written with its seed pinned in `[engine.place]`. Knobs of
-     later stages in `[engine.search]` (`detail.via_cost`) branch every kept placement at that
-     stage (see `docs/layout-engine-2.md`). `--search 40 --keep 8` widens it. Do not loop
-     `place --seed N` and `route` by hand: one search call covers what a dozen manual rounds
-     would.
-
-   Check reports the ratsnest for every unrouted connection, so route until `unrouted` is 0 on
-   every net in `show pcb:NAME`.
+4. **Layout.** Follow the layout loop below. `agentee edit pcb` writes a placement, a track, a
+   via or a zone by hand.
 5. **Simulate** what the design depends on (see below).
 6. **Fab.** Put `title = "NAME v1.0"` at the top of the layout so the silk names the board and
    its version, then `agentee fab pcb:NAME -o fab/` once check has no errors.
@@ -175,6 +145,67 @@ Order of work, each stage passing check before the next:
 
 Write a `DESIGN.md` next to the files as you go: the circuit, why each part was chosen, the layout
 rules the circuit needs, and what is still unverified. `examples/lna/DESIGN.md` is the model.
+
+## The layout loop
+
+The engine places and routes the board. Your job is to set it up, read what it made and steer it.
+Go round this loop until check has no errors:
+
+1. **Pin what the design fixes.** Connectors at the enclosure openings, mounting holes, anything
+   a mechanical drawing dictates: `agentee edit pcb NAME place J1 2,15 --rotation 90 --locked`.
+   Add a zone for each plane (`agentee edit pcb NAME zone GND --layers In1.Cu`). Leave every
+   other part unplaced.
+2. **Run the engine.** `agentee layout NAME --search` places, routes to the pads and planes,
+   finishes, and writes the best of 16 placements into the `# plan` sections of the layout.
+3. **Read the result.** The score table it prints is sorted worst first and names the nets and
+   parts under each term, so the top few lines are what to fix. Then `agentee check --item
+   pcb:NAME` and `agentee render pcb:NAME -o /tmp/x.png --canvas-only --rulers`.
+4. **Steer, then go back to 2.** Change one thing a round:
+   - A part in a bad spot: move it and lock it, `place U3 20,12 --locked`.
+   - Unrouted nets in one crowded area: lock the parts that came out well and widen the search,
+     `--search 40 --keep 8`.
+   - No placement routes: the board is too small, `agentee fit NAME --strategy balanced --write`.
+   - Too many vias or detours: give `[engine.search]` knobs to branch on,
+     `knobs = { "detail.via_cost" = ["1mm", "3mm"] }`.
+5. **Finish what is left by hand**, once only a few connections are open: the tools below, then
+   `agentee drc NAME`, a render and check once more.
+
+Each `agentee layout` run throws away its own `# plan` copper and routes again. Copper outside
+those sections (hand tracks, `agentee route` and `agentee tie` output) is kept and routed around.
+So do not route or tie before the engine runs: that copper stays through every later run and
+piles up. Remove an old hand route with `agentee edit pcb NAME untrack NET`. Do not loop
+`place --seed N` and `route` by hand either: one `--search` covers what a dozen manual rounds
+would.
+
+The engine stages are `constraints, place, access, global, detail, finish`. `--from`, `--to` and
+`--only` run part of them, for example `--from global` to route again without moving parts.
+`--search` is a beam search: each kept state branches into children with different knob values
+(placement seeds by default), the best `--keep` survive each stage, and the winner is written with
+its seed pinned in `[engine.place]`. See `docs/layout-engine-2.md`.
+
+Tools for the last few connections and for touch-ups, each with `--dry-run`:
+
+- `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`). Each track ends
+  on its pad centre, a run across an inner-layer pour of another net costs five times as much,
+  and a via the net is already joined without is dropped.
+- `agentee tie NAME` stubs each SMD pad of a plane net that does not yet reach its plane to the
+  plane with a via, offset straight out from the side of the part so a row of pins gets a row of
+  vias. A pad that its pour, tracks or vias already join to the plane is left alone. Decap and RF
+  part grounds each get a via of their own unless a stub already runs to one. A second run adds
+  nothing.
+- `agentee fit NAME` finds the smallest board the placed layout fits on, per aspect ratio,
+  checked with the global router. `--strategy tight|balanced|spread` trades size for routing
+  room, `--width` or `--height` holds a side, `--write` resizes the board and writes the
+  placement. Use it instead of shrinking the outline by hand.
+- `agentee place NAME` places parts without routing (`--parts 'U*'`, `--keep-placed`, `--seed N`).
+- `agentee pinswap NAME --part U1 --write` swaps a chip's interchangeable I/O to untangle it.
+- `agentee tune NAME` meanders pairs over their skew and match groups short of their length.
+- `agentee neck NAME` necks tracks down where they enter a narrower pad.
+- `agentee silk NAME` moves failing reference labels, `--hide` hides the ones with nowhere to go.
+- `agentee fill NAME` fills the zones and stores the copper in the file.
+
+Check reports the ratsnest for every unrouted connection, so the layout is done when `unrouted`
+is 0 on every net in `show pcb:NAME` and check has no errors.
 
 ## Parts from KiCad
 
