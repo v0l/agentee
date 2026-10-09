@@ -1030,7 +1030,7 @@ pub fn route(
     let entry = &p.layouts[i];
     let layout = &entry.item;
     let board = p.boards.iter().find(|b| b.name == layout.board).ok_or("board is missing")?;
-    let result = agentee_core::route::route(layout, &board.item, opts)?;
+    let result = agentee_layout::autoroute::route(layout, &board.item, opts)?;
     if write {
         append_route(&entry.path, &format!("agentee route {}", opts.nets.join(" ")), &result)?;
     }
@@ -1651,7 +1651,7 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
         agentee_core::route::RouteResult::default()
     } else {
         let opts = agentee_core::route::RouteOptions { nets: route_nets, ..Default::default() };
-        agentee_core::route::route(&layout, board, &opts)?
+        agentee_layout::autoroute::route(&layout, board, &opts)?
     };
     append_route(&path, "agentee testpoints routes", &routed)?;
 

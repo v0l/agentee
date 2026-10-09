@@ -38,6 +38,8 @@ use std::time::Instant;
 #[derive(Clone, Debug)]
 pub struct Options {
     pub nets: Vec<String>,
+    pub layers: Vec<String>,
+    pub via: Vec<String>,
     pub grid: f64,
     pub via_cost: f64,
     pub bend_cost: f64,
@@ -60,6 +62,8 @@ impl Default for Options {
     fn default() -> Self {
         Options {
             nets: Vec::new(),
+            layers: Vec::new(),
+            via: Vec::new(),
             grid: 0.05,
             via_cost: 3.0,
             bend_cost: 0.1,
@@ -240,10 +244,13 @@ fn pads_of(copper: &NetCopper) -> Vec<PadRef> {
 
 impl Base {
     pub fn new(layout: &Layout, board: &Board, opts: &Options) -> Result<Base, String> {
+        let planes = agentee_core::tie::plane_nets(layout);
         let wanted: Vec<usize> = (0..layout.nets.len())
             .filter(|&n| {
                 let name = &layout.nets[n].name;
-                opts.nets.is_empty() || opts.nets.iter().any(|g| glob(g, name))
+                opts.nets.is_empty()
+                    || opts.nets.iter().any(|g| g == name)
+                    || (!planes.contains(&n) && opts.nets.iter().any(|g| glob(g, name)))
             })
             .collect();
         if wanted.is_empty() {
@@ -702,6 +709,9 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         let name = layout.nets[st.net].name.clone();
         out.connections += st.needed;
         out.routed += st.joined;
+        if st.joined > 0 {
+            *out.per_net.entry(name.clone()).or_default() += st.joined;
+        }
         for p in &st.pieces {
             for r in p.trimmed.as_ref().unwrap_or(&p.tracks) {
                 if r.points.len() < 2 {

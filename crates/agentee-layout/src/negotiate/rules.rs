@@ -123,6 +123,15 @@ impl Rules {
         let layer_of = |n: &str| copper.iter().position(|c| c == n);
         let r = &board.rules;
         let slack = opts.grid * 0.1;
+        let mut allowed = vec![opts.layers.is_empty(); nl];
+        for l in &opts.layers {
+            allowed[layer_of(l).ok_or_else(|| format!("`{l}` is not a copper layer"))?] = true;
+        }
+        for v in &opts.via {
+            if !board.vias.iter().any(|b| &b.name == v) {
+                return Err(format!("`{v}` is not a via of the board"));
+            }
+        }
         let mut vias = Vec::new();
         for v in &board.vias {
             if board.stackup.drills_via(v).is_err() {
@@ -234,6 +243,9 @@ impl Rules {
                 Some(c) => copper.iter().map(|l| c.layers.contains(l)).collect(),
                 None => vec![true; nl],
             };
+            for (on, ok) in track.iter_mut().zip(&allowed) {
+                *on &= *ok;
+            }
             let refs = refs_of(&net.name);
             if !refs.is_empty() {
                 let kept: Vec<bool> = (0..nl).map(|l| track[l] && referenced(l, &refs)).collect();
@@ -241,17 +253,24 @@ impl Rules {
                     track = kept;
                 }
             }
-            let names: Vec<String> = class.map(|c| c.via.clone()).unwrap_or_default();
+            let chosen = !opts.via.is_empty();
+            let names: Vec<String> = if chosen {
+                opts.via.clone()
+            } else {
+                class.map(|c| c.via.clone()).unwrap_or_default()
+            };
             let mut net_vias: Vec<usize> =
                 names.iter().filter_map(|v| rules.vias.iter().position(|o| &o.name == v)).collect();
-            if net_vias.is_empty() && !rules.vias.is_empty() {
+            if net_vias.is_empty() && !rules.vias.is_empty() && !chosen {
                 net_vias.push(0);
             }
             let class_vias = net_vias.len();
-            let mut spare: Vec<usize> =
-                (0..rules.vias.len()).filter(|k| !net_vias.contains(k)).collect();
-            spare.sort_by(|&a, &b| rules.vias[a].r.total_cmp(&rules.vias[b].r));
-            net_vias.extend(spare);
+            if !chosen {
+                let mut spare: Vec<usize> =
+                    (0..rules.vias.len()).filter(|k| !net_vias.contains(k)).collect();
+                spare.sort_by(|&a, &b| rules.vias[a].r.total_cmp(&rules.vias[b].r));
+                net_vias.extend(spare);
+            }
             let crit = crit_of(n);
             let clearance = class
                 .into_iter()

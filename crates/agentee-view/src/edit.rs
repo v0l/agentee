@@ -439,7 +439,7 @@ impl Editor {
         let (tx, rx) = mpsc::channel();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(agentee_core::route::route(&layout, &inputs.board, &opts));
+            let _ = tx.send(agentee_layout::autoroute::route(&layout, &inputs.board, &opts));
             ctx.request_repaint();
         });
         self.route_job = Some(rx);

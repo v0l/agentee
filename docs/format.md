@@ -1384,9 +1384,20 @@ they are.
 ### Autorouting
 
 `agentee route NAME --nets 'FX_D*,SPI_*' --layers F.Cu,In2.Cu,B.Cu` (MCP `route`) routes the
-ratsnest of the named nets on a grid (`--grid`, default 0.05 mm) and appends the tracks and vias
-to the layout file as ordinary `[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards.
-It keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
+ratsnest of the named nets with the layout engine's detail router (see
+`docs/layout-engine-2.md`) and appends the tracks and vias to the layout file as ordinary
+`[[tracks]]` and `[[vias]]`, so they are yours to edit afterwards. The named nets negotiate for
+room together on a grid (`--grid`, default 0.05 mm) over up to 30 rounds, routed in parallel,
+ripping up only the pieces that overlap, so the order they are named in does not matter.
+`--layers` keeps tracks to those layers, apart from a short stub out of a pad that sits on none of
+them; `--via` limits layer changes to the named vias, otherwise a net takes its class vias first
+and the board's others after. `--via-cost`, `--bend-cost` and `--via-in-pad` work as below. Each
+net's new copper is checked against the rules before it is written, and dropped with the broken
+rule named under `failed`; a via the net is joined without is dropped.
+
+Coupled pairs (`--pairs`), the lanes of an interface with `max_vias` (routed after the other nets)
+and the viewer's single-connection route go through the older grid router. The grid router
+keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
 the board edge, sizes the room for each class via by its own pad, drill and layers (a microvia fits
 where a through via does not, and a microvia may sit beside a buried via on other layers), keeps new
 vias `min_hole_to_hole` from every drill whose span shares a dielectric with theirs and their holes

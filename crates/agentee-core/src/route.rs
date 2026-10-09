@@ -695,6 +695,12 @@ pub fn drop_spare_vias(layout: &Layout, board: &Board, mut r: RouteResult) -> Ro
 }
 
 pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> RouteResult {
+    let fixed: Vec<crate::layout::Via> = layout
+        .vias
+        .iter()
+        .filter(|v| !matches!(v.source, crate::layout::ViaSource::Stitch(_)))
+        .cloned()
+        .collect();
     let world = crate::drc::Ctx::new(
         board,
         &layout.copper,
@@ -702,7 +708,7 @@ pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> Rout
         &layout.board_cutouts,
         &layout.parts,
         &layout.tracks,
-        &layout.vias,
+        &fixed,
         &[],
         &layout.nets,
     );

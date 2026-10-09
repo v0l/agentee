@@ -185,9 +185,10 @@ its seed pinned in `[engine.place]`. See `docs/layout-engine-2.md`.
 
 Tools for the last few connections and for touch-ups, each with `--dry-run`:
 
-- `agentee route NAME --nets 'SPI_*'` routes those nets (`--pairs`, `--reroute`). Each track ends
-  on its pad centre, a run across an inner-layer pour of another net costs five times as much,
-  and a via the net is already joined without is dropped.
+- `agentee route NAME --nets 'SPI_*'` routes those nets with the engine's negotiated detail
+  router (`--reroute` to rip them up first). Each track ends on its pad centre and a via the net
+  is already joined without is dropped. `--pairs` and lanes of an interface with `max_vias` still
+  go through the older grid router.
 - `agentee tie NAME` stubs each SMD pad of a plane net that does not yet reach its plane to the
   plane with a via, offset straight out from the side of the part so a row of pins gets a row of
   vias. A pad that its pour, tracks or vias already join to the plane is left alone. Decap and RF

@@ -452,8 +452,11 @@ Not built yet:
 - Coupled routing of pairs and interface via budgets as a cost.
 - Pattern (L and Z) routes in global, and plane nets in global.
 - Via removal and snapping in finish.
-- The viewer drawing `Db` snapshots, `--checkpoint`, and `agentee route` running the new detail
-  router.
+- The viewer drawing `Db` snapshots and `--checkpoint`.
+
+`agentee route`, the MCP `route` tool, `testpoints` and the viewer's route tool run the detail
+router through `autoroute::route`, except for coupled pairs, single connections from the viewer
+and lanes of an interface with `max_vias`, which still use the grid router in `agentee-core`.
 
 ## Sources
 

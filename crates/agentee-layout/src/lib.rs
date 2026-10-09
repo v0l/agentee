@@ -1,4 +1,5 @@
 pub mod access;
+pub mod autoroute;
 pub mod constraints;
 pub mod detail;
 pub mod doc;
