@@ -195,6 +195,7 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
         texts: place::movable_texts(&layout.graphics),
         tracks: &file.tracks,
         vias: &file.vias,
+        budgets: Vec::new(),
     };
     place::place(&input, opts).unwrap()
 }
@@ -408,6 +409,16 @@ fn settled_labels_clear_the_silk_errors_of_a_fresh_placement() {
     for f in &moved {
         let at = f.at.unwrap();
         let from = format!("ref = \"{}\"\n", f.reference);
+        if let Some(start) = text.find(&from) {
+            let rest = &text[start..];
+            let end = rest[1..].find("\n[[").map_or(text.len(), |e| start + 1 + e);
+            let block: String = text[start..end]
+                .lines()
+                .filter(|l| !l.starts_with("label = "))
+                .map(|l| format!("{l}\n"))
+                .collect();
+            text.replace_range(start..end, &block);
+        }
         let to =
             format!("{from}label = {{ at = [{}, {}], rotation = {} }}\n", at[0], at[1], f.rotation);
         text = text.replacen(&from, &to, 1);

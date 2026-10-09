@@ -69,6 +69,11 @@ pub fn chip_height(kind: &str, width: f64) -> Option<f64> {
     })
 }
 
+pub fn electrolytic_height(upper: &str) -> Option<f64> {
+    let size = upper.strip_prefix("CP_ELEC_")?.split('_').next()?;
+    size.split_once('X')?.1.parse().ok()
+}
+
 pub fn header_pitch(name: &str) -> f64 {
     if name.contains("P1.27mm") {
         1.27
@@ -146,6 +151,9 @@ pub fn body_height(fp: &Footprint) -> Option<f64> {
     {
         return Some(h);
     }
+    if let Some(h) = electrolytic_height(&upper) {
+        return Some(h);
+    }
     if has("CRYSTAL_SMD") || has("OSCILLATOR_SMD") {
         return fab_bounds(fp).map(|_| named_height(&fp.name).unwrap_or(CAN));
     }
@@ -173,6 +181,7 @@ mod tests {
         assert_eq!(h("PinSocket_1x02_P1.27mm_Vertical"), Some(4.25));
         assert_eq!(h("SOIC-8_3.9x4.9mm_P1.27mm"), Some(1.5));
         assert_eq!(h("L_Bourns_SRR1260_h6.0mm"), Some(6.0));
+        assert_eq!(h("CP_Elec_6.3x7.7"), Some(7.7));
         assert_eq!(h("MountingHole_3.2mm_M3"), None);
         assert_eq!(h("Weird_Part"), None);
         assert_eq!(body_height(&footprint("SOIC-8", "height = \"4mm\"")), Some(4.0));

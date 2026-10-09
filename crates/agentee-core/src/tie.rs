@@ -487,12 +487,29 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             };
             let (vr, dr) = (spec.diameter.to_mm() / 2.0, spec.drill.to_mm() / 2.0);
             let width = layout.nets[net].width.min(pb.size()[0].min(pb.size()[1]));
+            let exit = |c: P| {
+                let l = geom::dist(pc, c);
+                if l < 1e-9 {
+                    return pc;
+                }
+                let u = [(c[0] - pc[0]) / l, (c[1] - pc[1]) / l];
+                let mut t = 0.0;
+                while t + STEP < l
+                    && crate::drc::rings_point_gap(
+                        &pad.outlines,
+                        [pc[0] + u[0] * (t + STEP), pc[1] + u[1] * (t + STEP)],
+                    ) <= 0.0
+                {
+                    t += STEP;
+                }
+                [pc[0] + u[0] * t, pc[1] + u[1] * t]
+            };
             let stub = |c: P| crate::layout::Track {
                 source: usize::MAX,
                 net,
                 layer: layer.clone(),
                 width,
-                points: vec![pc, c],
+                points: vec![exit(c), c],
             };
             let follows_rules = |c: P| {
                 let via = crate::layout::Via::of(spec, net, c, copper);
@@ -561,7 +578,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                 net: name.clone(),
                 layer: layer.clone(),
                 width: own_width,
-                points: vec![pc, c],
+                points: vec![exit(c).map(|v| (v * 1e4).round() / 1e4), c],
             });
             out.vias.push(RoutedVia { net: name, at: c, via: spec.name.clone() });
             kept.tracks.push(stub(c));

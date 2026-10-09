@@ -1,0 +1,201 @@
+# imported from KiCad Button_Switch_SMD:SW_SPST_PTS810
+name = "SW_SPST_PTS810"
+description = "C&K Components, PTS 810 Series, Microminiature SMT Top Actuated, http://www.ckswitches.com/media/1476/pts810.pdf"
+tags = ["SPST", "Button", "Switch"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Button_Switch_SMD.3dshapes/SW_SPST_PTS810.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-2.075, -1.075]
+size = [1.05, 0.65]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [2.075, -1.075]
+size = [1.05, 0.65]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [-2.075, 1.075]
+size = [1.05, 0.65]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [2.075, 1.075]
+size = [1.05, 0.65]
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.6]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 2.6]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, -1.7]
+end = [-2.2, -1.58]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, -0.57]
+end = [-2.2, 0.57]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, 1.58]
+end = [-2.2, 1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.2, 1.7]
+end = [2.2, 1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.2, -1.7]
+end = [-2.2, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.2, -1.58]
+end = [2.2, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.2, 0.57]
+end = [2.2, -0.57]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.2, 1.7]
+end = [2.2, 1.58]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.85, -1.85]
+end = [2.85, -1.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.85, 1.85]
+end = [-2.85, -1.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.85, -1.85]
+end = [2.85, 1.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [2.85, 1.85]
+end = [-2.85, 1.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.1, -1.6]
+end = [-2.1, 1.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.1, 1.6]
+end = [2.1, 1.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.4, -1.1]
+end = [0.4, -1.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.4, 1.1]
+end = [-0.4, 1.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.1, -1.6]
+end = [-2.1, -1.6]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [2.1, 1.6]
+end = [2.1, -1.6]
+width = 0.1
+
+[[graphics]]
+kind = "arc"
+layer = "F.Fab"
+start = [-0.4, 1.1]
+mid = [-1.5, 0.0]
+end = [-0.4, -1.1]
+width = 0.1
+
+[[graphics]]
+kind = "arc"
+layer = "F.Fab"
+start = [0.4, -1.1]
+mid = [1.5, 0.0]
+end = [0.4, 1.1]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 0.6

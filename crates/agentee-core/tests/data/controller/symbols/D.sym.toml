@@ -1,0 +1,41 @@
+# imported from KiCad Device:D
+name = "D"
+reference = "D"
+description = "Diode"
+keywords = ["diode"]
+footprint_filters = ["TO-???*", "*_Diode_*", "*SingleDiode*", "D_*"]
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -1.27], [-1.27, 1.27]]
+width = 0.254
+
+[[graphics]]
+kind = "polygon"
+points = [[1.27, -1.27], [1.27, 1.27], [-1.27, 0.0]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[1.27, 0.0], [-1.27, 0.0]]
+
+[[pins]]
+number = "1"
+name = "K"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1

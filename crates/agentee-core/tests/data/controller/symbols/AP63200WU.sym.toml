@@ -1,0 +1,69 @@
+# imported from KiCad Regulator_Switching:AP63203WU
+name = "AP63200WU"
+reference = "U"
+description = "2A, 1.1MHz Buck DC/DC Converter, fixed 3.3V output voltage, TSOT-23-6"
+datasheet = "https://www.diodes.com/assets/Datasheets/AP63200-AP63201-AP63203-AP63205.pdf"
+keywords = ["2A", "Buck", "DC/DC"]
+footprint = "TSOT-23-6"
+footprint_filters = ["TSOT?23*"]
+
+[[graphics]]
+kind = "rect"
+start = [-7.62, -5.08]
+end = [7.62, 5.08]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "3"
+name = "IN"
+type = "power_in"
+at = [-10.16, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "EN"
+type = "input"
+at = [-10.16, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "GND"
+type = "power_in"
+at = [0.0, 7.62]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "SW"
+type = "output"
+at = [10.16, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "BST"
+type = "passive"
+at = [10.16, 0.0]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "FB"
+type = "input"
+at = [10.16, 2.54]
+side = "right"
+length = 2.54
+unit = 1

@@ -1,0 +1,286 @@
+# imported from KiCad Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical
+name = "JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical"
+description = "JST XH series connector, B4B-XH-A (http://www.jst-mfg.com/product/pdf/eng/eXH.pdf), generated with kicad-footprint-generator"
+tags = ["connector", "JST", "XH", "vertical"]
+mount = "tht"
+model = "${KICAD9_3DMODEL_DIR}/Connector_JST.3dshapes/JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical.step"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [1.7, 1.95]
+roundrect_ratio = 0.147059
+drill = 0.95
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "oval"
+at = [2.5, 0.0]
+size = [1.7, 1.95]
+drill = 0.95
+layers = ["*.Cu", "*.Mask"]
+count = 3
+pitch = [2.5, 0.0]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [3.75, -3.55]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [3.75, 4.6]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.85, -2.75]
+end = [-2.85, -1.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.56, -2.46]
+end = [-2.56, 3.51]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.56, 3.51]
+end = [10.06, 3.51]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.55, -2.45]
+end = [-2.55, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.55, -1.7]
+end = [-0.75, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.55, -0.2]
+end = [-1.8, -0.2]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.8, -0.2]
+end = [-1.8, 2.75]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.8, 2.75]
+end = [3.75, 2.75]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.6, -2.75]
+end = [-2.85, -2.75]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.75, -2.45]
+end = [-2.55, -2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.75, -1.7]
+end = [-0.75, -2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.75, -2.45]
+end = [0.75, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.75, -1.7]
+end = [6.75, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.75, -2.45]
+end = [0.75, -2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.75, -1.7]
+end = [6.75, -2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [8.25, -2.45]
+end = [8.25, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [8.25, -1.7]
+end = [10.05, -1.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [9.3, -0.2]
+end = [9.3, 2.75]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [9.3, 2.75]
+end = [3.75, 2.75]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [10.05, -2.45]
+end = [8.25, -2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [10.05, -1.7]
+end = [10.05, -2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [10.05, -0.2]
+end = [9.3, -0.2]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [10.06, -2.46]
+end = [-2.56, -2.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [10.06, 3.51]
+end = [10.06, -2.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.95, -2.85]
+end = [-2.95, 3.9]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-2.95, 3.9]
+end = [10.45, 3.9]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [10.45, -2.85]
+end = [-2.95, -2.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [10.45, 3.9]
+end = [10.45, -2.85]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.45, -2.35]
+end = [-2.45, 3.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.45, 3.4]
+end = [9.95, 3.4]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-0.625, -2.35]
+end = [0.0, -1.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.0, -1.35]
+end = [0.625, -2.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [9.95, -2.35]
+end = [-2.45, -2.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [9.95, 3.4]
+end = [9.95, -2.35]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [3.75, 2.7]
+text = "${REFERENCE}"
+size = 1.0

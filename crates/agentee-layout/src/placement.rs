@@ -483,6 +483,7 @@ fn global_place(
             texts: place::movable_texts(&l.graphics),
             tracks: &model.file.tracks,
             vias: &model.file.vias,
+            budgets: place::budgets(&model.file.interfaces),
         };
         let opts = place::PlaceOptions {
             parts: parts.clone(),

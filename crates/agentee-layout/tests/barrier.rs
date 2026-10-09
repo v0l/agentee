@@ -187,6 +187,7 @@ fn placed_gap(board: &str) -> f64 {
         texts: Vec::new(),
         tracks: &[],
         vias: &[],
+        budgets: Vec::new(),
     };
     let r = agentee_core::place::place(&input, &Default::default()).unwrap();
     let _ = std::fs::remove_dir_all(&dir);

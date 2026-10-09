@@ -1,0 +1,35 @@
+# imported from KiCad Device:C
+name = "C"
+reference = "C"
+description = "Unpolarized capacitor"
+keywords = ["cap", "capacitor"]
+footprint = "C_0402_1005Metric"
+footprint_filters = ["C_*"]
+pin_name_offset = 0.254
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.032, -0.762], [2.032, -0.762]]
+width = 0.508
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.032, 0.762], [2.032, 0.762]]
+width = 0.508
+
+[[pins]]
+number = "1"
+type = "passive"
+at = [0.0, -3.81]
+side = "top"
+length = 2.794
+unit = 1
+
+[[pins]]
+number = "2"
+type = "passive"
+at = [0.0, 3.81]
+side = "bottom"
+length = 2.794
+unit = 1

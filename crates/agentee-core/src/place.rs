@@ -137,6 +137,15 @@ pub struct PlaceInput<'a> {
     pub texts: Vec<SilkText>,
     pub tracks: &'a [crate::layout::TrackFile],
     pub vias: &'a [crate::layout::ViaFile],
+    pub budgets: Vec<(String, f64)>,
+}
+
+pub fn budgets(interfaces: &[crate::interface::InterfaceFile]) -> Vec<(String, f64)> {
+    interfaces
+        .iter()
+        .filter_map(|f| f.max_length.map(|l| (f, l.to_mm())))
+        .flat_map(|(f, l)| f.nets.iter().map(move |n| (n.clone(), l)))
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -488,13 +497,70 @@ const HUG_REACH: f64 = 5.0;
 const HUG_STEP: f64 = 0.25;
 const LOOP_WEIGHT_PER_AMP: f64 = 1.5;
 const LOOP_AMPS: f64 = 0.5;
+const INFERRED_AMPS: f64 = 2.0;
+const LOUD_AMPS: f64 = 1.0;
+const ELECTROLYTIC_GAP: f64 = 3.0;
+const TALL: f64 = 3.0;
+const SHADOW_W: f64 = 1.0;
+const SHADOW_MARGIN: f64 = 1.0;
+const SMALL_DECAP: f64 = 0.67;
+const ATTACH_W: [f64; 3] = [6.0, 4.0, 3.0];
+const ATTACH_THR: f64 = 2.0;
+const SHEET_W: f64 = 0.3;
+const FEED_W: f64 = 8.0;
+const QUIET_W: f64 = 4.0;
+const HOLE_HARDWARE: f64 = 4.0;
+const CHAIN_FANOUT: usize = 3;
+const TOUCH: f64 = 0.01;
+const POLISH_ROUNDS: usize = 4;
+const SHEET_ROOM: f64 = 2.5;
+const FACE_W: f64 = 5.0;
+const FACE_REACH: f64 = 2.0;
+const BUDGET_W: f64 = 10.0;
+const ROUTE_FACTOR: f64 = 1.2;
+const SENSE_WATTS: f64 = 0.25;
+const SMALL_CASE: f64 = 1.8;
 
 fn class_amps(board: &Board, class: &str) -> Option<f64> {
     board.netclasses.iter().find(|c| c.name == class).and_then(|c| c.current.map(|a| a.0))
 }
 
+pub fn is_analog_class(board: &Board, class: &str) -> bool {
+    let c = board.netclasses.iter().find(|c| c.name == class);
+    class.to_ascii_lowercase().contains("analog")
+        || c.is_some_and(|c| c.description.to_ascii_lowercase().starts_with("analog"))
+}
+
+fn inferred_loop(parts: &[Part], pins: &[(usize, usize)]) -> bool {
+    let has = |f: &dyn Fn(&Part, &LPad) -> bool| {
+        pins.iter().any(|&(i, k)| f(&parts[i], &parts[i].pads[k]))
+    };
+    let inductor = has(&|p, _| ref_prefix(&p.reference) == "L" && p.role == Role::Passive);
+    let chip = has(&|p, _| p.role == Role::Chip);
+    let connector = has(&|p, _| p.role == Role::Connector);
+    let switch = has(&|p, q| is_mosfet(p) && matches!(q.name.as_str(), "D" | "S"));
+    let sense = has(&|p, _| p.rated_w >= SENSE_WATTS && ref_prefix(&p.reference) == "R");
+    let fuse = has(&|p, _| is_fuse(p));
+    (inductor && chip) || (switch && connector) || sense || fuse
+}
+
+fn is_mosfet(p: &Part) -> bool {
+    p.pads.iter().any(|q| q.name == "G") && p.pads.iter().any(|q| q.name == "D" || q.name == "S")
+}
+
+fn is_fuse(p: &Part) -> bool {
+    ref_prefix(&p.reference) == "F" || p.symbol.contains("fuse")
+}
+
 pub fn loop_weight(board: &Board, class: &str) -> f64 {
     1.0 + LOOP_WEIGHT_PER_AMP * class_amps(board, class).unwrap_or(LOOP_AMPS)
+}
+
+fn is_supply_net(board: &Board, name: &str, class: &str) -> bool {
+    match board.netclasses.iter().find(|c| c.name == class && c.name != "Default") {
+        Some(c) => is_ground(name) || c.current.is_some(),
+        None => is_power_net(board, name, class),
+    }
 }
 
 pub fn is_fast_class(board: &Board, class: &str) -> bool {
@@ -527,6 +593,47 @@ pub fn cap_farads(value: &str) -> Option<f64> {
     let (a, b) = (&v[..pos], &v[pos + 1..]);
     let text = if b.is_empty() { a.to_string() } else { format!("{a}.{b}") };
     text.parse::<f64>().ok().map(|x| x * scale)
+}
+
+fn is_facing(reference: &str, fp_name: &str, symbol: &str) -> bool {
+    let (f, s) = (fp_name.to_ascii_lowercase(), symbol.to_ascii_lowercase());
+    let prefix = ref_prefix(reference);
+    f.starts_with("led_")
+        || s == "led"
+        || s.starts_with("led_")
+        || prefix == "SW"
+        || (f.starts_with("sw_") && !f.contains("slide"))
+}
+
+fn silk_segments(shape: &Shape) -> Vec<(P, P)> {
+    match shape {
+        Shape::Line { start, end } => vec![(start.to_mm(), end.to_mm())],
+        Shape::Polyline { points, closed } => {
+            let p: Vec<P> = points.iter().map(|q| q.to_mm()).collect();
+            let mut out: Vec<(P, P)> = p.windows(2).map(|w| (w[0], w[1])).collect();
+            if *closed && p.len() > 2 {
+                out.push((p[p.len() - 1], p[0]));
+            }
+            out
+        }
+        Shape::Rect { start, end } => {
+            let (a, b) = (start.to_mm(), end.to_mm());
+            let c = [a, [b[0], a[1]], b, [a[0], b[1]]];
+            (0..4).map(|k| (c[k], c[(k + 1) % 4])).collect()
+        }
+        Shape::Circle { center, radius } => {
+            let ring = geom::circle(center.to_mm(), radius.to_mm(), 12);
+            (0..ring.len()).map(|k| (ring[k], ring[(k + 1) % ring.len()])).collect()
+        }
+        Shape::Arc { start, mid, end } => {
+            vec![(start.to_mm(), mid.to_mm()), (mid.to_mm(), end.to_mm())]
+        }
+        Shape::Text { .. } => Vec::new(),
+    }
+}
+
+fn two_pad_case(fp_name: &str, fp: &Footprint) -> Option<f64> {
+    (copper_pad_numbers(fp) == 2).then(|| crate::drc::case_of(fp_name).map(|c| c.1)).flatten()
 }
 
 pub fn is_capacitor(reference: &str, fp_name: &str) -> bool {
@@ -769,6 +876,8 @@ struct LPad {
     edge: bool,
     supply: bool,
     regulated: bool,
+    name: String,
+    kind: Option<crate::symbol::PinType>,
 }
 
 #[derive(Clone)]
@@ -812,6 +921,14 @@ struct Part<'a> {
     switcher: bool,
     hot: bool,
     spread_hot: bool,
+    loud: bool,
+    height: Option<f64>,
+    small: bool,
+    electrolytic: bool,
+    facing: bool,
+    symbol: String,
+    rated_w: f64,
+    sheet: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -822,6 +939,8 @@ struct NetInfo {
     ground: bool,
     rf: bool,
     amps: f64,
+    analog: bool,
+    budget: Option<f64>,
 }
 
 type Target = (usize, P, Option<(usize, P)>);
@@ -850,6 +969,17 @@ struct Cluster {
     anchor: usize,
     members: Vec<usize>,
     served: HashMap<usize, (usize, usize)>,
+}
+
+type Hold = (usize, (u8, f64, f64), Vec<End>);
+
+#[derive(Clone, Copy)]
+struct Attach {
+    part: usize,
+    pad: usize,
+    to: End,
+    rank: u8,
+    depth: usize,
 }
 
 #[derive(Clone)]
@@ -884,6 +1014,8 @@ struct Placer<'a> {
     is_two_pin: Vec<bool>,
     clusters: Vec<Cluster>,
     cluster_of: Vec<Option<usize>>,
+    attached: Vec<Attach>,
+    feeds: Vec<(End, End)>,
     b: Board2,
     sides: Sides,
     grid: PartGrid,
@@ -1248,7 +1380,11 @@ impl<'a> Placer<'a> {
                 } else {
                     1
                 };
-                shape(poly, side, false)
+                if p.role == Role::Fiducial {
+                    shape(&grow_loop(poly, TOUCH), side, false)
+                } else {
+                    shape(poly, side, false)
+                }
             })
             .collect();
         if let Some(label) = p.label.as_ref().filter(|_| !self.soft_labels) {
@@ -1485,6 +1621,70 @@ impl<'a> Placer<'a> {
         self.inside(i, st, &sh) && !self.clashes(i, &sh, skip) && !self.too_hot(i, &sh, skip)
     }
 
+    fn clear_legal(&self, i: usize, st: St) -> bool {
+        let body: Vec<WShape> = self.shapes(i, st).into_iter().filter(|s| !s.label).collect();
+        if !self.inside(i, st, &body) || self.too_hot(i, &body, &[]) {
+            return false;
+        }
+        let grown: Vec<WShape> = body
+            .into_iter()
+            .map(|s| {
+                let poly = grow_loop(&s.poly, TOUCH);
+                WShape { b: poly_bounds(&poly), poly, rect: false, ..s }
+            })
+            .collect();
+        !self.body_clashes(i, &grown) && self.copper_ok(i, st, &grown, &[])
+    }
+
+    fn label_clear(&self, i: usize) -> bool {
+        let labels: Vec<WShape> = self.cache[i].iter().filter(|s| s.label).cloned().collect();
+        if labels.is_empty() {
+            return true;
+        }
+        if self.clashes(i, &labels, &[]) || !self.inside(i, self.parts[i].st, &labels) {
+            return false;
+        }
+        let mut near: Vec<usize> = Vec::new();
+        for l in &labels {
+            for c in self.grid.cells(&l.b) {
+                for &j in &self.grid.cells[c] {
+                    if j != i && self.parts[j].placed && !near.contains(&j) {
+                        near.push(j);
+                    }
+                }
+            }
+        }
+        near.iter().all(|&j| {
+            let p = &self.parts[j];
+            let t = p.st.transform();
+            p.fp.graphics.iter().filter(|g| g.layer == "F.SilkS").all(|g| {
+                silk_segments(&g.shape).iter().all(|&(a, b)| {
+                    let seg = [t.apply(a), t.apply(b)];
+                    labels.iter().all(|l| {
+                        (l.side & if p.st.bottom { 2 } else { 1 }) == 0
+                            || geom::polygon_distance(&seg, &l.poly) > g.width.to_mm() / 2.0
+                    })
+                })
+            })
+        })
+    }
+
+    fn body_clashes(&self, i: usize, sh: &[WShape]) -> bool {
+        sh.iter().any(|s| {
+            self.grid.cells(&s.b).any(|c| {
+                self.grid.cells[c].iter().any(|&j| {
+                    j != i
+                        && self.cache[j].iter().any(|t| {
+                            !t.label
+                                && s.side & t.side != 0
+                                && strict_overlap(&s.b, &t.b)
+                                && polys_overlap(&s.poly, &t.poly)
+                        })
+                })
+            })
+        })
+    }
+
     fn legal(&self, i: usize, st: St, skip: &[usize]) -> bool {
         let sh = self.shapes(i, st);
         self.inside(i, st, &sh)
@@ -1714,6 +1914,14 @@ impl<'a> Placer<'a> {
         if p.large {
             cost += 0.5 * geom::dist(c, self.b.centre);
         }
+        if p.facing {
+            let s = p.local.size();
+            let half = s[0].max(s[1]) / 2.0;
+            cost += FACE_W * (self.edge_gap(c) - half - FACE_REACH).max(0.0);
+            for &(h, r) in &self.holes {
+                cost += FACE_W * (r + half + HOLE_HARDWARE - geom::dist(h, c)).max(0.0);
+            }
+        }
         cost + self.flex_penalty(i, p.st)
     }
 
@@ -1839,7 +2047,11 @@ impl<'a> Placer<'a> {
                 if net.weight == 0.0 {
                     continue;
                 }
-                cost += net.weight * self.net_hpwl(n);
+                let hpwl = self.net_hpwl(n);
+                cost += net.weight * hpwl;
+                if let Some(b) = net.budget {
+                    cost += BUDGET_W * (ROUTE_FACTOR * hpwl - b).max(0.0);
+                }
                 if self.is_two_pin[n] {
                     cost += self.cross_w * self.crossings_of(n) as f64;
                 }
@@ -2161,6 +2373,7 @@ fn with_spec<'b>(
         texts: input.texts.clone(),
         tracks: input.tracks,
         vias: input.vias,
+        budgets: input.budgets.clone(),
     }
 }
 
@@ -2388,6 +2601,14 @@ fn place_with<'a>(
                                 || p.symbol.pins.iter().any(|m| power(m) && m.name == n.name))
                     })
                 });
+                let pin = units.iter().find_map(|(_, p)| {
+                    p.symbol
+                        .pins
+                        .iter()
+                        .find(|n| n.number == pad.number)
+                        .map(|n| (n.name.clone(), n.kind))
+                });
+                let (name, kind) = pin.map_or((String::new(), None), |(n, k)| (n, Some(k)));
                 let outline = if pad.is_copper() || pad.kind == PadKind::Npth {
                     pad.outlines()
                 } else {
@@ -2396,7 +2617,7 @@ fn place_with<'a>(
                 let mut bb = Bounds::EMPTY;
                 outline.iter().flatten().for_each(|q| bb.add(*q));
                 let c = if bb.is_empty() { pad.at.to_mm() } else { bb.center() };
-                LPad { c, outline, net, edge: pad.edge, supply, regulated }
+                LPad { c, outline, net, edge: pad.edge, supply, regulated, name, kind }
             })
             .collect();
         let mut loops: Vec<(bool, Vec<P>)> = Vec::new();
@@ -2488,6 +2709,18 @@ fn place_with<'a>(
             switcher: false,
             hot: false,
             spread_hot: false,
+            loud: false,
+            height: crate::height::body_height(fp),
+            small: two_pad_case(&fp_name, fp).is_some_and(|l| l < SMALL_CASE),
+            electrolytic: fp_name.to_ascii_lowercase().starts_with("cp_")
+                || first.symbol_name.to_ascii_lowercase().contains("polarized"),
+            facing: is_facing(r, &fp_name, &first.symbol_name),
+            symbol: first.symbol_name.to_ascii_lowercase(),
+            rated_w: first.fields.get("power").and_then(|w| watts(w)).unwrap_or(0.0),
+            sheet: sch.sheets.iter().position(|f| {
+                let a = first.at.to_mm();
+                a[0] >= f.min[0] && a[0] <= f.max[0] && a[1] >= f.min[1] && a[1] <= f.max[1]
+            }),
         });
     }
     for r in input.spec.edges.keys() {
@@ -2521,7 +2754,7 @@ fn place_with<'a>(
         .iter()
         .enumerate()
         .map(|(ni, n)| {
-            let power = is_power_net(board, &n.name, &n.class);
+            let power = is_supply_net(board, &n.name, &n.class);
             NetInfo {
                 pins: Vec::new(),
                 weight: if power {
@@ -2535,6 +2768,13 @@ fn place_with<'a>(
                 ground: is_ground(&n.name),
                 rf: is_rf_class(board, &n.class),
                 amps: class_amps(board, &n.class).unwrap_or(0.0),
+                analog: is_analog_class(board, &n.class),
+                budget: input
+                    .budgets
+                    .iter()
+                    .filter(|(g, _)| glob(g, &n.name) || *g == n.name)
+                    .map(|b| b.1)
+                    .reduce(f64::min),
             }
         })
         .collect();
@@ -2562,9 +2802,14 @@ fn place_with<'a>(
             }
         });
     }
-    for (ni, n) in nets.iter_mut().enumerate() {
-        if n.power && !n.ground && n.pins.len() >= 2 && n.pins.len() <= LOOP_PARTS {
-            n.weight = loop_weight(board, &sch.nets[ni].class);
+    for n in nets.iter_mut() {
+        if n.amps == 0.0 && !n.ground && inferred_loop(&parts, &n.pins) {
+            n.amps = INFERRED_AMPS;
+        }
+        if (n.power || n.amps > 0.0) && !n.ground && n.pins.len() >= 2 && n.pins.len() <= LOOP_PARTS
+        {
+            let amps = if n.amps > 0.0 { n.amps } else { LOOP_AMPS };
+            n.weight = n.weight.max(1.0 + LOOP_WEIGHT_PER_AMP * amps);
         }
     }
     let two_pin: Vec<usize> =
@@ -2661,6 +2906,8 @@ fn place_with<'a>(
         two_pin,
         is_two_pin,
         clusters: Vec::new(),
+        attached: Vec::new(),
+        feeds: Vec::new(),
         b,
         sides: opts.sides,
         grid: PartGrid::new(&ob),
@@ -2730,6 +2977,7 @@ fn place_with<'a>(
         cand.share_rotation();
         moves += cand.refine(&mut rng, QUENCH_PER_PART, QUENCH_HEAT);
         cand.hug();
+        cand.polish();
         cand.clear_flex_zone();
         let all: Vec<usize> = (0..n_parts).collect();
         let score = cand.local_cost(&all) + 1e4 * failed.len() as f64;
@@ -2765,7 +3013,7 @@ fn place_with<'a>(
                     && pl.b.depth.least(&b) > 0.0
                     && !pl.b.silk.iter().any(|k| k.side & side != 0 && strict_overlap(&b, &k.b))
             }
-            None => !pl.soft_labels,
+            None => !pl.soft_labels && pl.label_clear(i),
         })
         .collect();
     let placements = pl
@@ -2872,15 +3120,24 @@ impl<'a> Placer<'a> {
                 if !has_ground && rails.len() < 2 {
                     continue;
                 }
+                let prefix = ref_prefix(&self.parts[i].reference);
+                let between = matches!(prefix.as_str(), "C" | "L" | "FB");
+                if !between && (!has_ground || prefix != "R") {
+                    continue;
+                }
                 let me = self.parts[i].sch_at;
                 let chips: Vec<usize> = self
                     .anchors_on(rail, i)
                     .into_iter()
                     .filter(|c| self.parts[*c].role == Role::Chip)
                     .collect();
+                let sheet = self.parts[i].sheet;
                 let Some(&best) = chips.iter().min_by(|a, b| {
-                    geom::dist(self.parts[**a].sch_at, me)
-                        .total_cmp(&geom::dist(self.parts[**b].sch_at, me))
+                    let away = |c: usize| self.parts[c].sheet != sheet;
+                    away(**a).cmp(&away(**b)).then(
+                        geom::dist(self.parts[**a].sch_at, me)
+                            .total_cmp(&geom::dist(self.parts[**b].sch_at, me)),
+                    )
                 }) else {
                     continue;
                 };
@@ -2960,6 +3217,7 @@ impl<'a> Placer<'a> {
             self.cluster_of[*a] = Some(*c);
         }
         self.mark_switchers();
+        self.build_attachments();
         let mut links: Vec<(End, End, LinkKind)> = Vec::new();
         for c in &self.clusters {
             for &m in &c.members {
@@ -2975,7 +3233,7 @@ impl<'a> Placer<'a> {
                     };
                     let rail = p.pads[k].net;
                     let w = base * rail.map_or(1.0, |n| 1.0 + self.nets[n].amps);
-                    let thr = if bulk { self.b.decap * 2.5 } else { self.b.decap };
+                    let thr = if bulk { self.b.decap * 2.5 } else { self.b.decap * SMALL_DECAP };
                     let pull = LinkKind::Pull { w, thr, extra: 5.0, near: self.b.standoff };
                     let to = self.coil_end(c.anchor, rail, m).unwrap_or(End::Pad(c.anchor, pin));
                     links.push((End::Pad(m, k), to, pull));
@@ -2984,7 +3242,7 @@ impl<'a> Placer<'a> {
                         .flatten()
                     {
                         let pull =
-                            LinkKind::Pull { w: w / 2.0, thr, extra: 2.0, near: self.b.standoff };
+                            LinkKind::Pull { w: w / 4.0, thr, extra: 2.0, near: self.b.standoff };
                         links.push((End::Pad(m, g), End::Pad(c.anchor, gp), pull));
                     }
                 } else if p.role == Role::Crystal {
@@ -3031,21 +3289,294 @@ impl<'a> Placer<'a> {
                 links.push((End::Centre(i), End::Centre(j), LinkKind::Repel { w: 2.0, thr }));
             }
         }
-        let loud: Vec<usize> = (0..n).filter(|i| self.parts[*i].switcher).collect();
+        let loud: Vec<usize> =
+            (0..n).filter(|i| self.parts[*i].switcher || self.parts[*i].loud).collect();
         let quiet: Vec<usize> = (0..n).filter(|i| self.parts[*i].sensitive).collect();
         for &i in &loud {
             for &j in &quiet {
-                if i != j {
+                if i != j && !self.related(i, j) {
                     links.push((
                         End::Centre(i),
                         End::Centre(j),
-                        LinkKind::Repel { w: 2.0, thr: QUIET_GAP },
+                        LinkKind::Repel { w: QUIET_W, thr: QUIET_GAP },
                     ));
                 }
             }
         }
+        let half = |i: usize| {
+            let s = self.parts[i].local.size();
+            s[0].max(s[1]) / 2.0
+        };
+        let hot: Vec<usize> = (0..n).filter(|i| self.parts[*i].hot).collect();
+        for i in (0..n).filter(|i| self.parts[*i].electrolytic) {
+            for &j in hot.iter().filter(|j| **j != i) {
+                let thr = half(i) + half(j) + ELECTROLYTIC_GAP;
+                links.push((End::Centre(i), End::Centre(j), LinkKind::Repel { w: 2.0, thr }));
+            }
+        }
+        for i in 0..n {
+            let Some(h) = self.parts[i].height.filter(|h| *h > TALL) else { continue };
+            for j in (0..n).filter(|j| *j != i && self.parts[*j].small && !self.related(i, *j)) {
+                let thr = half(i) + half(j) + h + SHADOW_MARGIN;
+                links.push((End::Centre(i), End::Centre(j), LinkKind::Repel { w: SHADOW_W, thr }));
+            }
+        }
+        for a in &self.attached {
+            let amps = self.parts[a.part].pads[a.pad].net.map_or(0.0, |x| self.nets[x].amps);
+            let w = ATTACH_W[a.rank as usize] * (1.0 + amps);
+            let pull = LinkKind::Pull { w, thr: ATTACH_THR, extra: 5.0, near: self.b.standoff };
+            links.push((End::Pad(a.part, a.pad), a.to, pull));
+        }
+        for &(a, b) in &self.feeds {
+            links.push((a, b, LinkKind::Pull { w: FEED_W, thr: 0.0, extra: 0.0, near: 0.0 }));
+        }
+        let sheets = self.parts.iter().filter_map(|p| p.sheet).max().map_or(0, |m| m + 1);
+        for sheet in 0..sheets {
+            let mine: Vec<usize> = (0..n)
+                .filter(|i| {
+                    self.parts[*i].sheet == Some(sheet)
+                        && !matches!(self.parts[*i].role, Role::Hole | Role::Fiducial)
+                })
+                .collect();
+            let chip = |i: usize| self.parts[i].role == Role::Chip;
+            let Some(&anchor) = mine.iter().max_by(|a, b| {
+                chip(**a)
+                    .cmp(&chip(**b))
+                    .then(self.parts[**a].area.total_cmp(&self.parts[**b].area))
+                    .then(b.cmp(a))
+            }) else {
+                continue;
+            };
+            let area: f64 = mine.iter().map(|i| self.parts[*i].area).sum();
+            let thr = (area * SHEET_ROOM).sqrt();
+            for &i in mine.iter().filter(|i| **i != anchor) {
+                links.push((
+                    End::Centre(i),
+                    End::Centre(anchor),
+                    LinkKind::Pull { w: 0.0, thr, extra: SHEET_W, near: 0.0 },
+                ));
+            }
+        }
         for (a, b, k) in links {
             self.add_link(a, b, k);
+        }
+    }
+
+    fn owner(&self, i: usize) -> Option<usize> {
+        if let Some(a) = self.attached.iter().find(|a| a.part == i) {
+            return Some(Self::end_part(a.to));
+        }
+        self.cluster_of[i].map(|c| self.clusters[c].anchor).filter(|a| *a != i)
+    }
+
+    fn related(&self, i: usize, j: usize) -> bool {
+        let (oi, oj) = (self.owner(i), self.owner(j));
+        oi == Some(j) || oj == Some(i) || (oi.is_some() && oi == oj)
+    }
+
+    fn attached_to(&self, i: usize) -> bool {
+        self.attached.iter().any(|a| a.part == i)
+    }
+
+    fn free_follower(&self, j: usize) -> bool {
+        let p = &self.parts[j];
+        let rf = p.pads.iter().any(|q| q.net.is_some_and(|x| self.nets[x].rf));
+        !p.facing
+            && !rf
+            && !self.attached_to(j)
+            && !self.cluster_of[j].is_some_and(|c| self.clusters[c].served.contains_key(&j))
+            && (p.role == Role::Passive || self.protector(j))
+    }
+
+    fn protector(&self, j: usize) -> bool {
+        let p = &self.parts[j];
+        let ground = p.pads.iter().any(|q| q.net.is_some_and(|x| self.nets[x].ground));
+        let cap_or_res = matches!(ref_prefix(&p.reference).as_str(), "C" | "R" | "L" | "FB");
+        if !ground || cap_or_res || p.pins > 8 || !matches!(p.role, Role::Passive | Role::Chip) {
+            return false;
+        }
+        p.pads.iter().filter_map(|q| q.net).filter(|x| !self.nets[*x].ground).all(|x| {
+            self.nets[x].pins.iter().any(|&(c, _)| self.parts[c].role == Role::Connector)
+                || self.nets[x]
+                    .pins
+                    .iter()
+                    .any(|&(c, _)| self.parts[c].role == Role::Chip && c != j)
+                    && self.chain_node(x)
+        })
+    }
+
+    fn chain_node(&self, x: usize) -> bool {
+        self.attached
+            .iter()
+            .any(|a| a.rank == 0 && self.parts[a.part].pads.iter().any(|q| q.net == Some(x)))
+    }
+
+    fn build_attachments(&mut self) {
+        let n = self.parts.len();
+        let connectors: Vec<usize> =
+            (0..n).filter(|i| self.parts[*i].role == Role::Connector).collect();
+        let mut frontier: Vec<(usize, End, usize, usize, bool)> = Vec::new();
+        for &c in &connectors {
+            for (q, pad) in self.parts[c].pads.iter().enumerate() {
+                if let Some(x) = pad.net.filter(|x| !self.nets[*x].ground)
+                    && !frontier.iter().any(|f| f.0 == x)
+                {
+                    frontier.push((x, End::Pad(c, q), c, 0, self.nets[x].power));
+                }
+            }
+        }
+        let mut seen: Vec<usize> = Vec::new();
+        let mut guarded: Vec<(usize, End, usize, usize, bool)> = Vec::new();
+        while !frontier.is_empty() {
+            let (x, from, owner, depth, path) = frontier.remove(0);
+            if seen.contains(&x) {
+                continue;
+            }
+            let chips = self.nets[x].pins.iter().any(|&(j, _)| {
+                j != owner
+                    && matches!(self.parts[j].role, Role::Chip | Role::Crystal)
+                    && !self.protector(j)
+            });
+            if chips || self.nets[x].pins.len() > CHAIN_FANOUT {
+                guarded.push((x, from, owner, depth, path));
+                continue;
+            }
+            seen.push(x);
+            let pins = self.nets[x].pins.clone();
+            for (j, k) in pins {
+                if j == owner || !self.free_follower(j) {
+                    continue;
+                }
+                if self.protector(j) {
+                    self.attach_protector(j, k, from, depth);
+                    continue;
+                }
+                self.attached.push(Attach { part: j, pad: k, to: from, rank: 0, depth });
+                if let Some((a, b)) = self.parts[j].ends {
+                    let k2 = if k == a { b } else { a };
+                    if let Some(y) = self.parts[j].pads[k2].net.filter(|y| !self.nets[*y].ground) {
+                        frontier.push((
+                            y,
+                            End::Pad(j, k2),
+                            j,
+                            depth + 1,
+                            path && self.nets[x].power,
+                        ));
+                    }
+                }
+            }
+        }
+        guarded.sort_by(|a, b| b.3.cmp(&a.3).then(a.0.cmp(&b.0)));
+        for (x, from, owner, depth, path) in guarded {
+            if seen.contains(&x) {
+                continue;
+            }
+            seen.push(x);
+            if depth > 0 && path {
+                for &(j, k) in &self.nets[x].pins {
+                    if j != owner && self.parts[j].role == Role::Chip && !self.protector(j) {
+                        self.feeds.push((from, End::Pad(j, k)));
+                    }
+                }
+            }
+            let pins = self.nets[x].pins.clone();
+            for (j, k) in pins {
+                if j != owner && self.free_follower(j) && self.protector(j) {
+                    self.attach_protector(j, k, from, depth);
+                }
+                if depth > 0 && path && self.parts[j].electrolytic && !self.attached_to(j) {
+                    if let Some(c) = self.cluster_of[j] {
+                        self.clusters[c].served.remove(&j);
+                    }
+                    self.attached.push(Attach { part: j, pad: k, to: from, rank: 0, depth });
+                }
+            }
+        }
+        for j in 0..n {
+            if !self.free_follower(j) || !is_capacitor(&self.parts[j].reference, "") {
+                continue;
+            }
+            let ground =
+                self.parts[j].pads.iter().any(|q| q.net.is_some_and(|x| self.nets[x].ground));
+            let Some((k, x)) = self.parts[j].pads.iter().enumerate().find_map(|(k, q)| {
+                q.net.filter(|x| self.nets[*x].power && !self.nets[*x].ground).map(|x| (k, x))
+            }) else {
+                continue;
+            };
+            let pins = &self.nets[x].pins;
+            if !ground
+                || pins
+                    .iter()
+                    .any(|&(c, _)| matches!(self.parts[c].role, Role::Chip | Role::Connector))
+            {
+                continue;
+            }
+            let coil = pins.iter().copied().find(|&(c, _)| {
+                matches!(ref_prefix(&self.parts[c].reference).as_str(), "L" | "FB")
+            });
+            if let Some((c, q)) = coil {
+                self.attached.push(Attach {
+                    part: j,
+                    pad: k,
+                    to: End::Pad(c, q),
+                    rank: 2,
+                    depth: 0,
+                });
+            }
+        }
+        let mut nodes: Vec<(u8, usize, usize, usize)> = Vec::new();
+        for (x, net) in self.nets.iter().enumerate() {
+            if net.power || net.ground {
+                continue;
+            }
+            let active: Vec<(usize, usize)> = net
+                .pins
+                .iter()
+                .copied()
+                .filter(|&(j, _)| {
+                    !matches!(self.parts[j].role, Role::Passive | Role::TestPoint)
+                        || self.parts[j].facing
+                })
+                .collect();
+            let [(c, q)] = active.as_slice() else { continue };
+            if self.parts[*c].role == Role::Connector {
+                continue;
+            }
+            let input = self.parts[*c].pads[*q].kind == Some(crate::symbol::PinType::Input);
+            nodes.push((if input { 1 } else { 2 }, x, *c, *q));
+        }
+        nodes.sort_unstable();
+        for (rank, x, c, q) in nodes {
+            let pins = self.nets[x].pins.clone();
+            for (j, k) in pins {
+                if j != c && self.free_follower(j) && self.parts[j].role == Role::Passive {
+                    self.attached.push(Attach {
+                        part: j,
+                        pad: k,
+                        to: End::Pad(c, q),
+                        rank,
+                        depth: 0,
+                    });
+                }
+            }
+        }
+    }
+
+    fn attach_protector(&mut self, j: usize, k: usize, from: End, depth: usize) {
+        for (k2, q) in self.parts[j].pads.iter().enumerate() {
+            let Some(y) = q.net.filter(|y| !self.nets[*y].ground) else { continue };
+            let at = self.nets[y]
+                .pins
+                .iter()
+                .find(|&&(c, _)| self.parts[c].role == Role::Connector)
+                .map(|&(c, p)| End::Pad(c, p));
+            match at {
+                _ if k2 == k => {
+                    self.attached.push(Attach { part: j, pad: k, to: from, rank: 0, depth })
+                }
+                Some(to) => self.attached.push(Attach { part: j, pad: k2, to, rank: 0, depth }),
+                None => {}
+            }
         }
     }
 
@@ -3100,6 +3631,41 @@ impl<'a> Placer<'a> {
 
     fn mark_switchers(&mut self) {
         let n = self.parts.len();
+        for i in 0..n {
+            let p = &self.parts[i];
+            let drives = self.part_nets[i].iter().any(|&x| {
+                let net = &self.nets[x];
+                !net.ground
+                    && net.amps >= LOUD_AMPS
+                    && net.pins.len() <= LOOP_PARTS
+                    && net.pins.iter().any(|&(j, _)| {
+                        j != i
+                            && (self.parts[j].role == Role::Connector
+                                || ref_prefix(&self.parts[j].reference) == "L")
+                    })
+            });
+            let opamp = p.pads.iter().any(|q| matches!(q.name.as_str(), "+" | "-" | "IN+" | "IN-"))
+                || p.pads.iter().any(|q| q.name.starts_with("VIN+") || q.name.starts_with("VIN-"));
+            let analog =
+                self.part_nets[i].iter().any(|&x| self.nets[x].analog && !self.nets[x].power);
+            if p.role == Role::Chip && drives {
+                self.parts[i].loud = true;
+                for &x in &self.part_nets[i] {
+                    let net = &self.nets[x];
+                    if net.ground || net.amps < LOUD_AMPS || net.pins.len() > LOOP_PARTS {
+                        continue;
+                    }
+                    let mine = net.pins.iter().find(|&&(j, _)| j == i);
+                    let load =
+                        net.pins.iter().find(|&&(j, _)| self.parts[j].role == Role::Connector);
+                    if let (Some(&(_, k)), Some(&(c, q))) = (mine, load) {
+                        self.feeds.push((End::Pad(c, q), End::Pad(i, k)));
+                    }
+                }
+            } else if (opamp || analog) && !p.large && p.role != Role::Connector {
+                self.parts[i].sensitive = true;
+            }
+        }
         for i in 0..n {
             let p = &self.parts[i];
             if p.role == Role::Crystal {
@@ -4171,7 +4737,11 @@ impl<'a> Placer<'a> {
                 count += 1;
             }
             if count >= 2 {
-                cost += net.weight * (b.size()[0] + b.size()[1]);
+                let hpwl = b.size()[0] + b.size()[1];
+                cost += net.weight * hpwl;
+                if let Some(budget) = net.budget {
+                    cost += BUDGET_W * (ROUTE_FACTOR * hpwl - budget).max(0.0);
+                }
             }
             if self.is_two_pin[n] {
                 cost += self.cross_w * self.est_crossings(n) as f64;
@@ -4657,50 +5227,162 @@ impl<'a> Placer<'a> {
         accepted
     }
 
-    fn hug(&mut self) {
-        let mut order: Vec<(usize, usize, usize)> = Vec::new();
+    fn hold_order(&self) -> Vec<Hold> {
+        let mut order: Vec<Hold> = Vec::new();
+        let farads = |i: usize| cap_farads(&self.parts[i].value).unwrap_or(0.0);
         for c in &self.clusters {
-            for (&m, &(_, pin)) in &c.served {
-                if self.movable(m) && self.parts[m].placed {
-                    order.push((m, c.anchor, pin));
+            for (&m, &(k, pin)) in &c.served {
+                if !self.movable(m) || !self.parts[m].placed {
+                    continue;
+                }
+                let pad = &self.parts[c.anchor].pads[pin];
+                let amps = pad.net.map_or(0.0, |n| self.nets[n].amps);
+                let class = if pad.regulated { 0 } else { 2 };
+                let rail = self.parts[m].pads[k].net;
+                let to = self.coil_end(c.anchor, rail, m).unwrap_or(End::Pad(c.anchor, pin));
+                order.push((m, (class, -(amps * 100.0).round(), farads(m)), vec![to]));
+            }
+        }
+        for a in &self.attached {
+            if !self.movable(a.part) || !self.parts[a.part].placed {
+                continue;
+            }
+            match order.iter_mut().find(|o| o.0 == a.part) {
+                Some(o) => o.2.push(a.to),
+                None => {
+                    let class = [1, 3, 4][a.rank as usize];
+                    let amps =
+                        self.parts[a.part].pads[a.pad].net.map_or(0.0, |n| self.nets[n].amps);
+                    let key = if a.rank == 0 { a.depth as f64 } else { -(amps * 100.0).round() };
+                    order.push((a.part, (class, key, farads(a.part)), vec![a.to]));
                 }
             }
         }
-        let farads = |i: usize| cap_farads(&self.parts[i].value).unwrap_or(0.0);
-        let amps = |i: usize, pin: usize| {
-            let pad = &self.parts[i].pads[pin];
-            let a = pad.net.map_or(0.0, |n| self.nets[n].amps);
-            -(a * 100.0).round() - if pad.regulated { 1e6 } else { 0.0 }
-        };
+        for i in 0..self.parts.len() {
+            if self.parts[i].facing && self.movable(i) && !order.iter().any(|o| o.0 == i) {
+                order.push((i, (5, 0.0, 0.0), Vec::new()));
+            }
+        }
         order.sort_by(|a, b| {
-            amps(a.1, a.2)
-                .total_cmp(&amps(b.1, b.2))
-                .then(farads(a.0).total_cmp(&farads(b.0)))
+            a.1.0
+                .cmp(&b.1.0)
+                .then(a.1.1.total_cmp(&b.1.1))
+                .then(a.1.2.total_cmp(&b.1.2))
                 .then(a.0.cmp(&b.0))
         });
-        let all: Vec<usize> = (0..self.parts.len()).collect();
-        let before = self.local_cost(&all);
-        let kept: Vec<(usize, St)> = order.iter().map(|o| (o.0, self.parts[o.0].st)).collect();
-        let crowding: Vec<f64> = order
-            .iter()
-            .map(|o| if self.soft_labels { self.label_overlap(o.0) } else { 0.0 })
-            .collect();
-        for &(m, _, _) in &order {
-            self.remove(m);
-        }
-        let steps = (HUG_REACH / HUG_STEP) as i32;
-        let mut stuck = false;
-        for (x, &(m, anchor, pin)) in order.iter().enumerate() {
-            let rail = self.clusters[self.cluster_of[m].expect("served part has a cluster")]
-                .served
-                .get(&m)
-                .and_then(|&(k, _)| self.parts[m].pads[k].net);
-            let target = match self.coil_end(anchor, rail, m) {
-                Some(e) => self.end_pos(e),
-                None => self.pad_pos(anchor, pin),
+        order
+    }
+
+    fn edge_target(&self, i: usize) -> P {
+        let c = self.centre(i);
+        let s = self.parts[i].local.size();
+        let inset = s[0].max(s[1]) / 2.0 + 1.0;
+        let edge = self.board_edge();
+        let mut best = (f64::MAX, c);
+        for (a, b) in edge.segments() {
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let l = d[0] * d[0] + d[1] * d[1];
+            let t = if l == 0.0 {
+                0.0
+            } else {
+                (((c[0] - a[0]) * d[0] + (c[1] - a[1]) * d[1]) / l).clamp(0.0, 1.0)
             };
+            let q = [a[0] + t * d[0], a[1] + t * d[1]];
+            let g = geom::dist(c, q);
+            if g < best.0 {
+                best = (g, q);
+            }
+        }
+        let (g, q) = best;
+        if g < 1e-9 {
+            return c;
+        }
+        [q[0] + (c[0] - q[0]) / g * inset, q[1] + (c[1] - q[1]) / g * inset]
+    }
+
+    fn hold_target(&self, i: usize, ends: &[End]) -> P {
+        if ends.is_empty() {
+            return self.edge_target(i);
+        }
+        let mut target = [0.0, 0.0];
+        for e in ends {
+            let p = self.end_pos(*e);
+            target = [target[0] + p[0] / ends.len() as f64, target[1] + p[1] / ends.len() as f64];
+        }
+        target
+    }
+
+    fn swap_held(&mut self) -> bool {
+        let order = self.hold_order();
+        let mut moved = false;
+        for x in 0..order.len() {
+            for y in x + 1..order.len() {
+                let (a, b) = (order[x].0, order[y].0);
+                let (sa, sb) = (self.parts[a].local.size(), self.parts[b].local.size());
+                if (sa[0] - sb[0]).abs() > 0.3 || (sa[1] - sb[1]).abs() > 0.3 {
+                    continue;
+                }
+                let (pa, pb) = (self.parts[a].st, self.parts[b].st);
+                if geom::dist(pa.at, pb.at) > HUG_REACH * 2.0 {
+                    continue;
+                }
+                let before = self.local_cost(&[a, b]);
+                self.remove(a);
+                self.remove(b);
+                let mut best: Option<(f64, St, St)> = None;
+                for ra in [0.0, 90.0, 180.0, 270.0] {
+                    for rb in [0.0, 90.0, 180.0, 270.0] {
+                        let (na, nb) =
+                            (St { at: pb.at, rot: ra, ..pa }, St { at: pa.at, rot: rb, ..pb });
+                        if !self.clear_legal(a, na) {
+                            continue;
+                        }
+                        self.parts[a].st = na;
+                        self.insert(a);
+                        let ok = self.clear_legal(b, nb);
+                        if ok {
+                            self.parts[b].st = nb;
+                            self.insert(b);
+                            let c = self.local_cost(&[a, b]);
+                            self.remove(b);
+                            if c < before - 1e-6 && best.as_ref().is_none_or(|t| c < t.0) {
+                                best = Some((c, na, nb));
+                            }
+                        }
+                        self.remove(a);
+                    }
+                }
+                let (na, nb) = best.map_or((pa, pb), |t| (t.1, t.2));
+                moved |= best.is_some();
+                self.parts[a].st = na;
+                self.parts[b].st = nb;
+                self.insert(a);
+                self.insert(b);
+            }
+        }
+        moved
+    }
+
+    fn polish(&mut self) {
+        for _ in 0..POLISH_ROUNDS {
+            let moved = self.nudge() | self.swap_held();
+            if !moved {
+                break;
+            }
+        }
+    }
+
+    fn nudge(&mut self) -> bool {
+        let mut moved = false;
+        let order = self.hold_order();
+        let steps = (HUG_REACH / HUG_STEP) as i32;
+        for (m, _, ends) in &order {
+            let m = *m;
+            let target = self.hold_target(m, ends);
             let st = self.parts[m].st;
-            let mut best: Option<(f64, St)> = None;
+            let crowding = if self.soft_labels { self.label_overlap(m) } else { 0.0 };
+            let mut best = (self.local_cost(&[m]), st);
+            self.remove(m);
             for dx in -steps..=steps {
                 for dy in -steps..=steps {
                     let at = snap_p([
@@ -4709,27 +5391,120 @@ impl<'a> Placer<'a> {
                     ]);
                     for rot in [0.0, 90.0, 180.0, 270.0] {
                         let cand = St { at, rot, bottom: st.bottom };
-                        if !self.legal(m, cand, &[]) {
+                        if !self.clear_legal(m, cand) {
                             continue;
                         }
                         self.parts[m].st = cand;
                         self.insert(m);
                         let c = self.local_cost(&[m]);
-                        let crowds = self.soft_labels && self.label_overlap(m) > crowding[x] + EPS;
+                        let crowds = self.soft_labels && self.label_overlap(m) > crowding + EPS;
                         self.remove(m);
-                        if !crowds && best.as_ref().is_none_or(|b| c < b.0 - 1e-9) {
-                            best = Some((c, cand));
+                        if !crowds && c < best.0 - 1e-9 {
+                            best = (c, cand);
                         }
+                    }
+                }
+            }
+            moved |= best.1.at != st.at || best.1.rot != st.rot;
+            self.parts[m].st = best.1;
+            self.insert(m);
+        }
+        moved
+    }
+
+    fn hug(&mut self) {
+        let order = self.hold_order();
+        let all: Vec<usize> = (0..self.parts.len()).collect();
+        let before = self.local_cost(&all);
+        let kept: Vec<(usize, St)> = order.iter().map(|o| (o.0, self.parts[o.0].st)).collect();
+        if !self.repack(&order) || self.local_cost(&all) > before {
+            self.restore(&order, &kept);
+        }
+        let mut owners: Vec<usize> = Vec::new();
+        for o in &order {
+            let owner = o.2.first().map_or(o.0, |e| Self::end_part(*e));
+            if !owners.contains(&owner) {
+                owners.push(owner);
+            }
+        }
+        for owner in owners {
+            let group: Vec<Hold> = order
+                .iter()
+                .filter(|o| o.2.first().map_or(o.0, |e| Self::end_part(*e)) == owner)
+                .cloned()
+                .collect();
+            let mut near: Vec<usize> = group.iter().map(|g| g.0).collect();
+            near.push(owner);
+            let kept: Vec<(usize, St)> = group.iter().map(|o| (o.0, self.parts[o.0].st)).collect();
+            let mut best = (self.local_cost(&near), kept.clone());
+            let mut flipped = group.clone();
+            flipped.reverse();
+            for g in [&group, &flipped] {
+                self.restore(&group, &kept);
+                if self.repack(g) {
+                    let c = self.local_cost(&near);
+                    if c < best.0 - 1e-9 {
+                        best = (c, group.iter().map(|o| (o.0, self.parts[o.0].st)).collect());
+                    }
+                }
+            }
+            self.restore(&group, &best.1);
+        }
+    }
+
+    fn restore(&mut self, order: &[Hold], kept: &[(usize, St)]) {
+        for o in order {
+            self.remove(o.0);
+        }
+        for &(m, st) in kept {
+            self.parts[m].st = st;
+            self.insert(m);
+        }
+    }
+
+    fn repack(&mut self, order: &[Hold]) -> bool {
+        let crowding: Vec<f64> = order
+            .iter()
+            .map(|o| if self.soft_labels { self.label_overlap(o.0) } else { 0.0 })
+            .collect();
+        for o in order {
+            self.remove(o.0);
+        }
+        let steps = (HUG_REACH / HUG_STEP) as i32;
+        let mut stuck = false;
+        for (x, (m, _, ends)) in order.iter().enumerate() {
+            let m = *m;
+            let target = self.hold_target(m, ends);
+            let st = self.parts[m].st;
+            let mut best: Option<(f64, St)> = None;
+            let try_at = |me: &mut Self, cand: St, best: &mut Option<(f64, St)>| {
+                if !me.clear_legal(m, cand) {
+                    return;
+                }
+                me.parts[m].st = cand;
+                me.insert(m);
+                let c = me.local_cost(&[m]);
+                let crowds = me.soft_labels && me.label_overlap(m) > crowding[x] + EPS;
+                me.remove(m);
+                if !crowds && best.as_ref().is_none_or(|b| c < b.0 - 1e-9) {
+                    *best = Some((c, cand));
+                }
+            };
+            try_at(self, st, &mut best);
+            for dx in -steps..=steps {
+                for dy in -steps..=steps {
+                    let at = snap_p([
+                        target[0] + dx as f64 * HUG_STEP,
+                        target[1] + dy as f64 * HUG_STEP,
+                    ]);
+                    for rot in [0.0, 90.0, 180.0, 270.0] {
+                        try_at(self, St { at, rot, bottom: st.bottom }, &mut best);
                     }
                 }
             }
             let found = best.map(|b| b.1).or_else(|| {
                 self.parts[m].st = st;
-                if self.legal(m, st, &[]) {
-                    Some(st)
-                } else {
-                    self.nearest(m, st.at, st.rot, st.bottom, f64::MAX, &|_| 0.0)
-                }
+                self.nearest(m, st.at, st.rot, st.bottom, f64::MAX, &|_| 0.0)
             });
             match found {
                 Some(f) => self.parts[m].st = f,
@@ -4740,19 +5515,12 @@ impl<'a> Placer<'a> {
             }
             self.insert(m);
         }
-        if stuck || self.local_cost(&all) > before {
-            for &(m, _, _) in &order {
-                self.remove(m);
-            }
-            for &(m, st) in &kept {
-                self.parts[m].st = st;
-                self.insert(m);
-            }
-        }
+        !stuck
     }
 
     fn serves(&self, i: usize) -> bool {
         self.cluster_of[i].is_some_and(|c| self.clusters[c].served.contains_key(&i))
+            || self.attached_to(i)
     }
 
     fn share_rotation(&mut self) {

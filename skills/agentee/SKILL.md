@@ -185,7 +185,13 @@ Go round this loop until check has no errors:
 1. **Pin what the design fixes.** Connectors at the enclosure openings, mounting holes, anything
    a mechanical drawing dictates: `agentee edit pcb NAME place J1 2,15 --rotation 90 --locked`.
    Add a zone for each plane (`agentee edit pcb NAME zone GND --layers In1.Cu`). Leave every
-   other part unplaced.
+   other part unplaced. The placer reads the design's intent from the files, so give it that
+   intent before you move parts by hand: a `current` on every class that carries real current
+   (motor coils, switch nodes, power entry), correct pin types on symbols (`power_in`,
+   `power_out` for regulator outputs such as VCAP, `input` for FB and op-amp inputs), one sheet
+   per function, and `max_length` on interfaces whose nets must stay short. From these it puts
+   power stages beside their loads, protection at the connector, feedback parts at the pin, and
+   keeps switchers away from analog parts.
 2. **Run the engine.** `agentee layout NAME --search` places, routes to the pads and planes,
    finishes, and writes the best of 16 placements into the `# plan` sections of the layout.
 3. **Read the result.** The score table it prints is sorted worst first and names the nets and

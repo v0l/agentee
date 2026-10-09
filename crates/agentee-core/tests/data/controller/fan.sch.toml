@@ -1,0 +1,66 @@
+name = "fan"
+description = "12 V fan on J3, switched low side by an AO3400A (30 V, 48 mohm at 2.5 V VGS, VGS(th) 1.45 V max) from a 3.3 V PWM pin, 100 ohm gate resistor, 100k gate pull-down, B5819W flyback diode across the fan."
+board = "controller"
+
+[[parts]]
+ref = "J3"
+symbol = "Conn_01x02"
+at = [50.80, 304.80]
+value = "FAN"
+fields = { mpn = "B2B-PH-K-S", mfr = "JST" }
+
+[[parts]]
+ref = "Q1"
+symbol = "AO3400A"
+at = [76.20, 317.50]
+value = "AO3400A"
+fields = { mpn = "AO3400A", mfr = "AOS" }
+
+[[parts]]
+ref = "R7"
+symbol = "R"
+at = [63.50, 330.20]
+value = "100"
+
+[[parts]]
+ref = "R8"
+symbol = "R"
+at = [76.20, 336.55]
+value = "100k"
+
+[[parts]]
+ref = "D4"
+symbol = "D_Schottky"
+at = [63.50, 298.45]
+value = "B5819W"
+fields = { mpn = "B5819W", mfr = "Diodes" }
+
+[[nets]]
+name = "V12"
+class = "Power12"
+style = "power"
+pins = ["J3.1", "D4.1"]
+
+[[nets]]
+name = "FAN_N"
+class = "Fan"
+style = "label"
+pins = ["J3.2", "D4.2", "Q1.3"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["Q1.2", "R8.2"]
+
+[[nets]]
+name = "FAN_PWM"
+class = "Signal"
+style = "label"
+pins = ["R7.1"]
+
+[[nets]]
+name = "FAN_G"
+class = "Signal"
+style = "label"
+pins = ["R7.2", "Q1.1", "R8.1"]

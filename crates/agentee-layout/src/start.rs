@@ -142,6 +142,7 @@ pub fn place_text(
         texts: pl::movable_texts(&graphics),
         tracks: &file.tracks,
         vias: &file.vias,
+        budgets: pl::budgets(&file.interfaces),
     };
     let r = pl::place(&input, opts)?;
     let mut doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;

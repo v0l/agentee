@@ -1,0 +1,43 @@
+# imported from KiCad Switch:SW_Push
+name = "SW_Push"
+reference = "SW"
+description = "Push button switch, generic, two pins"
+keywords = ["switch", "normally-open", "pushbutton", "push-button"]
+footprint = "SW_SPST_PTS810"
+pin_names = "hidden"
+pin_name_offset = 1.016
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "circle"
+center = [-2.032, 0.0]
+radius = 0.508
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, -1.27], [0.0, -3.048]]
+
+[[graphics]]
+kind = "circle"
+center = [2.032, 0.0]
+radius = 0.508
+
+[[graphics]]
+kind = "polyline"
+points = [[2.54, -1.27], [-2.54, -1.27]]
+
+[[pins]]
+number = "1"
+name = "1"
+type = "passive"
+at = [-5.08, 0.0]
+side = "left"
+length = 2.54
+
+[[pins]]
+number = "2"
+name = "2"
+type = "passive"
+at = [5.08, 0.0]
+side = "right"
+length = 2.54

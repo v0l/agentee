@@ -1832,6 +1832,7 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
         texts: pl::movable_texts(&graphics),
         tracks: &file.tracks,
         vias: &file.vias,
+        budgets: pl::budgets(&file.interfaces),
     };
     let opts = pl::PlaceOptions {
         parts: a.parts.clone(),

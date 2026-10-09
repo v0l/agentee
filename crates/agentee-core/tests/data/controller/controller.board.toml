@@ -1,0 +1,111 @@
+name = "controller"
+description = "12 V fan and sensor controller, a placement fixture"
+fab = "jlcpcb"
+
+[outline]
+size = [60, 45]
+corner_radius = 1
+
+[stackup]
+preset = "JLC041611-7628"
+finish = "ENIG"
+
+[[vias]]
+name = "std"
+drill = "0.3mm"
+diameter = "0.6mm"
+
+[[vias]]
+name = "small"
+drill = "0.2mm"
+diameter = "0.4mm"
+
+[[netclasses]]
+name = "Default"
+voltage = "3.3VDC"
+track_width = "0.15mm"
+clearance = "0.15mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "Signal"
+voltage = "3.3VDC"
+track_width = "0.15mm"
+clearance = "0.15mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "Clock"
+voltage = "3.3VDC"
+track_width = "0.15mm"
+clearance = "0.25mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "Analog"
+voltage = "3.3VDC"
+description = "NTC, op-amp nodes, ADC input and the buck feedback node"
+track_width = "0.15mm"
+clearance = "0.2mm"
+via = ["small", "std"]
+
+[[netclasses]]
+name = "USB"
+voltage = "3.3VDC"
+impedance = "90ohm"
+diff_gap = "0.15mm"
+track_width = "0.2621mm"
+clearance = "0.15mm"
+via = "std"
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Ground"
+voltage = "0VDC"
+track_width = "0.3mm"
+clearance = "0.15mm"
+via = ["std", "small"]
+
+[[netclasses]]
+name = "Power3V3"
+voltage = "3.3VDC"
+track_width = "0.5mm"
+clearance = "0.15mm"
+current = "0.5A"
+via = ["std", "small"]
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Rail"
+voltage = "3.3VDC"
+track_width = "0.4mm"
+clearance = "0.15mm"
+via = ["std", "small"]
+
+[[netclasses]]
+name = "Power12"
+voltage = "12VDC"
+description = "12 V from J1, limited by the 1.1 A PTC"
+track_width = "1mm"
+clearance = "0.2mm"
+current = "1.1A"
+via = "std"
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Switch"
+voltage = "12VDC"
+description = "Buck switch node and boost"
+track_width = "0.8mm"
+clearance = "0.2mm"
+current = "1.5A"
+via = "std"
+layers = ["F.Cu", "B.Cu"]
+
+[[netclasses]]
+name = "Fan"
+voltage = "12VDC"
+description = "Fan return to the MOSFET drain, no current given so the placer infers it"
+track_width = "0.5mm"
+clearance = "0.2mm"
+via = "std"

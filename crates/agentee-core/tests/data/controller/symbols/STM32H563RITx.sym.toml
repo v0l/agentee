@@ -1,0 +1,594 @@
+# imported from KiCad MCU_ST_STM32H5:STM32H563RITx
+name = "STM32H563RITx"
+reference = "U"
+description = "STMicroelectronics Arm Cortex-M33 MCU, 2048KB flash, 640KB RAM, 250 MHz, 1.62-3.6V, 49 GPIO, LQFP64"
+datasheet = "https://www.st.com/resource/en/datasheet/stm32h563ri.pdf"
+keywords = ["Arm", "Cortex-M33", "STM32H5", "STM32H563/H573"]
+footprint = "LQFP-64_10x10mm_P0.5mm"
+footprint_filters = ["LQFP*10x10mm*P0.5mm*"]
+
+[[graphics]]
+kind = "rect"
+start = [-22.86, 43.18]
+end = [22.86, -43.18]
+width = 0.254
+fill = "background"
+
+[[pins]]
+number = "7"
+name = "NRST"
+type = "input"
+at = [-25.4, -38.1]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "60"
+name = "BOOT0"
+type = "input"
+at = [-25.4, -33.02]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "5"
+name = "PH0"
+type = "bidirectional"
+at = [-25.4, -27.94]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "6"
+name = "PH1"
+type = "bidirectional"
+at = [-25.4, -25.4]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "54"
+name = "PD2"
+type = "bidirectional"
+at = [-25.4, -20.32]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "8"
+name = "PC0"
+type = "bidirectional"
+at = [-25.4, -15.24]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "9"
+name = "PC1"
+type = "bidirectional"
+at = [-25.4, -12.7]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "10"
+name = "PC2"
+type = "bidirectional"
+at = [-25.4, -10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "11"
+name = "PC3"
+type = "bidirectional"
+at = [-25.4, -7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "24"
+name = "PC4"
+type = "bidirectional"
+at = [-25.4, -5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "25"
+name = "PC5"
+type = "bidirectional"
+at = [-25.4, -2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "37"
+name = "PC6"
+type = "bidirectional"
+at = [-25.4, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "38"
+name = "PC7"
+type = "bidirectional"
+at = [-25.4, 2.54]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "39"
+name = "PC8"
+type = "bidirectional"
+at = [-25.4, 5.08]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "40"
+name = "PC9"
+type = "bidirectional"
+at = [-25.4, 7.62]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "51"
+name = "PC10"
+type = "bidirectional"
+at = [-25.4, 10.16]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "52"
+name = "PC11"
+type = "bidirectional"
+at = [-25.4, 12.7]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "53"
+name = "PC12"
+type = "bidirectional"
+at = [-25.4, 15.24]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "PC13"
+type = "bidirectional"
+at = [-25.4, 17.78]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "PC14"
+type = "bidirectional"
+at = [-25.4, 20.32]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "4"
+name = "PC15"
+type = "bidirectional"
+at = [-25.4, 22.86]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "30"
+name = "VCAP"
+type = "power_out"
+at = [-25.4, 27.94]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "62"
+name = "VCAP"
+type = "power_out"
+at = [-25.4, 30.48]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "VBAT"
+type = "power_in"
+at = [-5.08, -45.72]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "19"
+name = "VDD"
+type = "power_in"
+at = [-2.54, -45.72]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "32"
+name = "VDD"
+type = "power_in"
+at = [0.0, -45.72]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "18"
+name = "VSS"
+type = "power_in"
+at = [0.0, 45.72]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "31"
+name = "VSS"
+type = "passive"
+at = [0.0, 45.72]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "47"
+name = "VSS"
+type = "passive"
+at = [0.0, 45.72]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "63"
+name = "VSS"
+type = "passive"
+at = [0.0, 45.72]
+side = "bottom"
+length = 2.54
+unit = 1
+hidden = true
+
+[[pins]]
+number = "48"
+name = "VDD"
+type = "power_in"
+at = [2.54, -45.72]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "12"
+name = "VSSA"
+type = "power_in"
+at = [2.54, 45.72]
+side = "bottom"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "64"
+name = "VDD"
+type = "power_in"
+at = [5.08, -45.72]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "13"
+name = "VDDA"
+type = "power_in"
+at = [7.62, -45.72]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "14"
+name = "PA0"
+type = "bidirectional"
+at = [25.4, -38.1]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "15"
+name = "PA1"
+type = "bidirectional"
+at = [25.4, -35.56]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "16"
+name = "PA2"
+type = "bidirectional"
+at = [25.4, -33.02]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "17"
+name = "PA3"
+type = "bidirectional"
+at = [25.4, -30.48]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "20"
+name = "PA4"
+type = "bidirectional"
+at = [25.4, -27.94]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "21"
+name = "PA5"
+type = "bidirectional"
+at = [25.4, -25.4]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "22"
+name = "PA6"
+type = "bidirectional"
+at = [25.4, -22.86]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "23"
+name = "PA7"
+type = "bidirectional"
+at = [25.4, -20.32]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "41"
+name = "PA8"
+type = "bidirectional"
+at = [25.4, -17.78]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "42"
+name = "PA9"
+type = "bidirectional"
+at = [25.4, -15.24]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "43"
+name = "PA10"
+type = "bidirectional"
+at = [25.4, -12.7]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "44"
+name = "PA11"
+type = "bidirectional"
+at = [25.4, -10.16]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "45"
+name = "PA12"
+type = "bidirectional"
+at = [25.4, -7.62]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "46"
+name = "PA13(JTMS"
+type = "bidirectional"
+at = [25.4, -5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "49"
+name = "PA14(JTCK"
+type = "bidirectional"
+at = [25.4, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "50"
+name = "PA15(JTDI)"
+type = "bidirectional"
+at = [25.4, 0.0]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "26"
+name = "PB0"
+type = "bidirectional"
+at = [25.4, 5.08]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "27"
+name = "PB1"
+type = "bidirectional"
+at = [25.4, 7.62]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "28"
+name = "PB2"
+type = "bidirectional"
+at = [25.4, 10.16]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "55"
+name = "PB3(JTDO"
+type = "bidirectional"
+at = [25.4, 12.7]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "56"
+name = "PB4(NJTRST)"
+type = "bidirectional"
+at = [25.4, 15.24]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "57"
+name = "PB5"
+type = "bidirectional"
+at = [25.4, 17.78]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "58"
+name = "PB6"
+type = "bidirectional"
+at = [25.4, 20.32]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "59"
+name = "PB7"
+type = "bidirectional"
+at = [25.4, 22.86]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "61"
+name = "PB8"
+type = "bidirectional"
+at = [25.4, 25.4]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "29"
+name = "PB10"
+type = "bidirectional"
+at = [25.4, 27.94]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "33"
+name = "PB12"
+type = "bidirectional"
+at = [25.4, 30.48]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "34"
+name = "PB13"
+type = "bidirectional"
+at = [25.4, 33.02]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "35"
+name = "PB14"
+type = "bidirectional"
+at = [25.4, 35.56]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "36"
+name = "PB15"
+type = "bidirectional"
+at = [25.4, 38.1]
+side = "right"
+length = 2.54
+unit = 1

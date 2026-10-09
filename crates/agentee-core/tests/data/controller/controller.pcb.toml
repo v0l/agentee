@@ -1,0 +1,13 @@
+name = "controller"
+board = "controller"
+schematic = "controller"
+
+[[pairs]]
+p = "USB_DP"
+n = "USB_DM"
+
+[[interfaces]]
+name = "analog"
+preset = "cmos"
+nets = ["AIN*", "NTC"]
+max_length = "25mm"

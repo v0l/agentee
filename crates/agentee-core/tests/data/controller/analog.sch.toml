@@ -1,0 +1,101 @@
+name = "analog"
+description = "10k NTC on J4 from a 10k divider off 3V3, a 1k series resistor into an MCP6001 (MCP6001 datasheet 4.1.2 limits input current), gain 1.51 (Rf 5.1k, Rg 10k), 100 nF bypass within 2 mm of VDD (datasheet 4.4), and a 1k / 100 nF filter (1.6 kHz) into the ADC pin."
+board = "controller"
+
+[[parts]]
+ref = "J4"
+symbol = "Conn_01x02"
+at = [152.40, 304.80]
+value = "NTC"
+fields = { mpn = "B2B-PH-K-S", mfr = "JST" }
+
+[[parts]]
+ref = "R9"
+symbol = "R"
+at = [171.45, 292.10]
+value = "10k"
+
+[[parts]]
+ref = "R10"
+symbol = "R"
+at = [177.80, 311.15]
+value = "1k"
+
+[[parts]]
+ref = "U4"
+symbol = "MCP6001-OT"
+at = [203.20, 311.15]
+value = "MCP6001T-I/OT"
+fields = { mpn = "MCP6001T-I/OT", mfr = "Microchip" }
+
+[[parts]]
+ref = "R11"
+symbol = "R"
+at = [203.20, 336.55]
+value = "5.1k"
+
+[[parts]]
+ref = "R12"
+symbol = "R"
+at = [190.50, 342.90]
+value = "10k"
+
+[[parts]]
+ref = "C23"
+symbol = "C"
+at = [209.55, 292.10]
+value = "100n/10V"
+
+[[parts]]
+ref = "R13"
+symbol = "R"
+at = [228.60, 311.15]
+value = "1k"
+
+[[parts]]
+ref = "C24"
+symbol = "C"
+at = [241.30, 323.85]
+value = "100n/10V"
+
+[[nets]]
+name = "3V3"
+class = "Power3V3"
+style = "power"
+pins = ["R9.1", "U4.5", "C23.1"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["J4.2", "U4.2", "C23.2", "R12.2", "C24.2"]
+
+[[nets]]
+name = "NTC"
+class = "Analog"
+style = "label"
+pins = ["J4.1", "R9.2", "R10.1"]
+
+[[nets]]
+name = "AIN_P"
+class = "Analog"
+style = "label"
+pins = ["R10.2", "U4.3"]
+
+[[nets]]
+name = "AIN_N"
+class = "Analog"
+style = "label"
+pins = ["U4.4", "R11.2", "R12.1"]
+
+[[nets]]
+name = "AIN_OUT"
+class = "Analog"
+style = "label"
+pins = ["U4.1", "R11.1", "R13.1"]
+
+[[nets]]
+name = "AIN"
+class = "Analog"
+style = "label"
+pins = ["R13.2", "C24.1"]

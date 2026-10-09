@@ -1314,15 +1314,54 @@ What goes where, strongest first, and why:
   load caps next to the crystal (ST AN2867, Oscillator design guide). A capacitor over 10 uF is
   bulk and may sit 2.5 times as far. The pull of each grows with the `current` of the class of
   the net it serves, so a sense resistor or a motor supply cap holds harder than a logic decap.
-  After annealing, every such part is lifted and put back in the best free spot within 5 mm of
-  its pin, the regulator outputs (`power_out` pins: VCAP, an internal LDO) first, then by the
-  current of the net, then smallest first. Clusters are placed to minimise weighted HPWL: nets
+  After annealing, every part that belongs at a pin is lifted and put back in the best free
+  spot within 5 mm of it, IC by IC, in two orders, keeping whichever costs less: the regulator
+  outputs (`power_out` pins: VCAP, an internal LDO) first, then protection, then decaps by the
+  current of the net and smallest first, then the parts of a single-IC net. Single moves and
+  swaps follow until nothing improves. These passes may cover a reference label; a label that
+  ends up covered is not written, and the layout engine hides one that settling cannot place. Clusters are placed to minimise weighted HPWL: nets
   of an impedance or pair class, `[[pairs]]` and `[[interfaces]]` count three times, ground and
   supply nets that reach more than four parts not at all (they are planes), and a net in a class
   with `current` that reaches four parts or fewer (a motor coil, a switch node, a sense
   resistor's node) counts 1 + 1.5 per amp. That keeps a power stage beside its load: a stepper
   driver goes next to its motor connector, not next to the MCU its step and direction lines come
   from, since a logic line can run across the board and a 2 A coil loop should not.
+- Protection sits at the connector, in the order the current meets it. From every connector pin
+  the placer follows nets that reach no IC through the parts in series (a fuse, a reverse
+  polarity diode, a ferrite, a series resistor, CC pull-downs) and puts each next to the pad it
+  is fed from; a part with a ground pad whose other pins all reach a connector (a TVS, an ESD
+  array such as USBLC6-2) goes on the connector pins it clamps, or on the protected node at the
+  end of a power chain (TI SLVA680, ST USBLC6-2 datasheet). A net that fans out to more than
+  three parts is a rail, and the chain stops there. An electrolytic on that protected node
+  stays with the chain, and the ICs it feeds are drawn toward the chain's end, so a power entry
+  runs connector, fuse, diode, TVS and bulk cap, then the regulator. RF nets are left to the RF
+  path below.
+- A net with one IC pin and only passives otherwise belongs at that pin: a feedback divider and
+  its feed-forward cap at FB (every buck datasheet's layout section), an op-amp's feedback
+  network at its inverting input, a gate resistor and pull-down at a MOSFET gate, a strap or
+  series resistor at the pin that drives it, an ADC filter cap at the ADC pin. Input pins (the
+  symbol's `input` type) go first. A capacitor on a supply with no IC on it goes to the
+  inductor or ferrite that supply feeds, and an LED's resistor to the LED.
+- A net in a class with `current` that reaches four parts or fewer is a current loop and counts
+  1 + 1.5 per amp. A loop with no `current` is inferred at 2 A: an inductor between an IC pin
+  and its output, a MOSFET drain or source to a connector, a sense resistor (`power` field of
+  0.25 W or more), or a fuse. An IC that drives 1 A or more into a connector or an inductor is
+  loud and is drawn to that connector, so a stepper driver or a fan switch sits beside its
+  load.
+- Loud parts (switchers, their inductors, drivers and switches like the above) keep 8 mm
+  (centre to centre) from sensitive ones: crystals, RF parts, op-amps and the small parts on
+  nets of a class whose name or description says analog, unless both belong to the same IC.
+- An electrolytic keeps 3 mm from a hot part, since its life halves every 10 C (Nichicon and
+  Panasonic application notes). A small two-pad chip keeps a part taller than 3 mm at least
+  that height away (`tall-part-shadow`), unless both serve the same IC; heights come from the
+  footprint `height`, the `CP_Elec_DxH` name, or the 3D view defaults.
+- LEDs and buttons go to the board edge, clear of mounting hardware, where they can be seen
+  and pressed.
+- Parts stay with their schematic sheet: each is drawn toward the sheet's largest IC once it
+  is further away than the sheet's parts need, and a decoupling cap takes an IC on its own
+  sheet before one elsewhere.
+- An `[[interfaces]]` entry with `max_length` caps its nets: 1.2 times a net's half perimeter
+  past that length costs as much as ten times the wirelength.
 - A switcher (an IC with an inductor on one of its pins whose other end is a supply) keeps its
   inductor and input caps tight against it, its output caps against the inductor's output pad,
   and switchers keep 8 mm (centre to centre) from
@@ -1506,7 +1545,8 @@ and supply pads join a plane instead of tracks between them. The via goes straig
 the part the pad sits on, so a row of pins gets a row of vias, as close as it can: its copper clear of every SMD pad (its own too,
 so no via-in-pad), its hole `min_hole_to_smd_pad` from them, `min_hole_to_hole` from other holes,
 `min_via_hole_to_copper` and the class clearance from other nets, `min_copper_to_edge` in from
-the outline, and the stub clear of other nets on the pad's layer. It tries 16 directions, nearest
+the outline, and the stub clear of other nets on the pad's layer. The stub starts where it
+leaves the pad, not at its centre, so a fine-pitch part's other pad is not in its way. It tries 16 directions, nearest
 the outward one first, up to 1.2 mm past the pad. A pad already joined to the main body of
 its net's zone on another layer is left alone, through whatever copper of its net does it: the
 pour on its own layer, tracks, vias and plated holes, so a pad in a ground pour that reaches the

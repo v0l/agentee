@@ -1,0 +1,103 @@
+# imported from KiCad Transistor_FET:AO3400A
+name = "AO3400A"
+reference = "Q"
+description = "30V Vds, 5.7A Id, N-Channel MOSFET, SOT-23"
+datasheet = "http://www.aosmd.com/pdfs/datasheet/AO3400A.pdf"
+keywords = ["N-Channel", "MOSFET"]
+footprint = "SOT-23"
+footprint_filters = ["SOT?23*"]
+pin_names = "hidden"
+
+[[graphics]]
+kind = "polyline"
+points = [[0.254, -1.905], [0.254, 1.905]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[0.254, 0.0], [-2.54, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.762, -2.286], [0.762, -1.27]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[0.762, -0.508], [0.762, 0.508]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[0.762, 1.27], [0.762, 2.286]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[0.762, 1.778], [3.302, 1.778], [3.302, -1.778], [0.762, -1.778]]
+
+[[graphics]]
+kind = "polygon"
+points = [[1.016, 0.0], [2.032, -0.381], [2.032, 0.381]]
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [1.651, 0.0]
+radius = 2.794
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[2.54, -2.54], [2.54, -1.778]]
+
+[[graphics]]
+kind = "circle"
+center = [2.54, -1.778]
+radius = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "circle"
+center = [2.54, 1.778]
+radius = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[2.54, 2.54], [2.54, 0.0], [0.762, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[2.794, -0.508], [2.921, -0.381], [3.683, -0.381], [3.81, -0.254]]
+
+[[graphics]]
+kind = "polygon"
+points = [[3.302, -0.381], [2.921, 0.254], [3.683, 0.254]]
+
+[[pins]]
+number = "1"
+name = "G"
+type = "input"
+at = [-5.08, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "D"
+type = "passive"
+at = [2.54, -5.08]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "S"
+type = "passive"
+at = [2.54, 5.08]
+side = "bottom"
+length = 2.54
+unit = 1

@@ -1,0 +1,276 @@
+# imported from KiCad Capacitor_SMD:CP_Elec_10x10.5
+name = "CP_Elec_10x10.5"
+description = "SMD capacitor, aluminum electrolytic, Vishay 1010, 10.0x10.5mm, http://www.vishay.com/docs/28395/150crz.pdf"
+tags = ["capacitor", "electrolytic"]
+mount = "smd"
+model = "${KICAD9_3DMODEL_DIR}/Capacitor_SMD.3dshapes/CP_Elec_10x10.5.step"
+
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "roundrect"
+at = [-4.2, 0.0]
+size = [4.4, 2.5]
+roundrect_ratio = 0.1
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "roundrect"
+at = [4.2, 0.0]
+size = [4.4, 2.5]
+roundrect_ratio = 0.1
+layers = ["F.Cu", "F.Mask", "F.Paste"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -6.3]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 6.3]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-6.85, -2.76]
+end = [-5.6, -2.76]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-6.225, -3.385]
+end = [-6.225, -2.135]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-5.36, -4.295563]
+end = [-5.36, -1.51]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-5.36, -4.295563]
+end = [-4.295563, -5.36]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-5.36, 4.295563]
+end = [-5.36, 1.51]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-5.36, 4.295563]
+end = [-4.295563, 5.36]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.295563, -5.36]
+end = [5.36, -5.36]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.295563, 5.36]
+end = [5.36, 5.36]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [5.36, -5.36]
+end = [5.36, -1.51]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [5.36, 5.36]
+end = [5.36, 1.51]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-6.65, -1.5]
+end = [-6.65, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-6.65, 1.5]
+end = [-5.5, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.5, -4.35]
+end = [-5.5, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.5, -4.35]
+end = [-4.35, -5.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.5, -1.5]
+end = [-6.65, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.5, 1.5]
+end = [-5.5, 4.35]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.5, 4.35]
+end = [-4.35, 5.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-4.35, -5.5]
+end = [5.5, -5.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-4.35, 5.5]
+end = [5.5, 5.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.5, -5.5]
+end = [5.5, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.5, -1.5]
+end = [6.65, -1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.5, 1.5]
+end = [5.5, 5.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.65, -1.5]
+end = [6.65, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.65, 1.5]
+end = [5.5, 1.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-5.25, -4.25]
+end = [-5.25, 4.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-5.25, -4.25]
+end = [-4.25, -5.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-5.25, 4.25]
+end = [-4.25, 5.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.558325, -1.7]
+end = [-3.558325, -1.7]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.25, -5.25]
+end = [5.25, -5.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.25, 5.25]
+end = [5.25, 5.25]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.058325, -2.2]
+end = [-4.058325, -1.2]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [5.25, -5.25]
+end = [5.25, 5.25]
+width = 0.1
+
+[[graphics]]
+kind = "circle"
+layer = "F.Fab"
+center = [0.0, 0.0]
+radius = 5.0
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 0.0]
+text = "${REFERENCE}"
+size = 1.0

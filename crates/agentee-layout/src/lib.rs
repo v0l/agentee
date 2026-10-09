@@ -483,11 +483,16 @@ impl Driver<'_, '_> {
             }
             d.doc.board_texts(&plan.texts);
             reload_ms = d.reload_unfilled(model)?;
-            let (moved, _) = model.layout.settle_labels(model.board);
+            let (moved, failing) = model.layout.settle_labels(model.board);
             if !moved.is_empty() {
                 d.doc.labels(&moved);
                 model.layout.apply_labels(&moved);
                 model.file = d.doc.file();
+            }
+            if !failing.is_empty() {
+                d.doc.hide_labels(&failing);
+                model.file = d.doc.file();
+                reload_ms += d.reload_unfilled(model)?;
             }
         }
         model.hot.clear();

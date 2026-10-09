@@ -1,0 +1,38 @@
+# imported from KiCad Device:Polyfuse
+name = "Polyfuse"
+reference = "F"
+description = "Resettable fuse, polymeric positive temperature coefficient"
+keywords = ["resettable", "fuse", "PTC", "PPTC", "polyfuse", "polyswitch"]
+footprint_filters = ["*polyfuse*", "*PTC*"]
+pin_names = "outside"
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.524, -2.54], [-1.524, -1.524], [1.524, 1.524], [1.524, 2.54]]
+
+[[graphics]]
+kind = "rect"
+start = [-0.762, -2.54]
+end = [0.762, 2.54]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, -2.54], [0.0, 2.54]]
+
+[[pins]]
+number = "1"
+type = "passive"
+at = [0.0, -3.81]
+side = "top"
+length = 1.27
+unit = 1
+
+[[pins]]
+number = "2"
+type = "passive"
+at = [0.0, 3.81]
+side = "bottom"
+length = 1.27
+unit = 1

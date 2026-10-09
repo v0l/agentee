@@ -241,6 +241,24 @@ impl Doc {
         }
     }
 
+    pub fn hide_labels(&mut self, refs: &[String]) {
+        for r in refs {
+            let Some(f) = self.base.footprints.iter_mut().find(|f| &f.reference == r) else {
+                continue;
+            };
+            let label = f.label.get_or_insert(LabelFile {
+                at: None,
+                rotation: None,
+                size: None,
+                hide: false,
+            });
+            label.hide = true;
+        }
+        if !refs.is_empty() {
+            self.changed();
+        }
+    }
+
     pub fn board_texts(&mut self, moves: &[agentee_core::place::TextMove]) {
         for m in moves {
             let found = self.base.graphics.iter_mut().find(|g| {

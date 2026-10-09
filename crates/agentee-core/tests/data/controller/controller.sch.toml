@@ -1,0 +1,5 @@
+name = "controller"
+description = "A 12 V fan and sensor controller: power entry, STM32H563, USB-C, a low-side fan switch and an NTC input. A placement fixture for the protection, feedback, gate drive, analog chain, sheet and user-facing rules."
+board = "controller"
+sheets = ["power", "mcu", "usb", "fan", "analog"]
+rails = { GND = 0, "3V3" = [3.2, 3.4], V12 = [10.8, 13.2] }
