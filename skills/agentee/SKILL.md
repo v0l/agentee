@@ -101,6 +101,7 @@ agentee new board NAME          # fab, stackup, outline, vias, net classes
 agentee new schematic NAME
 agentee new layout NAME
 agentee new sim NAME --kind logic   # a logic sim of the schematic; default --kind fdtd
+agentee new sim NAME --kind circuit # an analog circuit sim of the schematic
 agentee check
 ```
 
@@ -370,7 +371,11 @@ suggests the width that meets the target.
 ## Simulation
 
 Each `*.sim.toml` has a `kind`: FDTD (default), `cascade`, `channel`, `pdn`, `dc`, `thermal`,
-`logic`. A logic sim runs a schematic's digital parts and writes a VCD as well as the result.
+`logic`, `circuit`. A logic sim runs a schematic's digital parts and writes a VCD as well as the
+result. A circuit sim is an analog simulation of the schematic: operating point, AC, transient
+and noise, with `[[checks]]` that fail check. Only `[[drives]]` drive nets, so give each supply
+one, and give ICs a `[[blocks]]` model (`opamp`, `ldo`, `vcvs`) or `ignore` them. Run it on a
+sub-circuit (a bias network, a filter, a regulator) rather than the whole board.
 `agentee sim NAME` writes `NAME.result.json` (and `NAME.sNp` for S-parameters) next to the spec.
 Read the result with `agentee show sim:NAME`: `result.readings` is the summary (gain, match,
 NF, stability, eye height, peak temperature, drop). Look at the plots with `agentee render sim:NAME`.
@@ -433,8 +438,8 @@ per line. Send `commands = "help"` for the list.
 
 - `examples/demo`: a small board and part library that passes check.
 - `examples/lna`: a full design. Board spec with a field-solved coplanar RF class, schematic,
-  routed four layer layout, FDTD, cascade with vendor data, DC drop and thermal sims, and
-  `DESIGN.md`. Copy its patterns before inventing new ones.
+  routed four layer layout, FDTD, cascade with vendor data, DC drop, thermal and circuit sims,
+  and `DESIGN.md`. Copy its patterns before inventing new ones.
 - `examples/sdr`: a large design. Hierarchical schematic (power, clock, FPGA, RF, USB sheets),
   BGAs, USB 3 pairs with an FDTD and eye, DC drop on the core rail, thermal, and `DESIGN.md`.
 - `examples/hdi`: a 1+4+1 HDI coupon with microvias in the pads of a 0.5 mm BGA.

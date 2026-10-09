@@ -146,12 +146,12 @@ fn tools() -> Value {
         },
         {
             "name": "new_item",
-            "description": "Write a starter file for a board, symbol, footprint, schematic, layout or sim, to edit from. A sim starts as an FDTD run of a layout, or with sim_kind logic as a logic sim of a schematic (clock, reset, a clocked assertion) whose nets you rename.",
+            "description": "Write a starter file for a board, symbol, footprint, schematic, layout or sim, to edit from. A sim starts as an FDTD run of a layout, with sim_kind logic as a logic sim of a schematic (clock, reset, a clocked assertion), or with sim_kind circuit as an analog circuit sim of a schematic (a drive, an AC sweep and checks), whose nets you rename.",
             "inputSchema": s(json!({
                 "kind": { "type": "string", "enum": ["board", "symbol", "footprint", "schematic", "layout", "sim"] },
                 "name": { "type": "string" },
                 "dir": { "type": "string", "description": "relative to the project" },
-                "sim_kind": { "type": "string", "enum": ["fdtd", "logic"], "description": "with kind sim, default fdtd" },
+                "sim_kind": { "type": "string", "enum": ["fdtd", "logic", "circuit"], "description": "with kind sim, default fdtd" },
             }), &["kind", "name"]),
         },
         {

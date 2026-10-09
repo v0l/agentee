@@ -1,0 +1,35 @@
+name = "lna-biastee"
+kind = "circuit"
+description = "How far the bias tee (L3, C5) keeps RF on RF_OUT off VBIAS, from a 50 ohm source"
+ignore = ["D3"]
+record = ["RF_OUT", "VBIAS"]
+
+[[blocks]]
+ref = "U1"
+kind = "resistor"
+pins = { 1 = "3", 2 = "2" }
+resistance = "55ohm"
+
+[[drives]]
+net = "VEXT"
+dc = "5V"
+
+[[drives]]
+net = "RF_OUT"
+ac = 1
+resistance = "50ohm"
+
+[ac]
+from = "100kHz"
+to = "4GHz"
+points = 20
+
+[[checks]]
+v = "VBIAS"
+at = "50MHz"
+max = -50
+
+[[checks]]
+v = "VBIAS"
+at = "1GHz"
+max = -60

@@ -140,7 +140,7 @@ enum Cmd {
         name: String,
         #[arg(short, long)]
         dir: Option<PathBuf>,
-        /// The sim to start from: an FDTD run of a layout, or a logic sim of a schematic
+        /// The sim to start from: an FDTD run of a layout, or a logic or analog circuit sim of a schematic
         #[arg(long = "kind", value_enum, default_value = "fdtd")]
         sim_kind: ops::SimTemplate,
     },
@@ -170,7 +170,7 @@ enum Cmd {
         #[arg(long, default_value_t = 40)]
         limit: usize,
     },
-    /// Run a simulation (*.sim.toml): FDTD, dc, thermal, cascade, channel, pdn or logic
+    /// Run a simulation (*.sim.toml): FDTD, dc, thermal, cascade, channel, pdn, logic or circuit
     Sim {
         name: String,
         #[arg(short, long, default_value = ".")]

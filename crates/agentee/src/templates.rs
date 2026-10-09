@@ -92,6 +92,60 @@ sequence = [1, 0, 1, 0]
     )
 }
 
+pub fn circuit_sim(name: &str) -> String {
+    format!(
+        r#"name = "{name}"
+kind = "circuit"
+description = ""
+# schematic = "top"             # default: the only top-level schematic
+# ignore = ["J*", "U5"]         # parts to leave out; connectors and test points are left out anyway
+# record = ["OUT"]              # nets in the curves; default every net
+# temperature = 27              # deg C, for the noise
+
+# Rename the nets below to nets of your schematic. Only drives drive a net, so give each supply
+# the circuit does not make itself a drive of its own.
+[[drives]]
+net = "VIN"
+dc = "1V"
+ac = 1
+# pulse = {{ low = "0V", high = "1V", rise = "1us", width = "1ms", period = "2ms" }}
+# sine = {{ amplitude = "1V", frequency = "1kHz" }}
+# resistance = "50ohm"
+
+[ac]
+from = "10Hz"
+to = "10MHz"
+points = 20                     # per decade
+
+# [tran]
+# stop = "10ms"
+# step = "10us"
+
+# [noise]
+# output = "OUT"
+# input = "VIN"                 # a drive with `ac`, for the input referred curve
+# from = "10Hz"
+# to = "100kHz"
+
+[[checks]]
+v = "OUT"                       # at the operating point
+min = 0.9
+max = 1.1
+
+[[checks]]
+v = "OUT"
+at = "1kHz"                     # dB against the ac drive
+min = -1
+
+# [[blocks]]                     # a part with no built-in model
+# ref = "U1"
+# kind = "opamp"                 # opamp, ldo, vcvs, vccs, or a resistor, diode, npn, nmos ... override
+# gain = 1e5
+# gbw = "1MHz"
+"#
+    )
+}
+
 pub fn symbol(name: &str) -> String {
     format!(
         r#"name = "{name}"

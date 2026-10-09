@@ -357,6 +357,18 @@ impl Project {
             sim_files.iter().map(|(_, f, _)| (f.name.clone(), f.layout.clone())).collect();
         for (f, file, mut hash) in sim_files {
             let mut d = Diags::new(&file.name);
+            if file.kind == Some(crate::sim::SimKind::Circuit) {
+                match p.load_circuit(&f, &file, hash, &mut d) {
+                    Some(item) => p.sims.push(Entry {
+                        name: item.name.clone(),
+                        diags: tag(d, &f),
+                        path: f,
+                        item,
+                    }),
+                    None => p.failures.extend(tag(d, &f)),
+                }
+                continue;
+            }
             if file.kind == Some(crate::sim::SimKind::Logic) {
                 match p.load_logic(&f, &file, hash, &mut d) {
                     Some(item) => p.sims.push(Entry {
@@ -599,7 +611,7 @@ impl Project {
         }
     }
 
-    fn load_logic(&self, path: &Path, file: &SimFile, src: u64, d: &mut Diags) -> Option<Sim> {
+    fn sim_schematic(&self, file: &SimFile, d: &mut Diags) -> Option<&Entry<Schematic>> {
         let tops: Vec<&Entry<Schematic>> =
             self.schematics.iter().filter(|s| s.item.parent.is_none()).collect();
         let sch = match &file.schematic {
@@ -609,10 +621,44 @@ impl Project {
                 _ => None,
             },
         };
-        let Some(sch) = sch else {
+        if sch.is_none() {
             d.error("schematic", "name the schematic to simulate with `schematic`");
-            return None;
-        };
+        }
+        sch
+    }
+
+    fn load_circuit(&self, path: &Path, file: &SimFile, src: u64, d: &mut Diags) -> Option<Sim> {
+        let sch = self.sim_schematic(file, d)?;
+        let mut item = file.resolve_circuit(&sch.item, d);
+        let hash = crate::circuit::circuit_hash(
+            src,
+            item.circuit.as_ref().map(|c| c.netlist_hash).unwrap_or_default(),
+        );
+        let text = std::fs::read_to_string(crate::sim::result_path(path)).ok();
+        let result = text
+            .as_deref()
+            .and_then(|t| serde_json::from_str::<crate::circuit::CircuitResult>(t).ok());
+        match &result {
+            Some(r) if r.spec_hash == hash => {
+                for f in &r.failures {
+                    d.error("result", f.clone());
+                }
+            }
+            Some(_) => {
+                d.info(
+                    "result",
+                    "the spec or the schematic changed since the last run, the result shown is stale",
+                );
+                item.stale = true;
+            }
+            None => d.info("result", "not run yet, `agentee sim` runs it"),
+        }
+        item.circuit_result = result;
+        Some(item)
+    }
+
+    fn load_logic(&self, path: &Path, file: &SimFile, src: u64, d: &mut Diags) -> Option<Sim> {
+        let sch = self.sim_schematic(file, d)?;
         let mut item = file.resolve_logic(&sch.item, d);
         let hash = crate::logic::logic_hash(
             src,

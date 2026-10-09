@@ -144,6 +144,15 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                 "file": p.sims[i].path,
                 "sim": s,
                 "result": fdtd.or(maps).or(channel),
+                "circuit": s.circuit_result.as_ref().map(|r| json!({
+                    "passed": r.passed,
+                    "failures": r.failures,
+                    "checks": r.checks,
+                    "op": r.op,
+                    "currents": r.currents,
+                    "noise_rms": r.noise_rms,
+                    "path": agentee_core::sim::result_path(&p.sims[i].path),
+                })),
                 "logic": s.logic_result.as_ref().map(|r| json!({
                     "passed": r.passed,
                     "failures": r.failures,
@@ -435,6 +444,7 @@ pub enum SimTemplate {
     #[default]
     Fdtd,
     Logic,
+    Circuit,
 }
 
 impl SimTemplate {
@@ -442,7 +452,8 @@ impl SimTemplate {
         match s {
             "fdtd" => Ok(SimTemplate::Fdtd),
             "logic" => Ok(SimTemplate::Logic),
-            _ => Err(format!("no sim template `{s}`; there is fdtd and logic")),
+            "circuit" => Ok(SimTemplate::Circuit),
+            _ => Err(format!("no sim template `{s}`; there is fdtd, logic and circuit")),
         }
     }
 }
@@ -457,6 +468,7 @@ pub fn new_item(kind: Kind, sim: SimTemplate, name: &str, dir: &Path) -> Result<
         Kind::Sim => match sim {
             SimTemplate::Fdtd => crate::templates::fdtd_sim(name),
             SimTemplate::Logic => crate::templates::logic_sim(name),
+            SimTemplate::Circuit => crate::templates::circuit_sim(name),
         },
     };
     write_new(dir, name, kind, &text, false)

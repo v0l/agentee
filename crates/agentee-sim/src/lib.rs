@@ -2,6 +2,7 @@ pub mod boardsim;
 pub mod cascade;
 pub mod channel;
 pub mod checks;
+pub mod circuit;
 pub mod fdtd;
 pub mod gpu;
 pub mod logic;

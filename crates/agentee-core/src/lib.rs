@@ -1,6 +1,7 @@
 pub mod artwork;
 pub mod board;
 pub mod calc;
+pub mod circuit;
 pub mod contour;
 pub mod diag;
 pub mod drc;

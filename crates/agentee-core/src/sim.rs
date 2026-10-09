@@ -137,6 +137,20 @@ pub struct SimFile {
     pub parts: Vec<crate::logic::PartModelFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_violation: Option<crate::logic::OnViolation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drives: Vec<crate::circuit::DriveFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocks: Vec<crate::circuit::BlockFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<crate::circuit::CheckFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ac: Option<crate::circuit::SweepFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tran: Option<crate::circuit::TranFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise: Option<crate::circuit::NoiseFile>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -380,6 +394,7 @@ pub enum SimKind {
     Channel,
     Pdn,
     Logic,
+    Circuit,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -656,6 +671,10 @@ pub struct Sim {
     pub logic: Option<crate::logic::LogicSpec>,
     #[serde(skip)]
     pub logic_result: Option<crate::logic::LogicResult>,
+    #[serde(skip)]
+    pub circuit: Option<crate::circuit::CircuitSpec>,
+    #[serde(skip)]
+    pub circuit_result: Option<crate::circuit::CircuitResult>,
     pub description: String,
     pub layout: String,
     pub start: f64,
@@ -1077,6 +1096,32 @@ impl SimFile {
         })
     }
 
+    fn circuit_only_fields(&self) -> Vec<&'static str> {
+        let mut v = Vec::new();
+        if self.temperature.is_some() {
+            v.push("temperature");
+        }
+        if !self.drives.is_empty() {
+            v.push("drives");
+        }
+        if !self.blocks.is_empty() {
+            v.push("blocks");
+        }
+        if !self.checks.is_empty() {
+            v.push("checks");
+        }
+        if self.ac.is_some() {
+            v.push("ac");
+        }
+        if self.tran.is_some() {
+            v.push("tran");
+        }
+        if self.noise.is_some() {
+            v.push("noise");
+        }
+        v
+    }
+
     fn logic_only_fields(&self) -> Vec<&'static str> {
         let mut v = Vec::new();
         if self.schematic.is_some() {
@@ -1106,7 +1151,38 @@ impl SimFile {
         v
     }
 
+    pub fn resolve_circuit(&self, sch: &crate::schematic::Schematic, d: &mut Diags) -> Sim {
+        let spec = crate::circuit::resolve(self, sch, d);
+        let mut stray: Vec<&str> = Vec::new();
+        for (on, name) in [
+            (self.layout.is_some(), "layout"),
+            (self.frequency.is_some(), "frequency"),
+            (!self.ports.is_empty(), "ports"),
+            (!self.models.is_empty(), "models"),
+            (self.board.is_some(), "board"),
+            (self.duration.is_some(), "duration"),
+            (!self.stimulus.is_empty(), "stimulus"),
+            (!self.expect.is_empty(), "expect"),
+            (!self.parts.is_empty(), "parts"),
+            (self.on_violation.is_some(), "on_violation"),
+        ] {
+            if on {
+                stray.push(name);
+            }
+        }
+        if !stray.is_empty() {
+            d.error(stray[0], format!("{} do not belong to kind = \"circuit\"", stray.join(", ")));
+        }
+        let mut sim = self.resolve_logic_with(None, SimKind::Circuit);
+        sim.circuit = Some(spec);
+        sim
+    }
+
     pub fn resolve_logic(&self, sch: &crate::schematic::Schematic, d: &mut Diags) -> Sim {
+        let circuit = self.circuit_only_fields();
+        if !circuit.is_empty() {
+            d.error(circuit[0], format!("{} belong to kind = \"circuit\"", circuit.join(", ")));
+        }
         let spec = crate::logic::resolve(self, sch, d);
         let other = self.layout.is_some()
             || self.frequency.is_some()
@@ -1116,9 +1192,13 @@ impl SimFile {
         if other {
             d.error("kind", "a logic sim runs on the schematic; drop layout, frequency, ports, models and board");
         }
+        self.resolve_logic_with(Some(spec), SimKind::Logic)
+    }
+
+    fn resolve_logic_with(&self, spec: Option<crate::logic::LogicSpec>, kind: SimKind) -> Sim {
         Sim {
             name: self.name.clone(),
-            kind: SimKind::Logic,
+            kind,
             ambient: 25.0,
             h_top: 10.0,
             h_bottom: 10.0,
@@ -1137,8 +1217,10 @@ impl SimFile {
             pdn: None,
             channel: None,
             maps: None,
-            logic: Some(spec),
+            logic: spec,
             logic_result: None,
+            circuit: None,
+            circuit_result: None,
             description: self.description.clone(),
             layout: String::new(),
             start: 0.0,
@@ -1169,6 +1251,10 @@ impl SimFile {
         let stray = self.logic_only_fields();
         if !stray.is_empty() {
             d.error(stray[0], format!("{} belong to kind = \"logic\"", stray.join(", ")));
+        }
+        let circuit = self.circuit_only_fields();
+        if !circuit.is_empty() {
+            d.error(circuit[0], format!("{} belong to kind = \"circuit\"", circuit.join(", ")));
         }
         let fdtd = kind == SimKind::Fdtd;
         let band = self.frequency.as_ref().map(|f| (freq(&f.start), freq(&f.stop)));
@@ -1590,6 +1676,8 @@ impl SimFile {
             maps: None,
             logic: None,
             logic_result: None,
+            circuit: None,
+            circuit_result: None,
             description: self.description.clone(),
             layout: layout.name.clone(),
             start,

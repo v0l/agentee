@@ -104,12 +104,15 @@ pub fn run(
         return Err(format!("`{name}` is not a simulation"));
     };
     let entry = &p.sims[i];
-    if entry.diags.iter().any(|d| d.severity == Severity::Error) {
+    if entry.diags.iter().any(|d| d.severity == Severity::Error && d.at != "result") {
         return Err(format!("{} has errors, fix them first (agentee check)", entry.name));
     }
     let spec = &entry.item;
     if spec.kind == agentee_core::sim::SimKind::Logic {
         return run_logic(entry);
+    }
+    if spec.kind == agentee_core::sim::SimKind::Circuit {
+        return run_circuit(entry);
     }
     let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
     let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
@@ -236,6 +239,39 @@ pub fn run(
         "touchstone": touch,
         "summary": table,
         "readings": result.readings,
+    }))
+}
+
+fn run_circuit(
+    entry: &agentee_core::project::Entry<agentee_core::sim::Sim>,
+) -> Result<Value, String> {
+    let spec = &entry.item;
+    let c = spec.circuit.as_ref().ok_or("the circuit spec has errors")?;
+    let src = std::fs::read_to_string(&entry.path).map_err(|e| e.to_string())?;
+    let hash = agentee_core::circuit::circuit_hash(agentee_core::sim::hash(&src), c.netlist_hash);
+    let result = crate::circuit::run(c, &spec.name, hash);
+    let json_path = agentee_core::sim::result_path(&entry.path);
+    std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let analyses: Vec<&str> =
+        [Some("op"), c.ac.map(|_| "ac"), c.tran.map(|_| "tran"), c.noise.as_ref().map(|_| "noise")]
+            .into_iter()
+            .flatten()
+            .collect();
+    Ok(json!({
+        "sim": spec.name,
+        "kind": spec.kind,
+        "schematic": c.schematic,
+        "analyses": analyses,
+        "passed": result.passed,
+        "failures": result.failures,
+        "checks": result.checks,
+        "op": result.op,
+        "currents": result.currents,
+        "noise_rms": result.noise_rms,
+        "tran_points": result.times.len(),
+        "seconds": (result.seconds * 1000.0).round() / 1000.0,
+        "result": json_path,
     }))
 }
 

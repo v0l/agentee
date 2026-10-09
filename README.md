@@ -98,6 +98,14 @@ Both solvers run through wgpu (Vulkan, Metal or DX12) and fall back to the CPU o
   microstrip it gives return loss under -25 dB and phase velocity within 1.2% of
   Kirschning-Jansen.
 
+## Circuit simulation
+
+`kind = "circuit"` sims the schematic itself: modified nodal analysis with Newton iteration for
+the operating point, AC sweeps, a trapezoidal transient and adjoint noise. Resistors, capacitors,
+inductors, diodes, BJTs and MOSFETs come from the netlist; op-amps, LDOs and controlled sources
+are behavioural blocks in the sim spec. Checks on voltages, currents, gain, phase and noise
+density fail `agentee check` like any other rule.
+
 ## Benchmarks
 
 `crates/agentee-core/benches/fill.rs` times each stage of the zone fill (`clip`, `overlay`,

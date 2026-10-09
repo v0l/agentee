@@ -1,6 +1,7 @@
 pub mod app;
 pub mod board3d;
 pub mod canvas;
+pub mod circuit;
 pub mod edit;
 pub mod engine;
 pub mod eye;

@@ -275,7 +275,8 @@ impl App {
                             (s.result.is_none()
                                 && s.maps.is_none()
                                 && s.channel.is_none()
-                                && s.logic_result.is_none())
+                                && s.logic_result.is_none()
+                                && s.circuit_result.is_none())
                                 || s.stale,
                         )
                     }
