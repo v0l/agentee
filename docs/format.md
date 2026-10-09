@@ -2377,6 +2377,12 @@ gbw = "1MHz"
 # pins = { inp = "3", inn = "2", out = "1", vcc = "8", vee = "4" }
 ```
 
+The built-in device models below are generic stand-ins (a silicon diode, a small-signal BJT, a
+logic-level MOSFET), not the part on the schematic. Give each part that matters a block with
+values from its datasheet, and fit a diode's `is` and `n` to two of its typical VF points: two
+points a decade of current apart give `n = dV / (Vt ln 10)` and `is = I / exp(V / (n Vt))`.
+A result that rests on a default describes the default, not the part.
+
 Values take SI prefixes and units: `"4k7"`, `"100nF"`, `"1MHz"`, `"10meg"`, or a bare number.
 The ground is every net named with GND, `0V`, `GROUND` or starting with `VSS`, unless a drive
 names it. Nets with nothing to hold them sit on a 1 pS conductance to ground.
@@ -2420,8 +2426,10 @@ referred density when `input` is set, and the RMS over the band.
 
 A check that fails is an error on the sim while the result is current; the result goes stale
 when the spec or the schematic's netlist changes. `examples/lna` holds two: `lna-supply`, the
-OR-ing of the 5 V input through a Schottky with the LED and U1's bias current, and
-`lna-biastee`, how far the bias tee keeps RF on the output off VBIAS.
+OR-ing of the 5 V input through a Schottky to U1's bias current, and `lna-biastee`, how far the
+bias tee keeps RF on the output off VBIAS. Both take U1 as its 90 mA quiescent current and the
+BAT60A from its typical VF, from the two datasheets; the LED, which has no part number, is left
+out.
 
 ## Graphics
 

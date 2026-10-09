@@ -41,6 +41,34 @@ To use it over MCP instead of the shell:
 { "mcpServers": { "agentee": { "command": "agentee", "args": ["mcp", "/path/to/project"] } } }
 ```
 
+## Datasheets, never guesses
+
+Every number and pin that describes a real part comes from that part's datasheet: pinout and
+pin functions, pin types, absolute maximum and operating ratings, logic levels, supply current,
+regulator output and dropout, op-amp gain bandwidth and noise, diode forward voltage, transistor
+parameters, package and land pattern dimensions, recommended layout and decoupling, RF gain,
+noise figure and S-parameters. A plausible value from memory is how a board gets built with a
+swapped pin or a rail above a part's rating, and nothing downstream catches it: check, ERC and
+every sim trust the numbers you give them.
+
+- Before you use a part, get its datasheet (the symbol's `datasheet` field, the manufacturer's
+  page, a distributor's copy) and read the pin table and the electrical characteristics. If you
+  cannot get it, stop and ask the user for it. Do not fill the gap from memory, from a similar
+  part or from a family member.
+- Use the exact part number and package you will order. Variants of one family differ in
+  pinout, ratings and footprint, and so do KiCad library parts from the datasheet: treat an
+  import as a starting point and check its pin numbers, pin types and footprint against the
+  datasheet.
+- Say where each entered value came from: the `datasheet` URL on the symbol, and the table and
+  condition ("VF 0.2 V at 100 mA, typ") in the sim's `description` or the report to the user.
+- Prefer the vendor's own files over numbers you transcribe: S-parameter files, IBIS models,
+  SPICE parameters, reference layouts.
+- agentee's built-in fallbacks (circuit sim device models, the op-amp single pole, logic family
+  timing) are generic. Replace them with datasheet values for the part, or leave the part out of
+  the sim. Never report a result that rests on a default as if it described the part.
+- When the datasheet does not give a number you need, or a part has no part number yet ("any
+  0603 LED"), say so and ask. Never present an estimate as a datasheet value.
+
 ## Reference
 
 The full key-by-key reference is `agentee docs` (MCP `format_reference`). Read the section for
@@ -374,8 +402,11 @@ Each `*.sim.toml` has a `kind`: FDTD (default), `cascade`, `channel`, `pdn`, `dc
 `logic`, `circuit`. A logic sim runs a schematic's digital parts and writes a VCD as well as the
 result. A circuit sim is an analog simulation of the schematic: operating point, AC, transient
 and noise, with `[[checks]]` that fail check. Only `[[drives]]` drive nets, so give each supply
-one, and give ICs a `[[blocks]]` model (`opamp`, `ldo`, `vcvs`) or `ignore` them. Run it on a
-sub-circuit (a bias network, a filter, a regulator) rather than the whole board.
+one, and give ICs a `[[blocks]]` model (`opamp`, `ldo`, `vcvs`) or `ignore` them. Fill every
+block from the part's datasheet: an op-amp's gain, GBW and noise, an LDO's output and dropout, a
+diode's `is` and `n` fitted to two VF points, a supply current as a current drive. The built-in
+diode, BJT and MOSFET models are generic stand-ins, not the part. Run it on a sub-circuit (a bias
+network, a filter, a regulator) rather than the whole board.
 `agentee sim NAME` writes `NAME.result.json` (and `NAME.sNp` for S-parameters) next to the spec.
 Read the result with `agentee show sim:NAME`: `result.readings` is the summary (gain, match,
 NF, stability, eye height, peak temperature, drop). Look at the plots with `agentee render sim:NAME`.

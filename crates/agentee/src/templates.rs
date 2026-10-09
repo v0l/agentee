@@ -137,7 +137,7 @@ v = "OUT"
 at = "1kHz"                     # dB against the ac drive
 min = -1
 
-# [[blocks]]                     # a part with no built-in model
+# [[blocks]]                     # a part's model, every value from its datasheet
 # ref = "U1"
 # kind = "opamp"                 # opamp, ldo, vcvs, vccs, or a resistor, diode, npn, nmos ... override
 # gain = 1e5
