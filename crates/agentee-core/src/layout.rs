@@ -2199,7 +2199,9 @@ impl LayoutFile {
             let mut coupled = 0.0;
             let mut wrong: Option<(f64, f64)> = None;
             let mut uncoupled = 0.0;
-            let budget = class.and_then(|c| c.max_uncoupled.map(Length::to_mm)).unwrap_or(0.0);
+            let budget = class
+                .and_then(|c| c.max_uncoupled.map(Length::to_mm))
+                .unwrap_or(0.2 * pa.length_mm.max(pb.length_mm));
             if let Some(g) = gap {
                 for ta in tracks.iter().filter(|t| t.net == a) {
                     for tb in tracks.iter().filter(|t| t.net == b && t.layer == ta.layer) {
