@@ -577,6 +577,33 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
         }
         source_nodes.push(nodes);
     }
+    let mut mount_nodes: Vec<(Vec<usize>, f64)> = Vec::new();
+    for m in &spec.mounts {
+        let part = &layout.parts[m.part];
+        let mut nodes = Vec::new();
+        for pad in part
+            .pads
+            .iter()
+            .filter(|q| !q.copper.is_empty() && (m.pads.is_empty() || m.pads.contains(&q.number)))
+        {
+            for layer in &pad.copper {
+                let Some(s) = model.sheets.iter().position(|sh| &sh.name == layer) else {
+                    continue;
+                };
+                for (i, j) in r.nodes_in(&pad.outlines) {
+                    nodes.push(id(i, j, sheet_k[s]));
+                }
+            }
+        }
+        if nodes.is_empty() {
+            return Err(format!("{} has no copper pads to mount through", m.reference));
+        }
+        let g = 1.0 / m.theta / nodes.len() as f64;
+        for n in &nodes {
+            p.g0[*n] += g as f32;
+        }
+        mount_nodes.push((nodes, g));
+    }
     let sol = p.solve(1e-7, 50_000);
     let t = &sol.phi;
     let grid = MapGrid { origin: r.origin, cell: r.cell, width: r.nx, height: r.ny };
@@ -622,6 +649,15 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
                 detail: format!("pads + {} W x {} C/W", h.watts, th),
             });
         }
+    }
+    for (m, (nodes, g)) in spec.mounts.iter().zip(&mount_nodes) {
+        let watts: f64 = nodes.iter().map(|n| g * (t[*n] as f64 - spec.ambient)).sum();
+        readings.push(Reading {
+            label: format!("{} mount", m.reference),
+            value: watts,
+            unit: "W".into(),
+            detail: format!("{} C/W to ambient", m.theta),
+        });
     }
     readings.push(Reading {
         label: "ambient".into(),
@@ -729,6 +765,57 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let err = dc(&p.layouts[0].item, &p.boards[0].item, &p.sims[0].item, 0).unwrap_err();
         assert!(err.contains("load J2.1") && err.contains("no supply"), "{err}");
+    }
+
+    #[test]
+    fn a_mount_pulls_heat_out_through_its_pads() {
+        let dir = std::env::temp_dir().join(format!("agentee-sim-mount-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("symbols")).unwrap();
+        std::fs::create_dir_all(dir.join("footprints")).unwrap();
+        std::fs::write(
+            dir.join("t.board.toml"),
+            "name = \"t\"\n[outline]\nsize = [20, 10]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("symbols/P.sym.toml"),
+            "name = \"P\"\nreference = \"J\"\nfootprint = \"PAD\"\n[[pins]]\nnumber = \"1\"\nat = [0.0, 0.0]\nside = \"left\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("footprints/PAD.fp.toml"),
+            "name = \"PAD\"\n[[pads]]\nnumber = \"1\"\nkind = \"smd\"\nshape = \"rect\"\nat = [0.0, 0.0]\nsize = [2.0, 2.0]\nlayers = [\"F.Cu\", \"F.Mask\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.sch.toml"),
+            "name = \"t\"\nboard = \"t\"\n[[parts]]\nref = \"J1\"\nsymbol = \"P\"\nat = [0, 0]\n\
+             [[parts]]\nref = \"J2\"\nsymbol = \"P\"\nat = [10.16, 0]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("t.pcb.toml"),
+            "name = \"t\"\nboard = \"t\"\nschematic = \"t\"\n[[footprints]]\nref = \"J1\"\nat = [4, 5]\n\
+             [[footprints]]\nref = \"J2\"\nat = [16, 5]\n",
+        )
+        .unwrap();
+        let spec = "name = \"t\"\nkind = \"thermal\"\nlayout = \"t\"\ncell = 0.25\nambient = 25\n\
+             [[sources]]\nref = \"J1\"\npower = \"0.5W\"\n";
+        let run = |extra: &str| {
+            std::fs::write(dir.join("t.sim.toml"), format!("{spec}{extra}")).unwrap();
+            let p = agentee_core::Project::load(&dir).unwrap();
+            thermal(&p.layouts[0].item, &p.boards[0].item, &p.sims[0].item, 0).unwrap()
+        };
+        let read = |m: &MapResult, label: &str| {
+            m.readings.iter().find(|r| r.label == label).map(|r| r.value).unwrap()
+        };
+        let free = run("");
+        let mounted = run("[[mounts]]\nref = \"J2\"\ntheta = 2.0\n");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(read(&mounted, "J1 pads") < read(&free, "J1 pads") - 1.0);
+        let sunk = read(&mounted, "J2 mount");
+        assert!(sunk > 0.0 && sunk < 0.5, "{sunk}");
     }
 
     #[test]

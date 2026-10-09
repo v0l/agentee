@@ -2128,10 +2128,16 @@ ref = "U1"
 power = "0.45W"
 theta_jc = 65.0                # adds a junction estimate: pads + P x theta
 pads = ["2"]                   # the pads the heat leaves through, default all
+
+[[mounts]]                     # a part that carries heat off the board, such as a standoff
+ref = "H1"
+theta = 4.0                    # C/W from its pads to ambient
+# pads = ["1"]                 # default all
 ```
 
+A mount spreads its conductance over every copper cell of its pads, on each layer the pad is on.
 Maps: temperature per copper layer. Readings: board peak, each source's pad and junction
-temperature.
+temperature, and the watts each mount carries.
 
 ### Logic (`kind = "logic"`)
 

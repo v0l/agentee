@@ -74,6 +74,8 @@ pub struct SimFile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<HeatFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mounts: Vec<MountFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub supplies: Vec<SupplyFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loads: Vec<LoadFile>,
@@ -411,6 +413,16 @@ pub struct HeatFile {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct MountFile {
+    #[serde(rename = "ref")]
+    pub reference: String,
+    pub theta: f64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pads: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SupplyFile {
     pub pad: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -444,6 +456,14 @@ pub struct HeatSource {
     pub reference: String,
     pub watts: f64,
     pub theta_jc: Option<f64>,
+    pub pads: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Mount {
+    pub part: usize,
+    pub reference: String,
+    pub theta: f64,
     pub pads: Vec<String>,
 }
 
@@ -651,6 +671,7 @@ pub struct Sim {
     pub h_top: f64,
     pub h_bottom: f64,
     pub sources: Vec<HeatSource>,
+    pub mounts: Vec<Mount>,
     pub supplies: Vec<Supply>,
     pub loads: Vec<Load>,
     pub links: Vec<Link>,
@@ -1203,6 +1224,7 @@ impl SimFile {
             h_top: 10.0,
             h_bottom: 10.0,
             sources: Vec::new(),
+            mounts: Vec::new(),
             supplies: Vec::new(),
             loads: Vec::new(),
             links: Vec::new(),
@@ -1388,6 +1410,25 @@ impl SimFile {
                     theta_jc: h.theta_jc,
                     pads: h.pads.clone(),
                 })
+            })
+            .collect();
+        let mounts: Vec<Mount> = self
+            .mounts
+            .iter()
+            .enumerate()
+            .filter_map(|(i, m)| {
+                let at = format!("mounts[{i}] {}", m.reference);
+                let part = part_of(&m.reference, d, &at)?;
+                if !(m.theta > 0.0) {
+                    d.error(&at, "theta is the mount's thermal resistance to ambient in C/W and must be above 0");
+                    return None;
+                }
+                for n in &m.pads {
+                    if !layout.parts[part].pads.iter().any(|q| &q.number == n) {
+                        d.error(&at, format!("{} has no pad {n}", m.reference));
+                    }
+                }
+                Some(Mount { part, reference: m.reference.clone(), theta: m.theta, pads: m.pads.clone() })
             })
             .collect();
         let supplies: Vec<Supply> = self
@@ -1621,6 +1662,7 @@ impl SimFile {
             h_top: self.h_top.unwrap_or(10.0),
             h_bottom: self.h_bottom.unwrap_or(10.0),
             sources,
+            mounts,
             supplies,
             loads,
             links,
