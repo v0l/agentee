@@ -483,3 +483,36 @@ fn the_hdi_coupon_checks_clean_with_microvias_in_its_bga_pads() {
     let silk = p.layouts[0].diags.iter().filter(|d| d.rule.as_deref() == Some("silk-text")).count();
     assert_eq!(silk, 0);
 }
+
+#[test]
+fn a_via_that_joins_one_layer_is_dangling() {
+    let nets = "\n[[nets]]\nname = \"A\"\npins = [\"R1.1\", \"R2.1\"]\n";
+    let parts = [("R1", "R"), ("R2", "R")];
+    let placed = "[[footprints]]\nref = \"R1\"\nat = [10, 10]\n\n[[footprints]]\nref = \"R2\"\nat = [20, 10]\n";
+    let dangling = |p: &Project| -> Vec<String> {
+        p.layouts[0]
+            .diags
+            .iter()
+            .filter(|d| d.rule.as_deref() == Some("dangling-via"))
+            .map(|d| d.message.clone())
+            .collect()
+    };
+    let through = format!(
+        "{placed}\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[9.49, 10], [15, 10]]\n\n\
+         [[vias]]\nnet = \"A\"\nat = [15, 10]\n\n\
+         [[tracks]]\nnet = \"A\"\nlayer = \"B.Cu\"\npoints = [[15, 10], [17, 10]]\n\n\
+         [[vias]]\nnet = \"A\"\nat = [17, 10]\n\n\
+         [[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[17, 10], [19.49, 10]]\n"
+    );
+    let p = project(&parts, nets, &through);
+    assert!(dangling(&p).is_empty(), "{:?}", dangling(&p));
+
+    let stray = format!(
+        "{through}\n[[vias]]\nnet = \"A\"\nat = [12, 10]\n\n[[vias]]\nnet = \"A\"\nat = [12, 15]\n"
+    );
+    let p = project(&parts, nets, &stray);
+    let d = dangling(&p);
+    assert_eq!(d.len(), 2, "{d:?}");
+    assert!(d.iter().any(|m| m.contains("on 1 layer")), "{d:?}");
+    assert!(d.iter().any(|m| m.contains("on 0 layer")), "{d:?}");
+}

@@ -45,6 +45,15 @@ pub static RULES: &[Rule] = &[
         check: dangling_track,
     },
     Rule {
+        id: "dangling-via",
+        category: Category::Copper,
+        severity: Severity::Warning,
+        summary: "a via that joins copper of its net on fewer than two layers, so it carries nothing",
+        when: "every board",
+        applies: every,
+        check: dangling_via,
+    },
+    Rule {
         id: "track-grazes-pad",
         category: Category::Copper,
         severity: Severity::Warning,
@@ -385,6 +394,40 @@ fn dangling_track(cx: &Ctx, r: &mut Report) {
                     format!("end at [{:.3}, {:.3}] connects to nothing", end[0], end[1]),
                 );
             }
+        }
+    }
+}
+
+fn dangling_via(cx: &Ctx, r: &mut Report) {
+    let items = cx.copper_items();
+    for (vi, v) in cx.vias.iter().enumerate() {
+        let radius = v.diameter / 2.0;
+        let mut b = Bounds::EMPTY;
+        b.add_circle(v.at, radius);
+        let near = cx.items_near(&b, 0.01);
+        let joined = v
+            .layers
+            .iter()
+            .filter(|layer| {
+                near.iter().any(|&i| {
+                    let c = &items[i];
+                    c.net == Some(v.net)
+                        && c.layers.contains(*layer)
+                        && c.owner != Owner::Via(vi)
+                        && c.shape.circle_gap(v.at, radius) <= 1e-6
+                }) || cx
+                    .zones
+                    .iter()
+                    .any(|z| z.net == v.net && &z.layer == *layer && z.filled(v.at))
+            })
+            .count();
+        if joined < 2 {
+            r.emit(
+                format!("via at [{:.3}, {:.3}] {}", v.at[0], v.at[1], cx.nets[v.net].name),
+                format!(
+                    "joins copper of its net on {joined} layer(s), it carries nothing; remove it"
+                ),
+            );
         }
     }
 }

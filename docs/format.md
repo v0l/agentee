@@ -625,6 +625,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `spark-gap` | error | footprints with `spark_gaps` | a spark gap whose electrodes are not the declared `gap` apart (to 0.01 mm), sit under `min_clearance`, share a net or lack one, or have solder mask across the gap on an outer layer |
 | `unrouted` | error | always | a net whose pads are not all joined by tracks, vias and pours, naming the groups that are apart |
 | `dangling-track` | warning | always | a track end that touches no copper of its net and no pour |
+| `dangling-via` | warning | always | a via that joins copper of its net on fewer than two layers |
 | `track-grazes-pad` | warning | always | tracks that reach a pad only with their edge; run the centre line into the pad |
 | `copper-to-edge` | error | always | a track or via closer than `min_copper_to_edge` to the board outline or a board cutout, or off the board (a track across a cutout leaves the board) |
 | `pad-off-board` | error | always | pads outside the outline or in a board cutout; pads marked `edge = true` are exempt |

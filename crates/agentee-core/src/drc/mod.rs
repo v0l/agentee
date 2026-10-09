@@ -7,8 +7,8 @@ use crate::graphic::Graphic;
 use crate::interface::Interface;
 use crate::layout::{Layout, LayoutNet, MatchGroup, Pair, Placed, PlacedPad, Track, Via, ZoneFill};
 use serde::Serialize;
-use std::sync::OnceLock as OnceCell;
 use std::collections::HashMap;
+use std::sync::OnceLock as OnceCell;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
