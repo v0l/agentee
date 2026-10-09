@@ -38,10 +38,9 @@ pub struct PageState {
     pub show_fields: bool,
     pub show_tdr: bool,
     pub view_3d: bool,
-    pub camera: crate::board3d::Camera,
+    pub board_3d: crate::board3d::State,
     pub scene: Option<(SceneKey, std::sync::Arc<crate::board3d::Scene>)>,
     pub show_parts: bool,
-    pub soft_3d: crate::board3d::SoftCache,
     pub tdr_cache: Option<((u64, usize), Vec<crate::plot::Series>)>,
     pub runs: crate::simrun::Runs,
     pub wave: crate::wave::WaveView,
@@ -73,10 +72,9 @@ impl Default for PageState {
             show_fields: false,
             show_tdr: false,
             view_3d: false,
-            camera: Default::default(),
+            board_3d: Default::default(),
             scene: None,
             show_parts: true,
-            soft_3d: None,
             tdr_cache: None,
             runs: Default::default(),
             wave: Default::default(),
@@ -1007,14 +1005,7 @@ fn layout_view(
             st.scene = Some((key, std::sync::Arc::new(scene)));
         }
         if let Some((_, scene)) = &st.scene {
-            crate::board3d::show(
-                ui,
-                scene,
-                &mut st.camera,
-                st.interactive,
-                st.show_parts,
-                &mut st.soft_3d,
-            );
+            crate::board3d::show(ui, scene, &mut st.board_3d, st.interactive, st.show_parts);
         }
         return;
     }

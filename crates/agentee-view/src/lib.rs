@@ -5,7 +5,6 @@ pub mod edit;
 pub mod engine;
 pub mod eye;
 pub mod focus;
-pub mod gl3d;
 pub mod headless;
 pub mod heat;
 pub mod newlayout;

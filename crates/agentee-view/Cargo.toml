@@ -13,9 +13,8 @@ agentee-3d.workspace = true
 agentee-sim.workspace = true
 egui.workspace = true
 eframe.workspace = true
-egui_bench.workspace = true
+egui_bench = { workspace = true, features = ["viewer3d"] }
 toml_edit.workspace = true
 png = "0.18"
 notify = "8"
 earcutr = "0.5.0"
-three-d = { version = "0.19.0", default-features = false }

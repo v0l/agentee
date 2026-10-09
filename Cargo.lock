@@ -146,7 +146,6 @@ dependencies = [
  "egui_bench",
  "notify",
  "png",
- "three-d",
  "toml_edit 0.25.15+spec-1.1.0",
 ]
 
@@ -1089,11 +1088,11 @@ dependencies = [
 
 [[package]]
 name = "egui_bench"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "367d6f7771ed852ac3205af8c5c3ccd1c348cbb8a3770db12188190a3784beb6"
+version = "0.2.0"
 dependencies = [
  "egui",
+ "egui_glow",
+ "three-d",
 ]
 
 [[package]]

@@ -130,15 +130,15 @@ pub fn render_rgba(
     st.show_parts = !opts.hide.iter().any(|x| x == "parts");
     if let Some([x0, y0, x1, y1]) = opts.region {
         let c = [((x0 + x1) / 2.0) as f32, -((y0 + y1) / 2.0) as f32, 0.0];
-        st.camera.focus = Some((c, ((x1 - x0).abs().max((y1 - y0).abs())) as f32));
+        st.board_3d.region = Some((c, ((x1 - x0).abs().max((y1 - y0).abs())) as f32));
     }
     if opts.show.iter().any(|x| x == "3d-top") {
-        st.camera.pitch = 1.5;
-        st.camera.yaw = 0.0;
+        st.board_3d.camera.pitch = 1.5;
+        st.board_3d.camera.yaw = 0.0;
     }
     if opts.show.iter().any(|x| x == "3d-bottom") {
-        st.camera.pitch = -1.5;
-        st.camera.yaw = 0.0;
+        st.board_3d.camera.pitch = -1.5;
+        st.board_3d.camera.yaw = 0.0;
     }
     if let ItemRef::Sim(i) = item {
         let s = &project.sims[i];

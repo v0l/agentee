@@ -6,114 +6,69 @@ use agentee_core::footprint::PadKind;
 use agentee_core::geom::P;
 use agentee_core::layout::{Layout, Placed};
 use egui::epaint::{ClippedPrimitive, Primitive};
-use egui::{Color32, ColorImage, Pos2, Rect, Sense, TextureHandle, Ui, Vec2};
+use egui::{Color32, Pos2, Rect, Sense, TextureHandle, Ui, Vec2};
+use egui_bench::viewer3d::{
+    self, Camera, Image, Look, Material, Orbit, Shading, Style, V3, Viewer, cross, norm, sub,
+};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
-pub type V3 = [f32; 3];
-
-#[derive(Clone, Default)]
-pub struct Surface {
-    pub positions: Vec<V3>,
-    pub normals: Vec<V3>,
-    pub uvs: Vec<[f32; 2]>,
-    pub colour: [f32; 3],
-    pub texture: Option<usize>,
-    pub metal: f32,
-    pub part: bool,
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Finish {
+    #[default]
+    Board,
+    Metal,
 }
 
-pub struct Image {
-    pub width: usize,
-    pub height: usize,
-    pub rgba: Vec<u8>,
+impl Material for Finish {
+    fn shading(&self) -> Shading {
+        match self {
+            Finish::Board => Shading { gloss: 0.06, sharpness: 24.0, ..Shading::default() },
+            Finish::Metal => {
+                Shading { gloss: 0.46, sharpness: 81.6, metal: 0.8, ..Shading::default() }
+            }
+        }
+    }
 }
 
-#[derive(Default)]
+pub type Surface = viewer3d::Surface<Finish>;
+
+pub const BOARD: usize = 0;
+pub const PARTS: usize = 1;
+
 pub struct Scene {
-    pub id: u64,
-    pub surfaces: Vec<Surface>,
-    pub images: Vec<Image>,
-    pub centre: V3,
-    pub radius: f32,
+    pub mesh: Arc<viewer3d::Scene<Finish>>,
     pub pending: usize,
     pub missing: Vec<String>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub struct Camera {
-    pub yaw: f32,
-    pub pitch: f32,
-    pub zoom: f32,
-    pub pan: Vec2,
-    pub focus: Option<(V3, f32)>,
+pub const STYLE: Style = Style {
+    background: viewer3d::BACKGROUND,
+    ambient: 0.30,
+    key: 0.80,
+    fill: 0.25,
+    cap: Color32::from_rgb(237, 140, 46),
+    selected: Color32::from_rgb(245, 166, 59),
+    selected_tint: 0.35,
+};
+
+pub type SoftCache = Option<((u64, Camera, [u32; 2], bool), TextureHandle)>;
+
+pub struct State {
+    pub camera: Camera,
+    pub orbit: Orbit,
+    pub region: Option<(V3, f32)>,
+    soft: SoftCache,
 }
 
-impl Default for Camera {
+fn home() -> Camera {
+    Camera { yaw: 0.35, pitch: 0.85, ortho: false, ..Camera::default() }
+}
+
+impl Default for State {
     fn default() -> Self {
-        Camera { yaw: 0.35, pitch: 0.85, zoom: 1.0, pan: Vec2::ZERO, focus: None }
-    }
-}
-
-impl Camera {
-    pub fn zoom_at(&mut self, factor: f32, from_centre: Vec2) {
-        let before = self.zoom;
-        self.zoom = (self.zoom * factor).clamp(0.2, 20.0);
-        let k = self.zoom / before;
-        self.pan = from_centre + (self.pan - from_centre) * k;
-    }
-}
-
-pub const AMBIENT: f32 = 0.30;
-pub const KEY: f32 = 0.80;
-pub const FILL: f32 = 0.25;
-pub const BACKGROUND: Color32 = Color32::from_rgb(20, 22, 26);
-
-pub struct View {
-    pub eye: V3,
-    pub target: V3,
-    pub right: V3,
-    pub up: V3,
-    pub forward: V3,
-    pub focal: f32,
-    pub fov_y: f32,
-    pub near: f32,
-    pub far: f32,
-    pub key: V3,
-    pub fill: V3,
-}
-
-pub fn view(scene: &Scene, cam: &Camera, size: Vec2) -> View {
-    let (cy, sy, cp, sp) = (cam.yaw.cos(), cam.yaw.sin(), cam.pitch.cos(), cam.pitch.sin());
-    let eye_dir = [sy * cp, -cy * cp, sp];
-    let dist = scene.radius * 2.4;
-    let (centre, span) = cam.focus.unwrap_or((scene.centre, 0.0));
-    let zoom = if span > 0.0 { cam.zoom * dist / (1.25 * span * 1.15) } else { cam.zoom };
-    let forward = norm([-eye_dir[0], -eye_dir[1], -eye_dir[2]]);
-    let right = norm(cross(forward, [0.0, 0.0, 1.0]));
-    let right = if dot(right, right) < 0.5 { [1.0, 0.0, 0.0] } else { right };
-    let up = cross(right, forward);
-    let focal = size.x.min(size.y) * 1.25 * zoom;
-    let shift = add(scale(right, -cam.pan.x * dist / focal), scale(up, cam.pan.y * dist / focal));
-    let target = add(centre, shift);
-    let eye = add(target, scale(eye_dir, dist));
-    let back = scale(forward, -1.0);
-    let key = norm(add(add(scale(right, -0.35), scale(up, 0.55)), scale(back, 0.75)));
-    let fill = norm(add(add(scale(right, 0.55), scale(up, -0.25)), scale(back, 0.8)));
-    View {
-        eye,
-        target,
-        right,
-        up,
-        forward,
-        focal,
-        fov_y: 2.0 * (size.y * 0.5 / focal).atan(),
-        near: dist * 0.02,
-        far: dist * 10.0,
-        key,
-        fill,
+        State { camera: home(), orbit: Orbit::default(), region: None, soft: None }
     }
 }
 
@@ -558,8 +513,8 @@ fn place_model(
         let key = p.colour.map(|c| (c.clamp(0.0, 1.0) * 1000.0) as u16);
         let g = groups.entry(key).or_insert_with(|| Surface {
             colour: p.colour,
-            metal: if is_metal(p.colour) { 0.8 } else { 0.0 },
-            part: true,
+            material: if is_metal(p.colour) { Finish::Metal } else { Finish::Board },
+            group: PARTS,
             ..Default::default()
         });
         for (v, n) in p.positions.iter().zip(&p.normals) {
@@ -598,7 +553,7 @@ fn place_box(part: &Placed, top: f32, bot: f32, out: &mut Vec<Surface>) {
         .map(|q| tf.apply(q))
         .collect();
     let (z0, z1) = if part.bottom { (bot - h, bot) } else { (top, top + h) };
-    let mut s = Surface { colour: rgb(color), part: true, ..Default::default() };
+    let mut s = Surface { colour: rgb(color), group: PARTS, ..Default::default() };
     walls(&ring, z0, z1, true, &mut s);
     let zc = if part.bottom { z0 } else { z1 };
     let nz = if part.bottom { -1.0 } else { 1.0 };
@@ -614,10 +569,9 @@ fn place_box(part: &Placed, top: f32, bot: f32, out: &mut Vec<Surface>) {
     out.push(s);
 }
 
-static SCENE_ID: AtomicU64 = AtomicU64::new(1);
-
 pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
-    let mut s = Scene { id: SCENE_ID.fetch_add(1, Ordering::Relaxed), ..Default::default() };
+    let mut s = viewer3d::Scene::<Finish>::default();
+    let (mut pending, mut missing) = (0, Vec::new());
     let t = board.stackup.thickness().to_mm().max(0.4) as f32;
     let (top, bot) = (t / 2.0, -t / 2.0);
     let mask = mask_rgb(&board.stackup.mask_color);
@@ -627,7 +581,7 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     let mut bb = agentee_core::graphic::Bounds::EMPTY;
     outline.iter().for_each(|p| bb.add(*p));
     if bb.is_empty() {
-        return s;
+        return Scene { mesh: Arc::new(s), pending, missing };
     }
     let size = bb.size();
     let bounds = [bb.min[0], bb.min[1], size[0].max(1e-3), size[1].max(1e-3)];
@@ -640,7 +594,7 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     s.surfaces.push(faces(&outline, &hs, bot, false, bounds, 1));
     let mut edge = Surface { colour: rgb(fr4), ..Default::default() };
     walls(&outline, bot, top, true, &mut edge);
-    let mut plated = Surface { colour: rgb(gold), metal: 0.8, ..Default::default() };
+    let mut plated = Surface { colour: rgb(gold), material: Finish::Metal, ..Default::default() };
     for h in &hs {
         walls(&h.ring, h.z.1, h.z.0, false, if h.plated { &mut plated } else { &mut edge });
     }
@@ -673,12 +627,12 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
         match status {
             Status::Ready(mesh) => place_model(part, &mesh, true, top, bot, &mut groups),
             Status::Pending => {
-                s.pending += 1;
+                pending += 1;
                 place_box(part, top, bot, &mut boxes);
             }
             Status::Missing(e) => {
-                if !e.is_empty() && !s.missing.contains(&e) {
-                    s.missing.push(e);
+                if !e.is_empty() && !missing.contains(&e) {
+                    missing.push(e);
                 }
                 place_box(part, top, bot, &mut boxes);
             }
@@ -692,226 +646,40 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     s.surfaces.extend(boxes);
     let c = bb.center();
     s.centre = [c[0] as f32, -c[1] as f32, 0.0];
-    s.radius = (size[0].max(size[1]) as f32).max(1.0) * 0.75;
-    s
+    s.radius = (size[0].max(size[1]) as f32).max(1.0) * 0.69;
+    Scene { mesh: Arc::new(s), pending, missing }
 }
 
-pub fn sub(a: V3, b: V3) -> V3 {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-pub fn add(a: V3, b: V3) -> V3 {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-pub fn scale(a: V3, k: f32) -> V3 {
-    [a[0] * k, a[1] * k, a[2] * k]
-}
-
-pub fn cross(a: V3, b: V3) -> V3 {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
-pub fn dot(a: V3, b: V3) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-pub fn norm(a: V3) -> V3 {
-    let l = dot(a, a).sqrt().max(1e-9);
-    [a[0] / l, a[1] / l, a[2] / l]
-}
-
-fn to_linear(c: f32) -> f32 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-}
-
-fn to_srgb(c: f32) -> f32 {
-    let c = c.clamp(0.0, 1.0);
-    if c <= 0.0031308 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
-}
-
-fn shade(albedo: V3, n: V3, v: V3, metal: f32, vw: &View) -> V3 {
-    let albedo = albedo.map(to_linear);
-    let n = if dot(n, v) < 0.0 { scale(n, -1.0) } else { n };
-    let d = AMBIENT + KEY * dot(n, vw.key).max(0.0) + FILL * dot(n, vw.fill).max(0.0);
-    let h = norm(add(vw.key, v));
-    let ks = 0.06 + 0.5 * metal;
-    let sh = 24.0 + 72.0 * metal;
-    let sp = ks * dot(n, h).max(0.0).powf(sh);
-    [0, 1, 2].map(|k| {
-        let tint = 1.0 + (albedo[k] * 1.6 - 1.0) * metal;
-        to_srgb(albedo[k] * d + sp * tint)
-    })
-}
-
-fn sample(img: &Image, u: f32, v: f32) -> V3 {
-    let (w, h) = (img.width, img.height);
-    let x = (u * w as f32 - 0.5).clamp(0.0, w as f32 - 1.0);
-    let y = (v * h as f32 - 0.5).clamp(0.0, h as f32 - 1.0);
-    let (x0, y0) = (x as usize, y as usize);
-    let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
-    let (fx, fy) = (x - x0 as f32, y - y0 as f32);
-    let px = |x: usize, y: usize, k: usize| img.rgba[(y * w + x) * 4 + k] as f32 / 255.0;
-    [0, 1, 2].map(|k| {
-        let t = px(x0, y0, k) + (px(x1, y0, k) - px(x0, y0, k)) * fx;
-        let b = px(x0, y1, k) + (px(x1, y1, k) - px(x0, y1, k)) * fx;
-        t + (b - t) * fy
-    })
-}
-
-pub fn render_soft(
-    scene: &Scene,
-    cam: &Camera,
-    width: usize,
-    height: usize,
-    parts: bool,
-) -> ColorImage {
-    const SS: usize = 2;
-    let (w, h) = (width * SS, height * SS);
-    let vw = view(scene, cam, Vec2::new(width as f32, height as f32));
-    let focal = vw.focal * SS as f32;
-    let (cx, cy) = (w as f32 * 0.5, h as f32 * 0.5);
-    let mut depth = vec![f32::INFINITY; w * h];
-    let mut color = vec![rgb(BACKGROUND); w * h];
-    for surf in scene.surfaces.iter().filter(|s| parts || !s.part) {
-        let tex = surf.texture.and_then(|i| scene.images.get(i));
-        for t in (0..surf.positions.len() / 3).map(|i| i * 3) {
-            let sp = [0, 1, 2].map(|k| {
-                let d = sub(surf.positions[t + k], vw.eye);
-                let z = dot(d, vw.forward);
-                [cx + dot(d, vw.right) / z * focal, cy - dot(d, vw.up) / z * focal, z]
-            });
-            if sp.iter().any(|p| p[2] < vw.near) {
-                continue;
-            }
-            let area = (sp[1][0] - sp[0][0]) * (sp[2][1] - sp[0][1])
-                - (sp[1][1] - sp[0][1]) * (sp[2][0] - sp[0][0]);
-            if area.abs() < 1e-9 {
-                continue;
-            }
-            let x0 = sp.iter().map(|p| p[0]).fold(f32::MAX, f32::min).floor().max(0.0) as usize;
-            let y0 = sp.iter().map(|p| p[1]).fold(f32::MAX, f32::min).floor().max(0.0) as usize;
-            let x1 = (sp.iter().map(|p| p[0]).fold(f32::MIN, f32::max).ceil() as i64).min(w as i64);
-            let y1 = (sp.iter().map(|p| p[1]).fold(f32::MIN, f32::max).ceil() as i64).min(h as i64);
-            if x1 <= x0 as i64 || y1 <= y0 as i64 {
-                continue;
-            }
-            let inv_z = sp.map(|p| 1.0 / p[2]);
-            for y in y0..y1 as usize {
-                let py = y as f32 + 0.5;
-                for x in x0..x1 as usize {
-                    let px = x as f32 + 0.5;
-                    let e = |a: [f32; 3], b: [f32; 3]| {
-                        (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0])
-                    };
-                    let (w0, w1, w2) =
-                        (e(sp[1], sp[2]) / area, e(sp[2], sp[0]) / area, e(sp[0], sp[1]) / area);
-                    if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
-                        continue;
-                    }
-                    let iz = w0 * inv_z[0] + w1 * inv_z[1] + w2 * inv_z[2];
-                    let z = 1.0 / iz;
-                    let i = y * w + x;
-                    if z >= depth[i] {
-                        continue;
-                    }
-                    depth[i] = z;
-                    let pw = [w0 * inv_z[0] * z, w1 * inv_z[1] * z, w2 * inv_z[2] * z];
-                    let lerp3 = |a: &[V3]| {
-                        [0, 1, 2]
-                            .map(|k| pw[0] * a[t][k] + pw[1] * a[t + 1][k] + pw[2] * a[t + 2][k])
-                    };
-                    let pos = lerp3(&surf.positions);
-                    let n = norm(lerp3(&surf.normals));
-                    let albedo = match tex {
-                        Some(img) if surf.uvs.len() > t + 2 => {
-                            let uv = &surf.uvs;
-                            let u = pw[0] * uv[t][0] + pw[1] * uv[t + 1][0] + pw[2] * uv[t + 2][0];
-                            let v = pw[0] * uv[t][1] + pw[1] * uv[t + 1][1] + pw[2] * uv[t + 2][1];
-                            sample(img, u, v)
-                        }
-                        _ => surf.colour,
-                    };
-                    color[i] = shade(albedo, n, norm(sub(vw.eye, pos)), surf.metal, &vw);
-                }
-            }
-        }
-    }
-    let mut out = ColorImage::new([width, height], vec![Color32::BLACK; width * height]);
-    for y in 0..height {
-        for x in 0..width {
-            let mut acc = [0.0f32; 3];
-            for dy in 0..SS {
-                for dx in 0..SS {
-                    let c = color[(y * SS + dy) * w + x * SS + dx];
-                    for k in 0..3 {
-                        acc[k] += c[k];
-                    }
-                }
-            }
-            let n = (SS * SS) as f32;
-            out.pixels[y * width + x] = Color32::from_rgb(
-                (acc[0] / n * 255.0 + 0.5) as u8,
-                (acc[1] / n * 255.0 + 0.5) as u8,
-                (acc[2] / n * 255.0 + 0.5) as u8,
-            );
-        }
-    }
-    out
-}
-
-pub type SoftCache = Option<((u64, [u32; 4], [u32; 2], bool), TextureHandle)>;
-
-pub fn show(
-    ui: &mut Ui,
-    scene: &Arc<Scene>,
-    cam: &mut Camera,
-    interactive: bool,
-    parts: bool,
-    soft: &mut SoftCache,
-) {
+pub fn show(ui: &mut Ui, scene: &Arc<Scene>, state: &mut State, interactive: bool, parts: bool) {
     let size = ui.available_size();
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
+    let camera = match state.region {
+        Some((centre, span)) => state.camera.framed(&scene.mesh, centre, span),
+        None => state.camera,
+    };
+    let looks = [Look::default(), if parts { Look::default() } else { Look::HIDDEN }];
+    let mut viewer = Viewer::new(scene.mesh.clone(), camera).looks(looks).style(STYLE);
     if interactive {
-        if resp.dragged_by(egui::PointerButton::Primary) && !ui.input(|i| i.modifiers.shift) {
-            let d = resp.drag_delta();
-            cam.yaw -= d.x * 0.01;
-            cam.pitch = (cam.pitch + d.y * 0.01).clamp(-1.55, 1.55);
-        } else if resp.dragged() {
-            cam.pan += resp.drag_delta();
-        }
-        if let Some(at) = resp.hover_pos() {
-            let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
-            let factor = pinch * (1.0 + scroll * 0.002);
-            if (factor - 1.0).abs() > 1e-4 {
-                cam.zoom_at(factor, at - rect.center());
-            }
+        if viewer.navigate(ui, &resp, &mut state.orbit) {
+            state.camera = viewer.camera();
+            state.region = None;
         }
         if resp.double_clicked() {
-            *cam = Camera::default();
+            state.camera = home();
+            state.region = None;
         }
-        crate::gl3d::paint(ui, rect, scene.clone(), *cam, parts);
+        viewer.paint(ui, rect);
     } else {
         let ppp = ui.ctx().pixels_per_point();
         let (pw, ph) =
             ((rect.width() * ppp).round() as usize, (rect.height() * ppp).round() as usize);
-        let key = (
-            scene.id,
-            [
-                cam.yaw.to_bits(),
-                cam.pitch.to_bits(),
-                cam.zoom.to_bits(),
-                cam.pan.x.to_bits() ^ cam.pan.y.to_bits() ^ cam.focus.map_or(0, |f| f.1.to_bits()),
-            ],
-            [pw as u32, ph as u32],
-            parts,
-        );
-        if soft.as_ref().map(|s| s.0) != Some(key) && pw > 0 && ph > 0 {
-            let img = render_soft(scene, cam, pw, ph, parts);
+        let key = (scene.mesh.id, camera, [pw as u32, ph as u32], parts);
+        if state.soft.as_ref().map(|s| s.0) != Some(key) && pw > 0 && ph > 0 {
+            let img = viewer.render_soft(pw, ph);
             let tex = ui.ctx().load_texture("board3d", img, egui::TextureOptions::LINEAR);
-            *soft = Some((key, tex));
+            state.soft = Some((key, tex));
         }
-        if let Some((_, tex)) = soft {
+        if let Some((_, tex)) = &state.soft {
             ui.painter_at(rect).image(
                 tex.id(),
                 rect,
@@ -989,7 +757,13 @@ mod tests {
         let p = agentee_core::Project::load(&dir).unwrap();
         let part_triangles = || {
             let scene = build(&p.layouts[0].item, &p.boards[0].item, &dir, Fetch::Never);
-            scene.surfaces.iter().filter(|s| s.part).map(|s| s.positions.len() / 3).sum::<usize>()
+            scene
+                .mesh
+                .surfaces
+                .iter()
+                .filter(|s| s.group == PARTS)
+                .map(|s| s.positions.len() / 3)
+                .sum::<usize>()
         };
         std::fs::write(&model, quads(1)).unwrap();
         let first = part_triangles();
@@ -1001,42 +775,6 @@ mod tests {
         let second = part_triangles();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(first > 0 && second > first, "{first} then {second} part triangles");
-    }
-
-    #[test]
-    fn zooming_keeps_the_point_under_the_pointer() {
-        let scene = Scene {
-            id: 0,
-            surfaces: Vec::new(),
-            images: Vec::new(),
-            centre: [5.0, 3.0, 0.0],
-            radius: 10.0,
-            pending: 0,
-            missing: Vec::new(),
-        };
-        let size = Vec2::new(800.0, 600.0);
-        let mut cam = Camera { pan: Vec2::new(40.0, -25.0), ..Default::default() };
-        let pointer = Vec2::new(220.0, -130.0);
-        let v = view(&scene, &cam, size);
-        let dist = scene.radius * 2.4;
-        let under = add(
-            v.target,
-            add(
-                scale(v.right, pointer.x * dist / v.focal),
-                scale(v.up, -pointer.y * dist / v.focal),
-            ),
-        );
-        let screen = |v: &View| {
-            let d = sub(under, v.eye);
-            let z = dot(d, v.forward);
-            Vec2::new(v.focal * dot(d, v.right) / z, -v.focal * dot(d, v.up) / z)
-        };
-        assert!((screen(&v) - pointer).length() < 1e-2, "{:?}", screen(&v));
-        for factor in [1.6, 0.5, 3.0] {
-            cam.zoom_at(factor, pointer);
-            let after = screen(&view(&scene, &cam, size));
-            assert!((after - pointer).length() < 0.5, "{factor}: {after:?}");
-        }
     }
 
     use super::*;
@@ -1056,7 +794,7 @@ mod tests {
             .unwrap();
         let p = agentee_core::Project::load(&dir).unwrap();
         let scene = build(&p.layouts[0].item, &p.boards[0].item, &dir, Fetch::Blocking);
-        let top = &scene.surfaces[0];
+        let top = &scene.mesh.surfaces[0];
         let mut area = 0.0;
         for t in top.positions.chunks_exact(3) {
             let c = [(t[0][0] + t[1][0] + t[2][0]) / 3.0, -(t[0][1] + t[1][1] + t[2][1]) / 3.0];
@@ -1069,7 +807,7 @@ mod tests {
             area += ((u[0] * v[1] - u[1] * v[0]) / 2.0).abs() as f64;
         }
         assert!((area - (200.0 - 16.0)).abs() < 1e-3, "top face area {area}");
-        let walls = &scene.surfaces[2];
+        let walls = &scene.mesh.surfaces[2];
         assert_eq!(walls.positions.len(), 6 * 8);
     }
 
@@ -1108,9 +846,9 @@ mod tests {
                 })
                 .sum::<f64>()
         };
-        assert!(area(&scene.surfaces[0]) < 200.0 - 1e-4);
-        assert!((area(&scene.surfaces[1]) - 200.0).abs() < 1e-4);
-        let plated = &scene.surfaces[3];
+        assert!(area(&scene.mesh.surfaces[0]) < 200.0 - 1e-4);
+        assert!((area(&scene.mesh.surfaces[1]) - 200.0).abs() < 1e-4);
+        let plated = &scene.mesh.surfaces[3];
         let t = board.stackup.thickness().to_mm() as f32;
         let low = plated.positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
         let depth = board.stackup.copper_z("In1.Cu").unwrap() as f32;
@@ -1154,14 +892,14 @@ mod tests {
         };
         let ring_area =
             |r: f64, n: usize| 0.5 * n as f64 * r * r * (std::f64::consts::TAU / n as f64).sin();
-        assert!((area(&scene.surfaces[0]) - (200.0 - ring_area(0.15, 12))).abs() < 1e-3);
-        assert!((area(&scene.surfaces[1]) - (200.0 - ring_area(0.25, 16))).abs() < 1e-3);
+        assert!((area(&scene.mesh.surfaces[0]) - (200.0 - ring_area(0.15, 12))).abs() < 1e-3);
+        assert!((area(&scene.mesh.surfaces[1]) - (200.0 - ring_area(0.25, 16))).abs() < 1e-3);
         let t = board.stackup.thickness().to_mm() as f32;
         let floor = t / 2.0 - board.stackup.copper_z("In2.Cu").unwrap() as f32 - 0.1;
-        let plated = &scene.surfaces[3];
+        let plated = &scene.mesh.surfaces[3];
         let low = plated.positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
         assert!((low - floor).abs() < 1e-4, "{low} {floor}");
-        let wide: Vec<f32> = scene.surfaces[2]
+        let wide: Vec<f32> = scene.mesh.surfaces[2]
             .positions
             .iter()
             .filter(|q| ((q[0] - 5.0).powi(2) + (q[1] + 5.0).powi(2)).sqrt() < 0.3)
@@ -1194,7 +932,8 @@ mod tests {
             let scene = build(l, b, &dir, Fetch::Blocking);
             let t = b.stackup.thickness().to_mm() as f32;
             let stop = t / 2.0 - b.stackup.copper_z("In1.Cu").unwrap() as f32;
-            let low = scene.surfaces[3].positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
+            let low =
+                scene.mesh.surfaces[3].positions.iter().map(|q| q[2]).fold(f32::MAX, f32::min);
             low - stop
         };
         let point = lowest(board);
