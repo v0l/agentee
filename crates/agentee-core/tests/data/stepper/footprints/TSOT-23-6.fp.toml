@@ -4,6 +4,7 @@ description = "TSOT, 6 Pin (https://www.jedec.org/sites/default/files/docs/MO-19
 tags = ["TSOT", "TO_SOT_SMD"]
 mount = "smd"
 model = "${KICAD9_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/TSOT-23-6.step"
+height = "0.95mm"
 
 [[pads]]
 number = "1"

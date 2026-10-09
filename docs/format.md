@@ -1354,7 +1354,9 @@ What goes where, strongest first, and why:
 - An electrolytic keeps 3 mm from a hot part, since its life halves every 10 C (Nichicon and
   Panasonic application notes). A small two-pad chip keeps a part taller than 3 mm at least
   that height away (`tall-part-shadow`), unless both serve the same IC; heights come from the
-  footprint `height`, the `CP_Elec_DxH` name, or the 3D view defaults.
+  footprint `height`, the `CP_Elec_DxH` name, or the 3D view defaults. Run `agentee models`
+  first so `height` is the real model's: a vertical JST PH is 6 mm, which the name alone does
+  not say.
 - LEDs and buttons go to the board edge, clear of mounting hardware, where they can be seen
   and pressed.
 - Parts stay with their schematic sheet: each is drawn toward the sheet's largest IC once it
@@ -1768,7 +1770,10 @@ VRML file, so vendor models need not be checked in: it is downloaded once into
 generated part. Pin the URL to a commit or release so the file cannot change under you. KiCad
 library models that are not on disk are downloaded from the kicad-packages3D repository into the
 cache: `agentee models` (MCP `models`) fetches them all and
-reports what it found, and the viewer fetches in the background. A part without a model is a box
+reports what it found, and the viewer fetches in the background. It also writes `height` into
+each of the project's footprint files that has a model and no `height`: the top of the model as
+placed by `model_rotate`, `model_scale` and `model_offset`, so the placer and
+`tall-part-shadow` use the real part. A part without a model is a box
 over its fab outline, `height` tall, else a height guessed from the footprint name. STEP files are
 meshed with [truck](https://github.com/ricosjp/truck), with colours from their styled items and
 assembly placements applied. Edges use the 3D curve of each surface curve, not its pcurves.
@@ -2816,7 +2821,7 @@ agentee library verify
 `add` takes the symbol and footprint from a `.sym.toml` or `.fp.toml` file, a symbol or footprint
 of the project (`-p`), or a KiCad `Library:Name`; the footprint defaults to the symbol's. It
 copies the footprint's 3D model in (from the KiCad model directories, the model cache or a
-download) and points the footprint at the copy, so a part works offline and keeps working when a
+download), points the footprint at the copy and sets its `height` from the model when it has none, so a part works offline and keeps working when a
 KiCad install or a vendor download changes. It fetches the datasheet (`--datasheet` URL or PDF,
 else the symbol's URL, else the distributors'), pins it in the datasheet cache so `datasheet
 purge` never removes it, and records each listing's stock and price breaks. `--local` adds to the

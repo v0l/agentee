@@ -4,6 +4,7 @@ description = "JST PH series connector, B2B-PH-K (http://www.jst-mfg.com/product
 tags = ["connector", "JST", "PH", "vertical"]
 mount = "tht"
 model = "${KICAD9_3DMODEL_DIR}/Connector_JST.3dshapes/JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical.step"
+height = "6.00mm"
 
 [[pads]]
 number = "1"

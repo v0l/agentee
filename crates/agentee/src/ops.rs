@@ -524,22 +524,51 @@ pub fn fetch_models(p: &Project) -> Result<Value, String> {
     wanted.sort();
     wanted.dedup();
     let mut models = Vec::new();
+    let mut heights = Vec::new();
     for m in wanted {
         let local = agentee_3d::locate(&m, &p.root);
         let fetched = local.is_none();
         let row = match agentee_3d::get(&m, &p.root, agentee_3d::Fetch::Blocking) {
-            agentee_3d::Status::Ready(mesh) => json!({
-                "model": m,
-                "path": agentee_3d::locate(&m, &p.root),
-                "fetched": fetched,
-                "triangles": mesh.triangles(),
-            }),
+            agentee_3d::Status::Ready(mesh) => {
+                for e in &p.footprints {
+                    if e.item.model.as_deref() != Some(m.as_str()) || e.item.height.is_some() {
+                        continue;
+                    }
+                    if !e.path.starts_with(&p.root) {
+                        continue;
+                    }
+                    let Some(h) = agentee_3d::model_height(&e.item, &mesh) else { continue };
+                    write_height(&e.path, h)?;
+                    heights.push(
+                        json!({ "footprint": e.item.name, "height": (h * 100.0).round() / 100.0 }),
+                    );
+                }
+                json!({
+                    "model": m,
+                    "path": agentee_3d::locate(&m, &p.root),
+                    "fetched": fetched,
+                    "triangles": mesh.triangles(),
+                })
+            }
             agentee_3d::Status::Missing(e) => json!({ "model": m, "error": e }),
             agentee_3d::Status::Pending => json!({ "model": m, "error": "pending" }),
         };
         models.push(row);
     }
-    Ok(json!({ "cache": agentee_3d::cache_dir(), "generated": generated.len(), "models": models }))
+    Ok(json!({
+        "cache": agentee_3d::cache_dir(),
+        "generated": generated.len(),
+        "models": models,
+        "heights": heights,
+    }))
+}
+
+fn write_height(path: &Path, h: f64) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut doc: toml_edit::DocumentMut =
+        text.parse().map_err(|e| format!("{}: {e}", path.display()))?;
+    doc["height"] = toml_edit::value(format!("{:.2}mm", h));
+    std::fs::write(path, doc.to_string()).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 pub fn serpentine(

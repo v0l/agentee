@@ -240,6 +240,15 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
                 let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
                 std::fs::write(dir.join(&rel), &bytes).map_err(|e| e.to_string())?;
                 *ft = set_key(ft, "model", &rel)?;
+                if get_key(ft, "height").is_none()
+                    && let Ok(file) = toml::from_str::<agentee_core::footprint::FootprintFile>(ft)
+                    && let Ok(mesh) = agentee_3d::load(&path)
+                {
+                    let f = file.resolve(&mut agentee_core::diag::Diags::new(&file.name));
+                    if let Some(h) = agentee_3d::model_height(&f, &mesh) {
+                        *ft = set_key(ft, "height", &format!("{h:.2}mm"))?;
+                    }
+                }
                 files.push(Provenance {
                     path: rel.clone(),
                     source: m.clone(),
@@ -700,9 +709,8 @@ fn verify_one(e: &Entry, cache: &Cache) -> Vec<Finding> {
             Err(err) => push(false, format!("model {m}: {err}")),
             Ok(mesh) => {
                 let (lo, hi) = mesh.bounds();
-                let unit = if m.to_lowercase().contains(".wrl") { 2.54 } else { 1.0 };
-                let mw = f64::from(hi[0] - lo[0]) * unit * fp.model_scale[0];
-                let mh = f64::from(hi[1] - lo[1]) * unit * fp.model_scale[1];
+                let mw = f64::from(hi[0] - lo[0]) * fp.model_scale[0];
+                let mh = f64::from(hi[1] - lo[1]) * fp.model_scale[1];
                 let cy = fp.courtyard("F");
                 let b = if cy.is_empty() { fp.bounds() } else { cy };
                 let (fw, fh) = (b.max[0] - b.min[0], b.max[1] - b.min[1]);

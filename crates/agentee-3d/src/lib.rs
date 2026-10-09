@@ -94,6 +94,21 @@ fn gunzip(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+pub fn model_height(fp: &agentee_core::footprint::Footprint, mesh: &Mesh) -> Option<f64> {
+    let r = export::rotation(fp.model_rotate);
+    let s = fp.model_scale;
+    let top = mesh
+        .parts
+        .iter()
+        .flat_map(|p| &p.positions)
+        .map(|v| {
+            let q = [v[0] as f64 * s[0], v[1] as f64 * s[1], v[2] as f64 * s[2]];
+            r[2][0] * q[0] + r[2][1] * q[1] + r[2][2] * q[2] + fp.model_offset[2]
+        })
+        .fold(f64::MIN, f64::max);
+    (top > 0.0 && top < 100.0).then_some(top)
+}
+
 pub fn load(path: &Path) -> Result<Mesh, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let bytes = gunzip(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -431,6 +446,22 @@ mod tests {
             );
         }
         s
+    }
+
+    fn footprint(extra: &str) -> agentee_core::footprint::Footprint {
+        let f: agentee_core::footprint::FootprintFile =
+            toml::from_str(&format!("name = \"X\"\nmodel = \"x.wrl\"\n{extra}")).unwrap();
+        f.resolve(&mut agentee_core::diag::Diags::new("X"))
+    }
+
+    #[test]
+    fn model_height_is_the_top_of_the_placed_model() {
+        let mesh = wrl::parse(&quad_wrl(3));
+        let h = |extra: &str| model_height(&footprint(extra), &mesh).unwrap();
+        assert!((h("") - 5.08).abs() < 1e-6);
+        assert!((h("model_offset = [\"0mm\", \"0mm\", \"1mm\"]") - 6.08).abs() < 1e-6);
+        assert!((h("model_scale = [1.0, 1.0, 0.5]") - 2.54).abs() < 1e-6);
+        assert!((h("model_rotate = [-90.0, 0.0, 0.0]") - 2.54).abs() < 1e-6);
     }
 
     fn serve_once(body: Vec<u8>) -> String {

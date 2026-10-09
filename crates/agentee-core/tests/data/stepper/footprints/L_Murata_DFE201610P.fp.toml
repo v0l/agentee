@@ -4,6 +4,7 @@ description = "Inductor, Murata, DFE201610P, 2.0x1.6x1.0mm, (https://www.murata.
 tags = ["Inductor", "power", "chip", "flatwire"]
 mount = "smd"
 model = "${KICAD9_3DMODEL_DIR}/Inductor_SMD.3dshapes/L_Murata_DFE201610P.step"
+height = "1.00mm"
 
 [[pads]]
 number = "1"

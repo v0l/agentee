@@ -350,10 +350,11 @@ What the `layout-engine` branch measured on `examples/sdr`, and why the search i
 `cargo test -p agentee-core --release --test place_rules` places two fixtures from scratch with
 seeds 1 to 10 and checks each result against what the parts' datasheets ask, measured pad edge
 to pad edge. `tests/data/stepper` (24 V in, an AP63203 buck, an STM32H563, two TMC2209 drivers
-with their motor connectors): the TMC2209 filter caps within 5 mm of their pins and its sense
-resistors within 8 mm (datasheet 21), its VS electrolytic within 8 mm, each driver within 18 mm
+with their motor connectors): the TMC2209 filter caps within 3 mm of their pins and its sense
+resistors within 2 mm (datasheet 21), its VS electrolytic within 8 mm, each driver within 18 mm
 of its motor connector and nearer it than the other one, the buck's switch loop (AP63203 layout
-guide), a small cap on every STM32 supply pin and 2.2 uF on each VCAP (AN5711), the crystal and
+guide), a small cap within 3 mm of every STM32 supply pin and 2.2 uF within 2 mm of each VCAP
+(AN5711), the crystal and
 its load caps at OSC32. `tests/data/controller`, five sheets (12 V entry through a PTC, a
 reverse diode and an SMBJ15A; an AP63200 with its feedback divider; the STM32H563; USB-C with a
 USBLC6-2; a low-side AO3400A fan switch; an NTC into an MCP6001 and an ADC filter): fuse, diode
@@ -362,13 +363,16 @@ the USB connector, the divider at FB, gate resistor and pull-down at the gate, t
 beside its connector with no class `current`, the op-amp's feedback at its inverting input and
 its bypass within the 2 mm its datasheet asks, the analog nets inside their `max_length`,
 crystal and op-amp 8 mm from the switchers, the electrolytic 3 mm from the MCU, the reset button
-and LED at the edge, at most one small chip in a tall part's shadow, and half or more of each
+and LED at the edge, at most one small chip in a tall part's shadow besides those wired to
+it, and half or more of each
 large sheet's parts nearest their own sheet. The placer before power-aware weighting broke about fifty of the stepper checks over the ten
 seeds; the drivers landed 20 to 40 mm from their connectors, beside the MCU. With these rules
 the `sdr` full flow went from 494 of 535 connections, 59 unrouted and 120 DRC errors (104 silk)
-to 508 of 540, 36 unrouted and 20. A new
+to 504 of 536, 43 unrouted and 26. A new
 rule goes in `stepper_rules` with the datasheet section it comes from, and a new fixture gets
-its own rules function. `AGENTEE_PLACE_KEEP=dir` keeps each placed copy for `agentee render`.
+its own rules function. `AGENTEE_PLACE_KEEP=dir` keeps each placed copy for `agentee render`,
+and `AGENTEE_PLACE_SEEDS=11-40` runs other seeds; both fixtures pass seeds 1 to 40. Their
+footprint heights come from the KiCad models through `agentee models`.
 
 ## Benchmarks
 
@@ -383,7 +387,7 @@ time. `AGENTEE_BENCH_OUT=dir` keeps the result files.
 | `lna` route only, hand placement | 17 of 17, 0.3 s | 17 of 17, 0 DRC errors, RF nets at or under hand length, 0.4 s | 17 of 17, RF nets within 10% of hand length, 0 DRC errors |
 | `lna` full flow | RF_IN unrouted, RF_AMP_OUT 11.7 mm | J1, C1, U1, C2 and J2 on one line, 17 of 17, 0 DRC errors, 0.6 s | J1 to J2 chain in a line, all routed, 0 DRC errors |
 | `sdr` route only, committed placement | 280 of 311, 97 unrouted, 101 s | 530 of 593, 75 to 80 unrouted, 108 to 118 DRC errors (90 silk), 250 to 310 s | 0 unrouted, under 60 s |
-| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 508 of 540, 36 unrouted, 20 DRC errors (0 silk), 341 s | 0 unrouted, decap term under 20, under 120 s |
+| `sdr` full flow | 283 of 311, 98 unrouted, 289 DRC errors, 136 s | 504 of 536, 43 unrouted, 26 DRC errors (0 silk), 276 s | 0 unrouted, decap term under 20, under 120 s |
 | `praline` route only, hand placement | | 1249 of 1296, 45 unrouted, 23 DRC errors, 505 s | 0 unrouted |
 
 Connection counts went up because plane and ground pads are now routed connections. The

@@ -270,7 +270,8 @@ agentee import footprint Package_TO_SOT_SMD:SOT-89-3
 Imports land in `symbols/` and `footprints/`. `--force` overwrites. Run check straight after:
 KiCad silk is often 0.12 mm and JLCPCB wants 0.15 mm, so check names the footprints to widen.
 Change the `width` of their silk `[[graphics]]` in a text editor, one file at a time.
-`agentee models` fetches the 3D models the footprints name.
+`agentee models` fetches the 3D models the footprints name and writes each footprint's `height`
+from its model, which the placer uses to keep small parts out of tall parts' shadows.
 
 `agentee import board path/NAME.kicad_pcb --dir DIR` turns a whole KiCad board into a project:
 board spec, layout, a netlist schematic, footprints and box symbols.

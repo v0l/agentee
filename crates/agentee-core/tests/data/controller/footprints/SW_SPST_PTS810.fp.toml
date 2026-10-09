@@ -4,6 +4,7 @@ description = "C&K Components, PTS 810 Series, Microminiature SMT Top Actuated, 
 tags = ["SPST", "Button", "Switch"]
 mount = "smd"
 model = "${KICAD9_3DMODEL_DIR}/Button_Switch_SMD.3dshapes/SW_SPST_PTS810.step"
+height = "2.50mm"
 
 [[pads]]
 number = "1"

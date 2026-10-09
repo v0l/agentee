@@ -6,7 +6,17 @@ use std::path::{Path, PathBuf};
 
 type P = [f64; 2];
 
-const SEEDS: [u64; 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
+
+fn seeds() -> std::ops::RangeInclusive<u64> {
+    match std::env::var("AGENTEE_PLACE_SEEDS").ok().and_then(|s| {
+        let (a, b) = s.split_once('-')?;
+        Some(a.parse().ok()?..=b.parse().ok()?)
+    }) {
+        Some(r) => r,
+        None => SEEDS,
+    }
+}
 
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(name)
@@ -28,7 +38,7 @@ struct Laid {
     parts: Vec<Placed>,
     nets: Vec<String>,
     outline: Vec<P>,
-    shadows: Vec<String>,
+    shadows: Vec<(String, String)>,
     sheets: HashMap<String, String>,
 }
 
@@ -112,7 +122,11 @@ fn laid(name: &str, seed: u64) -> Laid {
             .diags
             .iter()
             .filter(|d| d.rule.as_deref() == Some("tall-part-shadow"))
-            .map(|d| d.at.trim_start_matches("part ").to_string())
+            .map(|d| {
+                let tall = d.message.split(" from ").nth(1).unwrap_or("");
+                let tall = tall.split(',').next().unwrap_or("").trim().to_string();
+                (d.at.trim_start_matches("part ").to_string(), tall)
+            })
             .collect(),
         sheets: sheets_of(&dir),
     };
@@ -129,7 +143,7 @@ struct Board {
     parts: Vec<Placed>,
     nets: Vec<String>,
     outline: Vec<P>,
-    shadows: Vec<String>,
+    shadows: Vec<(String, String)>,
     sheets: HashMap<String, String>,
     broken: Vec<String>,
 }
@@ -297,6 +311,15 @@ impl Board {
         }
     }
 
+    fn wired(&self, a: &str, b: &str) -> bool {
+        let nets = |r: &str| -> Vec<usize> {
+            let p = self.parts.iter().find(|p| p.reference == r);
+            p.map(|p| p.pads.iter().filter_map(|q| q.net).collect()).unwrap_or_default()
+        };
+        let theirs = nets(b);
+        nets(a).iter().any(|n| self.nets[*n] != "GND" && theirs.contains(n))
+    }
+
     fn closer(&mut self, why: &str, a: &str, near: &str, far: &str) {
         let (n, f) = (self.apart(a, near), self.apart(a, far));
         if n >= f {
@@ -313,15 +336,15 @@ fn stepper_rules(b: &mut Board) {
         let vs = [pin(22), pin(28)];
         let vs: Vec<&str> = vs.iter().map(|s| s.as_str()).collect();
         let why = format!("{u} datasheet 21, filter caps close to the pins");
-        b.pad_near(&why, &cap(1, 1), &[&pin(4)], 5.0);
-        b.pad_near(&why, &cap(1, 2), &[&pin(5)], 5.0);
-        b.pad_near(&why, &cap(2, 1), &[&pin(6)], 5.0);
-        b.pad_near(&why, &cap(3, 1), &[&pin(8)], 5.0);
-        b.pad_near(&why, &cap(0, 1), &vs, 5.0);
-        b.pad_near(&why, &cap(4, 1), &[&pin(15)], 5.0);
+        b.pad_near(&why, &cap(1, 1), &[&pin(4)], 3.0);
+        b.pad_near(&why, &cap(1, 2), &[&pin(5)], 3.0);
+        b.pad_near(&why, &cap(2, 1), &[&pin(6)], 3.0);
+        b.pad_near(&why, &cap(3, 1), &[&pin(8)], 3.0);
+        b.pad_near(&why, &cap(0, 1), &vs, 3.0);
+        b.pad_near(&why, &cap(4, 1), &[&pin(15)], 3.0);
         let why = format!("{u} datasheet 21.2, sense resistors close to BRA and BRB");
-        b.pad_near(&why, &format!("R{r}.1"), &[&pin(23)], 8.0);
-        b.pad_near(&why, &format!("R{}.1", r + 1), &[&pin(27)], 8.0);
+        b.pad_near(&why, &format!("R{r}.1"), &[&pin(23)], 2.0);
+        b.pad_near(&why, &format!("R{}.1", r + 1), &[&pin(27)], 2.0);
         let why = format!("{u} datasheet 21.3, VS electrolytic close to the device");
         b.pad_near(&why, &cap(5, 1), &vs, 8.0);
         let why = format!("{u} drives {j}: the coil current loop stays short");
@@ -330,7 +353,7 @@ fn stepper_rules(b: &mut Board) {
     }
     let why = "AP63203 layout 4, VIN capacitor as close as possible";
     b.pad_near(why, "C1.1", &["U1.3"], 2.0);
-    b.pad_near(why, "C1.2", &["U1.4"], 5.0);
+    b.pad_near(why, "C1.2", &["U1.4"], 2.0);
     let why = "AP63203 table 2, the switch loop: BST cap and inductor on SW";
     b.pad_near(why, "C2.1", &["U1.6"], 3.0);
     b.pad_near(why, "C2.2", &["U1.5"], 3.0);
@@ -340,11 +363,11 @@ fn stepper_rules(b: &mut Board) {
     let why = "AN5711, a small ceramic on every VDD, VDDA and VBAT pin";
     let decaps = ["C10.1", "C11.1", "C12.1", "C13.1", "C15.1", "C16.1", "C17.1"];
     for pin in ["U2.1", "U2.13", "U2.19", "U2.32", "U2.48", "U2.64"] {
-        b.pad_near(why, pin, &decaps, 5.0);
+        b.pad_near(why, pin, &decaps, 3.0);
     }
     let why = "AN5711, 2.2 uF on each VCAP pin";
-    b.pad_near(why, "U2.30", &["C18.1", "C19.1"], 5.0);
-    b.pad_near(why, "U2.62", &["C18.1", "C19.1"], 5.0);
+    b.pad_near(why, "U2.30", &["C18.1", "C19.1"], 2.0);
+    b.pad_near(why, "U2.62", &["C18.1", "C19.1"], 2.0);
     let why = "LSE crystal next to OSC32";
     b.pad_near(why, "Y1.1", &["U2.3"], 6.0);
     b.pad_near(why, "Y1.2", &["U2.4"], 6.0);
@@ -399,10 +422,14 @@ fn controller_rules(b: &mut Board) {
     let why = "user-facing parts at the board edge";
     b.by_edge(why, "SW1", 5.0);
     b.by_edge(why, "D3", 5.0);
-    let why = "tall-part-shadow, an info-level rule the placer weighs below the decap pulls: at most one small chip a tall part's height from it, besides the buck's own parts that AP63200 layout 4 and 5 put at the device";
+    let why = "tall-part-shadow, an info-level rule the placer weighs below the decap pulls: at most one small chip a tall part's height from it, besides parts wired to that part and the buck's own parts that AP63200 layout 4 and 5 put at the device";
     let own = ["C3", "R1", "R2", "C6"];
-    let shaded: Vec<String> =
-        b.shadows.iter().filter(|r| !own.iter().any(|o| r.ends_with(o))).cloned().collect();
+    let shaded: Vec<String> = b
+        .shadows
+        .iter()
+        .filter(|(r, tall)| !own.contains(&r.as_str()) && !b.wired(r, tall))
+        .map(|(r, tall)| format!("{r} by {tall}"))
+        .collect();
     if shaded.len() > 1 {
         b.broken.push(format!("{why}: {shaded:?}"));
     }
@@ -411,7 +438,7 @@ fn controller_rules(b: &mut Board) {
 
 fn check(name: &str, rules: fn(&mut Board)) {
     let mut report = Vec::new();
-    for seed in SEEDS {
+    for seed in seeds() {
         let l = laid(name, seed);
         let mut b = Board {
             parts: l.parts,
