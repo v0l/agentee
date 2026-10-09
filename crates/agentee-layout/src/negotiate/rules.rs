@@ -86,6 +86,8 @@ pub struct Rules {
     pub cut: Vec<Vec<usize>>,
     pub casts: Vec<bool>,
     pub iso: Isolation,
+    pub pairs: Vec<super::pair::PairRule>,
+    pub budget: Vec<Option<(usize, String)>>,
 }
 
 fn plane_cover(layout: &Layout) -> Vec<Vec<(usize, f64)>> {
@@ -168,6 +170,8 @@ impl Rules {
             cut: Vec::new(),
             casts: Vec::new(),
             iso: Isolation::new(board, &layout.nets, layout.copper.len()),
+            pairs: Vec::new(),
+            budget: vec![None; layout.nets.len()],
         };
         let cover = plane_cover(layout);
         let plane: Vec<bool> = (0..nl)
@@ -392,6 +396,37 @@ impl Rules {
                 via_need,
             });
         }
+        if opts.couple {
+            for p in &layout.pairs {
+                if let Some(r) = super::pair::rule(&mut rules, layout, board, p.p, p.n) {
+                    rules.pairs.push(r);
+                }
+            }
+        }
+        for iface in &layout.interfaces {
+            let Some(m) = iface.spec.max_vias else { continue };
+            for lane in &iface.lanes {
+                let ids: Vec<usize> = lane
+                    .nets
+                    .iter()
+                    .filter_map(|n| layout.nets.iter().position(|x| &x.name == n))
+                    .collect();
+                let used = layout
+                    .vias
+                    .iter()
+                    .filter(|v| ids.contains(&v.net))
+                    .filter(|v| !matches!(v.source, agentee_core::layout::ViaSource::Stitch(_)))
+                    .count();
+                let left = (m as usize).saturating_sub(used);
+                let open: Vec<usize> = ids.iter().copied().filter(|n| routed.contains(n)).collect();
+                for (k, &n) in open.iter().enumerate() {
+                    let share = left / open.len() + usize::from(k < left % open.len());
+                    if rules.budget[n].as_ref().is_none_or(|b| share < b.0) {
+                        rules.budget[n] = Some((share, iface.name.clone()));
+                    }
+                }
+            }
+        }
         let floor = rules.edge.max(rules.npth).max(rules.pth_cu).max(rules.inner_pth_cu);
         let max_c = layout
             .nets
@@ -403,6 +438,7 @@ impl Rules {
             .nets
             .iter()
             .flatten()
+            .chain(rules.pairs.iter().map(|p| &p.rule))
             .flat_map(|r| r.width.iter().map(|w| w / 2.0))
             .fold(0.0, f64::max);
         let via_reach =

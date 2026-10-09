@@ -82,6 +82,7 @@ pub struct Query<'a> {
     pub pres: f32,
     pub hard: bool,
     pub via_cost: f64,
+    pub vias: bool,
     pub bend_cost: f64,
     pub zone: &'a [u16],
     pub zone_cost: f64,
@@ -93,6 +94,7 @@ pub struct Query<'a> {
     pub own: &'a std::collections::HashSet<u32>,
     pub holes: &'a [(P, f64)],
     pub old: Option<&'a super::soft::Footprint>,
+    pub partner: Option<&'a super::pair::Partner>,
     pub entering: Option<&'a [bool]>,
 }
 
@@ -121,6 +123,7 @@ const BLOCK: usize = 4;
 const MINE: u8 = 2;
 const OLD: u8 = 4;
 const OLD_VIA: u8 = 8;
+const PARTNER: u8 = 128;
 
 #[derive(Default)]
 struct Scratch {
@@ -313,6 +316,18 @@ impl Query<'_> {
                 }
             }
         }
+        if let Some(fp) = self.partner.and_then(|p| p.fp.as_ref()) {
+            let at = |c: u32| {
+                let (x, y) = (c as usize % grid.w, c as usize / grid.w);
+                w.contains(x, y).then(|| (y - w.y0) * ww + (x - w.x0))
+            };
+            for l in 0..nl {
+                let Some(b) = self.rule.bucket[l] else { continue };
+                for k2 in fp.0[b].iter().filter_map(|&c| at(c)) {
+                    set_flag(flags, epoch, l * area + k2, PARTNER);
+                }
+            }
+        }
         let diag = g * std::f32::consts::SQRT_2;
         let (step, step_d) = (g * BLOCK as f32, diag * BLOCK as f32);
         for y in 0..bh {
@@ -405,9 +420,12 @@ impl Query<'_> {
             if !grid.track_ok(i3, net, need) {
                 return false;
             }
+            let fl = flag(flags, epoch, at(l, x, y));
             !hard
-                || flag(flags, epoch, at(l, x, y)) & MINE != 0
-                || rule.bucket[l].is_none_or(|b| self.soft.track(b, y * grid.w + x) == 0)
+                || fl & MINE != 0
+                || rule.bucket[l].is_none_or(|b| {
+                    self.soft.track(b, y * grid.w + x) <= u8::from(fl & PARTNER != 0)
+                })
         };
         for s in &self.sources {
             let Some(k) = local(s.at) else { continue };
@@ -502,6 +520,7 @@ impl Query<'_> {
                     } else {
                         rule.bucket[l].map(|b| self.soft.track(b, c2) as f32).unwrap_or(0.0)
                             - if fl & OLD != 0 { 1.0 } else { 0.0 }
+                            - if fl & PARTNER != 0 { 1.0 } else { 0.0 }
                     };
                     let hist = self.soft.hist[l * plane + c2];
                     let zn = self.zone[l * plane + c2];
@@ -527,7 +546,11 @@ impl Query<'_> {
                     }
                 }
             }
-            if d0 == LANDED || me.since < gap_cells || no_via.get(k2).copied().unwrap_or(false) {
+            if !self.vias
+                || d0 == LANDED
+                || me.since < gap_cells
+                || no_via.get(k2).copied().unwrap_or(false)
+            {
                 continue;
             }
             let c2 = y * grid.w + x;
@@ -551,7 +574,15 @@ impl Query<'_> {
                     }
                     let vb = rule.via_bucket[vi];
                     let old = vi < 4 && flag(flags, epoch, k2) & (OLD_VIA << vi) != 0;
-                    let count = self.soft.via(vb, c2) as f32 - if old { 1.0 } else { 0.0 };
+                    let theirs = self.partner.is_some_and(|p| p.has_via(vb, c2));
+                    if self.partner.is_some_and(|p| {
+                        p.near_via(grid.center(x, y), o.r, o.dr, &o.layers, self.rules.hole_gap)
+                    }) {
+                        continue;
+                    }
+                    let count = self.soft.via(vb, c2) as f32
+                        - if old { 1.0 } else { 0.0 }
+                        - if theirs { 1.0 } else { 0.0 };
                     if hard && count > 0.0 {
                         continue;
                     }

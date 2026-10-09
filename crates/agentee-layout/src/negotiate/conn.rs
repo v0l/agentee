@@ -116,6 +116,14 @@ impl NetCopper {
         out
     }
 
+    pub fn solid(&self) -> usize {
+        self.solid
+    }
+
+    pub fn holds(&self, g: usize, items: std::ops::Range<usize>) -> bool {
+        !self.has_pad(g) && items.into_iter().any(|i| self.group.get(i) == Some(&g))
+    }
+
     pub fn has_pad(&self, g: usize) -> bool {
         self.items.iter().zip(&self.group).any(|(it, &k)| k == g && matches!(it, Item::Pad { .. }))
     }

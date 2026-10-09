@@ -55,13 +55,14 @@ pub fn spread(layout: &Layout, base: &Base, tracks: &mut [RoutedTrack]) -> Vec<(
         anchors.push((v.net, v.at, v.diameter / 2.0));
     }
     let planes: Vec<usize> = base.rules.shadow.iter().flatten().copied().collect();
+    let paired: Vec<usize> = base.rules.pairs.iter().flat_map(|p| [p.p, p.n]).collect();
     let mut undo = Vec::new();
     for (ti, track) in tracks.iter_mut().enumerate() {
         let old = track.points.clone();
         let (Some(l), Some(n)) = (layer_of(&track.layer), net_of(&track.net)) else {
             continue;
         };
-        if planes.contains(&l) {
+        if planes.contains(&l) || paired.contains(&n) {
             continue;
         }
         let Some(rule) = base.rules.nets.get(n).and_then(|r| r.as_ref()) else { continue };

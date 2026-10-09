@@ -43,6 +43,7 @@ pub struct Ctx<'a> {
     pub own: &'a std::collections::HashSet<u32>,
     pub holes: &'a [(P, f64)],
     pub old: Option<&'a super::soft::Footprint>,
+    pub partner: Option<&'a super::pair::Partner>,
     pub pads: &'a [PadRef],
 }
 
@@ -74,8 +75,15 @@ impl Ctx<'_> {
         let i = self.grid.idx(l, x, y);
         self.grid.track_ok(i, self.net, self.rule.need[l])
             && (self.own.contains(&(i as u32))
-                || self.rule.bucket[l]
-                    .is_none_or(|b| self.soft.track_less(b, y * self.grid.w + x, self.old) == 0))
+                || self.rule.bucket[l].is_none_or(|b| self.free(b, y * self.grid.w + x)))
+            && self.partner.is_none_or(|p| {
+                !p.near_track(l, self.grid.center(x, y), self.rule.width[l] / 2.0, 0.0)
+            })
+    }
+
+    fn free(&self, b: usize, c: usize) -> bool {
+        let theirs = u8::from(self.partner.is_some_and(|p| p.has(b, c)));
+        self.soft.track_less(b, c, self.old) <= theirs
     }
 
     fn unshared(&self, l: usize, p: P) -> bool {
@@ -86,8 +94,7 @@ impl Ctx<'_> {
         let (x, y) = (x as usize, y as usize);
         let i = self.grid.idx(l, x, y);
         self.own.contains(&(i as u32))
-            || self.rule.bucket[l]
-                .is_none_or(|b| self.soft.track_less(b, y * self.grid.w + x, self.old) == 0)
+            || self.rule.bucket[l].is_none_or(|b| self.free(b, y * self.grid.w + x))
     }
 
     fn field_at(&self, l: usize, at: P) -> Option<(f64, f64)> {
@@ -130,6 +137,9 @@ impl Ctx<'_> {
             let t = k as f64 / n as f64;
             let at = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
             if !self.planar(l, at) || !self.unshared(l, at) {
+                return false;
+            }
+            if self.partner.is_some_and(|p| p.near_track(l, at, width / 2.0, 0.0)) {
                 return false;
             }
             let (x, y) = g.cell(at);
@@ -374,7 +384,13 @@ impl Ctx<'_> {
                     neck: n.width < self.rule.width[n.layer] - 1e-6,
                 })
                 .collect();
-            return Piece { tracks, vias: a.via.into_iter().collect(), trimmed: None, ms: 0.0 };
+            return Piece {
+                tracks,
+                vias: a.via.into_iter().collect(),
+                trimmed: None,
+                ms: 0.0,
+                coupled: false,
+            };
         }
         let mut runs: Vec<(usize, Vec<P>)> = Vec::new();
         let mut vias = Vec::new();
@@ -421,7 +437,7 @@ impl Ctx<'_> {
                     neck: n.width < self.rule.width[n.layer] - 1e-6,
                 })
                 .collect();
-            return Piece { tracks, vias: vec![va], trimmed: None, ms: 0.0 };
+            return Piece { tracks, vias: vec![va], trimmed: None, ms: 0.0, coupled: false };
         }
         match start {
             Some(a) => {
@@ -506,7 +522,7 @@ impl Ctx<'_> {
         }
         let trimmed =
             (trimmed.iter().zip(&tracks).any(|(a, b)| a.points != b.points)).then_some(trimmed);
-        Piece { tracks, vias, trimmed, ms: 0.0 }
+        Piece { tracks, vias, trimmed, ms: 0.0, coupled: false }
     }
 
     fn extend(&self, l: usize, pts: &mut Vec<P>, pads: &[PadRef], front: bool) {

@@ -372,7 +372,7 @@ change, run the `sdr` harness three times with `AGENTEE_BATCH` at 24, 32 and 40,
 how nets are grouped in a round, and compare the means.
 
 On `sdr` the only clearance errors are the two from the committed `[[fanouts]]`; the rest are
-pair and interface timing (pairs are not routed coupled yet) and the silk the placer leaves. On
+pair and interface timing and the silk the placer leaves. On
 `praline` every error kind is at or under the committed layout's count except unrouted.
 
 What stays unrouted on `sdr` is mostly power: the In3.Cu rail regions that could not be joined
@@ -443,20 +443,31 @@ Built, in `crates/agentee-layout`:
   The grid is shifted so the balls of the finest pitch BGA sit on cell centres, which puts the
   channels between balls and the dog-bone sites on cells too, and the cells around another
   net's planned escape cost more.
+- **Pairs.** A pair with one connection per net gets a centreline at the start of each round
+  it has to be routed in: a search with a bucket as wide as both tracks and the gap, from cells
+  near the middle of one end's pads to cells near the other's, on one layer, offset into the two
+  tracks (`negotiate/pair.rs`). Each run is stamped as it is laid so the next pair sees it. The
+  two nets then route their breakouts as one unit, the second seeing the first's new copper,
+  and between them only the plain clearance holds (exact geometry, not the soft halo). A run that
+  overlaps another net is laid again in the next round, and again in the hard pass with no
+  overlap allowed; a pair left short is tried once uncoupled. Runs are trimmed to the span
+  between their breakouts, and spread leaves pair nets alone. Interface `max_vias` is split over
+  the lane's nets; a connection over its share is tried again with dearer vias and the retry is
+  kept only if it fits. On `sdr` route-only, holding the budget hard (dearer, then planar, then
+  fail) left 196 pads unrouted against 68.
 - **Finish.** Spread (each move checked against the exact copper around it), length tuning that
   never folds a track onto its own net, then neck down of track ends that enter a pad narrower
   than the track.
 
 Not built yet:
 
-- Coupled routing of pairs and interface via budgets as a cost.
 - Pattern (L and Z) routes in global, and plane nets in global.
 - Via removal and snapping in finish.
 - The viewer drawing `Db` snapshots and `--checkpoint`.
 
 `agentee route`, the MCP `route` tool, `testpoints` and the viewer's route tool run the detail
-router through `autoroute::route`, except for coupled pairs, single connections from the viewer
-and lanes of an interface with `max_vias`, which still use the grid router in `agentee-core`.
+router through `autoroute::route`, except for single connections from the viewer, which still use
+the grid router in `agentee-core`.
 
 ## Sources
 

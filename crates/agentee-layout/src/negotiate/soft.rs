@@ -10,6 +10,7 @@ pub struct Piece {
     pub vias: Vec<(P, usize)>,
     pub trimmed: Option<Vec<Run>>,
     pub ms: f64,
+    pub coupled: bool,
 }
 
 #[derive(Clone, Debug)]

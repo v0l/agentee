@@ -1411,8 +1411,21 @@ and the board's others after. `--via-cost`, `--bend-cost` and `--via-in-pad` wor
 net's new copper is checked against the rules before it is written, and dropped with the broken
 rule named under `failed`; a via the net is joined without is dropped.
 
-Coupled pairs (`--pairs`), the lanes of an interface with `max_vias` (routed after the other nets)
-and the viewer's single-connection route go through the older grid router. The grid router
+A pair whose class has a `diff_gap` at least its clearance, with one connection per net, is routed
+coupled: a centreline as wide as both tracks and the gap is searched on one layer from near the
+middle of one pair of pads to near the middle of the other, offset into two tracks at exactly the
+pair gap, and each net then joins its pads to its track with an ordinary breakout. The centreline
+negotiates like any net, so a pair that overlaps another net is laid again in the next round;
+between the two nets of a pair only the plain clearance holds, so the breakouts may run beside the
+coupled tracks. A pair left with an open connection is tried once more uncoupled and kept that way
+if it joins more. `--pairs` is accepted and does nothing more. A net in an interface with
+`max_vias` gets its share of the lane's remaining vias (the lane less the vias it already has,
+split over the lane's nets being routed); a connection that takes more is searched again with
+dearer vias (four times, sixteen when no via is left), and the second route is kept only if it
+fits. Otherwise the first stands and check reports `interface-vias`, since holding every lane
+to its budget cost more connections than it saved errors.
+
+The viewer's single-connection route goes through the older grid router. The grid router
 keeps each net class's width, clearance and `layers` against every pad, track, via, hole and
 the board edge, sizes the room for each class via by its own pad, drill and layers (a microvia fits
 where a through via does not, and a microvia may sit beside a buried via on other layers), keeps new
