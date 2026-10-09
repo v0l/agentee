@@ -999,9 +999,25 @@ class, may be on another sheet);
 the top schematic runs every check on the joined design and draws the sheets stacked top to
 bottom. The top file may hold parts and nets of its own too.
 
-Check reports pins in two nets, pins in no net, single-pin nets, several outputs on one net,
-hand wires that miss a pin or touch another net's pin, overlapping parts, footprints whose
-pads do not cover the symbol's pins, and signal levels when `rails` is set. Every net in the `Default` netclass is a warning, whether it
+Check reports pins in two nets, pins in no net, single-pin nets, hand wires that miss a pin or
+touch another net's pin, overlapping parts, footprints whose pads do not cover the symbol's pins,
+the electrical rules below, and signal levels when `rails` is set.
+
+The electrical rules read each pin's `type` on the joined design (the top schematic of a sheet
+set). Parts with `dnp` and power symbols take no part; the pins of one reference count as one
+part, so a regulator with two `VOUT` pins is one driver.
+
+| rule | severity | when |
+|---|---|---|
+| `erc-unsupplied` | error | a net with `power_in` pins has no pin that can feed it: every other pin is an input, a `power_in` or a capacitor. A warning instead when the inputs are all on one part and a capacitor is on the net, the cap pin of an internal regulator, which should be `power_out` on the symbol |
+| `erc-undriven` | error | every pin on the net is an `input`; a capacitor on it (AC coupling, soft start) counts as intended. Left to the level check when `rails` is set and every input has `levels` |
+| `erc-drive-conflict` | error | push-pull outputs (`output`, `power_out`) of two parts on one net, or one beside an `open_collector` or `open_emitter` of another part |
+| `erc-tristate-contention` | warning | a push-pull output and a `tri_state` pin of another part on one net |
+| `erc-no-pull` | warning | open collector or emitter pins with nothing else to pull the line: no resistor, connector, output or rail, and no input with an internal `pull_up` or `pull_down` in its `levels` |
+| `erc-nc-pin` | warning | a `no_connect` pin is in a net; make it `passive` when the datasheet says to tie it |
+
+Pins imported from KiCad as `passive` or `unspecified` count as possible drivers, so the rules
+only speak where the symbol says what the pin is. Every net in the `Default` netclass is a warning, whether it
 names no class or names `Default`: the class sets the net's width, clearance, vias and routing
 order, so each net should say what it is. The warning needs a board and a layout of the
 schematic; a schematic only simulated (like `examples/logic`) skips it. Give the board a class

@@ -115,7 +115,7 @@ fn role(s: &Schematic, part: usize) -> Role {
     }
 }
 
-fn pin_levels(s: &Schematic, r: PinRef) -> Option<Levels> {
+pub(crate) fn pin_levels(s: &Schematic, r: PinRef) -> Option<Levels> {
     let sym = &s.parts[r.part].symbol;
     let pin = &sym.pins[r.pin];
     let base = sym.levels.clone().unwrap_or_default();

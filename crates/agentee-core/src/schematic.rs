@@ -574,25 +574,12 @@ impl Schematic {
                     );
                 }
             }
-            let drivers: Vec<String> = n
-                .pins
-                .iter()
-                .filter(|r| {
-                    matches!(
-                        self.parts[r.part].symbol.pins[r.pin].kind,
-                        PinType::Output | PinType::PowerOut
-                    )
-                })
-                .map(|r| self.pin_label(*r))
-                .collect();
-            if drivers.len() > 1 {
-                d.warn(&at, format!("several outputs drive it: {}", drivers.join(", ")));
-            }
             if n.style == NetStyle::Wire && (n.drawn_by_hand || !n.wires.is_empty()) {
                 self.check_wires(n, d);
             }
         }
         if !sheet {
+            crate::erc::check(self, d);
             crate::levels::check(self, d);
         }
         for r in &self.no_connect {

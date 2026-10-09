@@ -54,6 +54,7 @@ fn level_findings(
         .iter()
         .flat_map(|s| &s.diags)
         .filter(|d| d.at.starts_with("net ") && d.severity != Severity::Info)
+        .filter(|d| d.rule.as_deref().is_none_or(|r| !r.starts_with("erc-")))
         .filter(|d| !d.message.contains("only one pin") && !d.message.contains("no_connect"))
         .map(|d| (d.severity, d.message.clone()))
         .collect()

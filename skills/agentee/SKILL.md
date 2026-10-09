@@ -134,7 +134,9 @@ Order of work, each stage passing check before the next:
    Give the symbols of logic and MCU parts a `[levels]` table from the datasheet (VIH, VIL,
    limits, leakage) and the schematic a `rails` table, and check flags dividers that land between
    VIL and VIH, floating inputs, pulls too weak for the leakage, and overdriven pins. List ADC
-   inputs in `analog`.
+   inputs in `analog`. Pin types drive the `erc-*` rules (unsupplied rails, undriven inputs, two
+   outputs on a net, open drains with no pull-up), so fix a wrong pin `type` on the symbol
+   rather than living with the finding.
 4. **Layout.** Follow the layout loop below. `agentee edit pcb` writes a placement, a track, a
    via or a zone by hand.
 5. **Simulate** what the design depends on (see below).
