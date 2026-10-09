@@ -51,10 +51,12 @@ noise figure and S-parameters. A plausible value from memory is how a board gets
 swapped pin or a rail above a part's rating, and nothing downstream catches it: check, ERC and
 every sim trust the numbers you give them.
 
-- Before you use a part, get its datasheet (the symbol's `datasheet` field, the manufacturer's
-  page, a distributor's copy) and read the pin table and the electrical characteristics. If you
-  cannot get it, stop and ask the user for it. Do not fill the gap from memory, from a similar
-  part or from a family member.
+- Before you use a part, get its datasheet with `agentee datasheet fetch <ref|mpn|design>` (MCP
+  `datasheet_fetch`) and read the pin table and the electrical characteristics with
+  `agentee datasheet text <part> --find <pin or symbol>` (MCP `datasheet_text`). Do not fetch PDFs
+  your own way: the command shares one cached copy between every project and agent. When it lists
+  a part as unreachable, stop and ask the user for the PDF, then `agentee datasheet add <mpn>
+  file.pdf`. Do not fill the gap from memory, from a similar part or from a family member.
 - Use the exact part number and package you will order. Variants of one family differ in
   pinout, ratings and footprint, and so do KiCad library parts from the datasheet: treat an
   import as a starting point and check its pin numbers, pin types and footprint against the

@@ -317,6 +317,35 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "datasheet_fetch",
+            "description": "Fetch and cache a part's datasheet, or every part's of a layout or schematic, into the cache every project shares (~/.cache/agentee/datasheets). Tries the part's `datasheet` field, its symbol's `datasheet` URL, then the datasheet the distributors list for its mpn, with a browser user agent and retries. Lists the parts with no reachable datasheet: ask the user for those, never fill the gap from memory. A design fetch records the URL, hash and revision of each in datasheets.toml at the project root.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout or schematic, a reference (U3), a symbol or a part number" },
+                "url": { "type": "string", "description": "fetch one part from this URL instead" },
+                "refresh": { "type": "boolean", "description": "fetch again even when cached" },
+            }), &["name"]),
+        },
+        {
+            "name": "datasheet_text",
+            "description": "Read a cached datasheet as text with page numbers, fetching it first when it is not cached. Use find for the pin table and electrical characteristics (e.g. find \"VS\" returns the passages holding that word, matched whole and case sensitive when it has capitals), and pages for a page range. Without find or pages it returns the first 3 pages and the page count.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "a reference (U3), a symbol, a part number or a library part" },
+                "find": { "type": "string" },
+                "pages": { "type": "string", "description": "page or range, e.g. 4 or 4-6" },
+                "context": { "type": "integer", "default": 2, "description": "lines around each match" },
+            }), &["name"]),
+        },
+        {
+            "name": "datasheet_add",
+            "description": "Add a PDF the user supplied (a part behind a login, a vendor that blocks downloads) to the shared datasheet cache under its part number.",
+            "inputSchema": s(json!({
+                "mpn": { "type": "string" },
+                "path": { "type": "string", "description": "the PDF, relative to the project" },
+                "manufacturer": { "type": "string" },
+                "url": { "type": "string", "description": "where it came from" },
+            }), &["mpn", "path"]),
+        },
+        {
             "name": "field_solve",
             "description": "Solve a trace cross-section with the GPU field solver: impedance, effective permittivity, C and L per metre, delay. Includes solder mask, thickness, coplanar grounds and differential pairs. Within 0.5% of exact references with fine = true.",
             "inputSchema": s(json!({
@@ -829,6 +858,52 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 ))]));
             }
             Ok(ok(vec![text(agentee_parts::cost::text(&c))]))
+        }
+        "datasheet_fetch" => {
+            let p = crate::datasheets::project_for(root);
+            let args = crate::datasheets::FetchArgs {
+                url: arg(a, "url"),
+                refresh: flag(a, "refresh"),
+                config: None,
+                cache: None,
+                distributors: true,
+            };
+            let f = crate::datasheets::fetch(
+                p.as_ref(),
+                arg(a, "name").ok_or("name is required")?,
+                &args,
+            )?;
+            Ok(ok(vec![text(crate::datasheets::fetch_text(&f))]))
+        }
+        "datasheet_text" => {
+            let p = crate::datasheets::project_for(root);
+            let find = arg(a, "find");
+            let pages = arg(a, "pages").or(find.is_none().then_some("1-3"));
+            let args = crate::datasheets::TextArgs {
+                find,
+                pages,
+                context: int(a, "context", 2) as usize,
+                cache: None,
+                config: None,
+                offline: false,
+            };
+            let v = crate::datasheets::text(
+                p.as_ref(),
+                arg(a, "name").ok_or("name is required")?,
+                &args,
+            )?;
+            Ok(ok(vec![text(crate::datasheets::text_render(&v))]))
+        }
+        "datasheet_add" => {
+            let path = under(root, arg(a, "path"), "");
+            let v = crate::datasheets::add(
+                arg(a, "mpn").ok_or("mpn is required")?,
+                &path,
+                arg(a, "manufacturer"),
+                arg(a, "url"),
+                None,
+            )?;
+            Ok(ok(vec![text(pretty(&v))]))
         }
         "field_solve" => {
             let p = ops::load(root)?;

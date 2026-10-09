@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
 
+mod datasheets;
 mod edit;
 mod mcp;
 mod ops;
@@ -532,8 +533,72 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Fetch, cache and read part datasheets, shared by every project in ~/.cache/agentee/datasheets
+    Datasheet {
+        #[command(subcommand)]
+        cmd: DatasheetCmd,
+    },
     /// Print the file format reference
     Docs,
+}
+
+#[derive(Subcommand)]
+enum DatasheetCmd {
+    /// Fetch the datasheet of a part (reference, symbol or part number), or of every part of a layout or schematic, and list the parts with none reachable
+    Fetch {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Fetch from this URL instead
+        #[arg(long)]
+        url: Option<String>,
+        /// Fetch again even when a copy is cached
+        #[arg(long)]
+        refresh: bool,
+        /// Do not ask the distributors for a datasheet URL
+        #[arg(long)]
+        no_distributors: bool,
+        /// Distributor key file instead of ~/.config/agentee/distributors.toml
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Text of a cached datasheet with page numbers, or the passages matching --find
+    Text {
+        /// Reference, symbol, part number or library part
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Only the passages holding this word (case sensitive when it has capitals)
+        #[arg(long)]
+        find: Option<String>,
+        /// Page or page range, e.g. 3 or 3-5
+        #[arg(long)]
+        pages: Option<String>,
+        /// Lines of context around each match
+        #[arg(long, default_value_t = 2)]
+        context: usize,
+        /// Never fetch; fail when the datasheet is not cached
+        #[arg(long)]
+        offline: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add a local PDF to the cache, for parts behind a login or supplied by the user
+    Add {
+        mpn: String,
+        file: PathBuf,
+        #[arg(long)]
+        manufacturer: Option<String>,
+        /// Where it came from
+        #[arg(long)]
+        url: Option<String>,
+    },
+    /// Every cached datasheet
+    List,
+    /// Remove every cached datasheet that no library part pins
+    Purge,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -926,6 +991,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             }
             Ok(c.errors.is_empty())
         }
+        Cmd::Datasheet { cmd } => datasheet_cmd(cmd),
         Cmd::Fill { name, project } => {
             let p = ops::load(&project)?;
             print_json(&ops::write_fills(&p, &name)?);
@@ -1119,6 +1185,65 @@ fn run(cli: Cli) -> Result<bool, String> {
         }
         Cmd::Docs => {
             print!("{FORMAT}");
+            Ok(true)
+        }
+    }
+}
+
+fn datasheet_cmd(cmd: DatasheetCmd) -> Result<bool, String> {
+    match cmd {
+        DatasheetCmd::Fetch { name, project, url, refresh, no_distributors, config, json } => {
+            let p = datasheets::project_for(&project);
+            let args = datasheets::FetchArgs {
+                url: url.as_deref(),
+                refresh,
+                config: config.as_deref(),
+                cache: None,
+                distributors: !no_distributors,
+            };
+            let f = datasheets::fetch(p.as_ref(), &name, &args)?;
+            let ok = f.parts.iter().all(|g| g.path.is_some());
+            if json {
+                print_json(&serde_json::to_value(&f).map_err(|e| e.to_string())?);
+            } else {
+                print!("{}", datasheets::fetch_text(&f));
+            }
+            Ok(ok)
+        }
+        DatasheetCmd::Text { name, project, find, pages, context, offline, json } => {
+            let p = datasheets::project_for(&project);
+            let args = datasheets::TextArgs {
+                find: find.as_deref(),
+                pages: pages.as_deref(),
+                context,
+                cache: None,
+                config: None,
+                offline,
+            };
+            let v = datasheets::text(p.as_ref(), &name, &args)?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{}", datasheets::text_render(&v));
+            }
+            Ok(true)
+        }
+        DatasheetCmd::Add { mpn, file, manufacturer, url } => {
+            print_json(&datasheets::add(
+                &mpn,
+                &file,
+                manufacturer.as_deref(),
+                url.as_deref(),
+                None,
+            )?);
+            Ok(true)
+        }
+        DatasheetCmd::List => {
+            print_json(&datasheets::list(None)?);
+            Ok(true)
+        }
+        DatasheetCmd::Purge => {
+            print_json(&datasheets::purge(None)?);
             Ok(true)
         }
     }

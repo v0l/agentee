@@ -16,6 +16,7 @@ pub fn load_footprints(path: &Path) -> Result<Project, String> {
 pub fn load_checked(path: &Path) -> Result<Project, String> {
     let mut p = load(path)?;
     agentee_sim::checks::apply(&mut p);
+    crate::datasheets::apply_checks(&mut p);
     Ok(p)
 }
 
@@ -2097,14 +2098,14 @@ fn parts_schematic<'a>(
     }
 }
 
-struct Distributors {
+pub(crate) struct Distributors {
     mouser: Option<agentee_parts::mouser::Mouser>,
     farnell: Option<agentee_parts::farnell::Farnell>,
     digikey: Option<agentee_parts::digikey::DigiKey>,
 }
 
 impl Distributors {
-    fn open(q: &PartsQuery) -> Result<Self, String> {
+    pub(crate) fn open(q: &PartsQuery) -> Result<Self, String> {
         use agentee_parts::digikey::{DigiKey, Locale};
         use agentee_parts::{farnell::Farnell, mouser::Mouser};
         let cfg = agentee_parts::config::load(q.config)?;
@@ -2150,7 +2151,7 @@ impl Distributors {
         Ok(d)
     }
 
-    fn list(&self) -> Vec<&dyn agentee_parts::Distributor> {
+    pub(crate) fn list(&self) -> Vec<&dyn agentee_parts::Distributor> {
         let mut v: Vec<&dyn agentee_parts::Distributor> = Vec::new();
         if let Some(m) = &self.mouser {
             v.push(m);

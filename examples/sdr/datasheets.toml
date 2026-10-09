@@ -1,0 +1,307 @@
+[[parts]]
+key = "105450-0101"
+manufacturer = "Molex"
+refs = ["J1"]
+url = "http://www.farnell.com/datasheets/3200420.pdf"
+source = "Farnell"
+sha256 = "9693907edda2d21a3ab5e4ea8783fee57c4a3bd40160e591c4418d9115e599ce"
+revision = "Order No. 987651-4081 Rev. 5 USA/0k/GF/2021.02 ©2021 Molex"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "132289"
+manufacturer = "Amphenol"
+refs = ["J2", "J3"]
+url = "http://www.farnell.com/datasheets/1510369.pdf"
+source = "Farnell"
+sha256 = "3456bf4b332f2d98bcfc067d6ee9ba5cce049419ee66606831fd38340101ae07"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "AD9364BBCZ"
+manufacturer = "Analog Devices"
+refs = ["U2"]
+missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/ad9364.pdf: timeout: receive response; https://4donline.ihs.com/images/VipMasterIC/IC/ANDI/ANDI-S-A0002159342/ANDI-S-A0002159342-1.pdf?hkey=52A5661711E402568146F3353EA87419: HTTP 403"
+
+[[parts]]
+key = "ADF4002BCPZ"
+manufacturer = "Analog Devices"
+refs = ["U21"]
+missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/ADF4002.pdf: skipped, www.analog.com timed out earlier; https://4donline.ihs.com/images/VipMasterIC/IC/ANDI/ANDI-S-A0001403752/ANDI-S-A0001403752-1.pdf?hkey=52A5661711E402568146F3353EA87419: HTTP 403"
+
+[[parts]]
+key = "AP2112K-2.5TRG1"
+manufacturer = "Diodes"
+refs = ["U10"]
+url = "https://www.diodes.com/assets/Datasheets/AP2112.pdf"
+source = "symbol AP2112K-2.5"
+sha256 = "ef8d376f2ec356e29172eb9e053819a0ebdcc576dba7fc9ab0505c568427920f"
+revision = "Document number: DS39724 Rev. 2 - 2 www.diodes.com © Diodes Incorporated"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "ASE-50.000MHZ-LC-T"
+manufacturer = "Abracon"
+refs = ["X1"]
+url = "http://www.abracon.com/Oscillators/ASV.pdf"
+source = "symbol ASE-xxxMHz"
+sha256 = "1e9c5f54ef800f33c4d11970d5f281a4f4d0c36f8fc59bcbf636a5e6dc3d2b8e"
+revision = "Visit www.abracon.com for Terms & Conditions of Sale Revised: 09.02.14"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BAT54S"
+manufacturer = "Nexperia"
+refs = ["D7"]
+url = "https://www.diodes.com/assets/Datasheets/ds11005.pdf"
+source = "symbol BAT54S"
+sha256 = "50b04e4e17bcf5db62164f6e5422e91546d0cace0ab2efed61660c3044b4fef0"
+revision = "Document number: DS11005 Rev. 34 - 2 www.diodes.com © 2023 Copyright Diodes Incorporated. All Rights Reserved."
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BGS12WN6E6327"
+manufacturer = "Infineon"
+refs = ["U14", "U15", "U17", "U19"]
+url = "https://www.infineon.com/dgdl/Infineon-BGS12WN6-DataSheet-v02_05-EN.pdf?fileId=5546d4626b2d8e69016b89d2b3334727"
+source = "symbol BGS12WN6E6327"
+sha256 = "6cd5d36c7aaa3d514bbae4e4f28cd39efda4e47e0b6c0301853b7f57a4e5c645"
+revision = 'Datasheet Please read the sections "Important notice" and "Warnings" at the end of this document Revision 2.9'
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BLM15PX221SN1D"
+manufacturer = "Murata"
+refs = ["FB5"]
+url = "https://4donline.ihs.com/images/VipMasterIC/IC/MURE/MURE-S-A0010009827/MURE-S-A0010009827-1.pdf?hkey=6D3A4C79FDBF58556ACFDE234799DDF0"
+source = "Farnell"
+sha256 = "195e8bccc587156a9465d913d8cd1e9253856da4fd31056d9ff2ee0628b1949b"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BLM18KG121TN1D"
+manufacturer = "Murata"
+refs = ["FB4"]
+url = "http://www.farnell.com/datasheets/4799550.pdf"
+source = "Farnell"
+sha256 = "668c0f6ced5de9e839f0cdc5f40ed8f1afbd49036299b7fc29012423d9f2d539"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BLM18PG221SN1D"
+manufacturer = "Murata"
+refs = ["FB1", "FB2", "FB3", "FB6", "FB7", "FB8", "FB9"]
+url = "http://www.farnell.com/datasheets/1740433.pdf"
+source = "Farnell"
+sha256 = "8011a127d15187477e478d9aa54c50aa3b5b7d33fffe9279310ff02353fdb471"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "CYUSB3084-FCAXI"
+manufacturer = "Infineon"
+refs = ["U3"]
+url = "https://www.infineon.com/assets/row/public/documents/24/49/infineon-cyusb308x-ez-usb-fx5-usb-5-gbps-peripheral-controller-datasheet-en.pdf"
+source = "symbol CYUSB3084"
+sha256 = "d04da6085be042071a0de2e5611d1ddcfc401519a061f8b156fd73e5f4da82a0"
+revision = "Datasheet Please read the Important Notice at the end of this document 002-40850 Rev. *D"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "DFE322520F-1R0M"
+manufacturer = "Murata"
+refs = ["L1", "L2", "L3"]
+url = "http://www.farnell.com/datasheets/3768508.pdf"
+source = "Farnell"
+sha256 = "5112ed5e31b3b7144fd9d004cf40394cb8e7bf5b871fa6569ce6babc67e21a39"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "GJM1555C1H180GB01"
+manufacturer = "Murata"
+refs = ["C68", "C69", "C70", "C71"]
+url = "http://www.farnell.com/datasheets/2865511.pdf"
+source = "Farnell"
+sha256 = "baae39704cf2b9c8e7a1e899143cf75e898cd1390db5806302e3a6b43aa5275c"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "GRM1555C1H101JA01"
+manufacturer = "Murata"
+refs = ["C96", "C97", "C99", "C105"]
+url = "http://www.farnell.com/datasheets/4087655.pdf"
+source = "Farnell"
+sha256 = "5f270eba831a536ed80bc1ed959b5fc9983813b14f4c122bb9b066f60175f5d2"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "GRM1555C1H102JA01"
+manufacturer = "Murata"
+refs = ["C102", "C103"]
+url = "http://www.farnell.com/datasheets/3449658.pdf"
+source = "Farnell"
+sha256 = "db0c506d1a8ac74efc0ff9a6fd599a3aeb26cb2d43db1cd7af69a119923e1920"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "LQW18ANR10G00"
+manufacturer = "Murata"
+refs = ["L6", "L7"]
+missing = "https://www.murata.com/en-global/api/pdfdownloadapi?cate=cgInductors&amp;partno=LQW18ANR10G00%23: https://www.murata.com/en-global/api/pdfdownloadapi?cate=cgInductors&partno=LQW18ANR10G00%23: an HTML page, not a PDF"
+
+[[parts]]
+key = "LQW18ANR33G00"
+manufacturer = "Murata"
+refs = ["L4", "L5"]
+missing = "https://www.murata.com/en-global/api/pdfdownloadapi?cate=cgInductors&amp;partno=LQW18ANR33G00%23: https://www.murata.com/en-global/api/pdfdownloadapi?cate=cgInductors&partno=LQW18ANR33G00%23: an HTML page, not a PDF"
+
+[[parts]]
+key = "LTC6957IDD-3#PBF"
+manufacturer = "Analog Devices"
+refs = ["U20"]
+missing = "https://www.analog.com/media/en/technical-documentation/data-sheets/6957fb.pdf: skipped, www.analog.com timed out earlier"
+
+[[parts]]
+key = "PESD5V0S1UL"
+manufacturer = "Nexperia"
+refs = ["D1", "D8"]
+url = "https://assets.nexperia.com/documents/data-sheet/PESD5V0S1UL.pdf"
+source = "symbol PESD5V0S1UL"
+sha256 = "8ddea76afa74f87de5d3662e4d9149bf7397761fa99dc29b44bfbe42872d447e"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "QPL9547TR7"
+manufacturer = "Qorvo"
+refs = ["U16"]
+missing = "https://www.qorvo.com/products/d/da007268: HTTP 429"
+
+[[parts]]
+key = "SMF12A"
+manufacturer = "Littelfuse"
+refs = ["D6"]
+url = "https://www.vishay.com/doc?85881"
+source = "symbol SMF12A"
+sha256 = "4dcce5361b9c6c3a30e7b670755a1c9066bac6f6d7da71549e4263dd84f8317f"
+revision = "Rev. 2.4, 04-Jul-2023 1 Document Number: 85881"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "SN74LVC1G17DBVR"
+manufacturer = "TI"
+refs = ["U23"]
+url = "https://www.ti.com/lit/ds/symlink/sn74lvc1g17.pdf"
+source = "symbol 74LVC1G17"
+sha256 = "c76fa723fac4502423967a1aa087dd669106b52b8de620c024b26e56f5d59309"
+revision = "SCES351Y – JULY 2001 – REVISED OCTOBER 2025"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TCM1-63AX+"
+manufacturer = "Mini-Circuits"
+refs = ["T1", "T2"]
+url = "https://www.minicircuits.com/pdfs/TCM1-63AX+.pdf"
+source = "symbol TCM1-63AX+"
+sha256 = "158414570e6f50235237b992fbfeb1eb8f45d4a801d636c39cbe6ac611a2f058"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TPD4E05U06DQA"
+refs = ["U25", "U26"]
+url = "https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf"
+source = "symbol TPD4E05U06DQA"
+sha256 = "c167cf1e72a5473a4d2c59b6a3c0251498701da05b7785919b9ceaae3b3e02c6"
+revision = "SLVSBO7O – DECEMBER 2012 – REVISED AUGUST 2024"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TPD4E05U06DQAR"
+manufacturer = "TI"
+refs = ["U13"]
+url = "https://www.ti.com/lit/ds/symlink/tpd4e05u06.pdf"
+source = "symbol TPD4E05U06DQA"
+sha256 = "c167cf1e72a5473a4d2c59b6a3c0251498701da05b7785919b9ceaae3b3e02c6"
+revision = "SLVSBO7O – DECEMBER 2012 – REVISED AUGUST 2024"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TPS25200DRVR"
+manufacturer = "TI"
+refs = ["U5"]
+url = "https://www.ti.com/lit/ds/symlink/tps25200.pdf"
+source = "symbol TPS25200"
+sha256 = "fafdb867c456a2b24ef4fe5908e7d6da75703c0f24a36f984864d1d2daf9cd4a"
+revision = "SLVSCJ0F – MARCH 2014 – REVISED JULY 2025"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TPS62130RGTR"
+manufacturer = "TI"
+refs = ["U6", "U7", "U8"]
+url = "http://www.ti.com/lit/ds/symlink/tps62130.pdf"
+source = "symbol TPS62130"
+sha256 = "f9b1af285622c0cf1a5991f9641a6e64c5e6d899e52cc0b1632808742019579f"
+revision = "SLVSAG7F – NOVEMBER 2011 – REVISED NOVEMBER 2021"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TPS7A9101DSKR"
+manufacturer = "TI"
+refs = ["U9", "U24"]
+url = "http://www.ti.com/lit/ds/symlink/tps7a91.pdf"
+source = "symbol TPS7A91"
+sha256 = "1ab38416ceb4a3cd22b9e7665acc4409ac28f7c3a95c71ea195620f7d1ad7924"
+revision = "SBVS282A – DECEMBER 2016 – REVISED SEPTEMBER 2026"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TRF37A73IDSGR"
+manufacturer = "TI"
+refs = ["U18"]
+url = "http://www.ti.com/lit/ds/symlink/trf37a73.pdf"
+source = "symbol TRF37A73"
+sha256 = "776e5945eda48dd1008366ac0589030f2c740e1184d61d64e4ade5759cf564e3"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TS5A3159DBVR"
+manufacturer = "TI"
+refs = ["U22"]
+url = "http://www.ti.com/lit/ds/symlink/ts5a3159.pdf"
+source = "symbol TS5A3159DBV"
+sha256 = "384d4decc591a99e1fc75146e9bea26029a31a77e8bc0abbf4e5e51c8e871597"
+revision = "SCDS174D – AUGUST 2004 – REVISED NOVEMBER 2015"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "TXEADLSANF-40.000000"
+manufacturer = "Taitien"
+refs = ["Y1"]
+missing = "no datasheet URL found"
+
+[[parts]]
+key = "U.FL-R-SMT-1(10)"
+manufacturer = "Hirose"
+refs = ["J6", "J7"]
+url = "http://www.farnell.com/datasheets/2691132.pdf"
+source = "Farnell"
+sha256 = "e33df68b8078764b31936adc813b627058863950d9b9c7f521379d11ad184252"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "W25Q128JVSIQ"
+manufacturer = "Winbond"
+refs = ["U4"]
+url = "https://www.winbond.com/resource-files/w25q128jv_dtr%20revc%2003272018%20plus.pdf"
+source = "symbol W25Q128JVS"
+sha256 = "8074d84a409fce4af970f6c1ca366b63fc7cca46ba26b15ab3369e04c77c7761"
+revision = "- 100 - -Revision C"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "XC7A50T-1FTG256C"
+manufacturer = "AMD"
+refs = ["U1"]
+url = "http://www.farnell.com/datasheets/2301213.pdf"
+source = "Farnell"
+sha256 = "205824ba755c3f028759bb53adf4ccc79cfa179df4fc25dde24bd9f02e82588b"
+fetched = "2026-10-09"

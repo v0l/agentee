@@ -1,5 +1,6 @@
 pub mod config;
 pub mod cost;
+pub mod datasheet;
 pub mod digikey;
 pub mod farnell;
 pub mod mouser;

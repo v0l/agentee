@@ -1,0 +1,57 @@
+[[parts]]
+key = "132289"
+manufacturer = "Amphenol"
+refs = ["J1", "J2"]
+url = "http://www.farnell.com/datasheets/1510369.pdf"
+source = "Farnell"
+sha256 = "3456bf4b332f2d98bcfc067d6ee9ba5cce049419ee66606831fd38340101ae07"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BAT60A"
+manufacturer = "Infineon"
+refs = ["D1", "D2"]
+url = "https://www.infineon.com/dgdl/Infineon-BAT60ASERIES-DS-v01_01-en.pdf?fileId=db3a304313d846880113def70c9304a9"
+source = "symbol BAT60A"
+sha256 = "86aba710f6c93de0927f27879d199188f6227d87f497f179ebf7b9d43be654a0"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "BCR-162JLC"
+manufacturer = "Coilcraft"
+refs = ["L1", "L3"]
+missing = "no datasheet URL found"
+
+[[parts]]
+key = "ESD131-B1-W0201"
+manufacturer = "Infineon"
+refs = ["D3"]
+url = "https://www.infineon.com/dgdl/Infineon-ESD131-B1-W0201-DataSheet-v02_00-EN.pdf?fileId=5546d4625cc9456a015ce94850964889"
+source = "symbol ESD131-B1-W0201"
+sha256 = "d771d9f8bf156103a9e0c62c603e2a96b61dc7cf51f352551dfd9b568263c27e"
+revision = "6 Revision history"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "GRM155R61A105KE15D"
+manufacturer = "Murata"
+refs = ["C4"]
+url = "http://www.farnell.com/datasheets/2047964.pdf"
+source = "Farnell"
+sha256 = "cefcf166150d360829daa66bd55efa1d0c93881a5cde92766e2efa124b66bb6d"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "GRM155R71C104KA88D"
+manufacturer = "Murata"
+refs = ["C1", "C2", "C3", "C5"]
+url = "http://www.farnell.com/datasheets/4087776.pdf"
+source = "Farnell"
+sha256 = "785fa54be9ca821418bee9bf81be5a4af84d5b1581ef8d1575719dff5e7e85a3"
+fetched = "2026-10-09"
+
+[[parts]]
+key = "SPF5189Z"
+manufacturer = "Qorvo"
+refs = ["U1"]
+missing = "https://www.qorvo.com/products/d/da001910: HTTP 429; https://www.mouser.com/catalog/specsheets/pf5189z_data_sheet-5090612.pdf: an HTML page, not a PDF (Access to this page has been denied.)"
