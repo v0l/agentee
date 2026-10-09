@@ -466,7 +466,7 @@ pub fn check(lib: &Library, sch: &Schematic, path: &Path) -> Vec<Diagnostic> {
         let pins = pin_count(p);
         let message = if best.pin_count.is_some_and(|n| n != pins) {
             format!(
-                "{} is a {pins} pin {role} outside the parts library, and no library {role} has {pins} pins: add the one to use with agentee library add, or set the part's `library = \"no\"` field",
+                "{} is a {pins} pin {role} outside the parts library, and no library {role} has {pins} pins: find a current one in stock with agentee library find, add it with agentee library add, or set the part's `library = \"no\"` field",
                 p.reference
             )
         } else {

@@ -614,6 +614,30 @@ enum LibraryCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Library parts that match, then current parts in stock at the distributors to add when none fits
+    Find {
+        /// Words to search for, e.g. 3.3V buck 1A SOT-23-6
+        words: Vec<String>,
+        #[arg(long)]
+        role: Option<String>,
+        /// Only parts with at least this many in stock
+        #[arg(long, default_value_t = 1)]
+        need: u32,
+        /// Distributors to ask, comma separated (mouser, farnell, digikey), default every one with a key
+        #[arg(long, value_delimiter = ',')]
+        distributor: Vec<String>,
+        #[arg(long, default_value_t = 15)]
+        limit: usize,
+        /// Search the distributors even when the library has a match
+        #[arg(long)]
+        search: bool,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
     /// One library part: its files, where they came from, datasheet and stock
     Show {
         name: String,
@@ -1309,6 +1333,37 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
                 for e in &lib.errors {
                     eprintln!("error: {e}");
                 }
+            }
+            Ok(true)
+        }
+        LibraryCmd::Find {
+            words,
+            role,
+            need,
+            distributor,
+            limit,
+            search,
+            project,
+            config,
+            json,
+        } => {
+            let lib = library::open(Some(&project));
+            let v = library::find(
+                &lib,
+                &library::FindArgs {
+                    words: &words,
+                    role: role.as_deref(),
+                    need,
+                    distributors: &distributor,
+                    config: config.as_deref(),
+                    limit,
+                    search,
+                },
+            )?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{}", library::find_text(&v));
             }
             Ok(true)
         }

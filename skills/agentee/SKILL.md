@@ -43,21 +43,31 @@ To use it over MCP instead of the shell:
 
 ## The parts library first
 
-The user keeps the parts they want reused in a parts library: connectors, regulators, passives.
-Before picking any part, run `agentee library list` (MCP `library_list`, with a role or words such
-as `--role connector 2-pin power`) and use what is there with `agentee library use NAME` (MCP
-`library_use`). Its listing shows the last checked stock and price, so a library part needs no
-distributor search. Ask the user before using a part outside the library for a role it covers,
-and offer to add a new choice with `agentee library add`. `check` warns (rule `library`) when a
-design strays from it.
+Every part on a board comes from the user's parts library. For each part a design needs:
 
-Managing it, only when the user asks or agrees:
+1. **Look in the library.** `agentee library find WORDS --role ROLE` (MCP `library_find`), e.g.
+   `library find 3.3V buck --role regulator`. A match is the part to use: `agentee library use
+   NAME` (MCP `library_use`) copies its symbol, footprint and model in and prints the edit that
+   places it. Prefer a `preferred` part for its role. Its listing carries the last checked stock,
+   so it needs no distributor search.
+2. **When nothing fits, find a current part in stock.** The same `find` then searches Mouser,
+   Farnell and DigiKey and lists only active parts in stock (`--need N` for at least N), merged
+   by part number with total stock, where it is and the unit price. Prefer a part stocked at more
+   than one distributor. Read the datasheet of each candidate (`agentee datasheet text MPN`)
+   and pick the one whose ratings, package and pinout meet the design.
+3. **Add it to the library, then use it from there.** `agentee library add MPN --role ROLE
+   --symbol ... --footprint ... --rating "..."` (MCP `library_add`), then `library use`. Tell
+   the user which part you added and why. `add` notes when the part is not in stock as an active
+   part, and when no datasheet was reachable: then ask the user for the PDF.
+
+Never place a part that is not in the library, and never pick one from memory without a
+distributor listing. `check` warns (rule `library`) when a design strays from the library.
 
 ```sh
 agentee library add S2B-PH-K-S --name JST-PH-2 --role connector \
     --symbol Connector_Generic:Conn_01x02 \
     --footprint Connector_JST:JST_PH_S2B-PH-K_1x02_P2.00mm_Horizontal \
-    --manufacturer JST --rating "2 A, 100 V" --preferred
+    --manufacturer JST --rating "2 A, 100 V"
 agentee library show JST-PH-2      # files, where they came from, datasheet, stock
 agentee library refresh            # stock and price of every part, one lookup each
 agentee library verify             # symbol vs footprint vs datasheet, model vs footprint, hashes
@@ -65,11 +75,13 @@ agentee library verify             # symbol vs footprint vs datasheet, model vs 
 
 `add` copies the symbol, footprint and 3D model in, sets the footprint `height` from the model,
 fetches and pins the datasheet and records stock. Give it the real part number and the
-datasheet's rating; `--datasheet URL|PDF` when the distributors have none. `--preferred` marks
-the first choice for a role, `--generic` makes a resistor or capacitor series cover any value on
-that footprint, `--local` adds to the project's `.agentee/library` instead of the user's
-`~/.config/agentee/library`. Fix what `verify` reports before using the part: a pin that does not
-match the datasheet, or a model that does not fit the footprint.
+datasheet's rating; `--datasheet URL|PDF` when the distributors have none. `--generic` makes a
+resistor or capacitor series cover any value on that footprint; leave `--preferred` to the user.
+`--local` adds to the project's `.agentee/library` instead of the user's
+`~/.config/agentee/library`. Run `verify` after adding and fix what it reports before using the
+part: a pin that does not match the datasheet, or a model that does not fit the footprint. Run
+`refresh` before ordering, and replace a library part that has gone out of stock or obsolete the
+same way: find, add, use.
 
 ## Datasheets, never guesses
 

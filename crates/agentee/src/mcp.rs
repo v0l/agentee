@@ -15,7 +15,9 @@ const INSTRUCTIONS: &str = "agentee is an electronic design package for agents. 
 one call. Write symbols and footprints directly, reading format_reference first. Then call check and fix every \
 error. Never rewrite the TOML from a script. Use render_item to see what you made. Prefer importing KiCad parts (kicad_search, then \
 import_kicad_symbol / import_kicad_footprint) over drawing them by hand. When a design needs a part, look in the user's \
-parts library first (library_list) and use its parts (library_use); read every part's datasheet with datasheet_text.";
+parts library first (library_list) and use its parts (library_use). When it has nothing for the role, library_find a \
+current part in stock, read its datasheet, add it with library_add and use it from the library; read every part's \
+datasheet with datasheet_text.";
 
 fn tools() -> Value {
     let s = |props: Value, required: &[&str]| json!({ "type": "object", "properties": props, "required": required });
@@ -353,6 +355,37 @@ fn tools() -> Value {
                 "role": { "type": "string", "description": "connector, rf connector, usb connector, regulator, resistor, capacitor, led, diode, crystal ..." },
                 "words": { "type": "array", "items": { "type": "string" }, "description": "words that must all match, e.g. [\"2-pin\", \"power\"]" },
             }), &[]),
+        },
+        {
+            "name": "library_find",
+            "description": "Search for a part: the library parts that match, and only when none does (or search is set) active parts in stock at Mouser, Farnell and DigiKey for the same words, merged by part number with total stock, the distributors that have it, the best unit price at the quantity needed and a datasheet link. Use it when the library has no part for a role; pick from the datasheets, then library_add the choice and library_use it.",
+            "inputSchema": s(json!({
+                "words": { "type": "array", "items": { "type": "string" }, "description": "e.g. [\"3.3V\", \"buck\", \"1A\"] or a part number" },
+                "role": { "type": "string", "description": "only library parts of this role" },
+                "need": { "type": "integer", "description": "at least this many in stock, default 1" },
+                "search": { "type": "boolean", "description": "search the distributors even when the library has a match" },
+            }), &["words"]),
+        },
+        {
+            "name": "library_add",
+            "description": "Add a part to the user's parts library: its symbol and footprint (a .sym.toml/.fp.toml file, a project item or a KiCad Library:Name) and 3D model copied in, the footprint height set from the model, its datasheet fetched and pinned, its stock and price recorded. Notes say when the part is not in stock as an active part or has no datasheet. Add only parts the user agreed to, with the rating from the datasheet.",
+            "inputSchema": s(json!({
+                "mpn": { "type": "string" },
+                "role": { "type": "string", "description": "connector, regulator, resistor, capacitor, led, diode, crystal ..." },
+                "symbol": { "type": "string" },
+                "footprint": { "type": "string", "description": "default the symbol's footprint" },
+                "model": { "type": "string", "description": "a STEP or VRML file or URL, default the footprint's model" },
+                "datasheet": { "type": "string", "description": "URL or PDF, default the symbol's URL then the distributors'" },
+                "name": { "type": "string", "description": "library name, default the part number" },
+                "manufacturer": { "type": "string" },
+                "value": { "type": "string" },
+                "rating": { "type": "string", "description": "from the datasheet, e.g. \"2 A, 100 V\"" },
+                "notes": { "type": "string" },
+                "preferred": { "type": "boolean", "description": "the first choice for its role" },
+                "generic": { "type": "boolean", "description": "a resistor or capacitor series: any value on this footprint" },
+                "local": { "type": "boolean", "description": "into this project's .agentee/library" },
+                "force": { "type": "boolean" },
+            }), &["mpn", "role", "symbol"]),
         },
         {
             "name": "library_show",
@@ -924,6 +957,56 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 t += &format!("error: {e}\n");
             }
             Ok(ok(vec![text(t)]))
+        }
+        "library_find" => {
+            let lib = crate::library::open(Some(root));
+            let need = a.get("need").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+            let v = crate::library::find(
+                &lib,
+                &crate::library::FindArgs {
+                    words: &strings(a, "words"),
+                    role: arg(a, "role"),
+                    need,
+                    distributors: &[],
+                    config: None,
+                    limit: 15,
+                    search: flag(a, "search"),
+                },
+            )?;
+            Ok(ok(vec![text(crate::library::find_text(&v))]))
+        }
+        "library_add" => {
+            let local = flag(a, "local");
+            let p = match crate::datasheets::project_for(root) {
+                None if local => Some(crate::ops::load(root)?),
+                p => p,
+            };
+            let tags: Vec<String> = Vec::new();
+            let v = crate::library::add(
+                p.as_ref(),
+                &crate::library::AddArgs {
+                    mpn: arg(a, "mpn").ok_or("mpn is required")?,
+                    name: arg(a, "name"),
+                    role: arg(a, "role").ok_or("role is required")?,
+                    manufacturer: arg(a, "manufacturer"),
+                    symbol: arg(a, "symbol").ok_or("symbol is required")?,
+                    footprint: arg(a, "footprint"),
+                    model: arg(a, "model"),
+                    datasheet: arg(a, "datasheet"),
+                    value: arg(a, "value"),
+                    rating: arg(a, "rating"),
+                    pins: None,
+                    tags: &tags,
+                    notes: arg(a, "notes"),
+                    preferred: flag(a, "preferred"),
+                    generic: flag(a, "generic"),
+                    local,
+                    force: flag(a, "force"),
+                    distributors: true,
+                    config: None,
+                },
+            )?;
+            Ok(ok(vec![text(pretty(&v))]))
         }
         "library_show" => {
             let lib = crate::library::open(Some(root));

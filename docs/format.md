@@ -2756,7 +2756,10 @@ user's PDF through `datasheet add`, or a URL that works.
 The parts library is the user's own set of parts: the connectors, regulators, passives and
 anything else they want every design to reuse, so cables and stock carry between projects. Each
 part holds its symbol, footprint, 3D model, datasheet and last checked stock, and an agent picks
-from it before reaching for anything new (MCP `library_list`, `library_show`, `library_use`).
+from it before reaching for anything new (MCP `library_find`, `library_list`, `library_show`,
+`library_use`, `library_add`). The workflow for each part a design needs is find, add, use:
+`find` shows the library parts that match and, when none does, current parts in stock at the
+distributors; the chosen one goes into the library with `add` and onto the board with `use`.
 
 It lives in `~/.config/agentee/library/` (`$AGENTEE_LIBRARY` moves it), and a project can add or
 override parts in `.agentee/library/` at its root. Each part is a directory:
@@ -2810,6 +2813,8 @@ agentee library add S2B-PH-K-S --name JST-PH-2 --role connector \
     --symbol Connector_Generic:Conn_01x02 \
     --footprint Connector_JST:JST_PH_S2B-PH-K_1x02_P2.00mm_Horizontal \
     --manufacturer JST --rating "2 A, 100 V" --notes "power input" --preferred
+agentee library find 3.3V buck --role regulator   # library matches, else stocked parts to add
+agentee library find USB-C receptacle --need 100 --search
 agentee library list                           # every part, by role, with stock and price
 agentee library list --role connector 2-pin power
 agentee library show JST-PH-2
@@ -2818,13 +2823,22 @@ agentee library refresh                        # stock and price of every part, 
 agentee library verify
 ```
 
+`find WORDS` lists the library parts whose name, role, tags, part number, value, rating,
+footprint or notes match every word. Only when none matches (or with `--search`) it runs the
+same words as a keyword search at each distributor with a key and lists the parts that are
+active (no obsolete, end of life or discontinued status) with at least `--need` in stock (default
+1), merged by part number: total stock, the distributors that have it, the best unit price at
+that quantity, and the datasheet link. Parts stocked at more distributors come first, then by
+stock; `--limit` caps the list (default 15). A listed part already in the library says so.
+
 `add` takes the symbol and footprint from a `.sym.toml` or `.fp.toml` file, a symbol or footprint
 of the project (`-p`), or a KiCad `Library:Name`; the footprint defaults to the symbol's. It
 copies the footprint's 3D model in (from the KiCad model directories, the model cache or a
 download), points the footprint at the copy and sets its `height` from the model when it has none, so a part works offline and keeps working when a
 KiCad install or a vendor download changes. It fetches the datasheet (`--datasheet` URL or PDF,
 else the symbol's URL, else the distributors'), pins it in the datasheet cache so `datasheet
-purge` never removes it, and records each listing's stock and price breaks. `--local` adds to the
+purge` never removes it, and records each listing's stock and price breaks. Its notes say when no distributor has the part
+in stock as an active part. `--local` adds to the
 project's library instead.
 
 `use` copies the symbol into `symbols/`, the footprint into `footprints/` and the model into

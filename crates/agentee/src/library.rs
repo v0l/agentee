@@ -288,6 +288,14 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     };
     notes.extend(errors.into_iter().map(|e| format!("distributors: {e}")));
     let stock = stock_of(&mpn, &offers, &today);
+    if a.distributors && !offers.is_empty() {
+        let live = stock.iter().any(|st| st.stock > 0 && st.offer().active());
+        if !live {
+            notes.push(format!(
+                "{mpn} is not in stock as an active part at any distributor: find a current one with agentee library find, or ask the user"
+            ));
+        }
+    }
     let manufacturer = a.manufacturer.map(str::to_string).or_else(|| {
         offers.iter().find(|o| same_part(&o.mpn, &mpn)).map(|o| o.manufacturer.clone())
     });
@@ -366,6 +374,187 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     library::write_entry(&dir, &part)?;
     let entry = library::read_entry(&dir, if a.local { "project" } else { "global" })?;
     Ok(json!({ "added": entry, "notes": notes }))
+}
+
+pub struct FindArgs<'a> {
+    pub words: &'a [String],
+    pub role: Option<&'a str>,
+    pub need: u32,
+    pub distributors: &'a [String],
+    pub config: Option<&'a Path>,
+    pub limit: usize,
+    pub search: bool,
+}
+
+#[derive(serde::Serialize)]
+struct Candidate {
+    mpn: String,
+    manufacturer: String,
+    description: String,
+    stock: u64,
+    unit: Option<(f64, String)>,
+    lifecycle: Option<String>,
+    datasheet: Option<String>,
+    at: Vec<String>,
+    in_library: Option<String>,
+}
+
+pub fn find(lib: &Library, a: &FindArgs) -> Result<Value, String> {
+    let ours: Vec<&Entry> = lib.filter(a.role, a.words);
+    let q = ops::PartsQuery {
+        boards: 1,
+        alternatives: false,
+        distributors: a.distributors,
+        farnell_store: None,
+        refs: &[],
+        config: a.config,
+    };
+    let keyword = a.words.join(" ");
+    let mut offers = Vec::new();
+    let mut errors = Vec::new();
+    if !keyword.trim().is_empty() && (ours.is_empty() || a.search) {
+        match ops::Distributors::open(&q) {
+            Ok(d) => {
+                for s in d.list() {
+                    match s.search(&keyword) {
+                        Ok(o) => offers.extend(o),
+                        Err(e) => errors.push(e),
+                    }
+                }
+            }
+            Err(e) => errors.push(e),
+        }
+    }
+    let by = candidates(&offers, lib, a.need, a.limit);
+    Ok(json!({
+        "library": ours.iter().map(|e| json!({
+            "name": e.name,
+            "summary": e.summary(),
+            "stock": e.best_stock().map(Stock::line),
+        })).collect::<Vec<_>>(),
+        "candidates": by,
+        "errors": errors,
+        "next": if ours.is_empty() {
+            "pick a candidate from its datasheet, then agentee library add MPN --role ROLE --symbol ... --footprint ... and agentee library use NAME"
+        } else {
+            "use the library part: agentee library use NAME; add --search to look at the distributors too"
+        },
+    }))
+}
+
+fn candidates(
+    offers: &[agentee_parts::offer::Offer],
+    lib: &Library,
+    need: u32,
+    limit: usize,
+) -> Vec<Candidate> {
+    let mut by: Vec<Candidate> = Vec::new();
+    for o in offers.iter().filter(|o| o.active() && o.stock >= u64::from(need.max(1))) {
+        if o.mpn.trim().is_empty() {
+            continue;
+        }
+        let unit = o.cost(need.max(1)).map(|c| (c.unit, o.currency.clone()));
+        match by.iter_mut().find(|c| datasheet::normal(&c.mpn) == datasheet::normal(&o.mpn)) {
+            Some(c) => {
+                c.stock += o.stock;
+                if !c.at.contains(&o.distributor) {
+                    c.at.push(o.distributor.clone());
+                }
+                if c.datasheet.is_none() {
+                    c.datasheet = o.datasheet.clone();
+                }
+                if let (Some(u), Some(b)) = (&unit, &c.unit)
+                    && u.1 == b.1
+                    && u.0 < b.0
+                {
+                    c.unit = unit.clone();
+                }
+                if c.unit.is_none() {
+                    c.unit = unit;
+                }
+            }
+            None => by.push(Candidate {
+                mpn: o.mpn.clone(),
+                manufacturer: o.manufacturer.clone(),
+                description: o.description.clone(),
+                stock: o.stock,
+                unit,
+                lifecycle: o.lifecycle.clone(),
+                datasheet: o.datasheet.clone(),
+                at: vec![o.distributor.clone()],
+                in_library: lib.get(&o.mpn).map(|e| e.name.clone()),
+            }),
+        }
+    }
+    by.sort_by(|x, y| {
+        y.in_library
+            .is_some()
+            .cmp(&x.in_library.is_some())
+            .then(y.at.len().cmp(&x.at.len()))
+            .then(y.stock.cmp(&x.stock))
+    });
+    by.truncate(limit.max(1));
+    by
+}
+
+pub fn find_text(v: &Value) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let ours = v["library"].as_array().cloned().unwrap_or_default();
+    if ours.is_empty() {
+        s.push_str("in the library: none\n");
+    } else {
+        s.push_str("in the library, use these first:\n");
+        for e in &ours {
+            let _ = writeln!(
+                s,
+                "  {:<24} {}",
+                e["name"].as_str().unwrap_or(""),
+                e["summary"].as_str().unwrap_or("")
+            );
+            if let Some(st) = e["stock"].as_str() {
+                let _ = writeln!(s, "  {:<24} {st}", "");
+            }
+        }
+    }
+    let found = v["candidates"].as_array().cloned().unwrap_or_default();
+    if found.is_empty() {
+        s.push_str("in stock and active at the distributors: none\n");
+    } else {
+        s.push_str("in stock and active at the distributors:\n");
+        for c in &found {
+            let price = c["unit"]
+                .as_array()
+                .map(|u| {
+                    format!(
+                        ", {:.4} {} each",
+                        u[0].as_f64().unwrap_or(0.0),
+                        u[1].as_str().unwrap_or("")
+                    )
+                })
+                .unwrap_or_default();
+            let lib =
+                c["in_library"].as_str().map(|n| format!(" (library: {n})")).unwrap_or_default();
+            let at: Vec<&str> = c["at"]
+                .as_array()
+                .map(|a| a.iter().filter_map(|x| x.as_str()).collect())
+                .unwrap_or_default();
+            let _ = writeln!(
+                s,
+                "  {} {}{lib}: {} in stock at {}{price}",
+                c["manufacturer"].as_str().unwrap_or(""),
+                c["mpn"].as_str().unwrap_or(""),
+                c["stock"],
+                at.join(", ")
+            );
+            let _ = writeln!(s, "    {}", c["description"].as_str().unwrap_or(""));
+        }
+    }
+    for e in v["errors"].as_array().into_iter().flatten() {
+        let _ = writeln!(s, "error: {}", e.as_str().unwrap_or(""));
+    }
+    let _ = writeln!(s, "next: {}", v["next"].as_str().unwrap_or(""));
+    s
 }
 
 pub fn list_text(entries: &[&Entry]) -> String {
@@ -789,6 +978,35 @@ pub fn datasheet_of(project_root: Option<&Path>, name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn find_keeps_current_stocked_parts_merged_by_part_number() {
+        use agentee_parts::offer::{Break, Offer};
+        let offer = |d: &str, mpn: &str, stock: u64, price: f64, life: Option<&str>| Offer {
+            distributor: d.into(),
+            mpn: mpn.into(),
+            manufacturer: "Diodes".into(),
+            stock,
+            currency: "EUR".into(),
+            breaks: vec![Break { qty: 1, price }],
+            lifecycle: life.map(str::to_string),
+            ..Default::default()
+        };
+        let offers = [
+            offer("Mouser", "AP63203WU-7", 900, 0.60, None),
+            offer("Farnell", "AP63203WU-7", 100, 0.55, None),
+            offer("Mouser", "AP63200WU-7", 5, 0.50, None),
+            offer("Mouser", "OLD-PART", 5000, 0.10, Some("Obsolete")),
+            offer("Farnell", "TPS62162DSGR", 3000, 1.10, None),
+        ];
+        let lib = Library::open(None, Some(Path::new("/nonexistent")));
+        let c = candidates(&offers, &lib, 10, 10);
+        let mpns: Vec<&str> = c.iter().map(|c| c.mpn.as_str()).collect();
+        assert_eq!(mpns, ["AP63203WU-7", "TPS62162DSGR"]);
+        assert_eq!(c[0].stock, 1000);
+        assert_eq!(c[0].at, ["Mouser", "Farnell"]);
+        assert_eq!(c[0].unit.as_ref().map(|u| u.0), Some(0.55));
+    }
 
     #[test]
     fn a_listing_with_an_ordering_suffix_is_the_same_part() {
