@@ -5,6 +5,20 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub mouser: Option<MouserConfig>,
     pub farnell: Option<FarnellConfig>,
+    pub digikey: Option<DigiKeyConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DigiKeyConfig {
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: String,
+    pub site: Option<String>,
+    pub language: Option<String>,
+    pub currency: Option<String>,
+    #[serde(default)]
+    pub sandbox: bool,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -38,7 +52,7 @@ pub fn load(path: Option<&Path>) -> Result<Config, String> {
     };
     let text = std::fs::read_to_string(&path).map_err(|e| {
         format!(
-            "{}: {e}. Write it with [mouser] api_key = \"...\" and/or [farnell] api_key = \"...\", store = \"uk.farnell.com\"",
+            "{}: {e}. Write it with [mouser] api_key = \"...\", [farnell] api_key = \"...\", store = \"uk.farnell.com\" and/or [digikey] client_id = \"...\", client_secret = \"...\", site = \"IE\"",
             path.display()
         )
     })?;
@@ -52,6 +66,12 @@ impl Config {
 
     pub fn farnell_key(&self) -> Option<&str> {
         self.farnell.as_ref().map(|f| f.api_key.trim()).filter(|k| !k.is_empty())
+    }
+
+    pub fn digikey_keys(&self) -> Option<(&str, &str)> {
+        let d = self.digikey.as_ref()?;
+        let (id, secret) = (d.client_id.trim(), d.client_secret.trim());
+        (!id.is_empty() && !secret.is_empty()).then_some((id, secret))
     }
 
     pub fn farnell_store(&self) -> &str {

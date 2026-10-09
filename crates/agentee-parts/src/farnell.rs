@@ -220,6 +220,14 @@ fn product(p: &Value, store: &str, currency: &str) -> Offer {
         breaks,
         min,
         mult: 1,
+        datasheet: p
+            .get("datasheets")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .find_map(|d| d.get("url").and_then(Value::as_str))
+            .filter(|u| u.starts_with("http"))
+            .map(str::to_string),
         attributes,
         replacement: None,
     }

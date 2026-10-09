@@ -50,7 +50,13 @@ agentee export sensor-node -o sensor-node.step # board and part models as one ST
 agentee models                                 # fetch the KiCad 3D models the footprints name
 agentee fill sensor-node                       # fill the zones and store the copper in the layout
 agentee tie sensor-node                        # a via beside every ground and supply pad
+agentee datasheet fetch sensor-node            # cache every part's datasheet, list the missing
+agentee datasheet text U1 --find VS            # the pin table row, from the cached copy
+agentee library list --role connector          # the user's chosen parts, with stock and price
+agentee library use JST-PH-2                   # copy a library part's files into the project
 ```
+
+`datasheet text` reads PDFs with `pdftotext`, from poppler-utils (apt, dnf) or poppler (brew).
 
 `check` exits 1 when there are errors, so it fits in a loop or CI.
 

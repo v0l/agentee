@@ -165,6 +165,7 @@ fn part(p: &Value) -> Offer {
         min: s(p, "Min").parse().unwrap_or(1),
         mult: s(p, "Mult").parse().unwrap_or(1),
         url: Some(s(p, "ProductDetailUrl").to_string()).filter(|u| !u.is_empty()),
+        datasheet: Some(s(p, "DataSheetUrl").to_string()).filter(|u| u.starts_with("http")),
         attributes,
         replacement: Some(s(p, "SuggestedReplacement").to_string()).filter(|r| !r.is_empty()),
     }

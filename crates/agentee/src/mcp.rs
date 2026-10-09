@@ -14,7 +14,8 @@ const INSTRUCTIONS: &str = "agentee is an electronic design package for agents. 
 (footprints). Change schematics, layouts and board specs with the edit tool, all the commands of one change in \
 one call. Write symbols and footprints directly, reading format_reference first. Then call check and fix every \
 error. Never rewrite the TOML from a script. Use render_item to see what you made. Prefer importing KiCad parts (kicad_search, then \
-import_kicad_symbol / import_kicad_footprint) over drawing them by hand.";
+import_kicad_symbol / import_kicad_footprint) over drawing them by hand. When a design needs a part, look in the user's \
+parts library first (library_list) and use its parts (library_use); read every part's datasheet with datasheet_text.";
 
 fn tools() -> Value {
     let s = |props: Value, required: &[&str]| json!({ "type": "object", "properties": props, "required": required });
@@ -292,28 +293,78 @@ fn tools() -> Value {
         },
         {
             "name": "parts",
-            "description": "Price a layout's or schematic's BOM at Mouser and Farnell and find cheaper equivalents: the same part at the other distributor, resistors and ceramic capacitors with the same value, package, tolerance, voltage and dielectric (never a downgrade), generic discretes (2N7002, S1D, SS14, SMAJ..) by name and package, indicator LEDs by colour and package, and the distributor's suggested replacement for parts going obsolete. Costs are at the needed quantity, buying up to a price break when that is cheaper. Keys come from ~/.config/agentee/distributors.toml ([mouser] api_key, [farnell] api_key and store).",
+            "description": "Price a layout's or schematic's BOM at Mouser, Farnell and DigiKey and find cheaper equivalents: the same part at another distributor, resistors and ceramic capacitors with the same value, package, tolerance, voltage and dielectric (never a downgrade), generic discretes (2N7002, S1D, SS14, SMAJ..) by name and package, indicator LEDs by colour and package, and the distributor's suggested replacement for parts going obsolete. Costs are at the needed quantity, buying up to a price break when that is cheaper. Keys come from ~/.config/agentee/distributors.toml ([mouser] api_key, [farnell] api_key and store, [digikey] client_id, client_secret and site).",
             "inputSchema": s(json!({
                 "name": { "type": "string", "description": "layout or schematic" },
                 "boards": { "type": "integer", "default": 1 },
                 "alternatives": { "type": "boolean", "default": true },
-                "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell; default every one with a key" },
+                "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell, digikey; default every one with a key" },
                 "farnell_store": { "type": "string", "description": "e.g. uk.farnell.com, ie.farnell.com, www.newark.com" },
                 "refs": { "type": "array", "items": { "type": "string" }, "description": "only the BOM lines holding these references" },
-                "order": { "type": "string", "description": "directory, relative to the project, to write order sheets to instead of returning the report: NAME-order.csv and NAME-<distributor>.csv, each with the lines to buy there first, then the lines bought at the other distributor, then what it lacks" },
+                "order": { "type": "string", "description": "directory, relative to the project, to write order sheets to instead of returning the report: NAME-order.csv and NAME-<distributor>.csv, each with the lines to buy there first, then the lines bought at another distributor, then what it lacks" },
                 "spares": { "type": "boolean", "default": false, "description": "with order: 0402/0603 resistors and capacitors to the next 10 above need + 5, one spare per D, Q, U and F line, or the part's `spares` field" },
             }), &["name"]),
         },
         {
             "name": "bom",
-            "description": "BOM cost table of a layout or schematic: every line priced at Mouser and Farnell at each board count (default 1, 10 and 100), buying up to a price break when that is cheaper, with the total and the cost per board, and the lines that could not be priced and why. Use parts to look for cheaper equivalents.",
+            "description": "BOM cost table of a layout or schematic: every line priced at Mouser, Farnell and DigiKey at each board count (default 1, 10 and 100), buying up to a price break when that is cheaper, with the total and the cost per board, and the lines that could not be priced and why. Use parts to look for cheaper equivalents.",
             "inputSchema": s(json!({
                 "name": { "type": "string", "description": "layout or schematic" },
                 "boards": { "type": "array", "items": { "type": "integer" }, "description": "board counts, default [1, 10, 100]" },
-                "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell; default every one with a key" },
+                "distributors": { "type": "array", "items": { "type": "string" }, "description": "mouser, farnell, digikey; default every one with a key" },
                 "farnell_store": { "type": "string" },
                 "refs": { "type": "array", "items": { "type": "string" } },
                 "json": { "type": "boolean", "description": "return the rows as JSON instead of the table" },
+            }), &["name"]),
+        },
+        {
+            "name": "datasheet_fetch",
+            "description": "Fetch and cache a part's datasheet, or every part's of a layout or schematic, into the cache every project shares (~/.cache/agentee/datasheets). Tries the part's `datasheet` field, its symbol's `datasheet` URL, then the datasheet the distributors list for its mpn, with a browser user agent and retries. Lists the parts with no reachable datasheet: ask the user for those, never fill the gap from memory. A design fetch records the URL, hash and revision of each in datasheets.toml at the project root.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout or schematic, a reference (U3), a symbol or a part number" },
+                "url": { "type": "string", "description": "fetch one part from this URL instead" },
+                "refresh": { "type": "boolean", "description": "fetch again even when cached" },
+            }), &["name"]),
+        },
+        {
+            "name": "datasheet_text",
+            "description": "Read a cached datasheet as text with page numbers, fetching it first when it is not cached. Use find for the pin table and electrical characteristics (e.g. find \"VS\" returns the passages holding that word, matched whole and case sensitive when it has capitals), and pages for a page range. Without find or pages it returns the first 3 pages and the page count.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "a reference (U3), a symbol, a part number or a library part" },
+                "find": { "type": "string" },
+                "pages": { "type": "string", "description": "page or range, e.g. 4 or 4-6" },
+                "context": { "type": "integer", "default": 2, "description": "lines around each match" },
+            }), &["name"]),
+        },
+        {
+            "name": "datasheet_add",
+            "description": "Add a PDF the user supplied (a part behind a login, a vendor that blocks downloads) to the shared datasheet cache under its part number.",
+            "inputSchema": s(json!({
+                "mpn": { "type": "string" },
+                "path": { "type": "string", "description": "the PDF, relative to the project" },
+                "manufacturer": { "type": "string" },
+                "url": { "type": "string", "description": "where it came from" },
+            }), &["mpn", "path"]),
+        },
+        {
+            "name": "library_list",
+            "description": "The user's parts library: the connectors, regulators, passives and other parts they have chosen, each with its role, part number, rating, pin count, notes, whether it is preferred for its role, and its last checked stock and price. Look here first whenever a design needs a part, and use what is here before searching for anything new; ask the user before using a part outside the library for a role it covers.",
+            "inputSchema": s(json!({
+                "role": { "type": "string", "description": "connector, rf connector, usb connector, regulator, resistor, capacitor, led, diode, crystal ..." },
+                "words": { "type": "array", "items": { "type": "string" }, "description": "words that must all match, e.g. [\"2-pin\", \"power\"]" },
+            }), &[]),
+        },
+        {
+            "name": "library_show",
+            "description": "One library part in full: its symbol, footprint and model files and where each came from, its pinned datasheet file, and its stock and price at each distributor with the date checked.",
+            "inputSchema": s(json!({ "name": { "type": "string" } }), &["name"]),
+        },
+        {
+            "name": "library_use",
+            "description": "Copy a library part's symbol, footprint and 3D model into this project and return the edit command that places it with its mpn, mfr and library fields.",
+            "inputSchema": s(json!({
+                "name": { "type": "string" },
+                "force": { "type": "boolean", "description": "replace project files that differ from the library copy" },
             }), &["name"]),
         },
         {
@@ -829,6 +880,78 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 ))]));
             }
             Ok(ok(vec![text(agentee_parts::cost::text(&c))]))
+        }
+        "datasheet_fetch" => {
+            let p = crate::datasheets::project_for(root);
+            let args = crate::datasheets::FetchArgs {
+                url: arg(a, "url"),
+                refresh: flag(a, "refresh"),
+                config: None,
+                cache: None,
+                distributors: true,
+            };
+            let f = crate::datasheets::fetch(
+                p.as_ref(),
+                arg(a, "name").ok_or("name is required")?,
+                &args,
+            )?;
+            Ok(ok(vec![text(crate::datasheets::fetch_text(&f))]))
+        }
+        "datasheet_text" => {
+            let p = crate::datasheets::project_for(root);
+            let find = arg(a, "find");
+            let pages = arg(a, "pages").or(find.is_none().then_some("1-3"));
+            let args = crate::datasheets::TextArgs {
+                find,
+                pages,
+                context: int(a, "context", 2) as usize,
+                cache: None,
+                config: None,
+                offline: false,
+            };
+            let v = crate::datasheets::text(
+                p.as_ref(),
+                arg(a, "name").ok_or("name is required")?,
+                &args,
+            )?;
+            Ok(ok(vec![text(crate::datasheets::text_render(&v))]))
+        }
+        "library_list" => {
+            let lib = crate::library::open(Some(root));
+            let found = lib.filter(arg(a, "role"), &strings(a, "words"));
+            let mut t = crate::library::list_text(&found);
+            for e in &lib.errors {
+                t += &format!("error: {e}\n");
+            }
+            Ok(ok(vec![text(t)]))
+        }
+        "library_show" => {
+            let lib = crate::library::open(Some(root));
+            Ok(ok(vec![text(pretty(&crate::library::show(
+                &lib,
+                arg(a, "name").ok_or("name is required")?,
+            )?))]))
+        }
+        "library_use" => {
+            let lib = crate::library::open(Some(root));
+            let v = crate::library::use_part(
+                &lib,
+                arg(a, "name").ok_or("name is required")?,
+                root,
+                flag(a, "force"),
+            )?;
+            Ok(ok(vec![text(pretty(&v))]))
+        }
+        "datasheet_add" => {
+            let path = under(root, arg(a, "path"), "");
+            let v = crate::datasheets::add(
+                arg(a, "mpn").ok_or("mpn is required")?,
+                &path,
+                arg(a, "manufacturer"),
+                arg(a, "url"),
+                None,
+            )?;
+            Ok(ok(vec![text(pretty(&v))]))
         }
         "field_solve" => {
             let p = ops::load(root)?;

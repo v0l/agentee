@@ -21,6 +21,7 @@ pub struct Offer {
     pub min: u32,
     pub mult: u32,
     pub url: Option<String>,
+    pub datasheet: Option<String>,
     pub attributes: BTreeMap<String, String>,
     pub replacement: Option<String>,
 }

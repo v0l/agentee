@@ -16,6 +16,8 @@ pub fn load_footprints(path: &Path) -> Result<Project, String> {
 pub fn load_checked(path: &Path) -> Result<Project, String> {
     let mut p = load(path)?;
     agentee_sim::checks::apply(&mut p);
+    crate::datasheets::apply_checks(&mut p);
+    crate::library::apply_checks(&mut p);
     Ok(p)
 }
 
@@ -2098,17 +2100,20 @@ fn parts_schematic<'a>(
     }
 }
 
-struct Distributors {
+pub(crate) struct Distributors {
     mouser: Option<agentee_parts::mouser::Mouser>,
     farnell: Option<agentee_parts::farnell::Farnell>,
+    digikey: Option<agentee_parts::digikey::DigiKey>,
 }
 
 impl Distributors {
-    fn open(q: &PartsQuery) -> Result<Self, String> {
+    pub(crate) fn open(q: &PartsQuery) -> Result<Self, String> {
+        use agentee_parts::digikey::{DigiKey, Locale};
         use agentee_parts::{farnell::Farnell, mouser::Mouser};
         let cfg = agentee_parts::config::load(q.config)?;
         let wants = |d: &str| {
-            q.distributors.is_empty() || q.distributors.iter().any(|w| w.eq_ignore_ascii_case(d))
+            q.distributors.is_empty()
+                || q.distributors.iter().any(|w| w.replace('-', "").eq_ignore_ascii_case(d))
         };
         let store = q.farnell_store.unwrap_or(cfg.farnell_store()).to_string();
         let currency = cfg.farnell.as_ref().and_then(|f| f.currency.as_deref());
@@ -2118,12 +2123,25 @@ impl Distributors {
                 .farnell_key()
                 .filter(|_| wants("farnell"))
                 .map(|k| Farnell::new(k, &store, currency)),
+            digikey: cfg.digikey_keys().filter(|_| wants("digikey")).map(|(id, secret)| {
+                let c = cfg.digikey.as_ref();
+                DigiKey::new(
+                    id,
+                    secret,
+                    Locale {
+                        site: c.and_then(|c| c.site.as_deref()),
+                        language: c.and_then(|c| c.language.as_deref()),
+                        currency: c.and_then(|c| c.currency.as_deref()),
+                        sandbox: c.is_some_and(|c| c.sandbox),
+                    },
+                )
+            }),
         };
-        if d.mouser.is_none() && d.farnell.is_none() {
+        if d.mouser.is_none() && d.farnell.is_none() && d.digikey.is_none() {
             return Err(format!(
                 "no distributor API key for {} in {}",
                 if q.distributors.is_empty() {
-                    "Mouser or Farnell".to_string()
+                    "Mouser, Farnell or DigiKey".to_string()
                 } else {
                     q.distributors.join(", ")
                 },
@@ -2135,13 +2153,16 @@ impl Distributors {
         Ok(d)
     }
 
-    fn list(&self) -> Vec<&dyn agentee_parts::Distributor> {
+    pub(crate) fn list(&self) -> Vec<&dyn agentee_parts::Distributor> {
         let mut v: Vec<&dyn agentee_parts::Distributor> = Vec::new();
         if let Some(m) = &self.mouser {
             v.push(m);
         }
         if let Some(f) = &self.farnell {
             v.push(f);
+        }
+        if let Some(d) = &self.digikey {
+            v.push(d);
         }
         v
     }

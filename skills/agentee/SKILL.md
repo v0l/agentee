@@ -41,6 +41,16 @@ To use it over MCP instead of the shell:
 { "mcpServers": { "agentee": { "command": "agentee", "args": ["mcp", "/path/to/project"] } } }
 ```
 
+## The parts library first
+
+The user keeps the parts they want reused in a parts library: connectors, regulators, passives.
+Before picking any part, run `agentee library list` (MCP `library_list`, with a role or words such
+as `--role connector 2-pin power`) and use what is there with `agentee library use NAME` (MCP
+`library_use`). Its listing shows the last checked stock and price, so a library part needs no
+distributor search. Ask the user before using a part outside the library for a role it covers,
+and offer to add a new choice with `agentee library add`. `check` warns (rule `library`) when a
+design strays from it.
+
 ## Datasheets, never guesses
 
 Every number and pin that describes a real part comes from that part's datasheet: pinout and
@@ -51,10 +61,12 @@ noise figure and S-parameters. A plausible value from memory is how a board gets
 swapped pin or a rail above a part's rating, and nothing downstream catches it: check, ERC and
 every sim trust the numbers you give them.
 
-- Before you use a part, get its datasheet (the symbol's `datasheet` field, the manufacturer's
-  page, a distributor's copy) and read the pin table and the electrical characteristics. If you
-  cannot get it, stop and ask the user for it. Do not fill the gap from memory, from a similar
-  part or from a family member.
+- Before you use a part, get its datasheet with `agentee datasheet fetch <ref|mpn|design>` (MCP
+  `datasheet_fetch`) and read the pin table and the electrical characteristics with
+  `agentee datasheet text <part> --find <pin or symbol>` (MCP `datasheet_text`). Do not fetch PDFs
+  your own way: the command shares one cached copy between every project and agent. When it lists
+  a part as unreachable, stop and ask the user for the PDF, then `agentee datasheet add <mpn>
+  file.pdf`. Do not fill the gap from memory, from a similar part or from a family member.
 - Use the exact part number and package you will order. Variants of one family differ in
   pinout, ratings and footprint, and so do KiCad library parts from the datasheet: treat an
   import as a starting point and check its pin numbers, pin types and footprint against the
