@@ -458,9 +458,18 @@ pub fn parse(text: &str) -> Result<Mesh, String> {
             "MANIFOLD_SOLID_BREP"
             | "BREP_WITH_VOIDS"
             | "SHELL_BASED_SURFACE_MODEL"
-            | "FACETED_BREP" => {
-                refs(body).into_iter().filter(|s| table.shell.contains_key(s)).collect()
-            }
+            | "FACETED_BREP" => refs(body)
+                .into_iter()
+                .filter_map(|s| {
+                    if table.shell.contains_key(&s) {
+                        return Some(s);
+                    }
+                    let oriented = step.bodies.get(&s).copied().unwrap_or("");
+                    (kind(oriented) == "ORIENTED_CLOSED_SHELL")
+                        .then(|| refs(oriented).into_iter().find(|x| table.shell.contains_key(x)))
+                        .flatten()
+                })
+                .collect(),
             "CLOSED_SHELL" | "OPEN_SHELL" => vec![item],
             _ => Vec::new(),
         };
@@ -785,6 +794,14 @@ impl SearchNearestParameter<D2> for BoundedSurface3D {
 type FaceTris = Vec<(Option<u64>, Vec<[[f64; 3]; 2]>)>;
 
 fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<FaceTris> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        triangulate_shell(step, table, shell, unit)
+    }))
+    .ok()
+    .flatten()
+}
+
+fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<FaceTris> {
     let holder = table.shell.get(&shell)?;
     let face_ids: Vec<u64> = step
         .bodies
@@ -806,20 +823,23 @@ fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<Face
     let verts = &compressed.vertices;
     for e in compressed.edges.iter_mut() {
         let (a, b) = (verts[e.vertices.0], verts[e.vertices.1]);
-        match &mut e.curve {
-            Curve3D::BSplineCurve(c) => {
-                clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
-                trim_to(c, a, b)
+        let mut curve = e.curve.clone();
+        let usable = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            match &mut curve {
+                Curve3D::BSplineCurve(c) => {
+                    clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
+                    trim_to(c, a, b)
+                }
+                Curve3D::NurbsCurve(c) => {
+                    clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
+                    trim_to(c, a, b)
+                }
+                _ => {}
             }
-            Curve3D::NurbsCurve(c) => {
-                clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
-                trim_to(c, a, b)
-            }
-            _ => {}
-        }
-        if !finite_curve(&e.curve) {
-            e.curve = Curve3D::Line(Line(a, b));
-        }
+            finite_curve(&curve)
+        }))
+        .unwrap_or(false);
+        e.curve = if usable { curve } else { Curve3D::Line(Line(a, b)) };
     }
     for f in compressed.faces.iter_mut() {
         match &mut f.surface {
@@ -949,6 +969,16 @@ mod tests {
         let mesh = parse(include_str!("../tests/data/filleted_box.step")).unwrap();
         assert!(mesh.triangles() > 0);
         let (lo, hi) = mesh.bounds();
+        for k in 0..3 {
+            assert!((lo[k] + 0.5).abs() < 1e-4 && (hi[k] - 0.5).abs() < 1e-4, "{lo:?} {hi:?}");
+        }
+    }
+
+    #[test]
+    fn void_shells_of_a_brep_with_voids_are_drawn() {
+        let text = include_str!("../tests/data/filleted_box.step")
+            .replace("#15 = MANIFOLD_SOLID_BREP('',#16);", "#15 = BREP_WITH_VOIDS('',#90010,(#90011));\n#90010 = CLOSED_SHELL('',(#17));\n#90011 = ORIENTED_CLOSED_SHELL('',*,#16,.F.);");
+        let (lo, hi) = parse(&text).unwrap().bounds();
         for k in 0..3 {
             assert!((lo[k] + 0.5).abs() < 1e-4 && (hi[k] - 0.5).abs() < 1e-4, "{lo:?} {hi:?}");
         }
