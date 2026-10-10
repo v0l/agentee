@@ -2,7 +2,7 @@
 
 Shared list of open work. See `AGENTS.md` for how to log, take and finish an item.
 
-## Smaller gaps
+## Smaller gaps (taken: master)
 
 Found while laying out the rotator control board (`~/git/rotator/board`).
 
