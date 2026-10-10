@@ -334,6 +334,27 @@ fn reached_by_tracks(
     (0..vias.len()).filter(|&k| seen_via[k]).collect()
 }
 
+fn pour_islands(
+    layout: &Layout,
+    net: usize,
+    pad: &crate::layout::PlacedPad,
+    labels: &mut std::collections::HashMap<usize, Vec<u32>>,
+) -> Vec<(usize, u32)> {
+    let mut out = Vec::new();
+    for (zi, z) in layout.zones.iter().enumerate() {
+        if z.net != net || !pad.copper.contains(&z.layer) {
+            continue;
+        }
+        let label = labels.entry(zi).or_insert_with(|| islands(z));
+        for c in on_pad(z, &pad.outlines) {
+            if label[c] != 0 && !out.contains(&(zi, label[c])) {
+                out.push((zi, label[c]));
+            }
+        }
+    }
+    out
+}
+
 fn side_of(pad: P, body: P) -> P {
     let d = [pad[0] - body[0], pad[1] - body[1]];
     if d[0].abs() < 1e-6 && d[1].abs() < 1e-6 {
@@ -385,6 +406,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
     let mut labels: std::collections::HashMap<usize, Vec<u32>> = std::collections::HashMap::new();
     let mut reached: std::collections::HashMap<usize, std::collections::HashSet<(usize, usize)>> =
         std::collections::HashMap::new();
+    let mut tied_islands: std::collections::HashSet<(usize, u32)> = Default::default();
     let wants_close: Vec<bool> = layout
         .parts
         .iter()
@@ -430,6 +452,9 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
                     .entry(net)
                     .or_insert_with(|| reaches_plane(layout, net, &mut labels))
                     .contains(&(pi, qi))
+                    || pour_islands(layout, net, pad, &mut labels)
+                        .iter()
+                        .any(|i| tied_islands.contains(i))
             };
             if joined {
                 out.already += 1;
@@ -584,6 +609,7 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
             kept.tracks.push(stub(c));
             kept.vias.push(crate::layout::Via::of(spec, net, c, copper));
             placed.push((net, c));
+            tied_islands.extend(pour_islands(layout, net, pad, &mut labels));
             out.tied += 1;
         }
     }

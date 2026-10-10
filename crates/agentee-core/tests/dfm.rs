@@ -1761,6 +1761,25 @@ fn tie_skips_a_pad_its_pour_joins_to_the_plane_far_away_and_ties_nothing_twice()
 }
 
 #[test]
+fn tie_joins_a_pour_island_with_one_via() {
+    let p = load(&Fixture {
+        footprints: &[("ONE", ONE_PAD)],
+        parts: &[
+            ("R1", "ONE", [6.0, 10.0]),
+            ("R2", "ONE", [10.0, 10.0]),
+            ("R3", "ONE", [14.0, 10.0]),
+            ("R4", "ONE", [18.0, 10.0]),
+        ],
+        nets: &[("GND", &["R1.1", "R2.1", "R3.1", "R4.1"])],
+        pcb: "\n[[zones]]\nnet = \"GND\"\nlayers = [\"F.Cu\"]\noutline = [[4, 8], [20, 8], [20, 12], [4, 12]]\n\n[[zones]]\nnet = \"GND\"\nlayers = [\"B.Cu\"]\n",
+        ..Default::default()
+    });
+    let (l, b) = (&p.layouts[0].item, &p.boards[0].item);
+    let r = agentee_core::tie::tie(l, b, &["GND".into()]).unwrap();
+    assert_eq!((r.tied, r.already), (1, 3), "{:?} {:?}", r.vias, r.failed);
+}
+
+#[test]
 fn tie_skips_a_decap_pad_whose_stub_already_runs_to_a_via() {
     let p = load(&Fixture {
         parts: &[("C1", "TWO", [10.0, 10.0])],

@@ -1559,7 +1559,8 @@ leaves the pad, not at its centre, so a fine-pitch part's other pad is not in it
 the outward one first, up to 1.2 mm past the pad. A pad already joined to the main body of
 its net's zone on another layer is left alone, through whatever copper of its net does it: the
 pour on its own layer, tracks, vias and plated holes, so a pad in a ground pour that reaches the
-plane anywhere needs nothing, and running `tie` again adds nothing. Pads of a decoupling
+plane anywhere needs nothing, and running `tie` again adds nothing. Once `tie` puts a via on a
+pad in a pour island, the other pads in that island count as joined, so an island takes one via. Pads of a decoupling
 capacitor (a capacitor with a pin on a supply net) and of a part on an RF class net are the
 exception: they want the short return path, so each gets its own via unless a plated hole of its
 net is within 0.8 mm of its edge, a via of its net within 0.8 mm sits in the same pour island, or
