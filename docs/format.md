@@ -1099,7 +1099,9 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
 
 [[cutouts]]                    # keep zones off an area, e.g. under an SMA centre pin;
                                # a hole through the board is [[outline.cutouts]] in the board file;
-                               # `agentee edit pcb cutout --point X,Y X,Y ... --layers ...` adds one
+                               # `agentee edit pcb cutout --point X,Y X,Y ... --layers ...` adds one,
+                               # replacing a cutout with the same points; `uncutout X,Y` removes
+                               # every cutout around that point
 layers = ["In1.Cu"]
 points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
 

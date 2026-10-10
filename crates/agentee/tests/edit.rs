@@ -353,6 +353,20 @@ fn a_zone_outline_and_a_cutout_take_every_point_after_the_flag() {
     let pcb = sch(&d, "t.pcb.toml");
     assert!(pcb.contains("[[cutouts]]"), "{pcb}");
     assert!(pcb.contains("points = [[20.0, 2.0], [26.0, 2.0], [26.0, 6.0], [20.0, 6.0]]"), "{pcb}");
+
+    run(&d, &["edit", "pcb", "t", "cutout", "--point", "20,2", "26,2", "26,6", "20,6"]);
+    run(&d, &["edit", "pcb", "t", "cutout", "--point", "2,2", "4,2", "4,4"]);
+    let pcb = sch(&d, "t.pcb.toml");
+    assert_eq!(pcb.matches("[[cutouts]]").count(), 2, "the same points replace a cutout\n{pcb}");
+    assert!(!pcb.contains("layers = [\"B.Cu\"]"), "{pcb}");
+
+    let (_, err, ok) = run(&d, &["edit", "pcb", "t", "uncutout", "10,10"]);
+    assert!(!ok && err.contains("no cutout at 10,10"), "{err}");
+    let (out, _, _) = run(&d, &["edit", "pcb", "t", "uncutout", "22,4"]);
+    assert!(out.contains("removed 1 cutouts"), "{out}");
+    let pcb = sch(&d, "t.pcb.toml");
+    assert_eq!(pcb.matches("[[cutouts]]").count(), 1, "{pcb}");
+    assert!(pcb.contains("points = [[2.0, 2.0], [4.0, 2.0], [4.0, 4.0]]"), "{pcb}");
 }
 
 #[test]
@@ -513,6 +527,7 @@ fn help_lists_the_commands() {
         "via",
         "zone",
         "cutout",
+        "uncutout",
         "pair",
         "stitch",
         "fanout",

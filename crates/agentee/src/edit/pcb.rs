@@ -11,6 +11,7 @@ pub const COMMANDS: &[&str] = &[
     "zone",
     "unzone",
     "cutout",
+    "uncutout",
     "pair",
     "text",
     "fanout",
@@ -33,6 +34,7 @@ pub fn command(name: &str) -> Option<Cmd> {
         "zone" => zone,
         "unzone" => unzone,
         "cutout" => cutout,
+        "uncutout" => uncutout,
         "pair" => pair,
         "text" => text_cmd,
         "fanout" => fanout,
@@ -71,6 +73,7 @@ pub fn usage(name: &str) -> &'static str {
         }
         "unzone" => "unzone NET ...",
         "cutout" => "cutout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu]",
+        "uncutout" => "uncutout X,Y ...",
         "pair" => "pair NET+ NET- [--max-skew 1mm]",
         "text" => {
             "text STRING [--layer F.SilkS] [--at X,Y] [--size 1.0] [--rotation 90] [--locked]"
@@ -639,8 +642,58 @@ fn cutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     }
     set(&mut t, "layers", TValue::Array(a));
     set(&mut t, "points", points(&pts, "--point")?);
-    insert(s.doc(path)?, "cutouts", t);
+    let doc = s.doc(path)?;
+    let shape = |c: &Table| c.get("points").map(|v| v.to_string().replace(' ', ""));
+    let mine = shape(&t);
+    let same = doc
+        .get_mut("cutouts")
+        .and_then(|v| v.as_array_of_tables_mut())
+        .and_then(|a| a.iter_mut().find(|c| shape(c) == mine));
+    match same {
+        Some(slot) => *slot = t,
+        None => insert(doc, "cutouts", t),
+    }
     Ok(Report::log(format!("zones kept off a cutout on {}", layers.join(", "))))
+}
+
+fn uncutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let spots = o.rest().iter().map(|w| parse_xy(w)).collect::<Result<Vec<_>, _>>()?;
+    o.done("uncutout", 0)?;
+    if spots.is_empty() {
+        return Err("uncutout: give an X,Y inside each cutout to remove".into());
+    }
+    let a = s
+        .doc(path)?
+        .get_mut("cutouts")
+        .and_then(|v| v.as_array_of_tables_mut())
+        .ok_or("this layout has no cutouts")?;
+    let polygon = |c: &Table| -> Vec<[f64; 2]> {
+        c.get("points")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|p| {
+                        let p = p.as_array()?;
+                        let n = |i: usize| {
+                            p.get(i).and_then(|v| v.as_float().or(v.as_integer().map(|i| i as f64)))
+                        };
+                        Some([n(0)?, n(1)?])
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    for spot in &spots {
+        if !a.iter().any(|c| agentee_core::geom::point_in_polygon(*spot, &polygon(c))) {
+            return Err(format!("no cutout at {},{}", spot[0], spot[1]));
+        }
+    }
+    let before = a.len();
+    a.retain(|c| {
+        let poly = polygon(c);
+        !spots.iter().any(|p| agentee_core::geom::point_in_polygon(*p, &poly))
+    });
+    Ok(Report::log(format!("removed {} cutouts", before - a.len())))
 }
 
 fn pair(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
