@@ -581,3 +581,23 @@ fn roomy_boards_reserve_clear_reference_labels() {
         .collect();
     assert!(crowded.is_empty(), "{crowded:#?}");
 }
+
+#[test]
+fn a_point_to_point_net_in_a_current_class_pulls_its_parts_together() {
+    let dir = small_dir("", "[place]\nedges = { J1 = \"left\", J2 = \"right\" }\n");
+    let board = std::fs::read_to_string(dir.join("t.board.toml")).unwrap();
+    let board = board.replace("size = [40, 30]", "size = [60, 20]")
+        + "[[netclasses]]\nname = \"Motor\"\ntrack_width = \"0.5mm\"\nclearance = \"0.2mm\"\nvia = \"std\"\ncurrent = \"2A\"\n";
+    std::fs::write(dir.join("t.board.toml"), board).unwrap();
+    let sch = std::fs::read_to_string(dir.join("t.sch.toml")).unwrap();
+    let sch = sch
+        .replace("[[nets]]\nname = \"VCC\"\npins = [\"U1.3\", \"C1.1\"]\n", "")
+        .replace("\"U1.2\", \"C1.2\", \"J1.2\"", "\"U1.2\", \"C1.1\", \"C1.2\", \"J1.2\", \"J2.2\"")
+        + "\n[[parts]]\nref = \"J2\"\nsymbol = \"Conn_Coaxial\"\nvalue = \"OUT\"\nat = [40.64, 20.32]\n\n[[nets]]\nname = \"MOT\"\nclass = \"Motor\"\npins = [\"U1.3\", \"J2.1\"]\n";
+    std::fs::write(dir.join("t.sch.toml"), sch).unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    let at = |n: &str| r.placements.iter().find(|p| p.reference == n).unwrap().at;
+    let d = |a: [f64; 2], b: [f64; 2]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+    let (u1, j1, j2) = (at("U1"), at("J1"), at("J2"));
+    assert!(d(u1, j2) < d(u1, j1), "U1 {u1:?} J1 {j1:?} J2 {j2:?}");
+}

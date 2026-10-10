@@ -664,7 +664,7 @@ impl Layout {
         let rule_on = |id: &str| crate::drc::id_enabled(board, id);
         let mut failing = Vec::new();
         let mut stuck: Vec<String> = Vec::new();
-        for _ in 0..LABEL_PASSES {
+        for pass in 0..=LABEL_PASSES {
             let fixes = check_silk(
                 &parts,
                 &self.vias,
@@ -678,6 +678,9 @@ impl Layout {
                 &mut crate::drc::Findings::default(),
             );
             failing = fixes.iter().map(|f| f.reference.clone()).collect();
+            if pass == LABEL_PASSES {
+                break;
+            }
             let mut changed = 0;
             for f in fixes {
                 let n = tries.entry(f.reference.clone()).or_default();
