@@ -1,7 +1,6 @@
 # TODO
 
-Gaps found while laying out the rotator control board (`~/git/rotator/board`). Take one,
-fix it, delete it from this file.
+Shared list of open work. See `AGENTS.md` for how to log, take and finish an item.
 
 ## Port the rest of `place-current-nets`
 
@@ -18,6 +17,8 @@ has its mounts and current-net placement. These three are still missing:
 When they are on master, delete the branch and the worktree.
 
 ## Smaller gaps
+
+Found while laying out the rotator control board (`~/git/rotator/board`).
 
 - There is no `uncutout`, so a duplicate `[[cutouts]]` has to be removed by hand.
 - `agentee tie` drops far more stitching vias than the island needs.
