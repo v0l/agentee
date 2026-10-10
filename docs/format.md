@@ -1694,7 +1694,7 @@ one (inside the window), both legs of a pair together. Delays turn into millimet
 own ps per mm. When one leg of a pair cannot take all of it, the other leg is held to what it got.
 A net that is over its group target is reported, not shortened. `agentee calc
 serpentine --from x,y --to x,y --add 2.5mm` (MCP `serpentine`) returns the points of one such
-meander on a segment you pick. Net lengths and delays are in `agentee show pcb:NAME`.
+meander on a segment you pick. Net lengths and delays are in `agentee show pcb:NAME`, which names every net it refers to.
 
 The viewer's layout page has a `3d` tab (`agentee view --3d` opens on it): the board in its
 stackup thickness, mask and silk colours and finish, copper under the mask, bare pads, plated and

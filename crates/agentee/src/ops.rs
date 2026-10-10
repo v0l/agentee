@@ -229,6 +229,38 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                 .iter()
                 .map(|(a, b, n)| json!({ "net": l.nets[*n].name, "from": a, "to": b }))
                 .collect();
+            let name = |n: usize| l.nets[n].name.clone();
+            let named = |item: Value| {
+                let mut v = item;
+                if let Some(n) = v["net"].as_u64() {
+                    v["net"] = json!(name(n as usize));
+                }
+                v
+            };
+            let tracks: Vec<Value> = l.tracks.iter().map(|t| named(json!(t))).collect();
+            let vias: Vec<Value> = l.vias.iter().map(|v| named(json!(v))).collect();
+            let pairs: Vec<Value> = l
+                .pairs
+                .iter()
+                .map(|pair| {
+                    let mut v = json!(pair);
+                    v["p"] = json!(name(pair.p));
+                    v["n"] = json!(name(pair.n));
+                    v["chain"] = json!(
+                        pair.chain.iter().map(|&(a, b)| [name(a), name(b)]).collect::<Vec<_>>()
+                    );
+                    v
+                })
+                .collect();
+            let match_groups: Vec<Value> = l
+                .match_groups
+                .iter()
+                .map(|g| {
+                    let mut v = json!(g);
+                    v["nets"] = json!(g.nets.iter().map(|&n| name(n)).collect::<Vec<_>>());
+                    v
+                })
+                .collect();
             json!({
                 "kind": "layout",
                 "file": p.layouts[i].path,
@@ -240,15 +272,15 @@ pub fn show(p: &Project, r: ItemRef) -> Value {
                 "copper_layers": l.copper,
                 "parts": parts,
                 "nets": l.nets,
-                "tracks": l.tracks,
-                "vias": l.vias,
+                "tracks": tracks,
+                "vias": vias,
                 "zones": l.zones.iter().map(|z| json!({ "net": l.nets[z.net].name, "layer": z.layer, "islands_removed": z.islands_removed })).collect::<Vec<_>>(),
                 "unrouted": ratsnest,
                 "silk": l.silk,
                 "title": l.title,
                 "watermark": l.watermark,
-                "pairs": l.pairs,
-                "match_groups": l.match_groups,
+                "pairs": pairs,
+                "match_groups": match_groups,
                 "interfaces": l.interfaces,
                 "diagnostics": p.layouts[i].diags,
             })
