@@ -2,7 +2,7 @@
 
 Shared list of open work. See `AGENTS.md` for how to log, take and finish an item.
 
-## Port the rest of `place-current-nets`
+## Port the rest of `place-current-nets` (taken: master)
 
 Branch `place-current-nets`, worktree `~/git/agentee-place-current-nets`. Master already
 has its mounts and current-net placement. These three are still missing:
