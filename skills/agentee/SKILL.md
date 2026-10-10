@@ -119,6 +119,10 @@ The full key-by-key reference is `agentee docs` (MCP `format_reference`). Read t
 the file kind you are about to write before writing it. This skill covers how to work, not every
 key.
 
+[practice.md](practice.md) is the design judgement check cannot make: stackup, rule values, part
+choice, placement and copper. Read it before choosing a stackup, picking parts or steering a
+layout.
+
 ## The loop
 
 Every change goes through the same four steps. A change is one batch of `agentee edit` commands
