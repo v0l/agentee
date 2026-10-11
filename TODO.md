@@ -9,6 +9,11 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   `here = sheets[0]`). In buggy-guard `edit sch power net +5V R67.1` failed with "no net `+5V` in
   pendant.sch.toml" and `net +5V U2.1` with "no part `U2`".
 
+## View
+
+- `the_engine_runs_into_the_editor_and_waits_for_save` in `crates/agentee-view/tests/edit.rs`
+  fails on master (ef65ccf): "the editor never settled" after 400 frames at line 120.
+
 ## Check
 
 - `testpoint::is_rail` takes any name starting `VBAT`/`VBUS` as a rail, so the level check calls
