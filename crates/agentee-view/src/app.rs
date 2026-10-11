@@ -22,6 +22,20 @@ fn changes_content(kind: &notify::EventKind) -> bool {
 
 type Row = (ItemRef, String, Option<Severity>, Option<f32>, bool);
 
+enum Leave {
+    Quit,
+    Open(PathBuf),
+}
+
+const SUFFIXES: [&str; 6] = [
+    agentee_core::project::BOARD_EXT,
+    agentee_core::project::SYMBOL_EXT,
+    agentee_core::project::FOOTPRINT_EXT,
+    agentee_core::project::SCHEMATIC_EXT,
+    agentee_core::project::LAYOUT_EXT,
+    agentee_core::project::SIM_EXT,
+];
+
 pub struct App {
     path: PathBuf,
     project: Project,
@@ -38,7 +52,8 @@ pub struct App {
     progress: std::collections::HashMap<String, agentee_core::sim::SimProgress>,
     polled: Instant,
     ctx: egui::Context,
-    closing: bool,
+    leaving: Option<Leave>,
+    browser: Option<Browser>,
     new_layout: Option<crate::newlayout::Form>,
     pending_select: Option<String>,
 }
@@ -53,9 +68,8 @@ impl App {
         egui_bench::install(&cc.egui_ctx);
         let repaint = cc.egui_ctx.clone();
         agentee_3d::set_waker(move || repaint.request_repaint());
-        let path = std::fs::canonicalize(&path).unwrap_or(path);
         let mut app = App {
-            path,
+            path: PathBuf::new(),
             project: Project::default(),
             error: None,
             tab: Kind::Symbol,
@@ -70,19 +84,67 @@ impl App {
             progress: Default::default(),
             polled: Instant::now() - Duration::from_secs(5),
             ctx: cc.egui_ctx.clone(),
-            closing: false,
+            leaving: None,
+            browser: None,
             new_layout: None,
             pending_select: None,
         };
         app.st.view_3d = view_3d;
-        app.reload();
-        app.watch(cc.egui_ctx.clone());
-        if let Some(r) = select.and_then(|n| app.project.find(&n)) {
-            app.select(r);
-        } else if let Some(r) = app.project.all_refs().first().copied() {
-            app.select(r);
-        }
+        app.open(path, select);
         app
+    }
+
+    fn open(&mut self, path: PathBuf, select: Option<String>) {
+        self.path = std::fs::canonicalize(&path).unwrap_or(path);
+        self.ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+            "agentee - {}",
+            self.path.display()
+        )));
+        self.st = PageState { view_3d: self.st.view_3d, ..PageState::default() };
+        self.project = Project::default();
+        self.selected = None;
+        self.filter.clear();
+        self.progress.clear();
+        self.polled = Instant::now() - Duration::from_secs(5);
+        self._watcher = None;
+        self.events = None;
+        self.dirty = None;
+        self.loading = None;
+        self.new_layout = None;
+        self.pending_select = None;
+        self.reload();
+        self.watch(self.ctx.clone());
+        if let Some(r) = select.and_then(|n| self.project.find(&n)) {
+            self.select(r);
+        } else if let Some(r) = self.project.all_refs().first().copied() {
+            self.select(r);
+        }
+    }
+
+    fn browse(&mut self) {
+        let dir = if self.path.is_dir() {
+            self.path.clone()
+        } else {
+            self.path.parent().map(PathBuf::from).unwrap_or_default()
+        };
+        self.browser = Some(
+            Browser::new("open a project folder or file", dir).suffixes(&SUFFIXES).folders(true),
+        );
+    }
+
+    fn show_browser(&mut self, ctx: &egui::Context) {
+        let Some(b) = &mut self.browser else { return };
+        let target = match b.show(ctx) {
+            Picked::Browsing => return,
+            Picked::Cancelled => None,
+            Picked::File(p) | Picked::Folder(p) => Some(p),
+        };
+        self.browser = None;
+        match target {
+            Some(p) if self.st.dirty() > 0 => self.leaving = Some(Leave::Open(p)),
+            Some(p) => self.open(p, None),
+            None => {}
+        }
     }
 
     fn watch(&mut self, ctx: egui::Context) {
@@ -215,6 +277,12 @@ impl App {
     fn header(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             Line::new().legend("agentee").value(self.path.display().to_string()).show(ui);
+            if toggle(ui, "open", self.browser.is_some())
+                .on_hover_text("open another project folder or file, ctrl+O")
+                .clicked()
+            {
+                self.browse();
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let e = self.project.count(Severity::Error);
                 let w = self.project.count(Severity::Warning);
@@ -371,9 +439,9 @@ impl App {
     fn guard_close(&mut self, ctx: &egui::Context) {
         if ctx.input(|i| i.viewport().close_requested()) && self.st.dirty() > 0 {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.closing = true;
+            self.leaving = Some(Leave::Quit);
         }
-        if !self.closing {
+        if self.leaving.is_none() {
             return;
         }
         let mut close = false;
@@ -382,24 +450,30 @@ impl App {
             note(ui, format!("{} layouts have edits that are not saved.", self.st.dirty()), VALUE);
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.button("save and quit").clicked() {
+                let verb = match self.leaving {
+                    Some(Leave::Open(_)) => "open",
+                    _ => "quit",
+                };
+                if ui.button(format!("save and {verb}")).clicked() {
                     match self.st.save_all() {
                         Ok(()) => close = true,
                         Err(e) => self.error = Some(e),
                     }
                 }
-                if ui.button("quit without saving").clicked() {
+                if ui.button(format!("{verb} without saving")).clicked() {
                     self.st.editors.clear();
                     close = true;
                 }
                 if ui.button("cancel").clicked() {
-                    self.closing = false;
+                    self.leaving = None;
                 }
             });
         });
         if close {
-            self.closing = false;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            match self.leaving.take() {
+                Some(Leave::Open(p)) => self.open(p, None),
+                _ => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            }
         }
     }
 }
@@ -409,6 +483,10 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.guard_close(&ctx);
         self.poll(&ctx);
+        self.show_browser(&ctx);
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
+            self.browse();
+        }
         if let Some(f) = &mut self.new_layout {
             match crate::newlayout::show(&ctx, &self.project, &self.project.root, f) {
                 crate::newlayout::Outcome::Open => {}
