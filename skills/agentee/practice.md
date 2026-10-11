@@ -35,7 +35,9 @@ both came from them. When one disagrees with this file, follow the principle and
   in reflow.
 - Stay well above the fab minimum. Global track and space 0.127 mm (5 mil) when fine-pitch parts
   need it, 0.2 to 0.3 mm when the board is 0603 and SOIC. Relax only around the part that needs
-  it. Drill 0.3 mm (0.25 mm minimum), board edge 0.5 mm, mask expansion 0.05 to 0.1 mm set once.
+  it, and widen again once clear of it. Drill 0.3 mm (0.25 mm minimum), board edge 0.5 mm, mask
+  expansion 0.05 to 0.1 mm set once. Cheap generic defaults any fab makes: 0.7/0.3 mm vias, 0.3 mm
+  signal, 0.5 mm and up for power.
 - A cheap 2L build wants 0.15 mm track and space and 0.3 mm holes; anything finer is a cost adder.
   Thick boards (over 2.4 mm, 16+ layers) need larger minimum holes; heavy copper cannot do fine
   tracks, so fine-pitch BGAs and heavy copper usually mean two boards.
@@ -44,8 +46,19 @@ both came from them. When one disagrees with this file, follow the principle and
   must run to the board edge with no tooling strip there.
 - Edges set the frequency content, not the clock: about 0.5 / rise time, and with no rise time in
   the datasheet or IBIS model assume 1 / (10 x clock). A 10 MHz bus with 0.5 ns edges has 1 GHz in
-  it. Controlled impedance (with `solver = "field"`) on nets that need it whatever their length;
-  only those few, the rest get slowed edges instead.
+  it. Use the fastest edge the part can make: datasheets often give only the best-case maximum,
+  so take the minimum, or read it from the IBIS model (20-80% there; scale to 10-90%). A USB 2
+  high-speed driver has 500 ps edges, 1 GHz of content for a 480 Mb/s link.
+- A trace longer than about 1/12 of the wavelength at that frequency in the dielectric is a
+  transmission line: 28 mm on an outer layer for a 1 ns GPIO, 8.7 mm for an L1 GPS feed.
+  Controlled impedance (with `solver = "field"`) on nets that need it whatever their length; only
+  those few, the rest get slowed edges instead. Reuse one width where an interface's tolerance
+  allows (USB 2 at 90 ohm differential on the existing 50 ohm single-ended width) so the fab
+  controls as few impedances as possible. For pairs, set the width from the single-ended target
+  first, then the gap for the differential one.
+- Narrow controlled traces need thin dielectrics and suffer most from etch tolerance (0.05 mm off
+  0.1 mm is 50%), and skin loss is worse on them. Fast striplines get two adjacent ground planes;
+  a segmented power plane as one reference is for non-critical nets only.
 
 ## Ground and return paths
 
@@ -76,6 +89,10 @@ both came from them. When one disagrees with this file, follow the principle and
 
 ## Parts
 
+- Give each rail a target impedance (allowed ripple / transient current) and keep its PDN
+  impedance flat below it with a `pdn` sim: the regulator loop covers up to about 10 to 20 kHz,
+  bulk caps from there to about 1 MHz, small MLCCs above. Taking out bulk caps in Phil's test gave a
+  1 ohm peak at 20 kHz, and rail noise followed the impedance curve exactly.
 - Decoupling is about loop inductance, not value. Size the minimum with C = I x t / dV; above it
   the value does not matter. Use the highest value the smallest body holds (10 uF 0402 has the
   same inductance and about the same price as 100 nF 0402), plus a few bulk caps elsewhere on the
@@ -158,12 +175,15 @@ both came from them. When one disagrees with this file, follow the principle and
   node short; differential inputs symmetric and close.
 - Spread tracks out wherever there is room; crosstalk shows up as random resets and interrupts.
   Spacing is the fix (2H microstrip, 1H stripline as a floor, much more for an ADC input or
-  reset). Slowing the aggressor's edge does more than shortening the run. Never a grounded guard
+  reset). Budget it against the victim: a 10-bit ADC LSB at 3.3 V is 3.2 mV, which against a
+  10 ns, 3.3 V aggressor over 50 mm needs about 2.6 mm. Slowing the aggressor's edge does more than shortening the run. Never a grounded guard
   trace between signals unless it is stitched densely.
 - Slow every edge you don't need: lower drive strength or slew control, or a series resistor or
   ferrite on each non-critical IO pin, with an RC/LC filter where it leaves the board. Give every
   IC pin that is not a fast interface provision for one.
 - Space vias so plane copper flows between their antipads, especially under BGAs.
+- Remove non-functional pads on vias and through-holes on layers they don't connect: less plane
+  voiding, less capacitance, less drill deflection in heavy copper. Say so in the fab notes.
 - Thermal vias in an exposed pad, as many as fit, 0.2 to 0.25 mm drill, straight to inner planes.
 - BGA: dog-bone fanout pointing out by quadrant, a power via beside each ground via, every via
   placed before routing. Decouple with 0201s between paired vias on the back, then 0402, bulk
@@ -225,8 +245,9 @@ both came from them. When one disagrees with this file, follow the principle and
 - Conformal coating means hand-masking every connector, button and programming port; minimise
   them.
 - Leave stencil and paste design to the assembler and the production panel to the fab.
-- Send fab notes and the stackup with the Gerbers, and tick controlled impedance when it matters
-  so it is measured. Answer a fab's engineering questions by fixing the design and sending new
+- Send fab notes and the stackup with the Gerbers: IPC class, finished hole sizes with tolerance,
+  impedance requirements, keep-out areas for the fab's logo and date code. Tick controlled
+  impedance when it matters so it is measured. Answer a fab's engineering questions by fixing the design and sending new
   Gerbers, so the next order has none.
 
 ## Before fab
@@ -234,4 +255,8 @@ both came from them. When one disagrees with this file, follow the principle and
 - Render and read every copper layer alone: slivers, plane voids, starved reliefs.
 - `agentee library verify` for footprints against the datasheet, then look at pin 1 and rotation
   of each fine-pitch part in a render.
-- Silk: pin 1, polarity, designators, board name, revision and date.
+- Silk: pin 1, polarity (the diode symbol plus A or K, polarity is the top assembly error),
+  designators, board name, revision and date, nothing over holes or exposed copper.
+- Check every through-hole that should be plated actually is; Phil once got unplated barrels.
+- Three global fiducials per assembled side, as far apart as possible, plus local ones beside
+  fine-pitch BGAs and QFNs.
