@@ -1,5 +1,5 @@
 use crate::edit::Editor;
-use agentee_core::engine::PHASES;
+use agentee_core::engine::{PHASES, default_phases};
 use agentee_core::project::Project;
 use agentee_core::units::{Length, trim};
 use agentee_layout::pinswap::PinSwap;
@@ -459,7 +459,7 @@ fn phases(
     if on != configured && !on.is_empty() {
         let ordered: Vec<&str> =
             PHASES.iter().copied().filter(|p| on.iter().any(|x| x == p)).collect();
-        let value = (ordered.len() != PHASES.len()).then(|| {
+        let value = (ordered != default_phases()).then(|| {
             let mut a = toml_edit::Array::new();
             ordered.iter().for_each(|p| a.push(*p));
             Value::Array(a)

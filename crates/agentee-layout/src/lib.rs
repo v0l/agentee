@@ -16,6 +16,7 @@ pub mod score;
 pub mod search;
 pub mod start;
 pub mod tangle;
+pub mod topo;
 
 use agentee_core::board::Board;
 use agentee_core::engine::{EngineFile, stage_of};
@@ -45,6 +46,7 @@ pub struct Model<'a> {
     pub planes: Option<planes::PlanesPlan>,
     pub global: Option<global::GlobalPlan>,
     pub detail: Option<detail::DetailPlan>,
+    pub topo: Option<topo::TopoPlan>,
     pub hot: Vec<placement::Hot>,
     pub base: Option<std::sync::Arc<negotiate::Base>>,
     pub hist: Option<Vec<f32>>,
@@ -166,6 +168,7 @@ impl Loaded<'_> {
             planes: None,
             global: None,
             detail: None,
+            topo: None,
             hot: Vec::new(),
             base: None,
             hist: None,
@@ -236,6 +239,8 @@ pub struct RunReport {
     pub global: Option<global::GlobalPlan>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<detail::DetailPlan>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topo: Option<topo::TopoPlan>,
 }
 
 pub fn plane_nets(file: &LayoutFile) -> Vec<String> {
@@ -441,7 +446,7 @@ impl<'c, 'a> Driver<'c, 'a> {
 
 impl Driver<'_, '_> {
     fn begin(&mut self, model: &mut Model, has: &dyn Fn(&str) -> bool) -> Result<(), String> {
-        if has("global") || has("detail") {
+        if has("global") || has("topo") || has("detail") {
             for p in std::iter::once(ROUTE).chain(RETIRED_PLANS.iter().copied()) {
                 self.doc.strip(p);
             }
@@ -452,7 +457,7 @@ impl Driver<'_, '_> {
         if self.doc.version() != self.cfg.doc.version() {
             self.reload(model)?;
         }
-        if has("finish") && !has("detail") {
+        if has("finish") && !has("topo") && !has("detail") {
             model.detail = self.doc.section(ROUTE).map(route_from_section);
         }
         Ok(())
@@ -554,6 +559,23 @@ impl Driver<'_, '_> {
         if let Some(x) = &model.detail {
             self.search.absorb(&x.spend);
         }
+        self.close_route(model, dopts)
+    }
+
+    fn topo_stage(
+        &mut self,
+        model: &mut Model,
+        dopts: &negotiate::Options,
+        guides_detail: bool,
+    ) -> Result<(), String> {
+        if self.unfilled {
+            self.reload(model)?;
+        }
+        self.step(model, &topo::Topo);
+        if guides_detail {
+            return Ok(());
+        }
+        model.detail = model.topo.as_ref().map(topo::TopoPlan::as_detail);
         self.close_route(model, dopts)
     }
 
@@ -737,6 +759,7 @@ impl Driver<'_, '_> {
             planes: model.planes.clone(),
             global: model.global.clone(),
             detail: model.detail.clone(),
+            topo: model.topo.clone(),
         })
     }
 }
@@ -799,6 +822,10 @@ impl<'l> Loaded<'l> {
                 "place" => d.place_stage(&mut model, 0)?,
                 "access" => d.access_stage(&mut model, &dopts)?,
                 "global" => d.global_stage(&mut model, &dopts)?,
+                "topo" => {
+                    let guides = engine.phases().iter().any(|p| p == "detail");
+                    d.topo_stage(&mut model, &dopts, guides)?
+                }
                 "detail" => d.detail_stage(&mut model, &dopts)?,
                 "finish" => d.finish_stage(&mut model, &dopts)?,
                 other => return Err(format!("no stage `{other}`")),
@@ -850,7 +877,7 @@ pub fn run(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
 fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
     let chosen = selected(cfg)?;
     let has = |s: &str| chosen.iter().any(|x| x == s);
-    let routes = has("global") || has("detail");
+    let routes = has("global") || has("topo") || has("detail");
     let started = std::time::Instant::now();
     let mut d = Driver::new(cfg);
     d.begin(model, &has)?;
@@ -942,7 +969,7 @@ fn run_phases(model: &mut Model, cfg: &Config) -> Result<RunReport, String> {
             route_reps(&mut d, model, &has, &dopts, rounds - 1, pass, start);
         }
     }
-    if has("detail") {
+    if has("topo") || has("detail") {
         d.close_route(model, &dopts)?;
     }
     if has("finish") && !d.stopped() {
@@ -980,6 +1007,15 @@ fn route_reps(
                 }
             };
             d.done(model, r, t0, 0);
+        }
+        if has("topo") {
+            if d.unfilled && d.reload(model).is_err() {
+                break;
+            }
+            d.step(model, &topo::Topo);
+            if !has("detail") {
+                model.detail = model.topo.as_ref().map(topo::TopoPlan::as_detail);
+            }
         }
         if has("detail") {
             d.step(model, &detail::Detail);

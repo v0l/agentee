@@ -638,5 +638,22 @@ pub fn guide(model: &Model) -> crate::negotiate::Guide {
             out.prefer_vias.entry(n).or_default().push(at);
         }
     }
+    if let Some(t) = &model.topo {
+        let net = |name: &str| l.nets.iter().position(|x| x.name == name);
+        for tr in &t.tracks {
+            let (Some(n), Some(ly)) = (net(&tr.net), l.copper.iter().position(|c| *c == tr.layer))
+            else {
+                continue;
+            };
+            for w in tr.points.windows(2) {
+                out.prefer.entry(n).or_default().push((ly, w[0], w[1]));
+            }
+        }
+        for v in &t.vias {
+            if let Some(n) = net(&v.net) {
+                out.prefer_vias.entry(n).or_default().push(v.at);
+            }
+        }
+    }
     out
 }

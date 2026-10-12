@@ -11,5 +11,6 @@ description = "Placement and routing engine for agentee: phases over one board m
 agentee-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+spade = "2.15"
 toml.workspace = true
 toml_edit.workspace = true

@@ -93,10 +93,12 @@ into `[[footprints]]`, through `toml_edit` as today. `--checkpoint` writes after
 ## Stages
 
 ```
-constraints -> place -> access -> global <-> detail -> finish
+constraints -> place -> access -> global <-> [topo] -> detail -> finish
                  ^                  |
                  +---- hot tiles ---+
 ```
+
+`topo` is optional and only runs when `phases` names it.
 
 ### 1. Constraints
 
@@ -217,6 +219,27 @@ corridor grown by one tile.
   routed again, the rest held fixed, with vias and foreign fills both four times dearer. The new
   route stays when it joins as much with fewer vias, for up to two passes.
 
+### Topo (optional)
+
+`crates/agentee-layout/src/topo.rs` triangulates each signal layer over the pad, via and track
+outlines plus a lattice of via sites (`site_pitch`, 0.4 mm), and routes each connection as an
+ordered crossing of triangle edges. Wires on an edge stack in order with their width and
+clearance, so two wires never cross on a layer, and a wire that finds no room rips up the ones
+in its way (`rip_limit` times each, 4 by default). The path is pulled taut through its edges and
+drawn any-angle with rounded corners. Class order is fixed: single-layer, impedance and pair
+classes first, supplies last.
+
+With `detail` in `phases`, topo's tracks and vias go to detail as a preference for their net, as
+the BGA escape does, and detail draws the copper. Without it, topo's copper is the route: it is
+held to the rules, written as `# plan route`, and repair and finish run on it as on detail's.
+
+On `sdr` from bare pads, topo alone reaches a score of 30.5k against detail's 44.7k with no
+copper overlap, but leaves 97 connections open against 67. Two gaps cause most of that. Portals
+between unused via sites are only `site_pitch` long, so a class whose width plus clearance is
+over 0.4 mm (Power, PowerHi) cannot cross the lattice. And about 165 nets lose some copper when
+the route is held to the rules, mostly where wires pass within tens of microns of each other or
+of a neighbouring pad between edges.
+
 ### 6. Finish
 
 Via removal and via snapping, octilinear cleanup and chamfers, then a spread pass that moves
@@ -264,6 +287,11 @@ via_cost = "3mm"
 bend_cost = "0.1mm"
 fences = true
 criticality = { RF = 1.0, LVDS = 0.8, USB_SS = 0.8, Clock = 0.5 }
+
+[engine.topo]                  # only read when phases names "topo"
+site_pitch = "0.4mm"
+via_cost = "3mm"               # falls back to [engine.detail] via_cost
+rip_limit = 4
 ```
 
 `stages` is accepted for `phases`. `class_order`, `tiers`, `corridors`, `rip_limit`, `pairs`, `tile`,

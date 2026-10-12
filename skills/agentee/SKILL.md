@@ -267,7 +267,8 @@ piles up. Remove an old hand route with `agentee edit pcb NAME untrack NET`. Do 
 `place --seed N` and `route` by hand either: one `--search` covers what a dozen manual rounds
 would.
 
-The engine stages are `constraints, place, access, global, detail, finish`. `--from`, `--to` and
+The engine stages are `constraints, place, access, global, detail, finish`, plus an optional
+`topo` (any-angle topological router) that runs only when `phases` names it. `--from`, `--to` and
 `--only` run part of them, for example `--from global` to route again without moving parts.
 `--search` is a beam search: each kept state branches into children with different knob values
 (placement seeds by default), the best `--keep` survive each stage, and the winner is written with

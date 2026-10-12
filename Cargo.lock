@@ -106,6 +106,7 @@ dependencies = [
  "agentee-core",
  "serde",
  "serde_json",
+ "spade",
  "toml",
  "toml_edit 0.25.15+spec-1.1.0",
 ]

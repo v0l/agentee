@@ -2,7 +2,14 @@ use crate::units::Length;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const PHASES: &[&str] = &["constraints", "place", "access", "global", "detail", "finish"];
+pub const PHASES: &[&str] =
+    &["constraints", "place", "access", "global", "topo", "detail", "finish"];
+
+pub const OPTIONAL_PHASES: &[&str] = &["topo"];
+
+pub fn default_phases() -> Vec<&'static str> {
+    PHASES.iter().copied().filter(|p| !OPTIONAL_PHASES.contains(p)).collect()
+}
 
 pub const RETIRED: &[(&str, &str)] = &[
     ("floorplan", "place"),
@@ -47,6 +54,19 @@ pub struct EngineFile {
     pub tangle: Option<TangleFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search: Option<SearchFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topo: Option<TopoFile>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TopoFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site_pitch: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via_cost: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rip_limit: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -173,7 +193,7 @@ pub enum Direction {
 impl EngineFile {
     pub fn phases(&self) -> Vec<String> {
         if self.phases.is_empty() {
-            return PHASES.iter().map(|s| s.to_string()).collect();
+            return default_phases().into_iter().map(String::from).collect();
         }
         let mut out: Vec<String> = Vec::new();
         for p in &self.phases {
