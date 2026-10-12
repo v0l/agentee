@@ -560,6 +560,8 @@ impl SymbolFile {
     }
 }
 
+const MECHANICAL: [&str; 4] = ["H", "MH", "FID", "LOGO"];
+
 impl Symbol {
     pub fn check(&self, d: &mut Diags) {
         if self.name.trim().is_empty() {
@@ -573,7 +575,7 @@ impl Symbol {
                 format!("reference prefix `{}` should be letters, like U, R, C", self.reference),
             );
         }
-        if self.pins.is_empty() {
+        if self.pins.is_empty() && !MECHANICAL.contains(&self.reference.as_str()) {
             d.warn("pins", "symbol has no pins");
         }
         for unit in 1..=self.units {
@@ -690,5 +692,18 @@ side = "bottom"
         let mut d = Diags::new("R");
         f.resolve(&mut d).check(&mut d);
         assert!(d.has_errors());
+    }
+
+    #[test]
+    fn a_mounting_hole_or_fiducial_needs_no_pins() {
+        let pinless = |reference: &str| {
+            let f: SymbolFile =
+                toml::from_str(&format!("name = \"X\"\nreference = \"{reference}\"\n")).unwrap();
+            let mut d = Diags::new("X");
+            f.resolve(&mut d).check(&mut d);
+            d.list.iter().any(|x| x.message == "symbol has no pins")
+        };
+        assert!(!pinless("H") && !pinless("FID"));
+        assert!(pinless("U"));
     }
 }
