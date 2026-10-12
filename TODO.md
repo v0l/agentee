@@ -31,11 +31,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   1.5 V of V+, so `preamp-clip` clips low at 1.5 V. No slew rate, input bias current or PSRR,
   and `en` is flat with no 1/f corner (`crates/agentee-sim/src/circuit.rs` Buffer).
 
-## Library
-
-- `library find` merges offers by part number across makers (taken: todo-fixes-3): 1N5817G shows as onsemi with
-  Mouser's Comchip PDF (`QW_BG016_1N5817_G...`) as its datasheet link.
-
 ## Layout
 
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
