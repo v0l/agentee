@@ -401,12 +401,7 @@ fn leading_comments(doc: &toml_edit::DocumentMut) -> String {
         .and_then(|t| t.decor().prefix())
         .and_then(|p| p.as_str())
         .unwrap_or_default();
-    prefix
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.starts_with('#'))
-        .map(|l| format!("{l}\n"))
-        .collect()
+    prefix.lines().map(str::trim).filter(|l| l.starts_with('#')).map(|l| format!("{l}\n")).collect()
 }
 
 fn with_fills(

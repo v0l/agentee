@@ -421,6 +421,11 @@ impl Session {
                 Err(e) => broken.push(format!("{}: {e}", f.display())),
             }
         }
+        for d in &project.failures {
+            if let Some(f) = &d.file {
+                broken.push(format!("{}: does not load, fix it first: {}", f.display(), d.message));
+            }
+        }
         Ok(Session { root, project, docs, broken, target: None })
     }
 

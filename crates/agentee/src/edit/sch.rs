@@ -312,7 +312,7 @@ fn remove(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
                 a.retain(|t| text(t, "ref").as_deref() != Some(w.as_str()));
             }
             if let Some(a) = doc.get_mut("no_connect").and_then(|v| v.as_array_mut()) {
-                a.retain(|p| !p.as_str().is_some_and(|p| p.starts_with(&format!("{w}."))));
+                retain_values(a, |p| !p.as_str().is_some_and(|p| p.starts_with(&format!("{w}."))));
             }
             let doc = s.doc(path)?;
             let names: Vec<String> = doc
@@ -331,7 +331,9 @@ fn remove(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
                     .and_then(|t| t.get_mut("pins"))
                     .and_then(|v| v.as_array_mut())
                 {
-                    a.retain(|p| !p.as_str().is_some_and(|p| p.starts_with(&format!("{w}."))));
+                    retain_values(a, |p| {
+                        !p.as_str().is_some_and(|p| p.starts_with(&format!("{w}.")))
+                    });
                 }
             }
             log.push(format!("removed {w} and its pins"));
@@ -344,7 +346,7 @@ fn remove(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
             .is_some_and(|a| a.iter().any(|p| p.as_str() == Some(w.as_str())))
         {
             if let Some(a) = s.doc(path)?.get_mut("no_connect").and_then(|v| v.as_array_mut()) {
-                a.retain(|p| p.as_str() != Some(w.as_str()));
+                retain_values(a, |p| p.as_str() != Some(w.as_str()));
             }
             log.push(format!("{w} is no longer marked no-connect"));
             facts.push(json!({ "pin": w, "removed": true }));
@@ -692,17 +694,25 @@ fn disconnect(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, Strin
                     .and_then(|t| t.get_mut("pins"))
                     .and_then(|v| v.as_array_mut())
                 {
-                    a.retain(|v| v.as_str() != Some(label.as_str()));
+                    retain_values(a, |v| v.as_str() != Some(label.as_str()));
                 }
             }
         }
         let doc = s.doc(path)?;
         if let Some(a) = doc.get_mut("no_connect").and_then(|v| v.as_array_mut()) {
-            a.retain(|v| v.as_str() != Some(label.as_str()));
+            retain_values(a, |v| v.as_str() != Some(label.as_str()));
         }
         log.push(format!("unwired {label}"));
     }
     Ok(Report { log, facts: Vec::new() })
+}
+
+fn retain_values(a: &mut Array, keep: impl FnMut(&toml_edit::Value) -> bool) {
+    let first = a.get(0).map(|v| v.decor().prefix().cloned());
+    a.retain(keep);
+    if let (Some(Some(prefix)), Some(v)) = (first, a.get_mut(0)) {
+        v.decor_mut().set_prefix(prefix);
+    }
 }
 
 fn texts_pin(t: &Table) -> Vec<String> {
@@ -750,7 +760,7 @@ fn un_no_connect(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, St
         let doc = s.doc(path)?;
         if let Some(a) = doc.get_mut("no_connect").and_then(|v| v.as_array_mut()) {
             let before = a.len();
-            a.retain(|v| v.as_str() != Some(label.as_str()));
+            retain_values(a, |v| v.as_str() != Some(label.as_str()));
             if a.len() != before {
                 log.push(format!("{label} may be left open"));
             }
@@ -826,7 +836,7 @@ impl Session {
             .and_then(|t| t.get_mut("pins"))
             .and_then(|v| v.as_array_mut())
             .ok_or(format!("no net `{net}` in {}", path.display()))?;
-        a.retain(|v| v.as_str() != Some(pin));
+        retain_values(a, |v| v.as_str() != Some(pin));
         Ok(())
     }
 }

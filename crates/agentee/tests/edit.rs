@@ -820,3 +820,29 @@ fn each_unit_of_a_part_is_placed_and_wired() {
     let (_, err, ok) = run(&d, &["edit", "sch", "t", "add", "U1", "DUAL", "X"]);
     assert!(!ok && err.contains("--unit N"), "{err}");
 }
+
+#[test]
+fn removing_the_first_pin_leaves_the_list_tidy() {
+    let d = dir("tidy");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    edit(&d, &["sch", "t", "add", "R1", "R", "1k"]);
+    edit(&d, &["sch", "t", "add", "R2", "R", "1k"]);
+    edit(&d, &["sch", "t", "add", "R3", "R", "1k"]);
+    edit(&d, &["sch", "t", "net", "MID", "R1.1", "R2.1", "R3.1"]);
+    edit(&d, &["sch", "t", "nc", "R1.2", "R2.2"]);
+    edit(&d, &["sch", "t", "remove", "R1"]);
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("pins = [\"R2.1\", \"R3.1\"]"), "{text}");
+    assert!(text.contains("no_connect = [\"R2.2\"]"), "{text}");
+}
+
+#[test]
+fn a_file_that_does_not_load_is_not_edited() {
+    let d = dir("unloadable");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\ntitle = \"x\"\n").unwrap();
+    let before = sch(&d, "t.sch.toml");
+    let (out, err, ok) = run(&d, &["edit", "sch", "t", "add", "R1", "R", "1k"]);
+    assert!(!ok, "{out}");
+    assert!(err.contains("title"), "{err}");
+    assert_eq!(before, sch(&d, "t.sch.toml"));
+}
