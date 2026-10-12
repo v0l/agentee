@@ -264,7 +264,61 @@ pub struct FetchArgs<'a> {
     pub distributors: bool,
 }
 
-type Listed = BTreeMap<String, (Option<String>, Vec<(String, String)>)>;
+#[derive(Debug, Default)]
+struct Listing {
+    maker: String,
+    offers: usize,
+    urls: Vec<(String, String)>,
+}
+
+type Listed = BTreeMap<String, Vec<Listing>>;
+
+fn maker_key(name: &str) -> String {
+    const DROP: &[&str] = &[
+        "inc",
+        "incorporated",
+        "corp",
+        "corporation",
+        "co",
+        "ltd",
+        "limited",
+        "llc",
+        "gmbh",
+        "ag",
+        "sa",
+        "bv",
+        "plc",
+        "semiconductor",
+        "semiconductors",
+        "electronics",
+        "technology",
+        "technologies",
+        "international",
+        "group",
+    ];
+    let words: Vec<String> = name
+        .to_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty() && !DROP.contains(w))
+        .map(str::to_string)
+        .collect();
+    let joined = words.join("");
+    match joined.as_str() {
+        "ti" | "texasinstruments" | "nationalsemiconductor" => "texasinstruments".into(),
+        "st" | "stmicro" | "stmicroelectronics" => "stmicroelectronics".into(),
+        "on" | "onsemi" | "onsemiconductor" | "fairchild" => "onsemi".into(),
+        "adi" | "analogdevices" | "lineartechnology" | "maxim" | "maximintegrated" => {
+            "analogdevices".into()
+        }
+        "microchip" | "atmel" | "microsemi" => "microchip".into(),
+        _ => joined,
+    }
+}
+
+fn same_maker(a: &str, b: &str) -> bool {
+    let (a, b) = (maker_key(a), maker_key(b));
+    !a.is_empty() && !b.is_empty() && (a == b || a.contains(&b) || b.contains(&a))
+}
 
 fn distributor_urls(wants: &[&Want], config: Option<&Path>) -> (Listed, Vec<String>) {
     let mut out = Listed::new();
@@ -289,14 +343,24 @@ fn distributor_urls(wants: &[&Want], config: Option<&Path>) -> (Listed, Vec<Stri
         match s.by_mpn(&mpns) {
             Ok(offers) => {
                 for o in offers {
-                    let Some(u) = o.datasheet.clone() else { continue };
-                    let key = datasheet::normal(&o.mpn);
-                    let (maker, v) = out.entry(key).or_default();
-                    if maker.is_none() && !o.manufacturer.is_empty() {
-                        *maker = Some(o.manufacturer.clone());
-                    }
-                    if !v.iter().any(|(_, x)| *x == u) {
-                        v.push((o.distributor.clone(), u));
+                    let groups = out.entry(datasheet::normal(&o.mpn)).or_default();
+                    let k = match groups.iter().position(|g| same_maker(&g.maker, &o.manufacturer))
+                    {
+                        Some(k) => k,
+                        None => {
+                            groups.push(Listing {
+                                maker: o.manufacturer.clone(),
+                                ..Default::default()
+                            });
+                            groups.len() - 1
+                        }
+                    };
+                    let g = &mut groups[k];
+                    g.offers += 1;
+                    if let Some(u) = o.datasheet.clone()
+                        && !g.urls.iter().any(|(_, x)| *x == u)
+                    {
+                        g.urls.push((o.distributor.clone(), u));
                     }
                 }
             }
@@ -304,6 +368,71 @@ fn distributor_urls(wants: &[&Want], config: Option<&Path>) -> (Listed, Vec<Stri
         }
     }
     (out, errors)
+}
+
+fn listing_for(found: &Listed, mpn: &str) -> Vec<Listing> {
+    let want = datasheet::normal(mpn);
+    let exact = found.get(&want);
+    let makers: Vec<&str> = exact.into_iter().flatten().map(|g| g.maker.as_str()).collect();
+    let mut out: Vec<Listing> = exact
+        .into_iter()
+        .flatten()
+        .map(|g| Listing { maker: g.maker.clone(), offers: g.offers, urls: g.urls.clone() })
+        .collect();
+    if out.iter().any(|g| !g.urls.is_empty()) || want.len() < 5 {
+        return out;
+    }
+    for (k, groups) in found {
+        if *k == want || !k.starts_with(&want) {
+            continue;
+        }
+        for g in groups {
+            if !makers.is_empty() && !makers.iter().any(|m| same_maker(m, &g.maker)) {
+                continue;
+            }
+            match out.iter_mut().find(|o| same_maker(&o.maker, &g.maker)) {
+                Some(o) => o.urls.extend(g.urls.iter().cloned()),
+                None => out.push(Listing {
+                    maker: g.maker.clone(),
+                    offers: g.offers,
+                    urls: g.urls.clone(),
+                }),
+            }
+        }
+    }
+    out
+}
+
+fn makers_to_try<'a>(
+    mpn: &str,
+    listed: &'a [Listing],
+    wanted: Option<&str>,
+) -> (Vec<&'a Listing>, Option<String>) {
+    let with_urls: Vec<&Listing> = listed.iter().filter(|g| !g.urls.is_empty()).collect();
+    if let Some(m) = wanted {
+        let ours: Vec<&Listing> =
+            with_urls.iter().copied().filter(|g| same_maker(&g.maker, m)).collect();
+        let note = (ours.is_empty() && !with_urls.is_empty()).then(|| {
+            let others: Vec<&str> = with_urls.iter().map(|g| g.maker.as_str()).collect();
+            format!(
+                "{mpn}: the distributors list a datasheet from {} but not from {m}",
+                others.join(", ")
+            )
+        });
+        return (ours, note);
+    }
+    let mut all = with_urls;
+    all.sort_by(|a, b| b.offers.cmp(&a.offers));
+    let note = (all.len() > 1).then(|| {
+        let names: Vec<String> =
+            all.iter().map(|g| format!("{} ({} offers)", g.maker, g.offers)).collect();
+        format!(
+            "{mpn} is listed by {}; took {}, name the maker to pick another (`datasheet fetch \"MAKER {mpn}\"`, or `mfr` on the part)",
+            names.join(", "),
+            all[0].maker
+        )
+    });
+    (all, note)
 }
 
 fn try_urls(
@@ -420,22 +549,24 @@ pub fn fetch_wants(
             if got[i].is_some() {
                 continue;
             }
-            let Some((maker, urls)) = w.mpn.as_deref().and_then(|m| {
-                let want = datasheet::normal(m);
-                found.get(&want).or_else(|| {
-                    found
-                        .iter()
-                        .find(|(k, _)| want.len() >= 5 && k.starts_with(&want))
-                        .map(|(_, v)| v)
-                })
-            }) else {
-                continue;
-            };
-            if w.manufacturer.is_none() {
-                w.manufacturer = maker.clone();
+            let Some(mpn) = w.mpn.clone() else { continue };
+            let listed = listing_for(&found, &mpn);
+            let given = w.manufacturer.clone();
+            let (makers, note) = makers_to_try(&mpn, &listed, given.as_deref());
+            errors.extend(note);
+            for g in makers {
+                if given.is_none() {
+                    w.manufacturer = Some(g.maker.clone());
+                }
+                got[i] = try_urls(&cache, &fetcher, w, &g.urls, &mut tried[i])
+                    .map(|(e, c)| Got::found(w, "fetched", &e, &c));
+                if got[i].is_some() {
+                    break;
+                }
             }
-            got[i] = try_urls(&cache, &fetcher, w, urls, &mut tried[i])
-                .map(|(e, c)| Got::found(w, "fetched", &e, &c));
+            if got[i].is_none() {
+                w.manufacturer = given;
+            }
         }
     }
     let out: Vec<Got> = wants
@@ -767,6 +898,61 @@ pub fn project_for(path: &Path) -> Option<Project> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn makers_match_across_spellings() {
+        assert!(same_maker("Texas Instruments", "TI"));
+        assert!(same_maker("STMicroelectronics", "ST Microelectronics"));
+        assert!(same_maker("ON Semiconductor", "onsemi"));
+        assert!(same_maker("Comchip Technology", "COMCHIP"));
+        assert!(!same_maker("onsemi", "Comchip Technology"));
+        assert!(!same_maker("Texas Instruments", "STMicroelectronics"));
+    }
+
+    #[test]
+    fn a_longer_part_number_lends_a_datasheet_only_from_the_same_maker() {
+        let g = |maker: &str, url: Option<&str>| Listing {
+            maker: maker.into(),
+            offers: 1,
+            urls: url.map(|u| ("Farnell".to_string(), u.to_string())).into_iter().collect(),
+        };
+        let mut found = Listed::new();
+        found.insert("LM358P".into(), vec![g("Texas Instruments", None)]);
+        found.insert("LM358PT".into(), vec![g("STMICROELECTRONICS", Some("st.pdf"))]);
+        assert!(listing_for(&found, "LM358P").iter().all(|l| l.urls.is_empty()));
+        found.insert("LM358PE4".into(), vec![g("TEXAS INSTRUMENTS", Some("ti.pdf"))]);
+        let l = listing_for(&found, "LM358P");
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].urls[0].1, "ti.pdf");
+        found.remove("LM358P");
+        assert_eq!(listing_for(&found, "LM358P").len(), 2);
+    }
+
+    #[test]
+    fn a_named_maker_takes_only_its_own_datasheets() {
+        let listed = vec![
+            Listing {
+                maker: "STMicroelectronics".into(),
+                offers: 3,
+                urls: vec![("Farnell".into(), "st.pdf".into())],
+            },
+            Listing {
+                maker: "Texas Instruments".into(),
+                offers: 2,
+                urls: vec![("Mouser".into(), "ti.pdf".into())],
+            },
+        ];
+        let (picked, note) = makers_to_try("LM358P", &listed, Some("TI"));
+        assert_eq!(picked.iter().map(|g| g.urls[0].1.as_str()).collect::<Vec<_>>(), ["ti.pdf"]);
+        assert!(note.is_none());
+        let (picked, note) = makers_to_try("LM358P", &listed, None);
+        assert_eq!(picked[0].maker, "STMicroelectronics");
+        assert!(note.unwrap().contains("Texas Instruments (2 offers)"));
+        let (picked, note) = makers_to_try("LM358P", &listed, Some("onsemi"));
+        assert!(picked.is_empty());
+        assert!(note.unwrap().contains("not from onsemi"));
+    }
+
     use super::*;
 
     #[test]
