@@ -2508,6 +2508,12 @@ gbw = "1MHz"
 # en = "10n"                   # input voltage noise, V/rtHz
 # headroom = "0.1V"            # how close the output swings to its rails
 # pins = { inp = "3", inn = "2", out = "1", vcc = "8", vee = "4" }
+
+[[blocks]]
+ref = "RV1"
+kind = "potentiometer"         # pins 1 and 3 are the ends, 2 the wiper
+position = 0.25                # 0 puts the wiper at pin 1, 1 at pin 3; default 0.5
+# resistance = "10k"           # the end to end value, default the part's value
 ```
 
 `thd` is the harmonics 2 to 10 against the fundamental, in percent, over the whole periods

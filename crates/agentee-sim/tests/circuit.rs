@@ -48,6 +48,7 @@ fn symbols() -> Vec<(&'static str, String)> {
         ("DUAL_OPAMP", dual_opamp()),
         ("LDO", symbol("LDO", "U", &[("1", "VIN"), ("2", "GND"), ("3", "VOUT")])),
         ("CONN", symbol("CONN", "J", &[("1", "1")])),
+        ("POT", symbol("POT", "RV", &[("1", "1"), ("2", "W"), ("3", "3")])),
     ]
 }
 
@@ -420,4 +421,24 @@ fn a_span_check_needs_a_transient_and_no_at() {
     assert!(errors.iter().any(|e| e.contains("not `at`")), "{errors:?}");
     assert!(errors.iter().any(|e| e.contains("need a [tran]")), "{errors:?}");
     assert!(errors.iter().any(|e| e.contains("`from` and `to` go with")), "{errors:?}");
+}
+
+#[test]
+fn a_potentiometer_divides_at_its_position_and_sags_under_load() {
+    let pot = "[[drives]]\nnet = \"VIN\"\ndc = \"10V\"\n\n[[blocks]]\nref = \"RV1\"\nkind = \"potentiometer\"\nposition = 0.25\n";
+    let open = sim(
+        "pot",
+        &[("RV1", "POT", "10k")],
+        &[("VIN", &["RV1.1"]), ("W", &["RV1.2"]), ("GND", &["RV1.3"])],
+        pot,
+    );
+    assert!(close(open.op["W"], 7.5, 1e-6), "{:?}", open.op);
+    let loaded = sim(
+        "pot-load",
+        &[("RV1", "POT", "10k"), ("R1", "R", "7.5k")],
+        &[("VIN", &["RV1.1"]), ("W", &["RV1.2", "R1.1"]), ("GND", &["RV1.3", "R1.2"])],
+        pot,
+    );
+    let lower = 7500.0 * 7500.0 / 15000.0;
+    assert!(close(loaded.op["W"], 10.0 * lower / (2500.0 + lower), 1e-6), "{:?}", loaded.op);
 }

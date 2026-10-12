@@ -143,6 +143,8 @@ pub struct BlockFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resistance: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacitance: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inductance: Option<Quantity>,
@@ -793,6 +795,46 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                     },
                 };
                 push(&mut elements, r.reference.clone(), ElemKind::Resistor { r: rv.max(1e-6) }, nodes);
+            }
+            "potentiometer" | "pot" => {
+                let ends = [("1", "pin 1"), ("2", "the wiper (pin 2)"), ("3", "pin 3")];
+                let mut nodes = Vec::new();
+                for (role, what) in ends {
+                    let pin = b.and_then(|b| b.pins.get(role)).and_then(|k| r.by(k)).or_else(|| r.by(role));
+                    match cx.pin_node(r, pin, what, &at) {
+                        Some(n) => nodes.push(n),
+                        None => break,
+                    }
+                }
+                if nodes.len() < 3 {
+                    continue;
+                }
+                let total = match b.and_then(|b| b.resistance.clone()) {
+                    Some(q) => cx.q(&Some(q), &["ohm", "r"], &at, "resistance", 0.0),
+                    None => match value(&["ohm", "r"]) {
+                        Some(v) => v,
+                        None => {
+                            cx.d.error(&at, format!("cannot read {} as a resistance", r.label()));
+                            continue;
+                        }
+                    },
+                };
+                let pos = cx.q(&b.and_then(|b| b.position.clone()), &[], &at, "position", 0.5);
+                if !(0.0..=1.0).contains(&pos) {
+                    cx.d.error(&at, "`position` runs from 0 (wiper at pin 1) to 1 (wiper at pin 3)");
+                    continue;
+                }
+                let floor = (total * 1e-6).max(1e-3);
+                for (half, share, pair) in
+                    [("a", pos, [nodes[0], nodes[1]]), ("b", 1.0 - pos, [nodes[1], nodes[2]])]
+                {
+                    push(
+                        &mut elements,
+                        format!("{}.{half}", r.reference),
+                        ElemKind::Resistor { r: (total * share).max(floor) },
+                        pair.to_vec(),
+                    );
+                }
             }
             "capacitor" => {
                 let Some(nodes) = two(&mut cx) else { continue };

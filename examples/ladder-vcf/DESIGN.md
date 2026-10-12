@@ -81,8 +81,8 @@ The models in every sim come from datasheets:
 - **BC550C:** onsemi BC550/D. Is 16.4 fA, fitted to VBE(on) 660 mV at 2 mA; the same value
   also lands on figure 2's 0.58 V at 0.1 mA. Bf is 420, the C group minimum.
 - **Rails:** driven at ±12 V, with D1 and D2 left out.
-- **Pots:** RV1 is a drive on CUTOFF. RV2 and RV3 are ideal dividers, since a vcvs block has
-  no wiper resistance.
+- **Pots:** RV1 is a drive on CUTOFF. RV2 and RV3 are `potentiometer` blocks, 100k split at
+  their `position`, so their wipers load and are loaded like the real parts.
 - **Trimmer:** RV4 is set to 10.45k. That's the bench trim done in the sim: at that value
   6 V of CV gives 64x the tail current.
 
