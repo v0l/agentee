@@ -142,3 +142,52 @@ fn a_project_library_overrides_the_global_one() {
     let _ = std::fs::remove_dir_all(&global);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_capacitor_is_matched_by_value_and_an_mpn_may_hold_a_space() {
+    let dir = scratch("values");
+    entry(
+        &dir,
+        "C-330u",
+        PartFile {
+            role: "capacitor".into(),
+            mpn: Some("EEE-FK1C331P".into()),
+            value: Some("330uF".into()),
+            symbol: "C.sym.toml".into(),
+            ..Default::default()
+        },
+        "C.sym.toml",
+        None,
+    );
+    entry(
+        &dir,
+        "C-1u",
+        PartFile {
+            role: "capacitor".into(),
+            mpn: Some("FC-135 32.7680KA-AG0".into()),
+            value: Some("1u".into()),
+            symbol: "C.sym.toml".into(),
+            ..Default::default()
+        },
+        "C.sym.toml",
+        None,
+    );
+    let lib = Library::open(None, Some(&dir));
+    let mut p = Project::load(&lna()).unwrap();
+    let sch = &mut p.schematics[0];
+    let c4 = sch.item.parts.iter_mut().find(|x| x.reference == "C4").unwrap();
+    c4.fields.insert("mpn".into(), "FC-135 32.7680KA-AG0".into());
+    let d = library::check(&lib, &sch.item, &sch.path);
+    let caps: Vec<_> = d.iter().filter(|x| x.at.starts_with('C')).collect();
+    assert!(!caps.iter().any(|x| x.at == "C4"), "{caps:#?}");
+    assert!(!caps.iter().any(|x| x.message.contains("C-330u")), "{caps:#?}");
+    let c1 = caps.iter().find(|x| x.at == "C1").unwrap();
+    assert!(
+        c1.message.contains(
+            "C1 is a 100n capacitor and the parts library has no capacitor of that value"
+        ),
+        "{}",
+        c1.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

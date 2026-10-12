@@ -793,12 +793,28 @@ impl SearchNearestParameter<D2> for BoundedSurface3D {
 
 type FaceTris = Vec<(Option<u64>, Vec<[[f64; 3]; 2]>)>;
 
+thread_local! {
+    static QUIET: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn quietly<T>(f: impl FnOnce() -> T) -> std::thread::Result<T> {
+    static HOOK: std::sync::Once = std::sync::Once::new();
+    HOOK.call_once(|| {
+        let loud = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if !QUIET.with(|q| q.get()) {
+                loud(info);
+            }
+        }));
+    });
+    let was = QUIET.with(|q| q.replace(true));
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    QUIET.with(|q| q.set(was));
+    out
+}
+
 fn triangulate(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<FaceTris> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        triangulate_shell(step, table, shell, unit)
-    }))
-    .ok()
-    .flatten()
+    quietly(|| triangulate_shell(step, table, shell, unit)).ok().flatten()
 }
 
 fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Option<FaceTris> {
@@ -824,7 +840,7 @@ fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Optio
     for e in compressed.edges.iter_mut() {
         let (a, b) = (verts[e.vertices.0], verts[e.vertices.1]);
         let mut curve = e.curve.clone();
-        let usable = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let usable = quietly(|| {
             match &mut curve {
                 Curve3D::BSplineCurve(c) => {
                     clamp_curve(c, valid_range(c.knot_vec(), c.degree()));
@@ -837,7 +853,7 @@ fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Optio
                 _ => {}
             }
             finite_curve(&curve)
-        }))
+        })
         .unwrap_or(false);
         e.curve = if usable { curve } else { Curve3D::Line(Line(a, b)) };
     }
@@ -874,7 +890,7 @@ fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Optio
             })
             .collect(),
     };
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let result = quietly(|| {
         let mut lo = [f64::MAX; 3];
         let mut hi = [f64::MIN; 3];
         for v in &compressed.vertices {
@@ -887,7 +903,7 @@ fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Optio
         let tol =
             if diag.is_finite() && diag > 0.0 { (diag * 0.002).max(0.002 / unit) } else { 0.01 };
         bounded.robust_triangulation(tol)
-    }))
+    })
     .ok()?;
     let mut out = Vec::new();
     for (i, face) in result.faces.iter().enumerate() {
@@ -932,6 +948,13 @@ fn triangulate_shell(step: &Step, table: &Table, shell: u64, unit: f64) -> Optio
 mod tests {
     use super::*;
     use truck_stepio::r#in::alias::{BSplineCurve, NurbsCurve};
+
+    #[test]
+    fn a_caught_panic_stays_quiet_and_the_flag_comes_back() {
+        assert!(quietly(|| panic!("ZeroRange")).is_err());
+        assert_eq!(quietly(|| quietly(|| 1).unwrap() + 1).unwrap(), 2);
+        assert!(!QUIET.with(|q| q.get()));
+    }
 
     #[test]
     fn assembly_usage_names_the_child_whichever_side_of_the_relationship_it_is_on() {

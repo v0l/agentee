@@ -413,11 +413,11 @@ pub fn holds(e: &Entry, p: &Part) -> bool {
     if p.fields.get("library").is_some_and(|l| l == &e.name) {
         return true;
     }
-    let mpn = p.fields.get("mpn").map(|m| m.trim()).unwrap_or("");
-    let mpn = mpn.rsplit(char::is_whitespace).next().unwrap_or(mpn);
+    let full = p.fields.get("mpn").map(|m| m.trim()).unwrap_or("");
+    let last = full.rsplit(char::is_whitespace).next().unwrap_or(full);
     if let Some(m) = &e.part.mpn
-        && !mpn.is_empty()
-        && normal(m) == normal(mpn)
+        && !full.is_empty()
+        && (normal(m) == normal(full) || normal(m) == normal(last))
     {
         return true;
     }
@@ -426,9 +426,25 @@ pub fn holds(e: &Entry, p: &Part) -> bool {
         && p.footprint.as_deref() == e.footprint_name.as_deref()
 }
 
+const VALUED: [&str; 4] = ["resistor", "capacitor", "inductor", "ferrite"];
+
+fn same_value(e: &Entry, p: &Part, role: &str) -> bool {
+    if e.part.generic || !VALUED.iter().any(|r| same_role(r, role)) {
+        return true;
+    }
+    let (Some(want), Some(have)) = (crate::spec::si(&p.value), e.part.value.as_deref()) else {
+        return true;
+    };
+    crate::spec::si(have).is_none_or(|v| (v - want).abs() <= want.abs() * 1e-6)
+}
+
 pub fn suggest<'a>(lib: &'a Library, p: &Part, role: &str) -> Vec<&'a Entry> {
     let pins = pin_count(p);
-    let mut v: Vec<&Entry> = lib.entries.iter().filter(|e| same_role(&e.part.role, role)).collect();
+    let mut v: Vec<&Entry> = lib
+        .entries
+        .iter()
+        .filter(|e| same_role(&e.part.role, role) && same_value(e, p, role))
+        .collect();
     v.sort_by_key(|e| (e.pin_count != Some(pins), !e.part.preferred, e.name.clone()));
     v
 }
@@ -458,11 +474,26 @@ pub fn check(lib: &Library, sch: &Schematic, path: &Path) -> Vec<Diagnostic> {
         if !lib.config.roles.is_empty() && !lib.config.roles.iter().any(|r| same_role(r, &role)) {
             continue;
         }
-        let options = suggest(lib, p, &role);
-        if options.iter().any(|e| holds(e, p)) {
+        if lib.entries.iter().any(|e| same_role(&e.part.role, &role) && holds(e, p)) {
             continue;
         }
-        let Some(best) = options.first() else { continue };
+        let options = suggest(lib, p, &role);
+        let Some(best) = options.first() else {
+            if VALUED.iter().any(|r| same_role(r, &role)) && !p.value.trim().is_empty() {
+                out.push(Diagnostic {
+                    severity,
+                    file: Some(path.to_path_buf()),
+                    item: sch.name.clone(),
+                    at: p.reference.clone(),
+                    message: format!(
+                        "{} is a {} {role} and the parts library has no {role} of that value: add one with agentee library add, or set the part's `library = \"no\"` field",
+                        p.reference, p.value
+                    ),
+                    rule: Some("library".into()),
+                });
+            }
+            continue;
+        };
         let pins = pin_count(p);
         let message = if best.pin_count.is_some_and(|n| n != pins) {
             format!(
