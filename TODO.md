@@ -8,7 +8,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   and Ultra Librarian need an account for an automatic model lookup; their search endpoints
   return 403 without one. Their KiCad ZIPs already work as `library add --model part.zip`.
 
-## Spacing
+## Spacing (taken: spacing)
 
 - A footprint `clearance` relaxes its pads but not the tracks that run into them: the
   UCC256404 RVCC (pin 12) and HB (pin 14) pads are 1.94 mm apart, so the two tracks leaving
