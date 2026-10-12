@@ -1,0 +1,199 @@
+[[parts]]
+key = "1N5819-E3/54"
+manufacturer = "Vishay"
+refs = ["D1", "D2"]
+url = "https://4donline.ihs.com/images/VipMasterIC/IC/VISH/VISH-S-A0010746713/VISH-S-A0010894838-1.pdf?hkey=6D3A4C79FDBF58556ACFDE234799DDF0"
+source = "Farnell"
+sha256 = "a114a1ec565f07651ee31d4068178a2907e733647718c9783ca7f6df60fa66f6"
+revision = "Revision: 01-Jul-2020 1 Document Number: 88525"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "3296W-1-203LF"
+manufacturer = "Bourns"
+refs = ["RV4"]
+url = "https://4donline.ihs.com/images/VipMasterIC/IC/BOUR/BOUR-S-A0008796795/BOUR-S-A0008796795-1.pdf?hkey=6D3A4C79FDBF58556ACFDE234799DDF0"
+source = "Farnell"
+sha256 = "571d06939eae1bdf06b2aba273fff9cb3cc7bc49c2a8a7262e83bfc18cbb8222"
+revision = "REV. 08/19"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "90130-1210"
+manufacturer = "Molex"
+refs = ["J1"]
+url = "http://www.farnell.com/datasheets/2699089.pdf"
+source = "Farnell"
+sha256 = "65f8814aa4549cbd8804aae649578bc622841fb9c9086a03ccdd7e75dc31dfdd"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "BC550CTA"
+manufacturer = "onsemi"
+refs = ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10", "Q11", "Q12"]
+url = "https://4donline.ihs.com/images/VipMasterIC/IC/ONSM/ONSM-S-A0013182135/ONSM-S-A0013180388-1.pdf?hkey=6D3A4C79FDBF58556ACFDE234799DDF0"
+source = "Farnell"
+sha256 = "aa150e929b83a1ab65d36cbb3c94c8346218e98295888a72531ee14519f2d5a7"
+revision = "August, 2021 − Rev. 4 BC550/D"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "C315C101G1G5TA"
+manufacturer = "KEMET"
+refs = ["C9"]
+url = "https://www.yageogroup.com/component-documentation/download/specsheet/C315C101G1G5TA?lang=en"
+source = "Farnell"
+sha256 = "2e169d7f1776ac4977924299a9df7928c374e2a7c816f8c89b7a8b16bb963375"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "C320C104K5R5TA"
+manufacturer = "KEMET"
+refs = ["C3", "C4", "C5", "C6", "C7", "C8"]
+url = "https://www.yageogroup.com/component-documentation/download/specsheet/C320C104K5R5TA?lang=en"
+source = "Farnell"
+sha256 = "b8eff1181da6534630bebe8077b13366173a84faf78b8dfa9e9187476b4bcda2"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "ESK106M050AC3AA"
+manufacturer = "KEMET"
+refs = ["C1", "C2", "C14", "C15", "C16", "C17", "C18"]
+url = "https://www.yageogroup.com/component-documentation/download/specsheet/ESK106M050AC3AA?lang=en"
+source = "Farnell"
+sha256 = "1674dcddefaf4262d53c624a48f031e341793bf78a928a40422dcbc07bc4975c"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-100K"
+manufacturer = "Yageo"
+refs = ["R1", "R2", "R5", "R17", "R20", "R22", "R24"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-10K"
+manufacturer = "Yageo"
+refs = ["R19", "R21", "R23"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-121K"
+manufacturer = "Yageo"
+refs = ["R3"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-18K2"
+manufacturer = "Yageo"
+refs = ["R18"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-1K"
+manufacturer = "Yageo"
+refs = ["R15", "R16", "R25"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-1K5"
+manufacturer = "Yageo"
+refs = ["R10", "R11", "R12", "R13", "R14"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-1K8"
+manufacturer = "Yageo"
+refs = ["R6"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-2K2"
+manufacturer = "Yageo"
+refs = ["R8"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-4K7"
+manufacturer = "Yageo"
+refs = ["R9"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-4M7"
+manufacturer = "Yageo"
+refs = ["R7"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-91K"
+manufacturer = "Yageo"
+refs = ["R4"]
+source = "user"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "PJ398SM"
+manufacturer = "QingPu (Thonkiconn)"
+refs = ["J2", "J3", "J4", "J5"]
+source = "user"
+sha256 = "626e0005743a7b2f0083e1f3c805acf7e9382d61958fdc76a47efd07b43997cf"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "PTV09A-4020F-B104"
+manufacturer = "Bourns"
+refs = ["RV1", "RV2", "RV3"]
+url = "http://www.farnell.com/datasheets/2259384.pdf"
+source = "Farnell"
+sha256 = "f427c9f2d1420bcecb8deec2d6eea4950e2e37574bf7381f69c7cb1ba36bd2a1"
+revision = "70 REV. 01/17"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "R82DC4100AA60J"
+manufacturer = "KEMET"
+refs = ["C19", "C20"]
+url = "https://yageogroup.com/download/specsheet/R82DC4100AA60J"
+source = "Farnell"
+sha256 = "671eca64ed87eb59a626365482ca42b18b14c2705b535f4deebad90b51bdf12b"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "R82EC2680AA60J"
+manufacturer = "KEMET"
+refs = ["C10", "C11", "C12", "C13"]
+url = "https://connect.kemet.com:7667/gateway/IntelliData-ComponentDocumentation/1.0/download/specsheet/R82EC2680AA60J"
+source = "Farnell"
+sha256 = "ce5dd01877d40a6f5c062a9f2e0b305d55935eeaca16d1503a90b0c149683327"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "TL072IP"
+manufacturer = "Texas Instruments"
+refs = ["U1", "U2", "U3"]
+url = "https://www.ti.com/lit/ds/symlink/tl072.pdf"
+source = "given"
+sha256 = "13366ea85bacfe27406b66acc57e9163a5e4bc5138c319591f19dbe957fdc54f"
+revision = "SLOS080W – SEPTEMBER 1978 – REVISED JULY 2025"
+fetched = "2026-10-12"

@@ -1,0 +1,259 @@
+name = "cv"
+board = "ladder-vcf"
+description = "Exponential converter: U1A sums the CVs at -1 V/V (RV4 trims it to 1 V/oct), R5 and R6 scale that to 17.7 mV/V at Q1's base U1B holds Q1 at a 2.5 uA reference through R7, so Q2 sinks 2.5 uA x 2^(CV) from the ladder"
+
+[[parts]]
+ref = "J2"
+symbol = "PJ398SM"
+at = [20.32, 35.56]
+value = "PJ398SM"
+footprint = "Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles"
+fields = { library = "PJ398SM", mfr = "QingPu (Thonkiconn)", mpn = "PJ398SM" }
+
+[[parts]]
+ref = "J3"
+symbol = "PJ398SM"
+at = [20.32, 66.04]
+value = "PJ398SM"
+footprint = "Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles"
+fields = { library = "PJ398SM", mfr = "QingPu (Thonkiconn)", mpn = "PJ398SM" }
+
+[[parts]]
+ref = "RV3"
+symbol = "PTV09A-4020F-B104"
+at = [45.72, 66.04]
+value = "100k"
+footprint = "Potentiometer_Bourns_PTV09A-1_Single_Vertical"
+fields = { lcsc = "C5154557", library = "PTV09A-4020F-B104", mfr = "Bourns", mpn = "PTV09A-4020F-B104" }
+
+[[parts]]
+ref = "RV1"
+symbol = "PTV09A-4020F-B104"
+at = [45.72, 91.44]
+value = "100k"
+footprint = "Potentiometer_Bourns_PTV09A-1_Single_Vertical"
+fields = { lcsc = "C5154557", library = "PTV09A-4020F-B104", mfr = "Bourns", mpn = "PTV09A-4020F-B104" }
+
+[[parts]]
+ref = "R1"
+symbol = "MFR-25FBF52-100K"
+at = [71.12, 35.56]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "R2"
+symbol = "MFR-25FBF52-100K"
+at = [71.12, 66.04]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "R3"
+symbol = "MFR-25FBF52-121K"
+at = [71.12, 91.44]
+value = "121k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C3504869", library = "MFR-25FBF52-121K", mfr = "Yageo", mpn = "MFR-25FBF52-121K" }
+
+[[parts]]
+ref = "R4"
+symbol = "MFR-25FBF52-91K"
+at = [101.6, 20.32]
+value = "91k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1370837", library = "MFR-25FBF52-91K", mfr = "Yageo", mpn = "MFR-25FBF52-91K" }
+
+[[parts]]
+ref = "RV4"
+symbol = "3296W-1-203LF"
+at = [121.92, 20.32]
+value = "20k"
+footprint = "Potentiometer_Bourns_3296W_Vertical"
+rotation = 90.0
+fields = { lcsc = "C34845", library = "3296W-1-203LF", mfr = "Bourns", mpn = "3296W-1-203LF" }
+
+[[parts]]
+ref = "U1"
+symbol = "TL072IP"
+at = [111.76, 50.8]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 1
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "R5"
+symbol = "MFR-25FBF52-100K"
+at = [142.24, 50.8]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "R6"
+symbol = "MFR-25FBF52-1K8"
+at = [157.48, 66.04]
+value = "1k8"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1369881", library = "MFR-25FBF52-1K8", mfr = "Yageo", mpn = "MFR-25FBF52-1K8" }
+
+[[parts]]
+ref = "Q1"
+symbol = "BC550CTA"
+at = [172.72, 50.8]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "R7"
+symbol = "MFR-25FBF52-4M7"
+at = [177.8, 25.4]
+value = "4M7"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1375816", library = "MFR-25FBF52-4M7", mfr = "Yageo", mpn = "MFR-25FBF52-4M7" }
+
+[[parts]]
+ref = "U1"
+symbol = "TL072IP"
+at = [208.28, 35.56]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 2
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "C9"
+symbol = "C315C101G1G5TA"
+at = [208.28, 15.24]
+value = "100p"
+footprint = "C_Rect_L4.0mm_W2.5mm_P2.50mm"
+rotation = 90.0
+fields = { lcsc = "C3696170", library = "C315C101G1G5TA", mfr = "KEMET", mpn = "C315C101G1G5TA" }
+
+[[parts]]
+ref = "R8"
+symbol = "MFR-25FBF52-2K2"
+at = [208.28, 71.12]
+value = "2k2"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C3454390", library = "MFR-25FBF52-2K2", mfr = "Yageo", mpn = "MFR-25FBF52-2K2" }
+
+[[parts]]
+ref = "Q2"
+symbol = "BC550CTA"
+at = [233.68, 86.36]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "U1"
+symbol = "TL072IP"
+at = [254.0, 35.56]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 3
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "C3"
+symbol = "C320C104K5R5TA"
+at = [274.32, 30.48]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[parts]]
+ref = "C4"
+symbol = "C320C104K5R5TA"
+at = [274.32, 45.72]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[nets]]
+name = "CV_IN"
+class = "Signal"
+pins = ["J2.T", "R1.1"]
+
+[[nets]]
+name = "FM_IN"
+class = "Signal"
+pins = ["J3.T", "RV3.3"]
+
+[[nets]]
+name = "FM_ATT"
+class = "Signal"
+pins = ["RV3.2", "R2.1"]
+
+[[nets]]
+name = "CUTOFF"
+class = "Signal"
+pins = ["RV1.2", "R3.1"]
+
+[[nets]]
+name = "SUM"
+class = "Signal"
+pins = ["R1.2", "R2.2", "R3.2", "R4.1", "U1.2"]
+
+[[nets]]
+name = "TRIM_A"
+class = "Signal"
+pins = ["R4.2", "RV4.1"]
+
+[[nets]]
+name = "SUM_OUT"
+class = "Signal"
+pins = ["RV4.2", "RV4.3", "U1.1", "R5.1"]
+
+[[nets]]
+name = "QA_B"
+class = "Signal"
+pins = ["R5.2", "R6.1", "Q1.2"]
+
+[[nets]]
+name = "QA_C"
+class = "Signal"
+pins = ["Q1.1", "R7.2", "U1.6", "C9.1"]
+
+[[nets]]
+name = "SERVO"
+class = "Signal"
+pins = ["U1.7", "C9.2", "R8.1"]
+
+[[nets]]
+name = "EXP_E"
+class = "Signal"
+pins = ["R8.2", "Q1.3", "Q2.3"]
+
+[[nets]]
+name = "TAIL"
+class = "Signal"
+pins = ["Q2.1"]
+
+[[nets]]
+name = "+12V"
+class = "Power"
+style = "power"
+pins = ["RV1.3", "R7.1", "U1.8", "C3.1"]
+
+[[nets]]
+name = "-12V"
+class = "PowerNeg"
+style = "power"
+pins = ["U1.4", "C4.2"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["J2.S", "J2.TN", "J3.S", "J3.TN", "RV3.1", "RV1.1", "U1.3", "R6.2", "U1.5", "Q2.2", "C3.2", "C4.1"]

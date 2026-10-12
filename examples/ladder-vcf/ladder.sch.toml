@@ -1,0 +1,392 @@
+name = "ladder"
+board = "ladder-vcf"
+description = "Four-pole transistor ladder: Q3/Q4 split TAIL between the sides, each rung's 68n across its emitters is a pole at Ic/(8 pi Vt C) Bias string R9-R14 steps the rung bases 1.5 V apart from V0 = 1.5 V RV2 feeds OUT_PRE back into Q4's base for resonance"
+
+[[parts]]
+ref = "Q3"
+symbol = "BC550CTA"
+at = [76.2, 152.4]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "Q4"
+symbol = "BC550CTA"
+at = [127.0, 152.4]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "Q5"
+symbol = "BC550CTA"
+at = [76.2, 127.0]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "Q6"
+symbol = "BC550CTA"
+at = [127.0, 127.0]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "C10"
+symbol = "R82EC2680AA60J"
+at = [101.6, 137.16]
+value = "68n"
+footprint = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C3776762", library = "R82EC2680AA60J", mfr = "KEMET", mpn = "R82EC2680AA60J" }
+
+[[parts]]
+ref = "Q7"
+symbol = "BC550CTA"
+at = [76.2, 101.6]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "Q8"
+symbol = "BC550CTA"
+at = [127.0, 101.6]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "C11"
+symbol = "R82EC2680AA60J"
+at = [101.6, 111.76]
+value = "68n"
+footprint = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C3776762", library = "R82EC2680AA60J", mfr = "KEMET", mpn = "R82EC2680AA60J" }
+
+[[parts]]
+ref = "Q9"
+symbol = "BC550CTA"
+at = [76.2, 76.2]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "Q10"
+symbol = "BC550CTA"
+at = [127.0, 76.2]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "C12"
+symbol = "R82EC2680AA60J"
+at = [101.6, 86.36]
+value = "68n"
+footprint = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C3776762", library = "R82EC2680AA60J", mfr = "KEMET", mpn = "R82EC2680AA60J" }
+
+[[parts]]
+ref = "Q11"
+symbol = "BC550CTA"
+at = [76.2, 50.8]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "Q12"
+symbol = "BC550CTA"
+at = [127.0, 50.8]
+value = "BC550CTA"
+footprint = "TO-92_Inline_Wide"
+fields = { lcsc = "C605308", library = "BC550CTA", mfr = "onsemi", mpn = "BC550CTA" }
+
+[[parts]]
+ref = "C13"
+symbol = "R82EC2680AA60J"
+at = [101.6, 60.96]
+value = "68n"
+footprint = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C3776762", library = "R82EC2680AA60J", mfr = "KEMET", mpn = "R82EC2680AA60J" }
+
+[[parts]]
+ref = "R9"
+symbol = "MFR-25FBF52-4K7"
+at = [177.8, 25.4]
+value = "4k7"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1371435", library = "MFR-25FBF52-4K7", mfr = "Yageo", mpn = "MFR-25FBF52-4K7" }
+
+[[parts]]
+ref = "R10"
+symbol = "MFR-25FBF52-1K5"
+at = [177.8, 50.8]
+value = "1k5"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364426", library = "MFR-25FBF52-1K5", mfr = "Yageo", mpn = "MFR-25FBF52-1K5" }
+
+[[parts]]
+ref = "R11"
+symbol = "MFR-25FBF52-1K5"
+at = [177.8, 76.2]
+value = "1k5"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364426", library = "MFR-25FBF52-1K5", mfr = "Yageo", mpn = "MFR-25FBF52-1K5" }
+
+[[parts]]
+ref = "R12"
+symbol = "MFR-25FBF52-1K5"
+at = [177.8, 101.6]
+value = "1k5"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364426", library = "MFR-25FBF52-1K5", mfr = "Yageo", mpn = "MFR-25FBF52-1K5" }
+
+[[parts]]
+ref = "R13"
+symbol = "MFR-25FBF52-1K5"
+at = [177.8, 127.0]
+value = "1k5"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364426", library = "MFR-25FBF52-1K5", mfr = "Yageo", mpn = "MFR-25FBF52-1K5" }
+
+[[parts]]
+ref = "R14"
+symbol = "MFR-25FBF52-1K5"
+at = [177.8, 152.4]
+value = "1k5"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364426", library = "MFR-25FBF52-1K5", mfr = "Yageo", mpn = "MFR-25FBF52-1K5" }
+
+[[parts]]
+ref = "C18"
+symbol = "ESK106M050AC3AA"
+at = [198.12, 38.1]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "C17"
+symbol = "ESK106M050AC3AA"
+at = [198.12, 63.5]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "C16"
+symbol = "ESK106M050AC3AA"
+at = [198.12, 88.9]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "C15"
+symbol = "ESK106M050AC3AA"
+at = [198.12, 114.3]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "C14"
+symbol = "ESK106M050AC3AA"
+at = [198.12, 139.7]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "R15"
+symbol = "MFR-25FBF52-1K"
+at = [50.8, 167.64000000000001]
+value = "1k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364484", library = "MFR-25FBF52-1K", mfr = "Yageo", mpn = "MFR-25FBF52-1K" }
+
+[[parts]]
+ref = "R16"
+symbol = "MFR-25FBF52-1K"
+at = [152.4, 167.64000000000001]
+value = "1k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364484", library = "MFR-25FBF52-1K", mfr = "Yageo", mpn = "MFR-25FBF52-1K" }
+
+[[parts]]
+ref = "J4"
+symbol = "PJ398SM"
+at = [10.16, 142.24]
+value = "PJ398SM"
+footprint = "Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles"
+fields = { library = "PJ398SM", mfr = "QingPu (Thonkiconn)", mpn = "PJ398SM" }
+
+[[parts]]
+ref = "R17"
+symbol = "MFR-25FBF52-100K"
+at = [30.48, 152.4]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "C19"
+symbol = "R82DC4100AA60J"
+at = [50.8, 152.4]
+value = "1u"
+footprint = "C_Rect_L7.2mm_W5.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C600444", library = "R82DC4100AA60J", mfr = "KEMET", mpn = "R82DC4100AA60J" }
+
+[[parts]]
+ref = "RV2"
+symbol = "PTV09A-4020F-B104"
+at = [193.04, 177.8]
+value = "100k"
+footprint = "Potentiometer_Bourns_PTV09A-1_Single_Vertical"
+fields = { lcsc = "C5154557", library = "PTV09A-4020F-B104", mfr = "Bourns", mpn = "PTV09A-4020F-B104" }
+
+[[parts]]
+ref = "R18"
+symbol = "MFR-25FBF52-18K2"
+at = [172.72, 162.56]
+value = "18k2"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1367245", library = "MFR-25FBF52-18K2", mfr = "Yageo", mpn = "MFR-25FBF52-18K2" }
+
+[[parts]]
+ref = "C20"
+symbol = "R82DC4100AA60J"
+at = [152.4, 152.4]
+value = "1u"
+footprint = "C_Rect_L7.2mm_W5.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C600444", library = "R82DC4100AA60J", mfr = "KEMET", mpn = "R82DC4100AA60J" }
+
+[[nets]]
+name = "TAIL"
+class = "Signal"
+pins = ["Q3.3", "Q4.3"]
+
+[[nets]]
+name = "IN_L"
+class = "Signal"
+pins = ["Q3.2", "R15.1", "C19.2"]
+
+[[nets]]
+name = "IN_R"
+class = "Signal"
+pins = ["Q4.2", "R16.1", "C20.2"]
+
+[[nets]]
+name = "LAD_L1"
+class = "Signal"
+pins = ["Q3.1", "Q5.3", "C10.1"]
+
+[[nets]]
+name = "LAD_R1"
+class = "Signal"
+pins = ["Q4.1", "Q6.3", "C10.2"]
+
+[[nets]]
+name = "LAD_L2"
+class = "Signal"
+pins = ["Q5.1", "Q7.3", "C11.1"]
+
+[[nets]]
+name = "LAD_R2"
+class = "Signal"
+pins = ["Q6.1", "Q8.3", "C11.2"]
+
+[[nets]]
+name = "LAD_L3"
+class = "Signal"
+pins = ["Q7.1", "Q9.3", "C12.1"]
+
+[[nets]]
+name = "LAD_R3"
+class = "Signal"
+pins = ["Q8.1", "Q10.3", "C12.2"]
+
+[[nets]]
+name = "LAD_L4"
+class = "Signal"
+pins = ["Q9.1", "Q11.3", "C13.1"]
+
+[[nets]]
+name = "LAD_R4"
+class = "Signal"
+pins = ["Q10.1", "Q12.3", "C13.2"]
+
+[[nets]]
+name = "V1"
+class = "Signal"
+pins = ["Q5.2", "Q6.2", "R12.2", "R13.1", "C15.1"]
+
+[[nets]]
+name = "V2"
+class = "Signal"
+pins = ["Q7.2", "Q8.2", "R11.2", "R12.1", "C16.1"]
+
+[[nets]]
+name = "V3"
+class = "Signal"
+pins = ["Q9.2", "Q10.2", "R10.2", "R11.1", "C17.1"]
+
+[[nets]]
+name = "V4"
+class = "Signal"
+pins = ["Q11.2", "Q12.2", "R9.2", "R10.1", "C18.1"]
+
+[[nets]]
+name = "V0"
+class = "Signal"
+pins = ["R15.2", "R16.2", "R13.2", "R14.1", "C14.1"]
+
+[[nets]]
+name = "AUDIO_IN"
+class = "Signal"
+pins = ["J4.T", "R17.1"]
+
+[[nets]]
+name = "IN_A"
+class = "Signal"
+pins = ["R17.2", "C19.1"]
+
+[[nets]]
+name = "OUT_PRE"
+class = "Signal"
+pins = ["RV2.3"]
+
+[[nets]]
+name = "RES_W"
+class = "Signal"
+pins = ["RV2.2", "R18.1"]
+
+[[nets]]
+name = "RES_A"
+class = "Signal"
+pins = ["R18.2", "C20.1"]
+
+[[nets]]
+name = "+12V"
+class = "Power"
+style = "power"
+pins = ["Q11.1", "Q12.1", "R9.1"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["R14.2", "C14.2", "C15.2", "C16.2", "C17.2", "C18.2", "J4.S", "J4.TN", "RV2.1"]

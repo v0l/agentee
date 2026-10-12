@@ -1,0 +1,141 @@
+# imported from KiCad Potentiometer_THT:Potentiometer_Bourns_PTV09A-1_Single_Vertical
+name = "Potentiometer_Bourns_PTV09A-1_Single_Vertical"
+description = "Potentiometer, vertical, Bourns PTV09A-1 Single, http://www.bourns.com/docs/Product-Datasheets/ptv09.pdf"
+tags = ["Potentiometer", "vertical", "Bourns", "PTV09A-1", "Single"]
+mount = "tht"
+model = "${KICAD9_3DMODEL_DIR}/Potentiometer_THT.3dshapes/Potentiometer_Bourns_PTV09A-1_Single_Vertical.step"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "circle"
+at = [0.0, 0.0]
+size = [1.8, 1.8]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+count = 3
+pitch = [0.0, -2.5]
+
+[[pads]]
+number = "MP"
+kind = "tht"
+shape = "circle"
+at = [7.0, -6.9]
+size = [4.4, 4.4]
+drill = 2.2
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "MP"
+kind = "tht"
+shape = "circle"
+at = [7.0, 1.9]
+size = [4.4, 4.4]
+drill = 2.2
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [6.05, -10.35]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [6.05, 5.35]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.89, -7.46]
+end = [0.89, -5.696]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.89, -7.46]
+end = [4.635, -7.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.89, -4.304]
+end = [0.89, -3.196]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.89, -1.804]
+end = [0.89, -0.696]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.89, 0.696]
+end = [0.89, 2.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.89, 2.46]
+end = [4.635, 2.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [9.365, -7.46]
+end = [13.11, -7.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [9.365, 2.46]
+end = [13.11, 2.46]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [13.11, -7.46]
+end = [13.11, 2.46]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.15, -9.36]
+end = [13.25, 4.36]
+width = 0.05
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [1.0, -7.35]
+end = [13.0, 2.35]
+width = 0.1
+
+[[graphics]]
+kind = "circle"
+layer = "F.Fab"
+center = [7.0, -2.5]
+radius = 3.0
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [2.0, -2.5]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 90.0

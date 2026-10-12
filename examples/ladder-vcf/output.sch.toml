@@ -1,0 +1,228 @@
+name = "output"
+board = "ladder-vcf"
+no_connect = ["J5.TN"]
+description = "U2 buffers the top rung's emitters, U3A takes their difference x10 and U3B inverts it x10 to a Eurorack level"
+
+[[parts]]
+ref = "U2"
+symbol = "TL072IP"
+at = [50.8, 35.56]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 1
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "U2"
+symbol = "TL072IP"
+at = [50.8, 76.2]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 2
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "R19"
+symbol = "MFR-25FBF52-10K"
+at = [86.36, 35.56]
+value = "10k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1519255", library = "MFR-25FBF52-10K", mfr = "Yageo", mpn = "MFR-25FBF52-10K" }
+
+[[parts]]
+ref = "R21"
+symbol = "MFR-25FBF52-10K"
+at = [86.36, 76.2]
+value = "10k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1519255", library = "MFR-25FBF52-10K", mfr = "Yageo", mpn = "MFR-25FBF52-10K" }
+
+[[parts]]
+ref = "R20"
+symbol = "MFR-25FBF52-100K"
+at = [106.68, 55.88]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "R22"
+symbol = "MFR-25FBF52-100K"
+at = [121.92, 76.2]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "U3"
+symbol = "TL072IP"
+at = [127.0, 45.72]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 1
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "R23"
+symbol = "MFR-25FBF52-10K"
+at = [157.48, 45.72]
+value = "10k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1519255", library = "MFR-25FBF52-10K", mfr = "Yageo", mpn = "MFR-25FBF52-10K" }
+
+[[parts]]
+ref = "R24"
+symbol = "MFR-25FBF52-100K"
+at = [177.8, 30.48]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "U3"
+symbol = "TL072IP"
+at = [182.88, 55.88]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 2
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "R25"
+symbol = "MFR-25FBF52-1K"
+at = [213.36, 55.88]
+value = "1k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364484", library = "MFR-25FBF52-1K", mfr = "Yageo", mpn = "MFR-25FBF52-1K" }
+
+[[parts]]
+ref = "J5"
+symbol = "PJ398SM"
+at = [238.76, 55.88]
+value = "PJ398SM"
+footprint = "Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles"
+fields = { library = "PJ398SM", mfr = "QingPu (Thonkiconn)", mpn = "PJ398SM" }
+
+[[parts]]
+ref = "U2"
+symbol = "TL072IP"
+at = [50.8, 116.84]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 3
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "U3"
+symbol = "TL072IP"
+at = [86.36, 116.84]
+value = "TL072IP"
+footprint = "DIP-8_W7.62mm"
+unit = 3
+fields = { lcsc = "C110329", library = "TL072IP", mfr = "Texas Instruments", mpn = "TL072IP" }
+
+[[parts]]
+ref = "C5"
+symbol = "C320C104K5R5TA"
+at = [111.76, 116.84]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[parts]]
+ref = "C6"
+symbol = "C320C104K5R5TA"
+at = [127.0, 116.84]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[parts]]
+ref = "C7"
+symbol = "C320C104K5R5TA"
+at = [142.24, 116.84]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[parts]]
+ref = "C8"
+symbol = "C320C104K5R5TA"
+at = [157.48, 116.84]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[nets]]
+name = "LAD_L4"
+class = "Signal"
+pins = ["U2.3"]
+
+[[nets]]
+name = "LAD_R4"
+class = "Signal"
+pins = ["U2.5"]
+
+[[nets]]
+name = "BUF_L"
+class = "Signal"
+pins = ["U2.1", "U2.2", "R19.1"]
+
+[[nets]]
+name = "BUF_R"
+class = "Signal"
+pins = ["U2.7", "U2.6", "R21.1"]
+
+[[nets]]
+name = "DA_P"
+class = "Signal"
+pins = ["R19.2", "R20.1", "U3.3"]
+
+[[nets]]
+name = "DA_N"
+class = "Signal"
+pins = ["R21.2", "R22.1", "U3.2"]
+
+[[nets]]
+name = "DIFF_OUT"
+class = "Signal"
+pins = ["R22.2", "U3.1", "R23.1"]
+
+[[nets]]
+name = "INV_N"
+class = "Signal"
+pins = ["R23.2", "R24.1", "U3.6"]
+
+[[nets]]
+name = "OUT_PRE"
+class = "Signal"
+pins = ["R24.2", "U3.7", "R25.1"]
+
+[[nets]]
+name = "OUT"
+class = "Signal"
+pins = ["R25.2", "J5.T"]
+
+[[nets]]
+name = "+12V"
+class = "Power"
+style = "power"
+pins = ["U2.8", "U3.8", "C5.1", "C7.1"]
+
+[[nets]]
+name = "-12V"
+class = "PowerNeg"
+style = "power"
+pins = ["U2.4", "U3.4", "C6.2", "C8.2"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["R20.2", "U3.5", "J5.S", "C5.2", "C6.1", "C7.2", "C8.1"]

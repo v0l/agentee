@@ -1,0 +1,152 @@
+# imported from KiCad Diode_THT:D_DO-41_SOD81_P10.16mm_Horizontal
+name = "D_DO-41_SOD81_P10.16mm_Horizontal"
+description = "Diode, DO-41_SOD81 series, Axial, Horizontal, pin pitch=10.16mm, length*diameter=5.2*2.7mm^2, https://www.diodes.com/assets/Package-Files/DO-41-Plastic.pdf"
+tags = ["Diode", "DO-41_SOD81", "series", "Axial", "Horizontal", "pin", "pitch", "10.16mm", "length", "5.2mm", "diameter", "2.7mm"]
+mount = "tht"
+model = "3dmodels/D_DO-41_SOD81_P10.16mm_Horizontal.step"
+height = "3.21mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [2.2, 2.2]
+roundrect_ratio = 0.113636
+drill = 1.1
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [10.16, 0.0]
+size = [2.2, 2.2]
+drill = 1.1
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [5.08, -2.47]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [5.08, 2.47]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.34, 0.0]
+end = [2.36, 0.0]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.14, -1.47]
+end = [3.14, 1.47]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.26, -1.47]
+end = [3.26, 1.47]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.38, -1.47]
+end = [3.38, 1.47]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [8.82, 0.0]
+end = [7.8, 0.0]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.SilkS"
+start = [2.36, -1.47]
+end = [7.8, 1.47]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.35, -1.6]
+end = [11.51, 1.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.0, 0.0]
+end = [2.48, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.16, -1.35]
+end = [3.16, 1.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.26, -1.35]
+end = [3.26, 1.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.36, -1.35]
+end = [3.36, 1.35]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [10.16, 0.0]
+end = [7.68, 0.0]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [2.48, -1.35]
+end = [7.68, 1.35]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -2.1]
+text = "K"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [5.47, 0.0]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -2.1]
+text = "K"
+size = 1.0

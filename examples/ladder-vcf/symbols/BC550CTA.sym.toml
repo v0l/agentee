@@ -1,0 +1,67 @@
+# imported from KiCad Transistor_BJT:BC550
+name = "BC550CTA"
+reference = "Q"
+description = "0.1A Ic, 45V Vce, Small Signal NPN Transistor, TO-92"
+datasheet = "https://www.onsemi.com/pub/Collateral/BC550-D.pdf"
+keywords = ["NPN", "Transistor"]
+footprint = "TO-92_Inline_Wide"
+footprint_filters = ["TO?92*"]
+pin_names = "hidden"
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 0.0], [0.635, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.635, -1.905], [0.635, 1.905]]
+width = 0.508
+
+[[graphics]]
+kind = "circle"
+center = [1.27, 0.0]
+radius = 2.8194
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.635, -0.635], [2.54, -2.54]]
+
+[[graphics]]
+kind = "polyline"
+unit = 1
+points = [[0.635, 0.635], [2.54, 2.54]]
+
+[[graphics]]
+kind = "polygon"
+unit = 1
+points = [[1.27, 1.778], [1.778, 1.27], [2.286, 2.286]]
+fill = "solid"
+
+[[pins]]
+number = "2"
+name = "B"
+type = "input"
+at = [-5.08, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "1"
+name = "C"
+type = "passive"
+at = [2.54, -5.08]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "E"
+type = "passive"
+at = [2.54, 5.08]
+side = "bottom"
+length = 2.54
+unit = 1

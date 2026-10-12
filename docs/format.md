@@ -2559,7 +2559,9 @@ bias tee keeps RF on the output off VBIAS. Both take U1 as its 90 mA quiescent c
 BAT60A from its typical VF, from the two datasheets; the LED, which has no part number, is left
 out. `examples/preamp` is an op-amp design run through every analysis: the operating point, gain
 and noise of a gain stage and Sallen-Key filter on a dual LM358, the power-up thump as the
-mid-rail bias settles, clipping, and the reverse battery diode.
+mid-rail bias settles, clipping, and the reverse battery diode. `examples/ladder-vcf` is a BJT ladder filter: its sims
+check the expo converter's 1 V/oct tracking at three CVs, the resonance peak, and self-oscillation
+in a transient.
 
 ## Graphics
 

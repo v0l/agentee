@@ -1,0 +1,200 @@
+# imported from KiCad Connector_Audio:Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles
+name = "Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical_CircularHoles"
+description = "TRS 3.5mm, vertical, Thonkiconn, PCB mount, (http://www.qingpu-electronics.com/en/products/WQP-PJ398SM-362.html)"
+tags = ["WQP-PJ398SM", "WQP-PJ301M-12", "TRS", "3.5mm", "mono", "vertical", "jack", "thonkiconn", "qingpu"]
+mount = "tht"
+model = "${KICAD9_3DMODEL_DIR}/Connector_Audio.3dshapes/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical.step"
+
+[[pads]]
+number = "S"
+kind = "tht"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.93, 1.83]
+rotation = 180.0
+drill = 1.22
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "T"
+kind = "tht"
+shape = "circle"
+at = [0.0, 11.4]
+size = [2.13, 2.13]
+rotation = 180.0
+drill = 1.43
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "TN"
+kind = "tht"
+shape = "circle"
+at = [0.0, 3.1]
+size = [2.13, 2.13]
+rotation = 180.0
+drill = 1.42
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [-4.03, 1.08]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 180.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 5.0]
+text = "${VALUE}"
+size = 1.0
+rotation = 180.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.5, 1.98]
+end = [-4.5, 12.48]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.23, -1.17]
+end = [-1.23, -0.37]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.23, -1.17]
+end = [-0.37, -1.17]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.8, 12.48]
+end = [-4.5, 12.48]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-0.72, 1.98]
+end = [-4.5, 1.98]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.5, 1.98]
+end = [0.72, 1.98]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.5, 1.98]
+end = [4.5, 12.48]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.5, 12.48]
+end = [0.8, 12.48]
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [0.0, 6.48]
+radius = 1.8
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-5.0, 12.98]
+end = [-5.0, -1.42]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.0, -1.42]
+end = [-5.0, -1.42]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.0, 12.98]
+end = [-5.0, 12.98]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [5.0, 12.98]
+end = [5.0, -1.42]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.5, 12.48]
+end = [-4.5, 2.08]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.0, 0.0]
+end = [0.0, 2.03]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.5, 2.03]
+end = [-4.5, 2.03]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.5, 12.48]
+end = [-4.5, 12.48]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.5, 12.48]
+end = [4.5, 2.08]
+width = 0.1
+
+[[graphics]]
+kind = "circle"
+layer = "F.Fab"
+center = [0.0, 6.48]
+radius = 1.8
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "Cmts.User"
+at = [0.0, 6.48]
+text = "KEEPOUT"
+size = 0.4
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, 8.0]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 180.0

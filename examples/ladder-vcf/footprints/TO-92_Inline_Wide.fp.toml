@@ -1,0 +1,145 @@
+# imported from KiCad Package_TO_SOT_THT:TO-92_Inline_Wide
+name = "TO-92_Inline_Wide"
+description = "TO-92 leads in-line, wide, drill 0.75mm (see NXP sot054_po.pdf)"
+tags = ["to-92", "sc-43", "sc-43a", "sot54", "PA33", "transistor"]
+mount = "tht"
+model = "3dmodels/TO-92_Inline_Wide.step"
+height = "7.30mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "rect"
+at = [0.0, 0.0]
+size = [1.5, 1.5]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [2.54, 0.0]
+size = [1.5, 1.5]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "3"
+kind = "tht"
+shape = "circle"
+at = [5.08, 0.0]
+size = [1.5, 1.5]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [2.54, -3.56]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [2.54, 2.79]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [0.74, 1.85]
+end = [4.34, 1.85]
+width = 0.15
+
+[[graphics]]
+kind = "arc"
+layer = "F.SilkS"
+start = [0.1836, -1.098807]
+mid = [1.143021, -2.192817]
+end = [2.54, -2.6]
+width = 0.15
+
+[[graphics]]
+kind = "arc"
+layer = "F.SilkS"
+start = [0.74, 1.85]
+mid = [0.446097, 1.509328]
+end = [0.215816, 1.122795]
+width = 0.15
+
+[[graphics]]
+kind = "arc"
+layer = "F.SilkS"
+start = [2.54, -2.6]
+mid = [3.936979, -2.192818]
+end = [4.8964, -1.098807]
+width = 0.15
+
+[[graphics]]
+kind = "arc"
+layer = "F.SilkS"
+start = [4.864184, 1.122795]
+mid = [4.633903, 1.509328]
+end = [4.34, 1.85]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.01, -2.73]
+end = [-1.01, 2.01]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-1.01, -2.73]
+end = [6.09, -2.73]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.09, 2.01]
+end = [-1.01, 2.01]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.09, 2.01]
+end = [6.09, -2.73]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.8, 1.75]
+end = [4.3, 1.75]
+width = 0.1
+
+[[graphics]]
+kind = "arc"
+layer = "F.Fab"
+start = [0.786375, 1.753625]
+mid = [0.248779, -0.949055]
+end = [2.54, -2.48]
+width = 0.1
+
+[[graphics]]
+kind = "arc"
+layer = "F.Fab"
+start = [2.54, -2.48]
+mid = [4.831221, -0.949055]
+end = [4.293625, 1.753625]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [2.54, 0.0]
+text = "${REFERENCE}"
+size = 1.0

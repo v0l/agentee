@@ -1,0 +1,4 @@
+name = "ladder-vcf"
+description = "Eurorack transistor ladder VCF"
+board = "ladder-vcf"
+sheets = ["power", "cv", "ladder", "output"]

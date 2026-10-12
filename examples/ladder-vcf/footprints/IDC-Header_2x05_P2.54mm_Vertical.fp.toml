@@ -1,0 +1,344 @@
+# imported from KiCad Connector_IDC:IDC-Header_2x05_P2.54mm_Vertical
+name = "IDC-Header_2x05_P2.54mm_Vertical"
+description = "Through hole IDC box header, 2x05, 2.54mm pitch, DIN 41651 / IEC 60603-13, double rows, https://docs.google.com/spreadsheets/d/16SsEcesNF15N3Lb4niX7dcUr-NY5_MFPQhobNuNppn4/edit#gid=0"
+tags = ["Through", "hole", "vertical", "IDC", "box", "header", "THT", "2x05", "2.54mm", "double", "row"]
+mount = "tht"
+model = "3dmodels/IDC-Header_2x05_P2.54mm_Vertical.step"
+height = "9.10mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [1.7, 1.7]
+roundrect_ratio = 0.147059
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [2.54, 0.0]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "3"
+kind = "tht"
+shape = "circle"
+at = [0.0, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "4"
+kind = "tht"
+shape = "circle"
+at = [2.54, 2.54]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "5"
+kind = "tht"
+shape = "circle"
+at = [0.0, 5.08]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "6"
+kind = "tht"
+shape = "circle"
+at = [2.54, 5.08]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "7"
+kind = "tht"
+shape = "circle"
+at = [0.0, 7.62]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "8"
+kind = "tht"
+shape = "circle"
+at = [2.54, 7.62]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "9"
+kind = "tht"
+shape = "circle"
+at = [0.0, 10.16]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "10"
+kind = "tht"
+shape = "circle"
+at = [2.54, 10.16]
+size = [1.7, 1.7]
+drill = 1.0
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [1.27, -6.1]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [1.27, 16.26]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.68, -0.5]
+end = [-4.68, 0.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.68, 0.5]
+end = [-3.68, 0.0]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.68, 0.0]
+end = [-4.68, -0.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.29, -5.21]
+end = [5.83, -5.21]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.29, 3.03]
+end = [-1.98, 3.03]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.29, 15.37]
+end = [-3.29, -5.21]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.98, -3.91]
+end = [4.52, -3.91]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.98, 3.03]
+end = [-1.98, -3.91]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.98, 7.13]
+end = [-3.29, 7.13]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.98, 7.13]
+end = [-1.98, 7.13]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.98, 14.07]
+end = [-1.98, 7.13]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.52, -3.91]
+end = [4.52, 14.07]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.52, 14.07]
+end = [-1.98, 14.07]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [5.83, -5.21]
+end = [5.83, 15.37]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [5.83, 15.37]
+end = [-3.29, 15.37]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.68, -5.6]
+end = [-3.68, 15.76]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.68, 15.76]
+end = [6.22, 15.76]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.22, -5.6]
+end = [-3.68, -5.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.22, 15.76]
+end = [6.22, -5.6]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.18, -4.1]
+end = [-2.18, -5.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.18, 3.03]
+end = [-1.98, 3.03]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.18, 15.26]
+end = [-3.18, -4.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-2.18, -5.1]
+end = [5.72, -5.1]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.98, -3.91]
+end = [4.52, -3.91]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.98, 3.03]
+end = [-1.98, -3.91]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.98, 7.13]
+end = [-3.18, 7.13]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.98, 7.13]
+end = [-1.98, 7.13]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.98, 14.07]
+end = [-1.98, 7.13]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.52, -3.91]
+end = [4.52, 14.07]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.52, 14.07]
+end = [-1.98, 14.07]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [5.72, -5.1]
+end = [5.72, 15.26]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [5.72, 15.26]
+end = [-3.18, 15.26]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [1.27, 5.08]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 90.0

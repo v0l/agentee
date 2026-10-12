@@ -1,0 +1,106 @@
+name = "vcf-ac-3v"
+kind = "circuit"
+description = "CV at 3 V: bias string, ladder and expo operating points, flat passband, cutoff at 8x the 0 V cutoff (461 Hz, 12 dB down) and 80 dB per decade above it. U1 to U3 are the TL072 from TI SLOS080W tables 5.8 and 5.9 (TL07xI, typ at ±15 V): AOL 200 V/mV, GBW 5.25 MHz, en 37 nV/rtHz at 1 kHz taken as flat, VOS 3 mV, and 1.5 V of headroom from the ±13.5 V swing at RL 10 kohm. Q1 to Q12 are the BC550C from onsemi BC550/D: Is 16.4 fA from VBE(on) 660 mV typ at 2 mA (which also lands on figure 2's 0.58 V at 0.1 mA), Bf 420, the C group minimum. The rails are driven straight, D1 and D2 left out. RV4 sits at 10.45 kohm, the setting that puts 6 V of CV at 64x the tail current (the bench trim, done in the sim); RV1 is the CUTOFF drive, RV2 and RV3 are ideal dividers." 
+ignore = ["D1", "D2", "RV1"]
+record = ["AUDIO_IN", "IN_L", "LAD_L4", "LAD_R4", "DIFF_OUT", "OUT"]
+
+[[drives]]
+net = "+12V"
+dc = "12V"
+
+[[drives]]
+net = "-12V"
+dc = "-12V"
+
+[[drives]]
+net = "CV_IN"
+dc = "3V"
+
+[[drives]]
+net = "CUTOFF"
+dc = "0V"
+
+[[drives]]
+net = "AUDIO_IN"
+ac = 1
+resistance = "1k"
+
+[ac]
+from = "1Hz"
+to = "100kHz"
+points = 40
+
+[[checks]]
+v = "V0"
+min = 1.4
+max = 1.55
+
+[[checks]]
+v = "V4"
+min = 7.2
+max = 7.5
+
+[[checks]]
+v = "LAD_L4"
+min = 6.6
+max = 7.1
+
+[[checks]]
+v = "TAIL"
+min = 0.8
+max = 1.1
+
+[[checks]]
+v = "QA_C"
+min = -0.01
+max = 0.01
+
+[[checks]]
+v = "OUT"
+at = "20Hz"
+min = -0.5
+max = 0.2
+
+[[checks]]
+v = "OUT"
+at = "461Hz"
+min = -12.8
+max = -11.6
+
+[[checks]]
+v = "OUT"
+at = "4610Hz"
+max = -70
+
+[[blocks]]
+value = "TL072IP"
+kind = "opamp"
+gain = 2e5
+gbw = "5.25MHz"
+en = "37n"
+vos = "3mV"
+headroom = "1.5V"
+
+[[blocks]]
+value = "BC550CTA"
+kind = "npn"
+is = "16.4fA"
+bf = 420
+
+[[blocks]]
+ref = "RV4"
+kind = "resistor"
+resistance = "10.45k"
+
+[[blocks]]
+ref = "RV2"
+kind = "vcvs"
+gain = 0
+pins = { p = "2", n = "1", cp = "3", cn = "1" }
+
+[[blocks]]
+ref = "RV3"
+kind = "vcvs"
+gain = 0
+pins = { p = "2", n = "1", cp = "3", cn = "1" }
+

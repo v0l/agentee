@@ -1,0 +1,146 @@
+# imported from KiCad Package_DIP:DIP-8_W7.62mm
+name = "DIP-8_W7.62mm"
+description = "8-lead though-hole mounted DIP package, row spacing 7.62mm (300 mils)"
+tags = ["THT", "DIP", "DIL", "PDIP", "2.54mm", "7.62mm", "300mil"]
+mount = "tht"
+model = "3dmodels/DIP-8_W7.62mm.step"
+height = "3.68mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [1.6, 1.6]
+roundrect_ratio = 0.15625
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [0.0, 2.54]
+size = [1.6, 1.6]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+count = 3
+pitch = [0.0, 2.54]
+
+[[pads]]
+number = "5"
+kind = "tht"
+shape = "circle"
+at = [7.62, 7.62]
+size = [1.6, 1.6]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+count = 4
+pitch = [0.0, -2.54]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [3.81, -2.33]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [3.81, 9.95]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.16, -1.33]
+end = [1.16, 8.95]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.16, 8.95]
+end = [6.46, 8.95]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.81, -1.33]
+end = [1.16, -1.33]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.46, -1.33]
+end = [4.81, -1.33]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.46, 8.95]
+end = [6.46, -1.33]
+width = 0.15
+
+[[graphics]]
+kind = "arc"
+layer = "F.SilkS"
+start = [4.81, -1.33]
+mid = [3.81, -0.33]
+end = [2.81, -1.33]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.06, -1.52]
+end = [8.67, 9.14]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.635, -0.27]
+end = [1.635, -1.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [0.635, 8.89]
+end = [0.635, -0.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.635, -1.27]
+end = [6.985, -1.27]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [6.985, -1.27]
+end = [6.985, 8.89]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [6.985, 8.89]
+end = [0.635, 8.89]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [3.81, 3.81]
+text = "${REFERENCE}"
+size = 1.0
+rotation = 90.0

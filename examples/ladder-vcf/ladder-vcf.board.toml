@@ -1,0 +1,57 @@
+name = "ladder-vcf"
+description = "12HP Eurorack transistor ladder VCF: 4-pole BJT ladder, 1V/oct expo, resonance to self-oscillation, all through-hole, 2 layer"
+fab = "jlcpcb"
+
+[outline]
+size = [58.0, 108.0]
+corner_radius = "1"
+
+[stackup]
+preset = "jlcpcb-2l-1.6mm"
+finish = "ENIG"
+mask_color = "green"
+
+[[vias]]
+name = "std"
+drill = "0.4mm"
+diameter = "0.8mm"
+
+[[netclasses]]
+name = "Default"
+voltage = "12VDC"
+track_width = "0.3mm"
+clearance = "0.25mm"
+via = "std"
+
+[[netclasses]]
+name = "Signal"
+voltage = "12VDC"
+track_width = "0.3mm"
+clearance = "0.25mm"
+via = "std"
+description = "Audio CV and ladder nets within the ±12 V rails"
+
+[[netclasses]]
+name = "Ground"
+voltage = "0VDC"
+track_width = "0.6mm"
+clearance = "0.25mm"
+via = "std"
+
+[[netclasses]]
+name = "Power"
+voltage = "12VDC"
+track_width = "0.5mm"
+clearance = "0.25mm"
+current = "0.1A"
+max_temp_rise = "10C"
+via = "std"
+description = "+12 V Eurorack rail about 20 mA"
+
+[[netclasses]]
+name = "PowerNeg"
+description = "-12 V Eurorack rail about 15 mA"
+track_width = "0.5mm"
+clearance = "0.25mm"
+voltage = "-12VDC"
+current = "0.1A"

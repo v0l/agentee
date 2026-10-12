@@ -1,0 +1,102 @@
+# imported from KiCad Potentiometer_THT:Potentiometer_Bourns_3296W_Vertical
+name = "Potentiometer_Bourns_3296W_Vertical"
+description = "Potentiometer, vertical, Bourns 3296W, https://www.bourns.com/pdfs/3296.pdf"
+tags = ["Potentiometer", "vertical", "Bourns", "3296W"]
+mount = "tht"
+model = "3dmodels/Potentiometer_Bourns_3296W_Vertical.step"
+height = "11.05mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "circle"
+at = [0.0, 0.0]
+size = [1.44, 1.44]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+count = 3
+pitch = [-2.54, 0.0]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [-2.54, -3.66]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [-2.54, 3.67]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-7.415, -2.52]
+end = [-7.415, 2.53]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-7.415, -2.52]
+end = [2.335, -2.52]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-7.415, 2.53]
+end = [2.335, 2.53]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.335, -2.52]
+end = [2.335, 2.53]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-7.56, -2.66]
+end = [2.48, 2.67]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.652, 0.32]
+end = [0.125, 1.847]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [1.785, 0.453]
+end = [0.258, 1.98]
+width = 0.1
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-7.305, -2.41]
+end = [2.225, 2.42]
+width = 0.1
+
+[[graphics]]
+kind = "circle"
+layer = "F.Fab"
+center = [0.955, 1.15]
+radius = 1.095
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [-3.175, 0.005]
+text = "${REFERENCE}"
+size = 1.0

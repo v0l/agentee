@@ -1,0 +1,68 @@
+name = "vcf-osc"
+kind = "circuit"
+description = "Resonance at full (RV2 = 1, loop gain 1.3 at fc) with CV at 3 V: a 0.5 ms kick on the input starts the filter oscillating near 461 Hz. U1 to U3 are the TL072 from TI SLOS080W tables 5.8 and 5.9 (TL07xI, typ at ±15 V): AOL 200 V/mV, GBW 5.25 MHz, en 37 nV/rtHz at 1 kHz taken as flat, VOS 3 mV, and 1.5 V of headroom from the ±13.5 V swing at RL 10 kohm. Q1 to Q12 are the BC550C from onsemi BC550/D: Is 16.4 fA from VBE(on) 660 mV typ at 2 mA (which also lands on figure 2's 0.58 V at 0.1 mA), Bf 420, the C group minimum. The rails are driven straight, D1 and D2 left out. RV4 sits at 10.45 kohm, the setting that puts 6 V of CV at 64x the tail current (the bench trim, done in the sim); RV1 is the CUTOFF drive, RV2 and RV3 are ideal dividers." 
+ignore = ["D1", "D2", "RV1"]
+record = ["AUDIO_IN", "TAIL", "LAD_L4", "LAD_R4", "OUT"]
+
+[[drives]]
+net = "+12V"
+dc = "12V"
+
+[[drives]]
+net = "-12V"
+dc = "-12V"
+
+[[drives]]
+net = "CV_IN"
+dc = "3V"
+
+[[drives]]
+net = "CUTOFF"
+dc = "0V"
+
+[[drives]]
+net = "AUDIO_IN"
+resistance = "1k"
+pulse = { low = "0V", high = "1V", delay = "1ms", rise = "10us", fall = "10us", width = "0.5ms", period = "0s" }
+
+[tran]
+stop = "60ms"
+step = "10us"
+
+[[blocks]]
+value = "TL072IP"
+kind = "opamp"
+gain = 2e5
+gbw = "5.25MHz"
+en = "37n"
+vos = "3mV"
+headroom = "1.5V"
+
+[[blocks]]
+value = "BC550CTA"
+kind = "npn"
+is = "16.4fA"
+bf = 420
+
+[[blocks]]
+ref = "RV4"
+kind = "resistor"
+resistance = "10.45k"
+
+[[blocks]]
+ref = "RV2"
+kind = "vcvs"
+gain = 1.0
+pins = { p = "2", n = "1", cp = "3", cn = "1" }
+
+[[blocks]]
+ref = "RV3"
+kind = "vcvs"
+gain = 0
+pins = { p = "2", n = "1", cp = "3", cn = "1" }
+
+
+[[checks]]
+v = "TAIL"
+min = 0.8
+max = 1.1
