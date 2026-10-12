@@ -2,11 +2,6 @@
 
 Shared list of open work. See `AGENTS.md` for how to log, take and finish an item.
 
-## Layout (taken: master)
-
-- No routing keepout: `route` and `layout` cannot be kept off an area of a layer, such as a buck
-  switch node. buggy-guard v0.4.0 dropped temporary 4 mm GND tracks there and removed them after.
-
 ## Library (taken: master)
 
 - 3D model resolver: one chain behind `library add`, `models` and the 3D view that tries KiCad
