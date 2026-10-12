@@ -160,6 +160,54 @@ fn rules_can_be_disabled_or_change_severity() {
     assert!(shown.contains(": [via-cuts-pad] "), "{shown}");
 }
 
+const THERMAL_PAD: &str = r#"
+[[pads]]
+number = "1"
+kind = "smd"
+shape = "rect"
+at = [-2.0, 0]
+size = [0.5, 0.5]
+
+[[pads]]
+number = "2"
+kind = "smd"
+shape = "rect"
+at = [0, 0]
+size = [2.0, 2.0]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [-0.5, 0]
+size = [0.5, 0.5]
+drill = 0.2
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [0.5, 0]
+size = [0.5, 0.5]
+drill = 0.2
+"#;
+
+#[test]
+fn footprint_holes_in_its_own_pad_are_listed_to_fill() {
+    let p = load(&Fixture {
+        footprints: &[("EP", THERMAL_PAD)],
+        parts: &[("U1", "EP", [5.0, 5.0])],
+        nets: &[("A", &["U1.1"]), ("GND", &["U1.2"])],
+        ..Default::default()
+    });
+    let info = hits(&p, "via-in-pad");
+    assert!(
+        info.len() == 1 && info[0].1.starts_with("2 plated holes of 0.2mm drill sit in U1.2"),
+        "{info:?}"
+    );
+    assert_eq!(agentee_core::drc::holes_in_pads(&p.layouts[0].item.parts).len(), 2);
+}
+
 #[test]
 fn a_via_in_pad_wider_than_the_fab_fills_is_an_error() {
     let board = "[[vias]]\nname = \"big\"\ndrill = \"0.6mm\"\ndiameter = \"0.9mm\"\n";

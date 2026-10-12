@@ -92,7 +92,8 @@ impl Setup {
         let pads = || cx.parts.iter().flat_map(|p| p.pads.iter());
         Setup {
             layout: true,
-            via_in_pad: !vias_in_pads(cx.parts, cx.vias).is_empty(),
+            via_in_pad: !vias_in_pads(cx.parts, cx.vias).is_empty()
+                || !holes_in_pads(cx.parts).is_empty(),
             parts: cx.parts.len(),
             bottom_parts: cx.parts.iter().any(|p| p.bottom),
             zones: !cx.zones.is_empty(),
@@ -826,6 +827,26 @@ pub fn vias_in_pads(parts: &[Placed], vias: &[Via]) -> Vec<(usize, usize, usize)
                 && via::via_on_pad(v, p.q).is_some_and(via::ViaOnPad::in_pad)
             {
                 out.push((vi, p.part, p.pad));
+            }
+        }
+    }
+    out
+}
+
+pub fn holes_in_pads(parts: &[Placed]) -> Vec<(usize, usize, usize)> {
+    let mut out = Vec::new();
+    for (pi, p) in parts.iter().enumerate() {
+        for (hk, h) in p.pads.iter().enumerate() {
+            let Some((c, size, _)) = h.drill.filter(|_| h.kind == PadKind::Tht) else { continue };
+            let r = size[0].max(size[1]) / 2.0;
+            let host = p.pads.iter().position(|s| {
+                is_smd(s)
+                    && (s.number == h.number || s.net.is_some() && s.net == h.net)
+                    && s.copper.iter().any(|l| h.copper.contains(l))
+                    && via::circle_inside(s, c, r)
+            });
+            if let Some(sk) = host {
+                out.push((pi, hk, sk));
             }
         }
     }

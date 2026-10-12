@@ -539,6 +539,24 @@ fn notes(layout: &Layout, board: &Board) -> String {
     if n > 0 {
         let _ = writeln!(out, "\n{n} vias sit in SMD pads: fill and cap them (IPC-4761 type VII).");
     }
+    let mut holes: Vec<(String, usize)> = Vec::new();
+    for (pi, _, sk) in agentee_core::drc::holes_in_pads(&layout.parts) {
+        let p = &layout.parts[pi];
+        let pad = format!("{}.{}", p.reference, p.pads[sk].number);
+        match holes.iter_mut().find(|h| h.0 == pad) {
+            Some(h) => h.1 += 1,
+            None => holes.push((pad, 1)),
+        }
+    }
+    if !holes.is_empty() {
+        let total: usize = holes.iter().map(|h| h.1).sum();
+        let list: Vec<String> = holes.iter().map(|(p, n)| format!("{p} ({n})")).collect();
+        let _ = writeln!(
+            out,
+            "\n{total} plated footprint holes sit in SMD pads, {}: fill and cap them (IPC-4761 type VII).",
+            list.join(", ")
+        );
+    }
     let edge: Vec<String> = layout
         .parts
         .iter()

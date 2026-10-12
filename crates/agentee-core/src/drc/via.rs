@@ -28,7 +28,7 @@ pub static RULES: &[Rule] = &[
         id: "via-in-pad",
         category: Category::Drill,
         severity: Severity::Info,
-        summary: "vias fully inside SMD pads, which the fab notes ask to fill and cap",
+        summary: "vias and footprint holes fully inside SMD pads, which the fab notes ask to fill and cap",
         when: "vias in SMD pads",
         applies: with_via_in_pad,
         check: via_in_pad,
@@ -77,7 +77,7 @@ impl ViaOnPad {
     }
 }
 
-fn circle_inside(q: &PlacedPad, c: P, r: f64) -> bool {
+pub(crate) fn circle_inside(q: &PlacedPad, c: P, r: f64) -> bool {
     geom::circle(c, (r - 0.002).max(0.0), 32)
         .into_iter()
         .all(|p| q.outlines.iter().any(|o| geom::point_in_polygon(p, o)))
@@ -128,6 +128,14 @@ fn via_annulus_past_pad(cx: &Ctx, r: &mut Report) {
 }
 
 fn via_in_pad(cx: &Ctx, r: &mut Report) {
+    for (part, (pad, drills, n)) in part_holes_in_pads(cx) {
+        r.emit(
+            part.clone(),
+            format!(
+                "{n} plated holes of {drills} drill sit in {part}.{pad}, its own SMD pad: the fab notes ask to fill and cap them (IPC-4761 type VII), a cost adder that can double a small order; use the footprint without thermal vias unless the part needs the heat path"
+            ),
+        );
+    }
     let found = run(cx, crate::rules::ViaInPad);
     if found.is_empty() {
         return;
@@ -168,6 +176,16 @@ fn via_in_pad_fill(cx: &Ctx, r: &mut Report) {
             ),
         );
     }
+    for (pi, hk, sk) in super::holes_in_pads(cx.parts) {
+        let p = &cx.parts[pi];
+        let Some((_, size, _)) = p.pads[hk].drill else { continue };
+        let drill = size[0].max(size[1]);
+        if drill > max + 1e-6 {
+            big.entry(format!("{}", Length::mm(drill)))
+                .or_insert((0, format!("{}.{}", p.reference, p.pads[sk].number)))
+                .0 += 1;
+        }
+    }
     for (drill, (n, first)) in big {
         r.emit(
             "vias",
@@ -177,6 +195,22 @@ fn via_in_pad_fill(cx: &Ctx, r: &mut Report) {
             ),
         );
     }
+}
+
+fn part_holes_in_pads(cx: &Ctx) -> BTreeMap<String, (String, String, usize)> {
+    let mut out: BTreeMap<String, (String, String, usize)> = BTreeMap::new();
+    for (pi, hk, sk) in super::holes_in_pads(cx.parts) {
+        let p = &cx.parts[pi];
+        let size = p.pads[hk].drill.map(|d| d.1[0].max(d.1[1])).unwrap_or_default();
+        let e =
+            out.entry(p.reference.clone()).or_insert((p.pads[sk].number.clone(), String::new(), 0));
+        e.2 += 1;
+        let drill = format!("{}", Length::mm(size));
+        if !e.1.split(", ").any(|d| d == drill) {
+            e.1 = if e.1.is_empty() { drill } else { format!("{}, {drill}", e.1) };
+        }
+    }
+    out
 }
 
 fn hole_to_smd_pad(cx: &Ctx, r: &mut Report) {
