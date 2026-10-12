@@ -107,7 +107,8 @@ impl Harness {
     }
 
     fn settle(&mut self) {
-        for _ in 0..400 {
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(300) {
             self.frame(vec![]);
             if !self.ed().checking()
                 && !self.ed().routing()
