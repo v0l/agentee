@@ -44,6 +44,14 @@ both came from them. When one disagrees with this file, follow the principle and
 - Every process option costs: ENIG over HASL, non-green mask, 2 oz copper, filled vias,
   castellations, gold fingers, HDI. Use one only when a part or interface needs it. Gold fingers
   must run to the board edge with no tooling strip there.
+- Plain through vias tented by the mask are the free default. Via-in-pad filled and capped
+  (IPC-4761 VII), resin-plugged vias, blind, buried and microvias and backdrill are each a cost
+  adder: plugged vias roughly double a small PCBWay order. Never pick one to get round a layout
+  problem; move the via. Recommend one only when a part forces it, say which part and why, and
+  give the user the cheaper layout as the alternative.
+- Keep vias out of SMD pads: dog-bone each pad to a via beside it. Via-in-pad is needed only for
+  a BGA too fine to dog-bone (0.5 mm pitch and below) or a part whose datasheet asks for it. When
+  check or `fab-notes.txt` lists vias in pads to fill and cap, move them out before ordering.
 - Edges set the frequency content, not the clock: about 0.5 / rise time, and with no rise time in
   the datasheet or IBIS model assume 1 / (10 x clock). A 10 MHz bus with 0.5 ns edges has 1 GHz in
   it. Use the fastest edge the part can make: datasheets often give only the best-case maximum,
@@ -184,7 +192,10 @@ both came from them. When one disagrees with this file, follow the principle and
 - Space vias so plane copper flows between their antipads, especially under BGAs.
 - Remove non-functional pads on vias and through-holes on layers they don't connect: less plane
   voiding, less capacitance, less drill deflection in heavy copper. Say so in the fab notes.
-- Thermal vias in an exposed pad, as many as fit, 0.2 to 0.25 mm drill, straight to inner planes.
+- Thermal vias in an exposed pad, 0.2 to 0.25 mm drill straight to inner planes, only where the
+  part dissipates enough to need them (a regulator or driver near its limit, check the thermal
+  sim): they are vias in a pad, filled and capped at a cost. A low-power part's exposed pad joins
+  ground through the copper around it and vias just outside the pad.
 - BGA: dog-bone fanout pointing out by quadrant, a power via beside each ground via, every via
   placed before routing. Decouple with 0201s between paired vias on the back, then 0402, bulk
   nearby. At 0.5 mm pitch route through NC balls the datasheet says are unconnected.

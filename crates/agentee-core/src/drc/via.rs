@@ -140,7 +140,7 @@ fn via_in_pad(cx: &Ctx, r: &mut Report) {
     r.emit(
         "vias",
         format!(
-            "{} vias sit in SMD pads ({}): the fab notes ask to fill and cap them (IPC-4761 type VII); {}",
+            "{} vias sit in SMD pads ({}): the fab notes ask to fill and cap them (IPC-4761 type VII), a cost adder that can double a small order; move them beside the pad unless the part needs them there; {}",
             found.len(),
             super::list(&pads),
             kinds.join(", ")
