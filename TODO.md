@@ -19,15 +19,14 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   so nothing goes on B.Cu under the bulk caps, which check allows.
 - `agentee layout mains` (ubench, 2.5 mm HV classes) ran 30 min with no output and was killed.
 
-## Layout (taken: placement)
+## Layout
 
-- Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
-  U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`). On
-  `examples/ladder-vcf` the unlocked first run scattered the ladder transistors across the
-  board (169 crossings) and put D1/D2 70 mm from J1; the ladder, expo pair and diodes are locked
-  by hand there. 100n decouplers still land 7-14 mm from their TL072 pins.
-- `layout ladder-vcf --search 64 --keep 8` scored worse than `--search 32` and left GND
-  unrouted (RV3.1 cut off from the pour).
+- `examples/ladder-vcf` bias string R9-R13 and C17/C18 land 25-50 mm from the ladder: their
+  nets (V1-V4) join two transistor bases, so `build_attachments` in
+  `crates/agentee-core/src/place.rs` gives them no pull, and the space beside the locked ladder
+  goes to U1, C4 and R3. Seen with `layout ladder-vcf --to place`, seeds 1-8.
+- With every part but connectors, holes and pots unlocked, `layout ladder-vcf` still scatters
+  the ladder: 108-179 crossings over seeds 1-3, against 118-153 with the ladder locked.
 
 ## Topological router
 
