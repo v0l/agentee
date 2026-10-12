@@ -29,7 +29,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agentee"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-3d",
  "agentee-core",
@@ -51,7 +51,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-3d"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-core",
  "flate2",
@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "i_overlay",
@@ -79,7 +79,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-fab"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-core",
  "serde",
@@ -89,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-kicad"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-core",
  "i_overlay",
@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-layout"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-core",
  "serde",
@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-parts"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-core",
  "serde",
@@ -124,7 +124,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-sim"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-core",
  "bytemuck",
@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "agentee-view"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "agentee-3d",
  "agentee-core",
