@@ -19,7 +19,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   so nothing goes on B.Cu under the bulk caps, which check allows.
 - `agentee layout mains` (ubench, 2.5 mm HV classes) ran 30 min with no output and was killed.
 
-## Layout
+## Layout (taken: placement)
 
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
   U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`). On
