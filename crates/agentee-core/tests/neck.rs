@@ -240,3 +240,11 @@ min_via_hole_to_copper = "0.5mm"
     let p = load_on(&d, &fixed, board);
     assert_eq!(rule(&p, "hole-to-copper"), 0, "{:?}", errors(&p));
 }
+
+#[test]
+fn a_width_that_prints_as_the_class_width_is_the_class_width() {
+    let d = dir();
+    let at = |w: f64| track("P", "F.Cu", Some(w), &[[5.48, 5.0], [11.52, 5.0]]);
+    assert_eq!(rule(&load(&d, &at(0.79996)), "class-width"), 0);
+    assert_eq!(rule(&load(&d, &at(0.7999)), "class-width"), 1);
+}

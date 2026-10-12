@@ -116,7 +116,7 @@ fn neckdown(cx: &Ctx, r: &mut Report) {
 
 fn class_width(cx: &Ctx, r: &mut Report) {
     for (ti, w) in widths(cx) {
-        if !w.neckdown && w.width + 1e-6 < w.class_w {
+        if !w.neckdown && w.width + 5e-5 < w.class_w {
             r.emit(
                 w.at,
                 format!(
