@@ -100,7 +100,7 @@ fn chain_loops(mut open: Vec<Vec<P>>) -> Vec<Vec<P>> {
     out
 }
 
-fn outlines_on(p: &Placed, layer: &str) -> Vec<Vec<P>> {
+pub(crate) fn outlines_on(p: &Placed, layer: &str) -> Vec<Vec<P>> {
     let tf = p.transform();
     let mut closed = Vec::new();
     let mut open = Vec::new();

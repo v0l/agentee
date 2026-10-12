@@ -396,6 +396,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
                 shadow,
                 only_shadow: true,
                 domain: None,
+                zone: None,
             };
             soft.apply(&Soft::footprint(grid, rules, &c), true);
         }
@@ -1957,6 +1958,21 @@ fn drop_overlaps(
     (dropped, dropped_ms)
 }
 
+fn zone_pieces(a: P, b: P, zone: &rules::PartZone) -> Vec<(P, P, bool)> {
+    let mut ts = vec![0.0, 1.0];
+    for r in &zone.rings {
+        for k in 0..r.len() {
+            if let Some(t) = geom::segment_param(a, b, r[k], r[(k + 1) % r.len()]) {
+                ts.push(t);
+            }
+        }
+    }
+    ts.sort_by(f64::total_cmp);
+    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    let at = |t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    ts.windows(2).map(|w| (at(w[0]), at(w[1]), zone.holds(at((w[0] + w[1]) / 2.0)))).collect()
+}
+
 fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
     let me = rules.rule(states[si].net);
     let segs = |p: &Piece| -> Vec<(usize, P, P, f64)> {
@@ -1977,11 +1993,24 @@ fn clashes(p: &Piece, si: usize, states: &[NetState], rules: &Rules) -> bool {
             _ => me.clearance.max(them.clearance),
         };
         let gap = |l: usize| base.max(rules.iso.apart(me.domain, them.domain, l)) - 1e-4;
+        let shared = me.zone.filter(|z| them.zone == Some(*z)).map(|z| &rules.zones[z]);
         o.pieces.iter().any(|q| {
             let theirs = segs(q);
             let tt = mine.iter().any(|&(l, a, b, h)| {
                 theirs.iter().any(|&(m, x, y, k)| {
-                    l == m && geom::segment_segment_distance(a, b, x, y) - h - k < gap(l)
+                    if l != m {
+                        return false;
+                    }
+                    let Some(zone) = shared else {
+                        return geom::segment_segment_distance(a, b, x, y) - h - k < gap(l);
+                    };
+                    let local = zone.own.max(rules.iso.apart(me.domain, them.domain, l)) - 1e-4;
+                    zone_pieces(a, b, zone).iter().any(|&(a, b, ain)| {
+                        zone_pieces(x, y, zone).iter().any(|&(x, y, xin)| {
+                            let want = if ain && xin { local } else { gap(l) };
+                            geom::segment_segment_distance(a, b, x, y) - h - k < want
+                        })
+                    })
                 })
             });
             let via_seg = |vias: &[(P, usize)], segs: &[(usize, P, P, f64)]| {

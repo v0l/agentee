@@ -540,6 +540,14 @@ pub struct Placed {
 }
 
 impl Placed {
+    pub fn courtyard_rings(&self) -> Vec<Vec<P>> {
+        ["F.CrtYd", "B.CrtYd"]
+            .iter()
+            .flat_map(|l| crate::drc::courtyard::outlines_on(self, l))
+            .filter(|r| r.len() >= 3)
+            .collect()
+    }
+
     pub fn silk_texts(&self, index: usize) -> Vec<SilkText> {
         let t = self.transform();
         let mut out = Vec::new();

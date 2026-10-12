@@ -36,6 +36,7 @@ pub struct Copper {
     pub shadow: bool,
     pub only_shadow: bool,
     pub domain: Option<usize>,
+    pub zone: Option<usize>,
 }
 
 impl Copper {
@@ -79,7 +80,15 @@ impl Copper {
             }
             vias.extend(p.vias.iter().copied());
         }
-        Copper { segs, vias, clearance, shadow, only_shadow: false, domain: rule.domain }
+        Copper {
+            segs,
+            vias,
+            clearance,
+            shadow,
+            only_shadow: false,
+            domain: rule.domain,
+            zone: rule.zone,
+        }
     }
 }
 
@@ -149,15 +158,22 @@ impl Soft {
         let slack = rules.slack + grid.g * std::f64::consts::FRAC_1_SQRT_2;
         let mut tracks: Vec<Vec<u32>> = vec![Vec::new(); rules.buckets.len()];
         let mut vias: Vec<Vec<u32>> = vec![Vec::new(); rules.via_buckets.len()];
-        let mut reach: Vec<(bool, usize, f64)> = Vec::new();
+        type Reach = (bool, usize, f64, Option<(usize, f64)>);
+        let mut reach: Vec<Reach> = Vec::new();
         let stamp = |shape: &Shape,
-                     reach: &[(bool, usize, f64)],
+                     reach: &[Reach],
                      tracks: &mut Vec<Vec<u32>>,
                      vias: &mut Vec<Vec<u32>>| {
             let far = reach.iter().map(|r| r.2).fold(0.0, f64::max);
             grid.near(shape, far, |x, y, d| {
                 let cell = (y * grid.w + x) as u32;
-                for &(via, k, r) in reach {
+                for &(via, k, r, local) in reach {
+                    let r = match local {
+                        Some((z, near)) if d > near && rules.zones[z].holds(grid.center(x, y)) => {
+                            near
+                        }
+                        _ => r,
+                    };
                     if d <= r {
                         if via { vias[k].push(cell) } else { tracks[k].push(cell) }
                     }
@@ -169,15 +185,20 @@ impl Soft {
             let own = !c.only_shadow;
             for (bi, bk) in rules.buckets.iter().enumerate().filter(|(_, bk)| own && bk.layer == l)
             {
-                let gap = c.clearance.max(bk.c).max(rules.iso.apart(c.domain, bk.domain, l));
-                reach.push((false, bi, h + bk.h + gap + slack));
+                let apart = rules.iso.apart(c.domain, bk.domain, l);
+                let gap = c.clearance.max(bk.c).max(apart);
+                let local = c
+                    .zone
+                    .filter(|z| bk.zone == Some(*z))
+                    .map(|z| (z, h + bk.h + rules.zones[z].own.max(apart) + slack));
+                reach.push((false, bi, h + bk.h + gap + slack, local));
             }
             for (vi, vb) in
                 rules.via_buckets.iter().enumerate().filter(|(_, v)| own && v.layers.contains(&l))
             {
                 let gap = c.clearance.max(vb.c).max(rules.iso.apart(c.domain, vb.domain, l));
                 let r = (h + vb.r + gap).max(h + vb.dr + rules.hole_cu) + slack;
-                reach.push((true, vi, r));
+                reach.push((true, vi, r, None));
             }
             let (across, crit_only) =
                 if c.shadow { (&rules.shadow[l], false) } else { (&rules.cut[l], true) };
@@ -188,7 +209,7 @@ impl Soft {
                     .enumerate()
                     .filter(|(_, bk)| bk.layer == m && (bk.crit || !crit_only))
                 {
-                    reach.push((false, bi, h + bk.h + super::rules::SHADOW_GAP + slack));
+                    reach.push((false, bi, h + bk.h + super::rules::SHADOW_GAP + slack, None));
                 }
             }
             stamp(&Shape::Seg(a, b, 0.0), &reach, &mut tracks, &mut vias);
@@ -201,7 +222,7 @@ impl Soft {
             {
                 let gap = c.clearance.max(bk.c).max(rules.iso.apart(c.domain, bk.domain, bk.layer));
                 let r = (o.r + bk.h + gap).max(o.dr + rules.hole_cu + bk.h);
-                reach.push((false, bi, r + slack));
+                reach.push((false, bi, r + slack, None));
             }
             for (vi, vb) in rules.via_buckets.iter().enumerate() {
                 let shared = vb.layers.iter().filter(|l| o.layers.contains(l));
@@ -217,7 +238,7 @@ impl Soft {
                 } else {
                     0.0
                 };
-                reach.push((true, vi, copper.max(o.dr + vb.dr + rules.hole_gap) + slack));
+                reach.push((true, vi, copper.max(o.dr + vb.dr + rules.hole_gap) + slack, None));
             }
             stamp(&Shape::Circle(at, 0.0), &reach, &mut tracks, &mut vias);
         }

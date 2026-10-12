@@ -728,8 +728,29 @@ pub struct Report<'a> {
 
 impl Report<'_> {
     pub fn emit(&mut self, at: impl Into<String>, message: impl Into<String>) {
+        self.emit_pair(at, message, None);
+    }
+
+    pub fn emit_pair(
+        &mut self,
+        at: impl Into<String>,
+        message: impl Into<String>,
+        pair: Option<[(&str, Option<&str>); 2]>,
+    ) {
         let at = at.into();
-        if let Some(k) = self.waivers.iter().position(|w| w.rule == self.rule && w.at == at) {
+        let names = |side: &str, item: (&str, Option<&str>)| {
+            side == item.0 || item.1.is_some_and(|n| side.strip_prefix("net ") == Some(n))
+        };
+        let pair_matches = |w: &crate::board::Waiver| {
+            let (Some([x, y]), Some((a, b))) = (pair, w.at.split_once(" / ")) else {
+                return false;
+            };
+            let (a, b) = (a.trim(), b.trim());
+            (names(a, x) && names(b, y)) || (names(a, y) && names(b, x))
+        };
+        if let Some(k) =
+            self.waivers.iter().position(|w| w.rule == self.rule && (w.at == at || pair_matches(w)))
+        {
             self.waived[k] += 1;
             return;
         }
@@ -898,7 +919,7 @@ pub fn list(items: &[String]) -> String {
 
 mod assembly;
 mod copper;
-mod courtyard;
+pub(crate) mod courtyard;
 mod drill;
 mod isolation;
 mod mask;

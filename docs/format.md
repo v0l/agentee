@@ -590,6 +590,11 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 rule = "pad-off-board"         # the rule id
 at = "part J1"                 # the place DRC prints before the message: part J1, net GND, pad U1.3
 reason = "milled edge-card socket"
+
+[[drc.waive]]                  # a finding between two items names both, in either order: a pad
+rule = "clearance"             # as DRC prints it or `net NAME` for any copper of that net
+at = "U2.12 / net HB"
+reason = "package pin pitch"
 ```
 
 A waived finding shows as an info line with its reason. A waiver that matches nothing is a
@@ -635,7 +640,7 @@ warning, so one left behind after the geometry changes is noticed.
 | `placement-cluster-spread` | info | parts | a two-pin passive whose signal nets reach one IC and nothing else, farther than `cluster_spread` (10 mm) from that IC's pin |
 | `placement-connector-not-at-edge` | info | parts | a connector (edge pads, `overhang = true`, or a `J`/`P` reference that is not a Tag-Connect, U.FL or test pad) whose courtyard is farther than `connector_edge` (3 mm) from the outline |
 | `short` | error | always | copper of two different nets touches |
-| `clearance` | error | always | copper of two nets closer than the larger of their class clearances (a footprint `clearance` replaces them for its pads), or copper run into a non-plated hole. Pads of one footprint are held to `min_clearance` and to the class clearance of nets in an isolation domain; spark gap electrodes are skipped |
+| `clearance` | error | always | copper of two nets closer than the larger of their class clearances (a footprint `clearance` replaces them for its pads, and inside its courtyard between copper of nets on its pads), or copper run into a non-plated hole. Pads of one footprint are held to `min_clearance` and to the class clearance of nets in an isolation domain; spark gap electrodes are skipped |
 | `isolation-domain` | error | `[[domains]]` | a net whose class or name puts it in two domains |
 | `isolation-unassigned` | warning | `[[domains]]` | nets in no domain, which no barrier covers |
 | `isolation-clearance` | error | a barrier with `clearance`, or class voltages that need one | copper of two domains on one layer closer than the clearance of the barrier between them, pads of one footprint and pours included; one line per net pair with the closest spot |
@@ -888,7 +893,8 @@ model_scale = [1, 1, 1]                # optional
 # mask_web = false             # the fab opens the mask over all pads of a fine pitch part as one
                                # window, so min_mask_web is not checked between its own pads
 # clearance = "0.2mm"          # as KiCad's footprint clearance: its pads keep this from other
-                               # copper instead of the net class clearance
+                               # copper instead of the net class clearance, and inside its
+                               # courtyard so do the tracks and vias of the nets on its pads
 # overhang = true              # a connector meant to hang over the board edge: part-body-to-edge
                                # skips it, its SMD pads still keep min_part_to_edge
 # mlcc = false                 # not a ceramic capacitor (film, polymer): the mlcc-flex-zone rules

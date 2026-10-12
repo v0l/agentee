@@ -475,3 +475,56 @@ fn an_own_voltage_above_the_voltage_is_an_error() {
         p.boards[0].diags
     );
 }
+
+fn fanout(own: &str, tail: f64) -> Project {
+    fanout_with(own, tail, "")
+}
+
+fn fanout_with(own: &str, tail: f64, rules: &str) -> Project {
+    let courtyard = "\n[[graphics]]\nkind = \"rect\"\nlayer = \"F.CrtYd\"\nstart = [-2.0, -1.5]\nend = [4.0, 1.5]\nwidth = 0.05\n";
+    let fps = [("PAIR", row("PAIR", &[0.0, 1.94], &format!("{own}{courtyard}")))];
+    let nets: &[(&str, &str, &[&str])] = &[("HB", "HV", &["U1.1"]), ("RVCC", "HV", &["U1.2"])];
+    let track = |net: &str, x: f64| {
+        format!(
+            "\n[[tracks]]\nnet = \"{net}\"\nlayer = \"F.Cu\"\nwidth = 0.6\npoints = [[{x}, 10.0], [{x}, {}]]\n",
+            10.0 + tail
+        )
+    };
+    let pcb = format!("{}{}{}", at("U1", 20.0, 10.0), track("HB", 20.0), track("RVCC", 21.94));
+    load(&Board {
+        rules,
+        cutouts: "",
+        footprints: &fps,
+        parts: &[("U1", "PAIR", 2)],
+        nets,
+        pcb: &pcb,
+    })
+}
+
+#[test]
+fn tracks_leaving_a_footprint_keep_its_own_clearance_inside_the_courtyard() {
+    let tracks = |p: &Project| -> Vec<String> {
+        hits(p, "clearance").into_iter().filter(|h| h.starts_with("track")).collect()
+    };
+    let short = fanout("clearance = \"0.9mm\"\n", 1.0);
+    assert!(hits(&short, "clearance").is_empty(), "{:?}", hits(&short, "clearance"));
+    let none = fanout("", 1.0);
+    assert!(!tracks(&none).is_empty(), "without a footprint clearance the class holds");
+    let long = fanout("clearance = \"0.9mm\"\n", 6.0);
+    assert!(!tracks(&long).is_empty(), "past the courtyard the class holds again");
+}
+
+#[test]
+fn a_waiver_names_one_clearance_pair_by_pad_or_net() {
+    let waive = |at: &str| {
+        format!(
+            "\n[[drc.waive]]\nrule = \"clearance\"\nat = \"{at}\"\nreason = \"pin spacing of the package\"\n"
+        )
+    };
+    let all = hits(&fanout_with("", 1.0, ""), "clearance");
+    let pads = hits(&fanout_with("", 1.0, &waive("net RVCC / U1.1")), "clearance");
+    assert_eq!(pads.len(), all.len() - 1, "{pads:?}");
+    assert!(pads.iter().all(|h| !h.starts_with("U1.1 is")), "{pads:?}");
+    let nets = hits(&fanout_with("", 1.0, &waive("net RVCC / net HB")), "clearance");
+    assert!(nets.is_empty(), "{nets:?}");
+}

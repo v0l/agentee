@@ -1,5 +1,6 @@
 use super::{Layer, Spacing};
 use crate::board::Board;
+use crate::geom::{self, P};
 use crate::layout::LayoutNet;
 
 #[derive(Clone, Default)]
@@ -128,6 +129,78 @@ pub fn need<C: super::Context>(
     })
 }
 
+fn inside_part<C: super::Context>(
+    cx: &C,
+    a: &crate::drc::Cu,
+    b: &crate::drc::Cu,
+    need: f64,
+) -> Option<(f64, Vec<Vec<P>>)> {
+    use crate::drc::Owner;
+    let (Some(na), Some(nb)) = (a.net, b.net) else { return None };
+    if matches!(a.owner, Owner::Pad(..)) || matches!(b.owner, Owner::Pad(..)) {
+        return None;
+    }
+    let min_clearance = cx.board().rules.min_clearance.to_mm();
+    cx.parts().iter().find_map(|p| {
+        let own = p.footprint.clearance?.max(min_clearance);
+        let has = |n: usize| p.pads.iter().any(|q| q.net == Some(n));
+        if own >= need || !has(na) || !has(nb) {
+            return None;
+        }
+        let rings = p.courtyard_rings();
+        (!rings.is_empty()).then_some((own, rings))
+    })
+}
+
+fn inside(q: P, rings: &[Vec<P>]) -> bool {
+    rings.iter().any(|r| geom::point_in_polygon(q, r))
+}
+
+fn pieces(shape: &crate::drc::CuShape, rings: &[Vec<P>]) -> Vec<(crate::drc::CuShape, bool)> {
+    use crate::drc::CuShape;
+    match shape {
+        CuShape::Seg(a, b, h) => {
+            let mut ts = vec![0.0, 1.0];
+            for r in rings {
+                for k in 0..r.len() {
+                    let (c, d) = (r[k], r[(k + 1) % r.len()]);
+                    if let Some(t) = geom::segment_param(*a, *b, c, d) {
+                        ts.push(t);
+                    }
+                }
+            }
+            ts.sort_by(f64::total_cmp);
+            ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+            let at = |t: f64| [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+            ts.windows(2)
+                .map(|w| {
+                    let mid = at((w[0] + w[1]) / 2.0);
+                    (CuShape::Seg(at(w[0]), at(w[1]), *h), inside(mid, rings))
+                })
+                .collect()
+        }
+        CuShape::Circle(c, _) => vec![(shape.clone(), inside(*c, rings))],
+        CuShape::Poly(_) => vec![(shape.clone(), false)],
+    }
+}
+
+fn clear_by_parts(
+    a: &crate::drc::CuShape,
+    b: &crate::drc::CuShape,
+    rings: &[Vec<P>],
+    own: f64,
+    need: f64,
+) -> bool {
+    let (pa, pb) = (pieces(a, rings), pieces(b, rings));
+    pa.iter().all(|(x, xin)| {
+        pb.iter().all(|(y, yin)| {
+            let want = if *xin && *yin { own } else { need };
+            let d = x.distance(y);
+            d > 1e-6 && d + crate::layout::DRC_EPSILON >= want
+        })
+    })
+}
+
 impl super::Rule for NetClearance {
     fn id(&self) -> &'static str {
         "clearance"
@@ -158,6 +231,11 @@ impl super::Rule for NetClearance {
                 if dist > 1e-6 && dist + crate::layout::DRC_EPSILON >= need {
                     continue;
                 }
+                if let Some((own, rings)) = inside_part(cx, a, b, need)
+                    && clear_by_parts(&a.shape, &b.shape, &rings, own, need)
+                {
+                    continue;
+                }
                 let at = match a.shape {
                     crate::drc::CuShape::Seg(p, _, _) | crate::drc::CuShape::Circle(p, _) => p,
                     crate::drc::CuShape::Poly(ref v) => {
@@ -172,6 +250,7 @@ impl super::Rule for NetClearance {
                     gap: dist.max(0.0),
                     need,
                     at,
+                    nets: a.net.zip(b.net),
                     ..Default::default()
                 });
             }

@@ -490,12 +490,19 @@ fn net_clearance(cx: &Ctx, r: &mut Report) {
         if v.rule == "short" {
             r.emit("short", format!("{} touches {}", v.subject, v.other));
         } else {
-            r.emit(
+            let net = |n: usize| cx.nets.get(n).map(|x| x.name.as_str());
+            let (na, nb) = v.nets.map_or((None, None), |(a, b)| (net(a), net(b)));
+            r.emit_pair(
                 "clearance",
                 format!("{} is {} from {}, needs {}", v.subject, mm(v.gap), v.other, mm(v.need)),
+                Some([(item_name(&v.subject), na), (item_name(&v.other), nb)]),
             );
         }
     }
+}
+
+fn item_name(described: &str) -> &str {
+    described.split(" (").next().unwrap_or(described)
 }
 
 fn copper_to_edge(cx: &Ctx, r: &mut Report) {

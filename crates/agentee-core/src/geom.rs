@@ -72,6 +72,19 @@ pub fn segment_segment_distance(a: P, b: P, c: P, d: P) -> f64 {
         .min(point_segment_distance(d, a, b))
 }
 
+pub fn segment_param(a: P, b: P, c: P, d: P) -> Option<f64> {
+    let r = [b[0] - a[0], b[1] - a[1]];
+    let s = [d[0] - c[0], d[1] - c[1]];
+    let den = r[0] * s[1] - r[1] * s[0];
+    if den.abs() < 1e-12 {
+        return None;
+    }
+    let q = [c[0] - a[0], c[1] - a[1]];
+    let t = (q[0] * s[1] - q[1] * s[0]) / den;
+    let u = (q[0] * r[1] - q[1] * r[0]) / den;
+    ((0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)).then_some(t)
+}
+
 pub fn point_in_polygon(p: P, poly: &[P]) -> bool {
     let mut inside = false;
     let n = poly.len();

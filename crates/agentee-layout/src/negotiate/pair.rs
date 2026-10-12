@@ -69,7 +69,7 @@ pub fn rule(
                 && b.domain == domain
         });
         bucket[l] = Some(found.unwrap_or_else(|| {
-            rules.buckets.push(Bucket { layer: l, h, c: band, crit, domain });
+            rules.buckets.push(Bucket { layer: l, h, c: band, crit, domain, zone: None });
             rules.buckets.len() - 1
         }));
     }
@@ -89,6 +89,7 @@ pub fn rule(
         crit: rp.crit.max(rn.crit),
         shadows: rp.shadows || rn.shadows,
         domain,
+        zone: None,
         bucket,
         via_bucket: Vec::new(),
         need: need.clone(),

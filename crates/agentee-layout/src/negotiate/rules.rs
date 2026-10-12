@@ -1,5 +1,6 @@
 use super::Options;
 use agentee_core::board::Board;
+use agentee_core::geom::{self, P};
 use agentee_core::layout::Layout;
 use agentee_core::place;
 pub use agentee_core::rules::Isolation;
@@ -44,6 +45,7 @@ pub struct NetRule {
     pub crit: f64,
     pub shadows: bool,
     pub domain: Option<usize>,
+    pub zone: Option<usize>,
     pub bucket: Vec<Option<usize>>,
     pub via_bucket: Vec<usize>,
     pub need: Vec<Need>,
@@ -57,6 +59,18 @@ pub struct Bucket {
     pub c: f64,
     pub crit: bool,
     pub domain: Option<usize>,
+    pub zone: Option<usize>,
+}
+
+pub struct PartZone {
+    pub own: f64,
+    pub rings: Vec<Vec<P>>,
+}
+
+impl PartZone {
+    pub fn holds(&self, q: P) -> bool {
+        self.rings.iter().any(|r| geom::point_in_polygon(q, r))
+    }
 }
 
 pub struct ViaBucket {
@@ -88,6 +102,7 @@ pub struct Rules {
     pub iso: Isolation,
     pub pairs: Vec<super::pair::PairRule>,
     pub budget: Vec<Option<(usize, String)>>,
+    pub zones: Vec<PartZone>,
 }
 
 fn plane_cover(layout: &Layout) -> Vec<Vec<(usize, f64)>> {
@@ -172,7 +187,21 @@ impl Rules {
             iso: Isolation::new(board, &layout.nets, layout.copper.len()),
             pairs: Vec::new(),
             budget: vec![None; layout.nets.len()],
+            zones: Vec::new(),
         };
+        let mut zone_of: Vec<Option<usize>> = vec![None; layout.nets.len()];
+        for p in &layout.parts {
+            let Some(own) = p.footprint.clearance else { continue };
+            let rings = p.courtyard_rings();
+            if rings.is_empty() {
+                continue;
+            }
+            let z = rules.zones.len();
+            rules.zones.push(PartZone { own: own.max(r.min_clearance.to_mm()), rings });
+            for n in p.pads.iter().filter_map(|q| q.net) {
+                zone_of[n].get_or_insert(z);
+            }
+        }
         let cover = plane_cover(layout);
         let plane: Vec<bool> = (0..nl)
             .map(|l| {
@@ -303,6 +332,7 @@ impl Rules {
                 clearance.max(s.to_mm() + strip + net.clearance + opts.grid)
             });
             let domain = rules.iso.of(n);
+            let zone = zone_of[n].filter(|&z| rules.zones[z].own < band);
             let mut bucket = vec![None; nl];
             for l in 0..nl {
                 if !track[l] && !net_vias.iter().any(|&k| rules.vias[k].layers.contains(&l)) {
@@ -315,6 +345,7 @@ impl Rules {
                         && um(b.c) == um(band)
                         && b.crit == rules.casts[n]
                         && b.domain == domain
+                        && b.zone == zone
                 });
                 bucket[l] = Some(found.unwrap_or_else(|| {
                     rules.buckets.push(Bucket {
@@ -323,6 +354,7 @@ impl Rules {
                         c: band,
                         crit: rules.casts[n],
                         domain,
+                        zone,
                     });
                     rules.buckets.len() - 1
                 }));
@@ -389,6 +421,7 @@ impl Rules {
                 crit,
                 shadows,
                 domain,
+                zone,
                 bucket,
                 via_bucket,
                 need,
