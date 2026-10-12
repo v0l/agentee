@@ -1,6 +1,6 @@
 name = "preamp-ac"
 kind = "circuit"
-description = "Operating point, gain and noise from a 100 ohm line source on the input jack to the output jack. U1 is the LM358 from the TI datasheet (SLOS068AB, table 5.7, VS = 5 V, 25 C, typ): AOL 100 V/mV, GBW 0.7 MHz, en 40 nV/rtHz at 1 kHz (taken as flat), VOS 3 mV, and 1.5 V of headroom, its worst swing from the positive rail at RL >= 2 kohm, applied to both rails. Its quiescent current is a 0.7 mA sink on VCC, 2 x 350 uA typ. D1 is the 1N4148 fitted to the onsemi 1N914/D figure 4 typical curve at 25 C, 500 mV at 0.1 mA and 617 mV at 1 mA (n 1.97, Is 5.6 nA)."
+description = "Operating point, gain and noise from a 100 ohm line source on the input jack to the output jack. U1 is the LM358 from the TI datasheet (SLOS068AB, table 5.7, VS = 5 V, 25 C, typ): AOL 100 V/mV, GBW 0.7 MHz, en 40 nV/rtHz at 1 kHz (taken as flat), VOS 3 mV, 1.5 V of headroom from the positive rail at RL >= 2 kohm and 5 mV from the negative, SR 0.3 V/us, IB -20 nA (out of the inputs) and PSRR 100 dB. Its quiescent current is a 0.7 mA sink on VCC, 2 x 350 uA typ. D1 is the 1N4148 fitted to the onsemi 1N914/D figure 4 typical curve at 25 C, 500 mV at 0.1 mA and 617 mV at 1 mA (n 1.97, Is 5.6 nA)."
 record = ["VCC", "VREF", "IN", "GAIN_OUT", "FILT_OUT", "OUT"]
 
 [[drives]]
@@ -82,7 +82,11 @@ gain = 1e5
 gbw = "0.7MHz"
 en = "40n"
 vos = "3mV"
-headroom = "1.5V"
+headroom_high = "1.5V"
+headroom_low = "5mV"
+slew = "0.3V/us"
+ib = "-20nA"
+psrr = "100dB"
 
 [[blocks]]
 ref = "D1"

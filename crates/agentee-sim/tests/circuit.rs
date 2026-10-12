@@ -442,3 +442,80 @@ fn a_potentiometer_divides_at_its_position_and_sags_under_load() {
     let lower = 7500.0 * 7500.0 / 15000.0;
     assert!(close(loaded.op["W"], 10.0 * lower / (2500.0 + lower), 1e-6), "{:?}", loaded.op);
 }
+
+fn follower(name: &str, source: &str, block: &str, spec: &str) -> CircuitResult {
+    sim(
+        name,
+        &[("RS", "R", source), ("U1", "OPAMP", "X")],
+        &[
+            ("VIN", &["RS.1"]),
+            ("INP", &["RS.2", "U1.3"]),
+            ("OUT", &["U1.1", "U1.2"]),
+            ("VP", &["U1.8"]),
+            ("GND", &["U1.4"]),
+        ],
+        &format!(
+            "[[blocks]]\nref = \"U1\"\nkind = \"opamp\"\ngain = 1e5\ngbw = \"10MHz\"\nrout = \"1ohm\"\n{block}\n\n[[drives]]\nnet = \"VP\"\ndc = \"10V\"\n\n{spec}"
+        ),
+    )
+}
+
+#[test]
+fn each_rail_has_its_own_headroom() {
+    let r = follower(
+        "rails",
+        "1k",
+        "headroom_high = \"1.5V\"\nheadroom_low = \"5mV\"",
+        "[[drives]]\nnet = \"VIN\"\nsine = { offset = \"5V\", amplitude = \"8V\", frequency = \"1kHz\" }\n\n[tran]\nstop = \"3ms\"\nstep = \"2us\"\n\n[[checks]]\npeak = \"OUT\"\nfrom = \"1ms\"\nmin = 8.4\nmax = 8.55\n\n[[checks]]\ntrough = \"OUT\"\nfrom = \"1ms\"\nmin = 0.0\nmax = 0.05\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
+}
+
+#[test]
+fn a_slew_limit_stretches_a_step() {
+    let step = "[[drives]]\nnet = \"VIN\"\nsteps = [[\"0s\", \"2V\"], [\"1us\", \"2V\"], [\"1.01us\", \"7V\"]]\n\n[tran]\nstop = \"20us\"\nstep = \"0.02us\"\n\n[[checks]]\nv = \"OUT\"\nat = \"3us\"\nmin = 0\n\n[[checks]]\nv = \"OUT\"\nat = \"5us\"\nmin = 0\n";
+    let fast = follower("fast", "1k", "", step);
+    let slow = follower("slow", "1k", "slew = \"1V/us\"", step);
+    assert!(fast.checks[0].value > 6.9, "{:?}", fast.checks);
+    let rate = (slow.checks[1].value - slow.checks[0].value) / 2.0;
+    assert!((rate - 1.0).abs() < 0.1, "{rate} V/us");
+}
+
+#[test]
+fn psrr_passes_rail_ripple_without_moving_the_operating_point() {
+    let r = sim(
+        "psrr",
+        &[("RS", "R", "1k"), ("U1", "OPAMP", "X")],
+        &[
+            ("VIN", &["RS.1"]),
+            ("INP", &["RS.2", "U1.3"]),
+            ("OUT", &["U1.1", "U1.2"]),
+            ("VP", &["U1.8"]),
+            ("GND", &["U1.4"]),
+        ],
+        "[[blocks]]\nref = \"U1\"\nkind = \"opamp\"\ngain = 1e5\ngbw = \"10MHz\"\nrout = \"1ohm\"\npsrr = \"60dB\"\n\n[[drives]]\nnet = \"VP\"\ndc = \"10V\"\nac = 1\n\n[[drives]]\nnet = \"VIN\"\ndc = \"5V\"\n\n[ac]\nfrom = \"10Hz\"\nto = \"100kHz\"\n\n[[checks]]\nv = \"OUT\"\nmin = 4.9999\nmax = 5.0001\n\n[[checks]]\nv = \"OUT\"\nat = \"100Hz\"\nmin = -60.5\nmax = -59.5\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
+}
+
+#[test]
+fn bias_current_drops_across_the_source_resistance() {
+    let r = follower(
+        "bias",
+        "1meg",
+        "ib = \"100nA\"",
+        "[[drives]]\nnet = \"VIN\"\ndc = \"5V\"\n\n[[checks]]\nv = \"OUT\"\nmin = 4.899\nmax = 4.901\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
+}
+
+#[test]
+fn input_noise_rises_below_its_flicker_corner() {
+    let r = follower(
+        "flicker",
+        "1",
+        "en = \"10n\"\nfc = \"100Hz\"",
+        "[[drives]]\nnet = \"VIN\"\ndc = \"5V\"\n\n[noise]\noutput = \"OUT\"\nfrom = \"1Hz\"\nto = \"100kHz\"\n\n[[checks]]\nnoise = \"OUT\"\nat = \"10Hz\"\nmin = \"32n\"\nmax = \"34n\"\n\n[[checks]]\nnoise = \"OUT\"\nat = \"10kHz\"\nmin = \"9.9n\"\nmax = \"10.2n\"\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
+}

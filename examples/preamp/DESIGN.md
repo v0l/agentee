@@ -65,9 +65,9 @@ datasheet.
 
 The U1 and D1 models in every sim come from their datasheets:
 
-- **U1:** AOL 100 V/mV, GBW 0.7 MHz, en 40 nV/rtHz (taken as flat), VOS 3 mV. Its headroom is
-  1.5 V, the worst positive swing at RL >= 2 kohm. The model applies the same headroom to both
-  rails, so the bottom clip is pessimistic: the real part swings to within millivolts of ground.
+- **U1:** AOL 100 V/mV, GBW 0.7 MHz, en 40 nV/rtHz (taken as flat), VOS 3 mV, SR 0.3 V/us,
+  IB -20 nA (out of the inputs), PSRR 100 dB. It swings to 1.5 V under VCC (the worst case at
+  RL >= 2 kohm) and to 5 mV above ground.
 - **D1:** fitted to the typical curve in onsemi 1N914/D figure 4: 500 mV at 0.1 mA, 617 mV at
   1 mA (n 1.97, Is 5.6 nA).
 
@@ -75,7 +75,7 @@ The U1 and D1 models in every sim come from their datasheets:
 |---|---|---|
 | `preamp-ac` | Operating point, gain and phase from a 100 ohm source, noise from 20 Hz to 20 kHz | VCC 8.40 V, VREF 4.20 V. Gain 20.8 dB at 100 Hz, 18.8 dB at 1 kHz, -18.1 dB at 10 kHz. 374 nV/rtHz at the output at 1 kHz, 17.5 uV RMS over the band |
 | `preamp-power` | Battery switched on, 8 s transient | GAIN_OUT clips at 7.0 V while C5 charges. OUT swings 6.1 V at 0.2 s, then settles to 0 V within about 2 s |
-| `preamp-clip` | 1 kHz, 400 mV peak sine | Clips at 6.9 V and 1.5 V. The most the input passes cleanly is 245 mV peak |
+| `preamp-clip` | 1 kHz, 400 mV peak sine | Clips at 6.9 V and 25 mV, 16% THD. The most the input passes cleanly is 245 mV peak |
 | `preamp-reverse` | Battery reversed | VCC -1 mV, D1 leaks 5.6 nA |
 
 Above 100 kHz the gain flattens at about -60 dB instead of falling. Signal leaks forward through

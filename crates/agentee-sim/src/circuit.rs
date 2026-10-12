@@ -23,7 +23,10 @@ enum Unit {
     Q { c: Ix, b: Ix, e: Ix, pnp: bool, is: f64, bf: f64, br: f64, va: Option<f64>, mem: usize },
     M { d: Ix, g: Ix, s: Ix, p: bool, vth: f64, k: f64, lambda: f64, mem: usize },
     Gm { p: Ix, n: Ix, cp: Ix, cn: Ix, gm: f64, offset: f64 },
-    Buffer { out: Ix, input: Ix, vcc: Ix, vee: Ix, rails: bool, headroom: f64, j: usize },
+    Slew { n: Ix, cp: Ix, cn: Ix, gm: f64, offset: f64, imax: f64 },
+    Supply { n: Ix, vcc: Ix, vee: Ix, g: f64, nominal: Option<f64> },
+    Cur { a: Ix, b: Ix, i: f64 },
+    Buffer { out: Ix, input: Ix, vcc: Ix, vee: Ix, rails: bool, room: (f64, f64), j: usize },
     Ldo { vin: Ix, g: Ix, out: Ix, vout: f64, dropout: f64, iq: f64, j: usize },
     Vcvs { p: Ix, n: Ix, cp: Ix, cn: Ix, gain: f64, j: usize },
     Src { p: Ix, n: Ix, j: Option<usize>, drive: usize },
@@ -40,6 +43,7 @@ enum Psd {
     Shot(usize, u8),
     Channel(usize),
     Fixed(f64),
+    Flicker(f64, f64),
 }
 
 pub struct Net {
@@ -57,17 +61,21 @@ struct Integrator {
     node: usize,
     vcc: Ix,
     vee: Ix,
-    headroom: f64,
+    room: (f64, f64),
+}
+
+fn swing(hi: f64, lo: f64, room: (f64, f64)) -> (f64, f64) {
+    let (top, bot) = (hi - room.0, lo + room.1);
+    ((top + bot) / 2.0, (top - bot) / 2.0)
 }
 
 impl Integrator {
     fn limit(&self, new: f64, old: f64, x: &[f64]) -> f64 {
         let (hi, lo) = (v(x, self.vcc), v(x, self.vee));
-        let half = (hi - lo) / 2.0 - self.headroom;
+        let (mid, half) = swing(hi, lo, self.room);
         if half <= 1e-3 {
             return old + (new - old).clamp(-10.0, 10.0);
         }
-        let mid = (hi + lo) / 2.0;
         let (uo, un) = ((old - mid) / half, (new - mid) / half);
         let u = if uo.abs() <= WINDUP_SPAN {
             uo + (un - uo).clamp(-1.0, 1.0)
@@ -280,27 +288,52 @@ impl Net {
                         push(Unit::C { a: g, b: d, c: cgd }, false);
                     }
                 }
-                ElemKind::Opamp { gain, gbw, rout, vos, en, headroom } => {
+                ElemKind::Opamp {
+                    gain,
+                    gbw,
+                    rout,
+                    vos,
+                    en,
+                    fc,
+                    headroom_high,
+                    headroom_low,
+                    slew,
+                    ib,
+                    psrr,
+                } => {
+                    let room = (headroom_high, headroom_low);
                     let n1 = node(&mut size);
                     let n2 = node(&mut size);
                     if let (Some(node), true) = (n1, n.len() >= 5) {
-                        integrators.push(Integrator { node, vcc: n[3], vee: n[4], headroom });
+                        integrators.push(Integrator { node, vcc: n[3], vee: n[4], room });
                     }
-                    push(
-                        Unit::Gm { p: None, n: n1, cp: n[0], cn: n[1], gm: 1.0, offset: vos },
-                        true,
-                    );
+                    let c = 1.0 / (std::f64::consts::TAU * gbw);
+                    let (cp, cn) = (n[0], n[1]);
+                    if slew > 0.0 {
+                        push(
+                            Unit::Slew { n: n1, cp, cn, gm: 1.0, offset: vos, imax: slew * c },
+                            true,
+                        );
+                    } else {
+                        push(Unit::Gm { p: None, n: n1, cp, cn, gm: 1.0, offset: vos }, true);
+                    }
                     push(Unit::R { a: n1, b: None, g: 1.0 / gain }, false);
-                    push(Unit::C { a: n1, b: None, c: 1.0 / (std::f64::consts::TAU * gbw) }, false);
+                    push(Unit::C { a: n1, b: None, c }, false);
                     let rails = n.len() >= 5;
                     let (vcc, vee) = if rails { (n[3], n[4]) } else { (None, None) };
-                    push(
-                        Unit::Buffer { out: n2, input: n1, vcc, vee, rails, headroom, j: 0 },
-                        false,
-                    );
+                    push(Unit::Buffer { out: n2, input: n1, vcc, vee, rails, room, j: 0 }, false);
                     push(Unit::R { a: n2, b: n[2], g: 1.0 / rout.max(1e-6) }, false);
+                    if ib != 0.0 {
+                        push(Unit::Cur { a: cp, b: None, i: ib }, false);
+                        push(Unit::Cur { a: cn, b: None, i: ib }, false);
+                    }
+                    if rails && psrr > 0.0 {
+                        push(Unit::Supply { n: n1, vcc, vee, g: 1.0 / psrr, nominal: None }, false);
+                    }
                     if en > 0.0 {
-                        noise.push(NoiseSrc { a: None, b: n1, psd: Psd::Fixed(en * en) });
+                        let psd =
+                            if fc > 0.0 { Psd::Flicker(en * en, fc) } else { Psd::Fixed(en * en) };
+                        noise.push(NoiseSrc { a: None, b: n1, psd });
                     }
                 }
                 ElemKind::Ldo { vout, dropout, rout, iq } => {
@@ -492,7 +525,24 @@ impl Net {
                     s.ctrl(p, gm * offset, &[(cp, cn, gm)]);
                     s.ctrl(n, -gm * offset, &[(cp, cn, -gm)]);
                 }
-                Unit::Buffer { out, input, vcc, vee, rails, headroom, j } => {
+                Unit::Slew { n, cp, cn, gm, offset, .. } if matches!(mode, Mode::Dc { .. }) => {
+                    s.ctrl(n, -gm * offset, &[(cp, cn, -gm)]);
+                }
+                Unit::Slew { n, cp, cn, gm, offset, imax } => {
+                    let vd = v(x, cp) - v(x, cn) + offset;
+                    let t = (gm * vd / imax).tanh();
+                    let i = imax * t;
+                    let g = gm * (1.0 - t * t);
+                    let c0 = i - g * (v(x, cp) - v(x, cn));
+                    s.ctrl(n, -c0, &[(cp, cn, -g)]);
+                }
+                Unit::Supply { n, vcc, vee, g, nominal } => {
+                    if let Some(nom) = nominal {
+                        s.ctrl(n, g * nom, &[(vcc, vee, -g)]);
+                    }
+                }
+                Unit::Cur { a, b, i } => s.cur(a, b, i),
+                Unit::Buffer { out, input, vcc, vee, rails, room, j } => {
                     s.add(out, Some(j), 1.0);
                     s.add(Some(j), out, 1.0);
                     let vi = v(x, input);
@@ -501,10 +551,9 @@ impl Net {
                         continue;
                     }
                     let (hi, lo) = (v(x, vcc), v(x, vee));
-                    let mid = (hi + lo) / 2.0;
-                    let half = (hi - lo) / 2.0 - headroom;
+                    let (mid, half) = swing(hi, lo, room);
                     let (f, d1, dc, de) = if half <= 1e-3 {
-                        (mid, 0.0, 0.5, 0.5)
+                        ((hi + lo) / 2.0, 0.0, 0.5, 0.5)
                     } else {
                         let u = (vi - mid) / half;
                         let t = u.tanh();
@@ -520,16 +569,20 @@ impl Net {
                     s.add(Some(j), vcc, -dc);
                     s.add(Some(j), vee, -de);
                     s.rhs(Some(j), f - d1 * vi - dc * hi - de * lo);
-                    if half > 1e-3 {
+                    if half > 1e-3 || matches!(mode, Mode::Tran { .. }) {
+                        let live = half > 1e-3;
+                        let (mid, half) = if live { (mid, half) } else { ((hi + lo) / 2.0, 1e-3) };
                         let top = mid + WINDUP_SPAN * half;
                         let bot = mid - WINDUP_SPAN * half;
                         let (f1, g1) = hinge(vi - top);
                         let (f2, g2) = hinge(bot - vi);
                         let k = (WINDUP_SPAN + 1.0) / 2.0;
                         let m = (WINDUP_SPAN - 1.0) / 2.0;
+                        let (th, tl, bh, bl) =
+                            if live { (k, -m, -m, k) } else { (0.5, 0.5, 0.5, 0.5) };
                         let di = WINDUP_G * (g1 + g2);
-                        let dhi = WINDUP_G * (m * g2 - k * g1);
-                        let dlo = WINDUP_G * (m * g1 - k * g2);
+                        let dhi = -WINDUP_G * (th * g1 + bh * g2);
+                        let dlo = -WINDUP_G * (tl * g1 + bl * g2);
                         let i0 = WINDUP_G * (f1 - f2);
                         s.ctrl(
                             input,
@@ -765,6 +818,14 @@ impl Net {
         mos(vgx, vdx, vth, k, lambda, self.vt).1
     }
 
+    fn hold_supplies(&mut self, op: &[f64]) {
+        for u in &mut self.units {
+            if let Unit::Supply { vcc, vee, nominal, .. } = u {
+                *nominal = Some(v(op, *vcc) - v(op, *vee));
+            }
+        }
+    }
+
     fn ac_matrix(&self, spec: &CircuitSpec, op: &[f64], w: f64) -> BTreeMap<(usize, usize), c64> {
         let st = State::default();
         let mut mem = self.seed(op);
@@ -873,13 +934,14 @@ fn interp_lin(ts: &[f64], ys: &[f64], t: f64) -> Option<f64> {
 
 pub fn run(spec: &CircuitSpec, name: &str, hash: u64) -> CircuitResult {
     let t0 = std::time::Instant::now();
-    let net = Net::build(spec);
+    let mut net = Net::build(spec);
     let mut res = CircuitResult { name: name.to_string(), spec_hash: hash, ..Default::default() };
     let Some(op) = net.op(spec) else {
         res.failures.push("the operating point did not converge".into());
         res.seconds = t0.elapsed().as_secs_f64();
         return res;
     };
+    net.hold_supplies(&op);
     let volts = |x: &[f64], n: Node| v(x, n);
     for (i, n) in spec.nets.iter().enumerate() {
         res.op.insert(n.clone(), op[i]);
@@ -931,7 +993,7 @@ pub fn run(spec: &CircuitSpec, name: &str, hash: u64) -> CircuitResult {
         let psd = |p: &Psd| -> f64 {
             match *p {
                 Psd::Thermal(r) => kt4 / r,
-                Psd::Fixed(s) => s,
+                Psd::Fixed(s) | Psd::Flicker(s, _) => s,
                 Psd::Shot(e, which) => {
                     let unit = net
                         .units
@@ -960,6 +1022,11 @@ pub fn run(spec: &CircuitSpec, name: &str, hash: u64) -> CircuitResult {
             }
         };
         let s_of: Vec<f64> = net.noise.iter().map(|n| psd(&n.psd)).collect();
+        let corner: Vec<f64> = net
+            .noise
+            .iter()
+            .map(|n| if let Psd::Flicker(_, fc) = n.psd { fc } else { 0.0 })
+            .collect();
         let mut input_curve = Vec::new();
         for &f in &freqs {
             let a = net.ac_matrix(spec, &op, std::f64::consts::TAU * f);
@@ -974,10 +1041,10 @@ pub fn run(spec: &CircuitSpec, name: &str, hash: u64) -> CircuitResult {
             let total: f64 = net
                 .noise
                 .iter()
-                .zip(&s_of)
-                .map(|(src, s)| {
+                .zip(s_of.iter().zip(&corner))
+                .map(|(src, (s, fc))| {
                     let h = at_node(&y, src.a) - at_node(&y, src.b);
-                    (h.re * h.re + h.im * h.im) * s
+                    (h.re * h.re + h.im * h.im) * s * (1.0 + fc / f)
                 })
                 .sum();
             noise_out.push(total.sqrt());

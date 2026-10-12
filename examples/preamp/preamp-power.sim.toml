@@ -31,7 +31,11 @@ gain = 1e5
 gbw = "0.7MHz"
 en = "40n"
 vos = "3mV"
-headroom = "1.5V"
+headroom_high = "1.5V"
+headroom_low = "5mV"
+slew = "0.3V/us"
+ib = "-20nA"
+psrr = "100dB"
 
 [[blocks]]
 ref = "D1"

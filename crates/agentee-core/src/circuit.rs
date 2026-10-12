@@ -161,6 +161,18 @@ pub struct BlockFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headroom: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headroom_high: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headroom_low: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slew: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ib: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psrr: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fc: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vout: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dropout: Option<Quantity>,
@@ -234,16 +246,63 @@ pub type Node = Option<usize>;
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ElemKind {
-    Resistor { r: f64 },
-    Capacitor { c: f64 },
-    Inductor { l: f64 },
-    Diode { is: f64, n: f64, bv: Option<f64>, cj: f64 },
-    Bjt { pnp: bool, is: f64, bf: f64, br: f64, va: Option<f64>, cje: f64, cjc: f64 },
-    Mosfet { p: bool, vth: f64, k: f64, lambda: f64, cgs: f64, cgd: f64 },
-    Opamp { gain: f64, gbw: f64, rout: f64, vos: f64, en: f64, headroom: f64 },
-    Ldo { vout: f64, dropout: f64, rout: f64, iq: f64 },
-    Vcvs { gain: f64 },
-    Vccs { gm: f64 },
+    Resistor {
+        r: f64,
+    },
+    Capacitor {
+        c: f64,
+    },
+    Inductor {
+        l: f64,
+    },
+    Diode {
+        is: f64,
+        n: f64,
+        bv: Option<f64>,
+        cj: f64,
+    },
+    Bjt {
+        pnp: bool,
+        is: f64,
+        bf: f64,
+        br: f64,
+        va: Option<f64>,
+        cje: f64,
+        cjc: f64,
+    },
+    Mosfet {
+        p: bool,
+        vth: f64,
+        k: f64,
+        lambda: f64,
+        cgs: f64,
+        cgd: f64,
+    },
+    Opamp {
+        gain: f64,
+        gbw: f64,
+        rout: f64,
+        vos: f64,
+        en: f64,
+        fc: f64,
+        headroom_high: f64,
+        headroom_low: f64,
+        slew: f64,
+        ib: f64,
+        psrr: f64,
+    },
+    Ldo {
+        vout: f64,
+        dropout: f64,
+        rout: f64,
+        iq: f64,
+    },
+    Vcvs {
+        gain: f64,
+    },
+    Vccs {
+        gm: f64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -984,13 +1043,20 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                     let rails = (vcc.is_some() && vee.is_some()) as usize;
                     let mut nodes = nodes;
                     nodes.truncate(3 + 2 * rails);
+                    let headroom = cx.q(&b.and_then(|b| b.headroom.clone()), &["v"], &at, "headroom", 0.1);
+                    let psrr_db = cx.opt(&b.and_then(|b| b.psrr.clone()), &["db"], &at, "psrr");
                     let kind = ElemKind::Opamp {
                         gain: cx.q(&b.and_then(|b| b.gain.clone()), &[], &at, "gain", 1e5),
                         gbw: cx.q(&b.and_then(|b| b.gbw.clone()), &["hz"], &at, "gbw", 1e6),
                         rout: cx.q(&b.and_then(|b| b.rout.clone()), &["ohm"], &at, "rout", 10.0),
                         vos: cx.q(&b.and_then(|b| b.vos.clone()), &["v"], &at, "vos", 0.0),
                         en: cx.q(&b.and_then(|b| b.en.clone()), &["v/rthz", "v/√hz", "v"], &at, "en", 0.0),
-                        headroom: cx.q(&b.and_then(|b| b.headroom.clone()), &["v"], &at, "headroom", 0.1),
+                        fc: cx.q(&b.and_then(|b| b.fc.clone()), &["hz"], &at, "fc", 0.0),
+                        headroom_high: cx.q(&b.and_then(|b| b.headroom_high.clone()), &["v"], &at, "headroom_high", headroom),
+                        headroom_low: cx.q(&b.and_then(|b| b.headroom_low.clone()), &["v"], &at, "headroom_low", headroom),
+                        slew: cx.q(&b.and_then(|b| b.slew.clone()), &["v/us"], &at, "slew", 0.0) * 1e6,
+                        ib: cx.q(&b.and_then(|b| b.ib.clone()), &["a"], &at, "ib", 0.0),
+                        psrr: psrr_db.map(|db| 10f64.powf(db / 20.0)).unwrap_or(0.0),
                     };
                     let name = if found == 0 { r.reference.clone() } else { format!("{}#{}", r.reference, found + 1) };
                     push(&mut elements, name, kind, nodes);

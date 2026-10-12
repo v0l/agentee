@@ -1,6 +1,6 @@
 name = "vcf-res"
 kind = "circuit"
-description = "CV at 3 V with resonance at 0.6: the passband drops 12 dB and a peak rises at fc, the Moog bass loss. U1 to U3 are the TL072 from TI SLOS080W tables 5.8 and 5.9 (TL07xI, typ at ±15 V): AOL 200 V/mV, GBW 5.25 MHz, en 37 nV/rtHz at 1 kHz taken as flat, VOS 3 mV, and 1.5 V of headroom from the ±13.5 V swing at RL 10 kohm. Q1 to Q12 are the BC550C from onsemi BC550/D: Is 16.4 fA from VBE(on) 660 mV typ at 2 mA (which also lands on figure 2's 0.58 V at 0.1 mA), Bf 420, the C group minimum. The rails are driven straight, D1 and D2 left out. RV4 sits at 10.45 kohm, the setting that puts 6 V of CV at 64x the tail current (the bench trim, done in the sim); RV1 is the CUTOFF drive, RV2 and RV3 are 100k potentiometer blocks set by `position`." 
+description = "CV at 3 V with RV2 at 0.9 of its travel: the passband drops 12 dB and a peak rises at fc, the Moog bass loss. U1 to U3 are the TL072 from TI SLOS080W tables 5.8 and 5.9 (TL07xI, typ at ±15 V): AOL 200 V/mV, GBW 5.25 MHz, en 37 nV/rtHz at 1 kHz taken as flat, VOS 3 mV, and 1.5 V of headroom from the ±13.5 V swing at RL 10 kohm. Q1 to Q12 are the BC550C from onsemi BC550/D: Is 16.4 fA from VBE(on) 660 mV typ at 2 mA (which also lands on figure 2's 0.58 V at 0.1 mA), Bf 420, the C group minimum. The rails are driven straight, D1 and D2 left out. RV4 sits at 10.45 kohm, the setting that puts 6 V of CV at 64x the tail current (the bench trim, done in the sim); RV1 is the CUTOFF drive, RV2 and RV3 are 100k potentiometer blocks set by `position`." 
 ignore = ["D1", "D2", "RV1"]
 record = ["AUDIO_IN", "IN_L", "LAD_L4", "LAD_R4", "DIFF_OUT", "OUT"]
 
@@ -64,7 +64,7 @@ resistance = "10.45k"
 [[blocks]]
 ref = "RV2"
 kind = "potentiometer"
-position = 0.6
+position = 0.9
 
 [[blocks]]
 ref = "RV3"

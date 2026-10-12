@@ -2507,6 +2507,12 @@ gbw = "1MHz"
 # vos = "0V"
 # en = "10n"                   # input voltage noise, V/rtHz
 # headroom = "0.1V"            # how close the output swings to its rails
+# headroom_high = "1.5V"       # per rail, default `headroom`
+# headroom_low = "5mV"
+# slew = "0.3V/us"             # slew rate, transient only
+# ib = "-20nA"                 # input bias current, into each input pin
+# psrr = "100dB"               # supply changes about the operating point, referred to the input
+# fc = "100Hz"                 # 1/f corner of `en`
 # pins = { inp = "3", inn = "2", out = "1", vcc = "8", vee = "4" }
 
 [[blocks]]

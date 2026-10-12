@@ -14,7 +14,7 @@ sims are `vcf-*.sim.toml`. All of it passes `agentee check`.
 | control | part | does |
 |---|---|---|
 | CUTOFF | RV1 | 0 to 10 octaves of base cutoff, 57.6 Hz to about 61 kHz |
-| RES | RV2 | Resonance; by the loop gain sum it self-oscillates past about 0.77 of its travel |
+| RES | RV2 | Resonance; it self-oscillates past about 0.95 of its travel, where R18 stops loading the wiper down |
 | FM | RV3 | Attenuator on the FM jack |
 | V/OCT | J2 | 1 V/oct cutoff CV, trimmed with RV4 |
 | FM | J3 | Second CV input, through RV3 |
@@ -91,7 +91,7 @@ The models in every sim come from datasheets:
 | `vcf-ac-0v` | Cutoff at CV 0 V | -12.4 dB at 57.6 Hz, -80.7 dB a decade above |
 | `vcf-ac-3v` | Bias points and cutoff at CV 3 V | V0 1.48 V, V4 7.38 V, TAIL 0.95 V, passband -0.08 dB, -12.4 dB at 461 Hz (8x), -80.7 dB at 4.61 kHz |
 | `vcf-ac-6v` | Cutoff at CV 6 V | -12.4 dB at 3.69 kHz (64x) |
-| `vcf-res` | Resonance at 0.6, CV 3 V | Passband drops to -11.7 dB and a peak rises to +0.1 dB at fc. That's the Moog bass loss |
+| `vcf-res` | RV2 at 0.9, CV 3 V | Passband drops to -12.2 dB and a peak rises to +0.7 dB at fc. That's the Moog bass loss |
 | `vcf-osc` | Resonance at full, 60 ms transient after a kick | Oscillates at 441 Hz, about 1.1 V peak at OUT |
 
 Four equal poles are each 3 dB down at fc, so the filter is 12 dB down there. The three AC sims
