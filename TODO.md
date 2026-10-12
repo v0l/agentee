@@ -28,14 +28,15 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - A pot (`RV`) has no model: a 3-pin pot needs a `vcvs` block, which has no wiper resistance
   (`examples/ladder-vcf` RV2, RV3). A `potentiometer` kind with `resistance` and `position`.
 - The AC phase plot draws noise for nets with no AC signal (gain near -400 dB); `vcf-ac-3v`
-  with SUM_OUT and QA_B recorded (`crates/agentee-view/src/circuit.rs`).
+  with SUM_OUT and QA_B recorded (`crates/agentee-view/src/circuit.rs`). (taken: todo-fixes-2)
 - Op-amp block has one `headroom` for both rails; the LM358 swings to within mV of ground but
   1.5 V of V+, so `preamp-clip` clips low at 1.5 V. No slew rate, input bias current or PSRR,
   and `en` is flat with no 1/f corner (`crates/agentee-sim/src/circuit.rs` Buffer).
 - `render sim:NAME` at the default 900 px cuts off the noise panel when there is a transient or
   AC plot above it; `preamp-ac` needed `--height 1800` (`crates/agentee-view/src/circuit.rs`).
+  (taken: todo-fixes-2)
 
-## Library
+## Library (taken: todo-fixes-2)
 
 - `library add --datasheet URL` pins the URL in `part.toml` but leaves the KiCad symbol's
   `datasheet`: LM358P kept `lm2904-n.pdf`, 1N5817G kept Vishay's for an onsemi part.
