@@ -65,3 +65,36 @@ fn a_knob_the_engine_lacks_is_refused() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("unknown field `sed`"));
 }
+
+#[test]
+fn layout_places_parts_that_have_no_footprint_entry_yet() {
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    let dir = std::env::temp_dir().join(format!("agentee-unplaced-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy(&lna, &dir);
+    let pcb = dir.join("lna.pcb.toml");
+    let mut doc: toml_edit::DocumentMut = std::fs::read_to_string(&pcb).unwrap().parse().unwrap();
+    doc["footprints"]
+        .as_array_of_tables_mut()
+        .unwrap()
+        .retain(|t| !matches!(t.get("ref").and_then(|r| r.as_str()), Some("R1") | Some("C5")));
+    std::fs::write(&pcb, doc.to_string()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+        .args(["layout", "lna", "--to", "place", "--json"])
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    let text = std::fs::read_to_string(&pcb).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["placed_first"], serde_json::json!(["C5", "R1"]));
+    let placed: toml_edit::DocumentMut = text.parse().unwrap();
+    let refs: Vec<&str> = placed["footprints"]
+        .as_array_of_tables()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t.get("ref").and_then(|r| r.as_str()))
+        .collect();
+    assert!(refs.contains(&"R1") && refs.contains(&"C5"), "{refs:?}");
+}

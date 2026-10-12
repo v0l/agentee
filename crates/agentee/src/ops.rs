@@ -1866,7 +1866,17 @@ pub struct PlaceArgs {
     pub write: bool,
 }
 
-pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
+struct Solved {
+    path: std::path::PathBuf,
+    text: String,
+    layout: String,
+    stale_copper: usize,
+    load_ms: u128,
+    solve_ms: u128,
+    r: agentee_core::place::PlaceResult,
+}
+
+fn solve_place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Solved, String> {
     use agentee_core::place as pl;
     let sides = match a.side.to_ascii_uppercase().as_str() {
         "F" | "TOP" => pl::Sides::Top,
@@ -1935,9 +1945,21 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     let load_ms = started.elapsed().as_millis();
     let r = pl::place(&input, &opts)?;
     let solve_ms = started.elapsed().as_millis() - load_ms;
-    let stale_copper = file.tracks.len() + file.vias.len();
-    let path = path.clone();
-    let layout_name = file.name.clone();
+    Ok(Solved {
+        path: path.clone(),
+        text,
+        layout: file.name.clone(),
+        stale_copper: file.tracks.len() + file.vias.len(),
+        load_ms,
+        solve_ms,
+        r,
+    })
+}
+
+pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
+    let started = std::time::Instant::now();
+    let Solved { path, text, layout: layout_name, stale_copper, load_ms, solve_ms, r } =
+        solve_place(root, name, a)?;
     let mut out = json!({
         "layout": layout_name,
         "written": false,
@@ -2042,6 +2064,7 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
     let path = p.layouts[i].path.clone();
     let inputs = p.layout_inputs(i)?;
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let (text, seeded) = seed_unplaced(root, name, &p, i, a, text)?;
     let run = agentee_layout::Run {
         from: a.from.clone(),
         to: a.to.clone(),
@@ -2060,10 +2083,13 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
         None => agentee_layout::run_text(&inputs, &text, &run)
             .map_err(|e| format!("{}: {e}", path.display()))?,
     };
-    if a.write && r.text != text {
+    if a.write && (seeded.is_some() || r.text != text) {
         std::fs::write(&path, &r.text).map_err(|e| e.to_string())?;
     }
     let mut v = serde_json::to_value(&r).unwrap_or_default();
+    if let Some(parts) = seeded {
+        v["placed_first"] = json!(parts);
+    }
     v["score_table"] = json!(r.score.table());
     v["time_table"] = json!(r.time.table());
     if let Some(s) = searched {
@@ -2071,6 +2097,62 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
         v["search"] = serde_json::to_value(&s).unwrap_or_default();
     }
     Ok(v)
+}
+
+fn place_stage_runs(engine: &agentee_core::engine::EngineFile, a: &LayoutArgs) -> bool {
+    let stages = engine.phases();
+    let at = |n: &Option<String>| {
+        n.as_deref()
+            .and_then(agentee_core::engine::stage_of)
+            .and_then(|s| stages.iter().position(|x| x == s))
+    };
+    let Some(place) = stages.iter().position(|s| s == "place") else { return false };
+    if a.only.is_some() {
+        return at(&a.only) == Some(place);
+    }
+    at(&a.from).is_none_or(|f| f <= place) && at(&a.to).is_none_or(|t| t >= place)
+}
+
+fn seed_unplaced(
+    root: &Path,
+    name: &str,
+    p: &agentee_core::project::Project,
+    i: usize,
+    a: &LayoutArgs,
+    text: String,
+) -> Result<(String, Option<Vec<String>>), String> {
+    let layout = &p.layouts[i].item;
+    if !place_stage_runs(&layout.engine, a) {
+        return Ok((text, None));
+    }
+    let Some(sch) = p.schematics.iter().find(|s| s.name == layout.schematic) else {
+        return Ok((text, None));
+    };
+    let unplaced: Vec<String> = sch
+        .item
+        .parts
+        .iter()
+        .filter(|q| q.footprint.is_some())
+        .map(|q| q.reference.clone())
+        .filter(|r| !layout.parts.iter().any(|q| &q.reference == r))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    if unplaced.is_empty() {
+        return Ok((text, None));
+    }
+    let seed = layout.engine.place.as_ref().and_then(|q| q.seed).unwrap_or(1);
+    let args = PlaceArgs {
+        parts: unplaced.clone(),
+        keep_placed: true,
+        side: "F".into(),
+        seed,
+        write: false,
+    };
+    let solved = solve_place(root, name, &args)?;
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    agentee_layout::start::write_placements(&mut doc, &solved.r.placements)?;
+    Ok((doc.to_string(), Some(unplaced)))
 }
 
 pub struct FitArgs {

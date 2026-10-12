@@ -122,6 +122,10 @@ passes: when global or detail report hot tiles, every part whose courtyard touch
 inflated by the overflow there (cell inflation, as RePlAce does it) and the placement is
 legalised again from where it was, not started over. At most `place_rounds` passes, default 3.
 
+A part with no `[[footprints]]` entry yet gets a first spot from the `agentee place` placer
+(front side, the others held) before this stage runs, and `agentee layout` reports those parts
+as `placed_first`.
+
 Parts stay on the side the file puts them. The placer runs once for the front and once for the
 back, the back pass with the front held, so a bottom part moves and turns with the seed like a
 top one. Locked parts and mounting holes hold on either side.
