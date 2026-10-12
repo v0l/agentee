@@ -59,6 +59,23 @@ fn part_index(doc: &DocumentMut, reference: &str) -> Result<usize, String> {
         .ok_or(format!("no part `{reference}` in this schematic"))
 }
 
+fn units_of(doc: &DocumentMut, reference: &str) -> Vec<(usize, i64)> {
+    doc.get("parts")
+        .and_then(|v| v.as_array_of_tables())
+        .map(|a| {
+            a.iter()
+                .enumerate()
+                .filter(|(_, t)| text(t, "ref").as_deref() == Some(reference))
+                .map(|(i, t)| (i, t.get("unit").and_then(|v| v.as_integer()).unwrap_or(1).max(1)))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn unit_number(u: &str) -> Result<i64, String> {
+    u.parse::<i64>().map_err(|_| format!("--unit `{u}` is not a number"))
+}
+
 fn refs(doc: &DocumentMut) -> Vec<String> {
     doc.get("parts")
         .and_then(|v| v.as_array_of_tables())
@@ -148,14 +165,31 @@ fn add(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     let footprint = o.take("footprint");
     let sym = resolve_symbol(s, &symbol, footprint.as_deref())?;
     let doc = s.read(path)?;
-    if refs(doc).contains(&reference) {
-        return Err(format!("`{reference}` is already a part here"));
+    let unit = o.take("unit");
+    let placed = units_of(doc, &reference);
+    if !placed.is_empty() {
+        let Some(u) = unit.as_deref() else {
+            return Err(format!(
+                "`{reference}` is already a part here; place another of its units with --unit N"
+            ));
+        };
+        let u = unit_number(u)?;
+        if placed.iter().any(|(_, p)| *p == u) {
+            return Err(format!("unit {u} of `{reference}` is already placed here"));
+        }
+        let parts = doc.get("parts").and_then(|v| v.as_array_of_tables());
+        let other = parts
+            .and_then(|a| a.get(placed[0].0))
+            .and_then(|t| text(t, "symbol"))
+            .unwrap_or_default();
+        if other != sym.name {
+            return Err(format!("`{reference}` is a `{other}` here, not a `{}`", sym.name));
+        }
     }
     let at = o.at("at")?.unwrap_or_else(|| tv(point_value(place(doc))));
     let (at, snapped) = grid_point(&at);
     let rotation = o.typed("rotation")?;
     let mirror = o.flag("mirror");
-    let unit = o.take("unit");
     let dnp = o.flag("dnp");
     let mut fields = Vec::new();
     while let Some(f) = o.take("field") {
@@ -179,7 +213,7 @@ fn add(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         set(&mut t, "mirror", true);
     }
     if let Some(u) = unit {
-        set(&mut t, "unit", u.parse::<i64>().map_err(|_| format!("--unit `{u}` is not a number"))?);
+        set(&mut t, "unit", unit_number(&u)?);
     }
     if dnp {
         set(&mut t, "dnp", true);
@@ -338,7 +372,19 @@ fn move_part(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String
     let unit = o.take("unit");
     o.done("move", 0)?;
     let doc = s.doc(path)?;
-    let i = part_index(doc, &reference)?;
+    let placed = units_of(doc, &reference);
+    let wanted = unit.as_deref().map(unit_number).transpose()?;
+    let i = match (placed.len(), wanted) {
+        (0, _) => return Err(format!("no part `{reference}` in this schematic")),
+        (1, _) => placed[0].0,
+        (_, Some(u)) => placed.iter().find(|(_, p)| *p == u).map(|(i, _)| *i).ok_or(format!(
+            "`{reference}` has no unit {u} here; place it with add {reference} SYMBOL --unit {u}"
+        ))?,
+        (_, None) => {
+            return Err(format!("`{reference}` has several units here; say which with --unit"));
+        }
+    };
+    let unit = if placed.len() > 1 { None } else { unit };
     let t = doc
         .get_mut("parts")
         .and_then(|v| v.as_array_of_tables_mut())
@@ -354,7 +400,7 @@ fn move_part(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String
         set(t, "mirror", true);
     }
     if let Some(u) = unit {
-        set(t, "unit", u.parse::<i64>().map_err(|_| format!("--unit `{u}` is not a number"))?);
+        set(t, "unit", unit_number(&u)?);
     }
     Ok(Report::log(format!("moved {reference}")))
 }
@@ -374,46 +420,64 @@ fn set_part(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String>
     }
     o.done("set", 0)?;
     let doc = s.doc(path)?;
-    let i = part_index(doc, &reference)?;
-    let t = doc
-        .get_mut("parts")
-        .and_then(|v| v.as_array_of_tables_mut())
-        .and_then(|a| a.get_mut(i))
-        .ok_or("no such part")?;
+    let placed = units_of(doc, &reference);
+    if placed.is_empty() {
+        return Err(format!("no part `{reference}` in this schematic"));
+    }
+    if unit.is_some() && placed.len() > 1 {
+        return Err(format!("`{reference}` has several units here; move one with move --unit"));
+    }
+    let value = value.or(positional.into_iter().next());
     let mut log = Vec::new();
-    if let Some(v) = value.or(positional.into_iter().next()) {
-        set(t, "value", v);
+    if value.is_some() {
         log.push(format!("{reference} value set"));
     }
-    if let Some(f) = footprint {
-        set(t, "footprint", f);
+    if footprint.is_some() {
         log.push(format!("{reference} footprint set"));
     }
-    if let Some(u) = unit {
-        set(t, "unit", u.parse::<i64>().map_err(|_| format!("--unit `{u}` is not a number"))?);
-    }
-    if dnp {
-        set(t, "dnp", true);
-    }
-    if mirror {
-        set(t, "mirror", true);
-    }
-    for k in clear.split(',').map(str::trim).filter(|k| !k.is_empty()) {
-        if !matches!(k, "dnp" | "mirror" | "footprint" | "unit" | "rotation" | "fields") {
+    let clear: Vec<&str> = clear.split(',').map(str::trim).filter(|k| !k.is_empty()).collect();
+    for k in &clear {
+        if !matches!(*k, "dnp" | "mirror" | "footprint" | "unit" | "rotation" | "fields") {
             return Err(format!("--clear `{k}` is not a part field"));
         }
-        t.remove(k);
         log.push(format!("{reference} cleared {k}"));
     }
-    for (k, v) in fields {
-        let Some(f) = t.get_mut("fields").and_then(|v: &mut Item| v.as_inline_table_mut()) else {
-            let mut inline = toml_edit::InlineTable::new();
-            inline.insert(&k, TValue::from(v.clone()));
-            set(t, "fields", TValue::InlineTable(inline));
-            continue;
-        };
-        f.insert(&k, TValue::from(v.clone()));
-        f.fmt();
+    let unit = unit.as_deref().map(unit_number).transpose()?;
+    for (i, _) in placed {
+        let t = doc
+            .get_mut("parts")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .and_then(|a| a.get_mut(i))
+            .ok_or("no such part")?;
+        if let Some(v) = &value {
+            set(t, "value", v.clone());
+        }
+        if let Some(f) = &footprint {
+            set(t, "footprint", f.clone());
+        }
+        if let Some(u) = unit {
+            set(t, "unit", u);
+        }
+        if dnp {
+            set(t, "dnp", true);
+        }
+        if mirror {
+            set(t, "mirror", true);
+        }
+        for k in &clear {
+            t.remove(k);
+        }
+        for (k, v) in &fields {
+            let Some(f) = t.get_mut("fields").and_then(|v: &mut Item| v.as_inline_table_mut())
+            else {
+                let mut inline = toml_edit::InlineTable::new();
+                inline.insert(k, TValue::from(v.clone()));
+                set(t, "fields", TValue::InlineTable(inline));
+                continue;
+            };
+            f.insert(k, TValue::from(v.clone()));
+            f.fmt();
+        }
     }
     Ok(Report { log, facts: Vec::new() })
 }
@@ -720,19 +784,21 @@ impl Session {
             .get("parts")
             .and_then(|v| v.as_array_of_tables())
             .ok_or(format!("`{spec}`: this schematic has no parts yet"))?;
-        let part = parts
-            .iter()
-            .find(|t| text(t, "ref").as_deref() == Some(reference))
-            .ok_or(format!("no part `{reference}` in this schematic"))?;
+        let placed: Vec<&Table> =
+            parts.iter().filter(|t| text(t, "ref").as_deref() == Some(reference)).collect();
+        let part = placed.first().ok_or(format!("no part `{reference}` in this schematic"))?;
         let symbol = text(part, "symbol").unwrap_or_default();
-        let unit = part.get("unit").and_then(|v| v.as_integer()).unwrap_or(1).max(1) as u32;
-        let sym = self.symbol(&symbol)?;
-        let pins: Vec<(&str, &str)> = sym
-            .pins
+        let units: Vec<u32> = placed
             .iter()
-            .filter(|p| p.in_unit(unit))
-            .map(|p| (p.number.as_str(), p.name.as_str()))
+            .map(|t| t.get("unit").and_then(|v| v.as_integer()).unwrap_or(1).max(1) as u32)
             .collect();
+        let sym = self.symbol(&symbol)?;
+        let mut pins: Vec<(&str, &str)> = Vec::new();
+        for p in sym.pins.iter().filter(|p| units.iter().any(|u| p.in_unit(*u))) {
+            if !pins.iter().any(|(n, _)| *n == p.number) {
+                pins.push((p.number.as_str(), p.name.as_str()));
+            }
+        }
         if let Some((n, _)) = pins.iter().find(|(n, _)| *n == wanted) {
             return Ok(n.to_string());
         }

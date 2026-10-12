@@ -766,3 +766,57 @@ fn a_net_goes_on_the_sheet_that_holds_its_pins() {
     let (_, err, ok) = run(&d, &["edit", "sch", "power", "net", "SPAN", "R67.2", "U2.2"]);
     assert!(!ok && err.contains("R67 is on power and U2 on mcu"), "{err}");
 }
+
+#[test]
+fn each_unit_of_a_part_is_placed_and_wired() {
+    let d = dir("units");
+    let mut sym = String::from("name = \"DUAL\"\nreference = \"U\"\n");
+    for (i, (n, name, unit)) in [
+        ("3", "+", 1),
+        ("2", "-", 1),
+        ("1", "", 1),
+        ("5", "+", 2),
+        ("6", "-", 2),
+        ("7", "", 2),
+        ("8", "V+", 3),
+        ("4", "V-", 3),
+    ]
+    .iter()
+    .enumerate()
+    {
+        sym += &format!(
+            "[[pins]]\nnumber = \"{n}\"\nname = \"{name}\"\ntype = \"passive\"\nat = [-7.62, {}]\nside = \"left\"\nunit = {unit}\n",
+            i as f64 * 2.54
+        );
+    }
+    std::fs::write(d.join("symbols/DUAL.sym.toml"), sym).unwrap();
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+
+    let script = "add U1 DUAL X --unit 1 --at 25.4,25.4\nadd U1 DUAL X --unit 2 --at 50.8,25.4\n\
+                  add U1 DUAL X --unit 3 --at 76.2,25.4\nnet VCC U1.8\nnet OUT U1.7 U1.6\n\
+                  move U1 50.8,50.8 --unit 2\nset U1 TL072\n";
+    let out = Command::new(bin())
+        .args(["edit", "sch", "t", "-"])
+        .current_dir(&d)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            use std::io::Write;
+            c.stdin.take().unwrap().write_all(script.as_bytes())?;
+            c.wait_with_output()
+        })
+        .unwrap();
+    let text = sch(&d, "t.sch.toml");
+    assert!(text.contains("\"U1.8\""), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("\"U1.7\", \"U1.6\""), "{text}");
+    assert!(text.contains("at = [50.8, 50.8]"), "{text}");
+    assert_eq!(text.matches("\"TL072\"").count(), 3, "{text}");
+    assert_eq!(text.matches("unit = ").count(), 3, "{text}");
+
+    let (_, err, ok) = run(&d, &["edit", "sch", "t", "add", "U1", "DUAL", "X", "--unit", "2"]);
+    assert!(!ok && err.contains("unit 2 of `U1` is already placed"), "{err}");
+    let (_, err, ok) = run(&d, &["edit", "sch", "t", "add", "U1", "DUAL", "X"]);
+    assert!(!ok && err.contains("--unit N"), "{err}");
+}
