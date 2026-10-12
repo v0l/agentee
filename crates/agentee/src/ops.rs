@@ -558,8 +558,7 @@ pub fn fetch_models(p: &Project) -> Result<Value, String> {
     let mut models = Vec::new();
     let mut heights = Vec::new();
     for m in wanted {
-        let local = agentee_3d::locate(&m, &p.root);
-        let fetched = local.is_none();
+        let fetched = agentee_3d::found(&m, &p.root).is_none();
         let row = match agentee_3d::get(&m, &p.root, agentee_3d::Fetch::Blocking) {
             agentee_3d::Status::Ready(mesh) => {
                 for e in &p.footprints {
@@ -575,9 +574,11 @@ pub fn fetch_models(p: &Project) -> Result<Value, String> {
                         json!({ "footprint": e.item.name, "height": (h * 100.0).round() / 100.0 }),
                     );
                 }
+                let hit = agentee_3d::found(&m, &p.root);
                 json!({
                     "model": m,
-                    "path": agentee_3d::locate(&m, &p.root),
+                    "path": hit.as_ref().map(|h| &h.0),
+                    "nearest": hit.and_then(|h| h.1),
                     "fetched": fetched,
                     "triangles": mesh.triangles(),
                 })

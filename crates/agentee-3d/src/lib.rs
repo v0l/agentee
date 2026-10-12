@@ -1,7 +1,10 @@
 pub mod export;
+mod nearest;
 pub mod parametric;
 pub mod step;
 pub mod wrl;
+
+pub use nearest::nearest;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -148,7 +151,7 @@ pub fn cache_dir() -> PathBuf {
     base.join("agentee").join("3dmodels")
 }
 
-fn roots(project: &Path) -> Vec<PathBuf> {
+pub(crate) fn roots(project: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     for var in ["KICAD10_3DMODEL_DIR", "KICAD9_3DMODEL_DIR", "KICAD8_3DMODEL_DIR", "KISYS3DMOD"] {
         if let Some(v) = std::env::var_os(var) {
@@ -305,6 +308,28 @@ pub fn fetch(model: &str) -> Result<PathBuf, String> {
     Err(format!("{rel}: not found in the KiCad 3D library"))
 }
 
+pub fn found(model: &str, project: &Path) -> Option<(PathBuf, Option<String>)> {
+    if let Some(p) = locate(model, project) {
+        return Some((p, None));
+    }
+    let sub = nearest(model, project, false)?;
+    locate(&sub, project).map(|p| (p, Some(sub)))
+}
+
+pub fn resolve(model: &str, project: &Path) -> Result<(PathBuf, Option<String>), String> {
+    if let Some(hit) = found(model, project) {
+        return Ok(hit);
+    }
+    match fetch(model) {
+        Ok(p) => Ok((p, None)),
+        Err(e) => {
+            let Some(sub) = nearest(model, project, true) else { return Err(e) };
+            let path = locate(&sub, project).map(Ok).unwrap_or_else(|| fetch(&sub))?;
+            Ok((path, Some(sub)))
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum Status {
     Ready(Arc<Mesh>),
@@ -377,7 +402,7 @@ fn load_cached(path: PathBuf) -> Status {
 }
 
 pub fn get(model: &str, project: &Path, fetch_mode: Fetch) -> Status {
-    if let Some(path) = locate(model, project) {
+    if let Some((path, _)) = found(model, project) {
         return load_cached(path);
     }
     let rel = relative(model);
@@ -389,8 +414,8 @@ pub fn get(model: &str, project: &Path, fetch_mode: Fetch) -> Status {
     }
     match fetch_mode {
         Fetch::Never => Status::Missing(format!("{rel}: not found locally")),
-        Fetch::Blocking => match fetch(model) {
-            Ok(path) => load_cached(path),
+        Fetch::Blocking => match resolve(model, project) {
+            Ok((path, _)) => load_cached(path),
             Err(e) => {
                 library().fetching.insert(rel, Some(e.clone()));
                 Status::Missing(e)
@@ -399,9 +424,10 @@ pub fn get(model: &str, project: &Path, fetch_mode: Fetch) -> Status {
         Fetch::Background => {
             library().fetching.insert(rel.clone(), None);
             let model = model.to_string();
+            let project = project.to_path_buf();
             std::thread::spawn(move || {
-                let state = match fetch(&model) {
-                    Ok(path) => {
+                let state = match resolve(&model, &project) {
+                    Ok((path, _)) => {
                         let _ = load_cached(path);
                         library().fetching.remove(&rel);
                         None

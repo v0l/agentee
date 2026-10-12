@@ -227,12 +227,18 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
         .or_else(|| fp_text.as_deref().and_then(|t| get_key(t, "model")));
     if let (Some(m), Some(ft)) = (model_spec, fp_text.as_mut()) {
         let found = if Path::new(&m).is_file() {
-            Ok(PathBuf::from(&m))
+            Ok((PathBuf::from(&m), None))
         } else {
-            agentee_3d::locate(&m, &root).map(Ok).unwrap_or_else(|| agentee_3d::fetch(&m))
+            agentee_3d::resolve(&m, &root)
         };
         match found {
-            Ok(path) => {
+            Ok((path, near)) => {
+                if let Some(n) = &near {
+                    notes.push(format!(
+                        "KiCad has no model {}; stored the nearest body {n}, check it with agentee library verify",
+                        agentee_3d::relative(&m)
+                    ));
+                }
                 let file =
                     path.file_name().and_then(|f| f.to_str()).unwrap_or("model.step").to_string();
                 let rel = format!("3dmodels/{file}");
@@ -251,7 +257,7 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
                 }
                 files.push(Provenance {
                     path: rel.clone(),
-                    source: m.clone(),
+                    source: near.clone().unwrap_or_else(|| m.clone()),
                     sha256: datasheet::sha256(&bytes),
                 });
                 model_rel = Some(rel);
