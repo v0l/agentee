@@ -34,3 +34,19 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 - `fab-notes.txt` has no IPC class, finished hole tolerance, removal of non-functional pads or
   fab logo keepout, and the board file has no key to set them; practice.md asks for all four.
+
+## DRC
+
+- No waiver path for by-design geometry: `drc` on a board with milled edge-card sockets
+  (Wing_Tab_4P pads straddling the outline) reports `pad-off-board` / `unrouted` for every
+  socket land pair, every run, with no `[[waivers]]` key or `--exclude` to record them as
+  reviewed-and-accepted (KiCad board files carry `exclude_from_drc` per pad for exactly this).
+  Seen importing a KiCad edge-card socket board: 3 sockets x 4 lands = 12 pads + 10 unrouted
+  pairs flag permanently.
+
+## KiCad round-trip
+
+- `import board` is one-way: a KiCad board imported to TOML, fixed with `silk`/`tie`/`route`,
+  cannot be written back to a `.kicad_pcb` that KiCad DRC and Gerber tooling accept. The
+  hub-board flow (KiCad Schematic -> DSN -> FreeRouting -> back to KiCad) needs a TOML ->
+  `.kicad_pcb` exporter or the importer round-trip stays lossy.
