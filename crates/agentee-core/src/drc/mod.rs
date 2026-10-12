@@ -64,6 +64,7 @@ pub struct Setup {
     pub creepage: bool,
     pub spark_gaps: bool,
     pub title: bool,
+    pub keepouts: bool,
 }
 
 impl Setup {
@@ -107,6 +108,7 @@ impl Setup {
             test_points: cx.parts.iter().any(crate::testpoint::is_test_point),
             spark_gaps: cx.parts.iter().any(|p| !p.footprint.spark_gaps.is_empty()),
             title: cx.title,
+            keepouts: !cx.keepouts.is_empty(),
             ..Setup::of_board(cx.board)
         }
     }
@@ -128,6 +130,7 @@ pub struct Ctx<'a> {
     pub interfaces: &'a [Interface],
     pub test: Option<&'a crate::testpoint::TestSpec>,
     pub heat: &'a [(String, f64)],
+    pub keepouts: &'a [crate::layout::Keepout],
     pub title: bool,
     found: &'a [Finding],
     items: OnceCell<Vec<Cu>>,
@@ -224,6 +227,7 @@ impl<'a> Ctx<'a> {
             interfaces: &[],
             test: None,
             heat: &[],
+            keepouts: &[],
             title: false,
             found: &[],
             items: OnceCell::new(),
@@ -246,6 +250,7 @@ impl<'a> Ctx<'a> {
             &l.nets,
         )
         .with_signals(&l.graphics, &l.pairs, &l.match_groups, &l.interfaces)
+        .with_keepouts(&l.keepouts)
         .with_test(&l.test)
         .with_title(l.title.is_some() || l.title_problem.is_some())
     }
@@ -275,6 +280,11 @@ impl<'a> Ctx<'a> {
         self.pairs = pairs;
         self.match_groups = match_groups;
         self.interfaces = interfaces;
+        self
+    }
+
+    pub fn with_keepouts(mut self, keepouts: &'a [crate::layout::Keepout]) -> Ctx<'a> {
+        self.keepouts = keepouts;
         self
     }
 

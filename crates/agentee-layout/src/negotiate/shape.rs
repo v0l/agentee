@@ -144,7 +144,11 @@ impl Ctx<'_> {
             }
             let (x, y) = g.cell(at);
             g.inside(x, y)
-                && g.fence_ok(y as usize * g.w + x as usize, self.net)
+                && {
+                    let c2 = y as usize * g.w + x as usize;
+                    g.fence_ok(c2, self.net)
+                        && g.keep_ok(l * g.plane() + c2, self.net, super::rules::um(width / 2.0))
+                }
                 && self.safe_at_w(l, at, width)
         })
     }

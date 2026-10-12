@@ -422,7 +422,8 @@ pub fn place(
         &layout.vias,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let base = crate::rules::Placed::new(&cx);
     let mut kept = crate::rules::Plan::default();
     let items = cx.copper_items();

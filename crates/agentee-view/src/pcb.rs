@@ -354,6 +354,10 @@ pub fn layout(
                 p.add(PathShape::closed_line(s, Stroke::new(1.0, VALUE.gamma_multiply(0.5))));
             }
         }
+        for k in l.keepouts.iter().filter(|k| k.layers.iter().any(|x| layers.shows(x))) {
+            let s: Vec<Pos2> = k.outline.iter().map(|q| xf.world(*q)).collect();
+            p.add(PathShape::closed_line(s, Stroke::new(1.0, theme::FAULT.gamma_multiply(0.7))));
+        }
     }
     if ratsnest {
         for (a, b, n) in &l.ratsnest {

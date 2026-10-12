@@ -12,6 +12,8 @@ pub const COMMANDS: &[&str] = &[
     "unzone",
     "cutout",
     "uncutout",
+    "keepout",
+    "unkeepout",
     "pair",
     "text",
     "label",
@@ -36,6 +38,8 @@ pub fn command(name: &str) -> Option<Cmd> {
         "unzone" => unzone,
         "cutout" => cutout,
         "uncutout" => uncutout,
+        "keepout" => keepout,
+        "unkeepout" => unkeepout,
         "pair" => pair,
         "text" => text_cmd,
         "label" => label,
@@ -77,6 +81,8 @@ pub fn usage(name: &str) -> &'static str {
         "unzone" => "unzone NET ...",
         "cutout" => "cutout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu]",
         "uncutout" => "uncutout X,Y ...",
+        "keepout" => "keepout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu] [--nets SW,GND]",
+        "unkeepout" => "unkeepout X,Y ...",
         "pair" => "pair NET+ NET- [--max-skew 1mm]",
         "text" => {
             "text STRING [--layer F.SilkS] [--at X,Y] [--size 1.0] [--rotation 90] [--locked]"
@@ -662,17 +668,74 @@ fn cutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     Ok(Report::log(format!("zones kept off a cutout on {}", layers.join(", "))))
 }
 
-fn uncutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+fn keepout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let layers = o.words("layers")?;
+    let nets = o.words("nets")?;
+    let pts = o.point_list("point");
+    o.done("keepout", 0)?;
+    if pts.len() < 3 {
+        return Err("keepout: give at least three --point X,Y".into());
+    }
+    let board = board_name(s, path)?;
+    for l in &layers {
+        s.check_layer(Some(&board), l)?;
+    }
+    for n in &nets {
+        net_known(s, path, n)?;
+    }
+    let mut t = Table::new();
+    set(&mut t, "points", points(&pts, "--point")?);
+    for (key, words) in [("layers", &layers), ("nets", &nets)] {
+        if !words.is_empty() {
+            let mut a = Array::new();
+            for w in words {
+                a.push(w.as_str());
+            }
+            set(&mut t, key, TValue::Array(a));
+        }
+    }
+    let doc = s.doc(path)?;
+    let shape = |c: &Table| c.get("points").map(|v| v.to_string().replace(' ', ""));
+    let mine = shape(&t);
+    let same = doc
+        .get_mut("keepouts")
+        .and_then(|v| v.as_array_of_tables_mut())
+        .and_then(|a| a.iter_mut().find(|c| shape(c) == mine));
+    match same {
+        Some(slot) => *slot = t,
+        None => insert(doc, "keepouts", t),
+    }
+    let on = if layers.is_empty() { "every copper layer".into() } else { layers.join(", ") };
+    let but = if nets.is_empty() { String::new() } else { format!(" but {}", nets.join(", ")) };
+    Ok(Report::log(format!("tracks and vias of every net{but} kept out of an area on {on}")))
+}
+
+fn unkeepout(s: &mut Session, path: &Path, o: Opts) -> Result<Report, String> {
+    remove_areas(s, path, o, "keepouts", "unkeepout", "keepout")
+}
+
+fn uncutout(s: &mut Session, path: &Path, o: Opts) -> Result<Report, String> {
+    remove_areas(s, path, o, "cutouts", "uncutout", "cutout")
+}
+
+fn remove_areas(
+    s: &mut Session,
+    path: &Path,
+    mut o: Opts,
+    key: &str,
+    cmd: &str,
+    what: &str,
+) -> Result<Report, String> {
     let spots = o.rest().iter().map(|w| parse_xy(w)).collect::<Result<Vec<_>, _>>()?;
-    o.done("uncutout", 0)?;
+    o.done(cmd, 0)?;
     if spots.is_empty() {
-        return Err("uncutout: give an X,Y inside each cutout to remove".into());
+        return Err(format!("{cmd}: give an X,Y inside each {what} to remove"));
     }
     let a = s
         .doc(path)?
-        .get_mut("cutouts")
+        .get_mut(key)
         .and_then(|v| v.as_array_of_tables_mut())
-        .ok_or("this layout has no cutouts")?;
+        .ok_or(format!("this layout has no {key}"))?;
     let polygon = |c: &Table| -> Vec<[f64; 2]> {
         c.get("points")
             .and_then(|v| v.as_array())
@@ -691,7 +754,7 @@ fn uncutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String>
     };
     for spot in &spots {
         if !a.iter().any(|c| agentee_core::geom::point_in_polygon(*spot, &polygon(c))) {
-            return Err(format!("no cutout at {},{}", spot[0], spot[1]));
+            return Err(format!("no {what} at {},{}", spot[0], spot[1]));
         }
     }
     let before = a.len();
@@ -699,7 +762,7 @@ fn uncutout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String>
         let poly = polygon(c);
         !spots.iter().any(|p| agentee_core::geom::point_in_polygon(*p, &poly))
     });
-    Ok(Report::log(format!("removed {} cutouts", before - a.len())))
+    Ok(Report::log(format!("removed {} {key}", before - a.len())))
 }
 
 fn pair(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {

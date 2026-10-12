@@ -14,6 +14,7 @@ pub trait Context {
     fn zones(&self) -> &[ZoneFill];
     fn fills(&self) -> &[FillIndex];
     fn spacing(&self) -> &super::Spacings;
+    fn keepouts(&self) -> &[crate::layout::Keepout];
 
     fn item(&self, i: usize) -> &Cu;
     fn hole(&self, i: usize) -> &Hole;
@@ -146,6 +147,10 @@ impl Context for Placed<'_> {
 
     fn spacing(&self) -> &super::Spacings {
         self.cx.spacing()
+    }
+
+    fn keepouts(&self) -> &[crate::layout::Keepout] {
+        self.cx.keepouts
     }
 
     fn item(&self, i: usize) -> &Cu {
@@ -463,6 +468,10 @@ impl Context for Planned<'_> {
         self.base.spacing()
     }
 
+    fn keepouts(&self) -> &[crate::layout::Keepout] {
+        self.base.keepouts()
+    }
+
     fn item(&self, i: usize) -> &Cu {
         let n = self.base_items();
         if i < n { self.base.item(i) } else { &self.items[i - n] }
@@ -607,6 +616,7 @@ impl Context for Planned<'_> {
             base.nets,
         )
         .with_signals(base.graphics, base.pairs, base.match_groups, base.interfaces)
+        .with_keepouts(base.keepouts)
         .with_title(base.title);
         let merged = match base.test {
             Some(t) => merged.with_test(t),

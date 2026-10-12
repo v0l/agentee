@@ -367,6 +367,25 @@ fn a_zone_outline_and_a_cutout_take_every_point_after_the_flag() {
     let pcb = sch(&d, "t.pcb.toml");
     assert_eq!(pcb.matches("[[cutouts]]").count(), 1, "{pcb}");
     assert!(pcb.contains("points = [[2.0, 2.0], [4.0, 2.0], [4.0, 4.0]]"), "{pcb}");
+
+    run(
+        &d,
+        &[
+            "edit", "pcb", "t", "keepout", "--point", "10,10", "14,10", "14,14", "--layers",
+            "F.Cu", "--nets", "GND",
+        ],
+    );
+    let pcb = sch(&d, "t.pcb.toml");
+    assert!(
+        pcb.contains("[[keepouts]]\npoints = [[10.0, 10.0], [14.0, 10.0], [14.0, 14.0]]\nlayers = [\"F.Cu\"]\nnets = [\"GND\"]"),
+        "{pcb}"
+    );
+    let (_, err, ok) =
+        run(&d, &["edit", "pcb", "t", "keepout", "--point", "1,1", "2,1", "2,2", "--nets", "NOPE"]);
+    assert!(!ok && err.contains("NOPE"), "{err}");
+    let (out, _, _) = run(&d, &["edit", "pcb", "t", "unkeepout", "13,11"]);
+    assert!(out.contains("removed 1 keepouts"), "{out}");
+    assert!(!sch(&d, "t.pcb.toml").contains("[[keepouts]]"));
 }
 
 #[test]
@@ -528,6 +547,8 @@ fn help_lists_the_commands() {
         "zone",
         "cutout",
         "uncutout",
+        "keepout",
+        "unkeepout",
         "pair",
         "stitch",
         "fanout",

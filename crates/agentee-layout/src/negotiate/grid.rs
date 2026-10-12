@@ -164,6 +164,7 @@ pub struct Grid {
     via_block: Vec<u32>,
     fence: Vec<u16>,
     fence_nets: Vec<Vec<u16>>,
+    keeps: Vec<KeepMap>,
     bin: f64,
     bw: usize,
     bh: usize,
@@ -179,6 +180,11 @@ struct Obstacle {
     net: u16,
     clr: f64,
     edge: bool,
+}
+
+struct KeepMap {
+    dist: Vec<u16>,
+    nets: Vec<u16>,
 }
 
 pub struct Fence {
@@ -372,6 +378,7 @@ impl Grid {
             via_block: vec![0; w * h],
             fence: vec![0; w * h],
             fence_nets: Vec::new(),
+            keeps: Vec::new(),
             bin: rules.reach.max(0.5),
             bw: ((w as f64 * g) / rules.reach.max(0.5)).ceil() as usize + 1,
             bh: ((h as f64 * g) / rules.reach.max(0.5)).ceil() as usize + 1,
@@ -432,7 +439,8 @@ impl Grid {
             &fixed,
             &[],
             &layout.nets,
-        );
+        )
+        .with_keepouts(&layout.keepouts);
         let placed = agentee_core::rules::Placed::new(&world);
         let net_id = |n: Option<usize>| n.map(|n| n as u16).unwrap_or(NONE);
         for k in agentee_core::rules::keepout::all(&placed, None, reach) {
@@ -484,6 +492,17 @@ impl Grid {
         }
         grid.block_smd(layout, rules);
         grid.block_silk(layout, rules);
+        for k in &layout.keepouts {
+            let mut dist = vec![u16::MAX; nl * w * h];
+            let layers: Vec<usize> = k.layers.iter().filter_map(|c| layer_of(c)).collect();
+            let plane = w * h;
+            grid.near(&Shape::Poly(k.outline.clone()), rules.reach, |x, y, d| {
+                for &l in &layers {
+                    dist[l * plane + y * w + x] = um(d);
+                }
+            });
+            grid.keeps.push(KeepMap { dist, nets: k.nets.iter().map(|&n| n as u16).collect() });
+        }
         for f in fences {
             grid.fence_nets.push(f.nets.iter().map(|&n| n as u16).collect());
             let id = grid.fence_nets.len() as u16;
@@ -566,10 +585,16 @@ impl Grid {
     }
 
     #[inline]
+    pub fn keep_ok(&self, i: usize, net: u16, q: u16) -> bool {
+        self.keeps.iter().all(|k| k.nets.contains(&net) || k.dist[i] > q)
+    }
+
+    #[inline]
     pub fn track_ok(&self, i: usize, net: u16, need: Need) -> bool {
         self.d[i].foreign(net) > need.d
             && self.q[i].foreign(net) > need.q
             && self.fence_ok(i % self.plane(), net)
+            && self.keep_ok(i, net, need.q)
             && self.iso_ok(i, net, need.q)
     }
 
@@ -597,6 +622,7 @@ impl Grid {
             let i = l * plane + c2;
             self.d[i].foreign(net) > need.d
                 && self.q[i].foreign(net) > need.q
+                && self.keep_ok(i, net, need.q)
                 && self.iso_ok(i, net, need.q)
         })
     }

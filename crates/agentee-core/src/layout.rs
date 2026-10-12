@@ -238,6 +238,80 @@ pub struct CutoutFile {
     pub points: Vec<Point>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeepoutFile {
+    pub points: Vec<Point>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nets: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Keepout {
+    pub outline: Vec<P>,
+    pub layers: Vec<String>,
+    pub nets: Vec<usize>,
+}
+
+impl Keepout {
+    pub fn bars(&self, net: Option<usize>, layers: &[String]) -> bool {
+        net.is_none_or(|n| !self.nets.contains(&n))
+            && layers.iter().any(|l| self.layers.contains(l))
+    }
+
+    pub fn reaches(&self, shape: &crate::drc::CuShape) -> bool {
+        match shape {
+            crate::drc::CuShape::Seg(a, b, hw) => {
+                geom::point_in_polygon(*a, &self.outline)
+                    || geom::point_in_polygon(*b, &self.outline)
+                    || geom::polyline_polygon_distance(&[*a, *b], &self.outline) < hw - 1e-6
+            }
+            crate::drc::CuShape::Circle(o, r) => {
+                geom::point_in_polygon(*o, &self.outline)
+                    || geom::polyline_polygon_distance(&[*o, *o], &self.outline) < r - 1e-6
+            }
+            crate::drc::CuShape::Poly(rings) => {
+                rings.iter().flatten().any(|q| geom::point_in_polygon(*q, &self.outline))
+            }
+        }
+    }
+}
+
+fn keepouts_of(
+    files: &[KeepoutFile],
+    copper: &[String],
+    net_index: impl Fn(&str) -> Option<usize>,
+    d: &mut Diags,
+) -> Vec<Keepout> {
+    let mut out = Vec::new();
+    for (i, k) in files.iter().enumerate() {
+        let at = format!("keepouts[{i}]");
+        if k.points.len() < 3 {
+            d.error(&at, "a keepout needs at least three points");
+            continue;
+        }
+        if let Some(l) = k.layers.iter().find(|l| !copper.contains(l)) {
+            d.error(
+                &at,
+                format!("`{l}` is not a copper layer of this board: {}", copper.join(", ")),
+            );
+            continue;
+        }
+        let mut nets = Vec::new();
+        for n in &k.nets {
+            match net_index(n) {
+                Some(x) => nets.push(x),
+                None => d.error(&at, format!("net `{n}` is not in the schematic")),
+            }
+        }
+        let layers = if k.layers.is_empty() { copper.to_vec() } else { k.layers.clone() };
+        out.push(Keepout { outline: k.points.iter().map(|p| p.to_mm()).collect(), layers, nets });
+    }
+    out
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LayoutFile {
@@ -256,6 +330,8 @@ pub struct LayoutFile {
     pub zones: Vec<ZoneFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cutouts: Vec<CutoutFile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keepouts: Vec<KeepoutFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pairs: Vec<PairFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -650,6 +726,7 @@ pub struct Layout {
     pub nets: Vec<LayoutNet>,
     pub ratsnest: Vec<(P, P, usize)>,
     pub cutouts: Vec<(Vec<String>, Vec<P>)>,
+    pub keepouts: Vec<Keepout>,
     pub graphics: Vec<crate::graphic::Graphic>,
     pub artwork: Vec<Artwork>,
     pub pairs: Vec<Pair>,
@@ -985,6 +1062,7 @@ impl LayoutFile {
             })
             .collect();
         let net_index = |name: &str| sch.nets.iter().position(|n| n.name == name);
+        let keepouts = keepouts_of(&self.keepouts, &copper, net_index, d);
         let mut found = crate::drc::Findings::default();
         let default_clearance = class_of(board, "Default")
             .map(|c| c.clearance.to_mm())
@@ -1167,7 +1245,8 @@ impl LayoutFile {
             &fixed,
             &[],
             &nets,
-        );
+        )
+        .with_keepouts(&keepouts);
         let fan_base = crate::rules::Placed::new(&fan_world);
         let mut fanned = crate::rules::Plan::default();
         for (i, f) in self.fanouts.iter().enumerate() {
@@ -1410,7 +1489,8 @@ impl LayoutFile {
             &stitch_fixed,
             &[],
             &nets,
-        );
+        )
+        .with_keepouts(&keepouts);
         let stitch_base = crate::rules::Placed::new(&stitch_world);
         let mut stitched = crate::rules::Plan::default();
         for (i, st) in self.stitching.iter().enumerate() {
@@ -2094,6 +2174,7 @@ impl LayoutFile {
                     &nets,
                 )
                 .with_signals(&graphics, &pairs, &match_groups, &interfaces)
+                .with_keepouts(&keepouts)
                 .with_test(&test)
                 .with_heat(&cx.heat)
                 .with_title(title.is_some() || title_problem.is_some())
@@ -2115,6 +2196,7 @@ impl LayoutFile {
             nets,
             ratsnest,
             cutouts,
+            keepouts,
             graphics,
             artwork,
             pairs,

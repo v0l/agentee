@@ -544,7 +544,7 @@ drc NAME` prints the layout's rule messages alone.
 The tools that add copper check it against the same rules before they write it. `tie`,
 `testpoints`, fanouts and stitching vias try each spot against `clearance`, `short`,
 `copper-to-edge`, the hole rules, `isolation-clearance`, `creepage`, `via-cuts-pad`,
-`via-in-pad-fill`, `hole-to-smd-pad`, `stacked-via` and `track-overlap`, and skip a spot that
+`via-in-pad-fill`, `hole-to-smd-pad`, `stacked-via`, `track-overlap` and `keepout`, and skip a spot that
 breaks one. `tune` and `neck` do the same for each meander and neck, judging it against the rest
 of the track it rewrites rather than the copy it replaces. `agentee route` and the layout engine
 drop the new tracks and vias that break one, found by halving the net's new copper until the
@@ -640,6 +640,7 @@ tombstone_ratio = 3            # copper or feed width one chip pad may have over
 | `impedance-width` | warning | impedance classes | a track of an impedance class at another width, its impedance moves |
 | `impedance-trace` | error | impedance classes | a track of an impedance class whose width, neck-downs included, or the copper beside it on an outer layer puts its impedance outside the class tolerance; the gap is not checked within the neck-down length of a pad or a junction |
 | `track-overlap` | error | always | tracks of one net running on top of each other, the copper is doubled |
+| `keepout` | error | layouts with `[[keepouts]]` | a track or via of a net the keepout does not list inside it on one of its layers; `agentee route` and the layout engine route around it |
 | `acute-turn` | warning | always | a track turning back more than 90 degrees, an acid trap (half a degree is allowed for coordinates rounded in the file) |
 | `zone-overlap` | error | zones | fills of two nets on one layer overlap, a short |
 | `zone-to-zone` | error | zones | fills of two nets on one layer closer than their clearance |
@@ -1119,6 +1120,14 @@ layers = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
                                # every cutout around that point
 layers = ["In1.Cu"]
 points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
+
+[[keepouts]]                   # keep tracks and vias off an area, e.g. under a buck switch node
+points = [[20, 4], [26, 4], [26, 8], [20, 8]]
+# layers = ["F.Cu", "In1.Cu"]  # default every copper layer
+# nets = ["SW"]                # nets that may still run inside; the rest keep out
+                               # `agentee edit pcb keepout --point X,Y X,Y ... --layers ... --nets ...`
+                               # adds one, `unkeepout X,Y` removes every keepout around that point;
+                               # zone fills are not cut, add a [[cutouts]] for that
 
 [[graphics]]                   # board text and lines, same keys as footprint graphics
 kind = "text"

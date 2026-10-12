@@ -44,6 +44,15 @@ pub static RULES: &[Rule] = &[
         check: impedance_trace,
     },
     Rule {
+        id: "keepout",
+        category: Category::Copper,
+        severity: Severity::Error,
+        summary: "a track or via of a net the keepout does not list inside a `[[keepouts]]` area on one of its layers",
+        when: "layouts with keepouts",
+        applies: with_keepouts,
+        check: keepout,
+    },
+    Rule {
         id: "track-overlap",
         category: Category::Copper,
         severity: Severity::Error,
@@ -286,6 +295,19 @@ fn acute_turn(cx: &Ctx, r: &mut Report) {
                 );
             }
         }
+    }
+}
+
+fn with_keepouts(s: &Setup) -> bool {
+    s.keepouts
+}
+
+fn keepout(cx: &Ctx, r: &mut Report) {
+    let placed = crate::rules::Placed::new(cx);
+    let mut out = Vec::new();
+    crate::rules::Rule::eval(&crate::rules::KeepoutArea, &placed, &mut out);
+    for v in out {
+        r.emit(v.subject, v.detail);
     }
 }
 

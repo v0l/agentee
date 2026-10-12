@@ -168,7 +168,8 @@ pub fn tune(layout: &Layout, board: &Board, opts: &TuneOptions) -> Result<TuneRe
         &layout.vias,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let base = crate::rules::Placed::new(&world);
     let spacing = crate::rules::Context::spacing(&base);
     let mut edited: Vec<usize> = Vec::new();

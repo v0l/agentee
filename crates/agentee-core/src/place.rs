@@ -2476,7 +2476,8 @@ fn place_once(input: &PlaceInput, opts: &PlaceOptions) -> Result<PlaceResult, St
         &vias,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let base = crate::rules::Placed::new(&world);
     let separates = crate::rules::Context::spacing(&base).isolation.separates();
     let mut hide = vec![false; layout.parts.len()];

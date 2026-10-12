@@ -223,6 +223,9 @@ struct Grid {
     window: Option<[usize; 4]>,
     fence: Vec<u16>,
     fence_nets: Vec<Vec<usize>>,
+    keep_track: Vec<u16>,
+    keep_via: Vec<u16>,
+    keep_nets: Vec<Vec<usize>>,
     pads: Vec<(usize, Vec<usize>, Vec<P>)>,
     pour: Vec<u16>,
 }
@@ -437,8 +440,15 @@ impl Grid {
         f != 0 && !self.fence_nets[f as usize - 1].contains(&net)
     }
 
+    fn kept(&self, map: &[u16], i: usize, net: usize) -> bool {
+        map.get(i).is_some_and(|&k| k != 0 && !self.keep_nets[k as usize - 1].contains(&net))
+    }
+
     fn ok(&self, i: usize, net: usize, soft: bool) -> (bool, bool) {
-        if !Self::free(&self.track, i, net) || self.fenced(i % (self.w * self.h), net) {
+        if !Self::free(&self.track, i, net)
+            || self.fenced(i % (self.w * self.h), net)
+            || self.kept(&self.keep_track, i, net)
+        {
             return (false, false);
         }
 
@@ -463,7 +473,7 @@ impl Grid {
         let mut clash = m.routed_holes[cell] & via.dielectrics != 0;
         for &l in &via.layers {
             let i = self.idx(l, x, y);
-            if !Self::free(&m.fixed, i, net) {
+            if !Self::free(&m.fixed, i, net) || self.kept(&self.keep_via, i, net) {
                 return (false, false);
             }
             clash |= !Self::free(&m.routed, i, net);
@@ -711,7 +721,8 @@ pub fn hold_to_rules(layout: &Layout, board: &Board, mut r: RouteResult) -> Rout
         &fixed,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let base = crate::rules::Placed::new(&world);
     let mut kept = crate::rules::Plan::default();
     let mut nets: Vec<String> = Vec::new();
@@ -883,7 +894,8 @@ fn route_once(
         &layout.vias,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let zone_base = crate::rules::Placed::new(&zone_world);
     let layer_of = |name: &str| copper.iter().position(|c| c == name);
     let mut routing = Vec::new();
@@ -2304,10 +2316,14 @@ fn build_grid(
         window: None,
         fence: vec![0; w * h],
         fence_nets: Vec::new(),
+        keep_track: Vec::new(),
+        keep_via: Vec::new(),
+        keep_nets: Vec::new(),
         pads: Vec::new(),
         pour: Vec::new(),
     };
     grid.pour = pours(&grid, layout, layers);
+    keep_out(&mut grid, layout, halves, vias);
     for f in fences {
         let allowed: Vec<usize> = layout
             .nets
@@ -2368,6 +2384,36 @@ fn build_grid(
         }
     }
     grid
+}
+
+fn keep_out(grid: &mut Grid, layout: &Layout, halves: &[f64], vias: &[ViaOption]) {
+    if layout.keepouts.is_empty() {
+        return;
+    }
+    let size = halves.len() * grid.w * grid.h;
+    grid.keep_track = vec![0; size];
+    grid.keep_via = vec![0; size];
+    let via_r = vias.iter().map(|v| v.via_r).fold(0.0, f64::max);
+    for k in &layout.keepouts {
+        grid.keep_nets.push(k.nets.clone());
+        let id = grid.keep_nets.len() as u16;
+        let ring = Shape::Poly(k.outline.clone());
+        let layers: Vec<usize> =
+            (0..halves.len()).filter(|&l| k.layers.contains(&layout.copper[l])).collect();
+        let reach = halves.iter().cloned().fold(via_r, f64::max);
+        for (x, y) in grid.cells_near(&ring, reach) {
+            let d = ring.dist(grid.center(x, y));
+            for &l in &layers {
+                let i = grid.idx(l, x, y);
+                if d < halves[l] + 1e-9 {
+                    grid.keep_track[i] = id;
+                }
+                if d < via_r + 1e-9 {
+                    grid.keep_via[i] = id;
+                }
+            }
+        }
+    }
 }
 
 fn pours(grid: &Grid, layout: &Layout, layers: usize) -> Vec<u16> {
@@ -3490,6 +3536,9 @@ mod tests {
             window: None,
             fence: vec![0; w * h],
             fence_nets: Vec::new(),
+            keep_track: Vec::new(),
+            keep_via: Vec::new(),
+            keep_nets: Vec::new(),
             pads: Vec::new(),
             pour: Vec::new(),
         }

@@ -278,7 +278,8 @@ pub fn neck(layout: &Layout, board: &Board, opts: &NeckOptions) -> Result<NeckRe
         &layout.vias,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let base = crate::rules::Placed::new(&world);
     let mut kept = crate::rules::Plan::default();
     let min_w = board.rules.min_track_width.to_mm();

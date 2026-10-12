@@ -1,3 +1,4 @@
+mod area;
 mod barrier;
 pub(crate) mod clearance;
 mod context;
@@ -10,6 +11,7 @@ mod tracks;
 mod vias;
 pub mod zone;
 
+pub use area::KeepoutArea;
 pub use barrier::{
     Creepage, IsolationClearance, Rim, Surface, closest as closest_edges,
     ring_edges as barrier_edges,
@@ -75,6 +77,7 @@ pub fn check<C: Context>(cx: &C, out: &mut Vec<Violation>) {
     HoleToSmdPad.eval(cx, out);
     StackedVia.eval(cx, out);
     TrackOverlap.eval(cx, out);
+    KeepoutArea.eval(cx, out);
 }
 
 pub fn legal<C: Context>(cx: &C) -> Result<(), Vec<Violation>> {

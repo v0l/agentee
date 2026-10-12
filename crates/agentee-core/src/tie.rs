@@ -398,7 +398,8 @@ pub fn tie(layout: &Layout, board: &Board, nets: &[String]) -> Result<TieResult,
         &fixed,
         &[],
         &layout.nets,
-    );
+    )
+    .with_keepouts(&layout.keepouts);
     let base = crate::rules::Placed::new(&world);
     let mut kept = crate::rules::Plan::default();
 
