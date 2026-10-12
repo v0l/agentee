@@ -218,8 +218,17 @@ pub fn rail_volts(name: &str) -> Option<f64> {
     })
 }
 
+const SIGNAL_TOKENS: &[&str] = &[
+    "ADC", "SENSE", "SNS", "SEN", "DET", "DETECT", "MON", "MEAS", "FB", "EN", "ENABLE", "PG",
+    "PGOOD", "GOOD", "OK", "DIV", "CTRL", "STAT", "STATUS", "IRQ", "ALERT", "FAULT", "FLT", "LVL",
+];
+
 pub fn is_rail(name: &str) -> bool {
     let up = name.to_ascii_uppercase();
+    let leaf = up.rsplit('/').next().unwrap_or(&up);
+    if leaf.split(['_', '-']).any(|t| SIGNAL_TOKENS.contains(&t)) {
+        return false;
+    }
     RAIL_PREFIXES.iter().any(|p| up.starts_with(p)) || up.split(['_', '-', '/']).any(rail_token)
 }
 
@@ -666,7 +675,19 @@ mod tests {
         for n in ["3V3", "+5V", "VCC_IO", "V1V8", "1.8V", "VBUS", "12V", "AVDD_1V0", "3P3V"] {
             assert!(is_rail(n), "{n}");
         }
-        for n in ["RF_OUT", "LED_DV2", "USB_DP", "SPI_MOSI", "V_SENSE"] {
+        assert!(is_rail("VCC_INT") && is_rail("VBAT") && is_rail("VBUS_5V"));
+        for n in [
+            "RF_OUT",
+            "LED_DV2",
+            "USB_DP",
+            "SPI_MOSI",
+            "V_SENSE",
+            "VBAT_ADC",
+            "VBUS_SENSE",
+            "VBUS_DET",
+            "3V3_EN",
+            "VIN_PG",
+        ] {
             assert!(!is_rail(n), "{n}");
         }
     }
