@@ -60,7 +60,16 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
   U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`).
 
-## Topological router (taken: topo-port)
+## Topological router
 
-- Port `topo.rs` from the `layout-engine` branch (5952707) onto master's stages, as a router or a
-  `prefer` guide for the negotiated detail router.
+- Classes whose width plus clearance is over `site_pitch` (0.4 mm) cannot cross the via site
+  lattice: a portal between two unused sites has only the pitch as room
+  (`crates/agentee-layout/src/topo.rs` `Router::room`). On `sdr` the Power and PowerHi nets fail.
+- About 165 nets on `sdr` lose copper when topo's route is held to the rules: wires 10-60 um
+  inside clearance of each other or of a pad between portals, and arcs round a single outline
+  sample dropping under the pad edge beside it (`round_corners`). Seen with
+  `phases = ["global", "topo"]` and `AGENTEE_UNROUTED_DEBUG=1`.
+- Topo as a guide (`topo` and `detail` both in `phases`) changes nothing on `sdr`: detail's
+  `prefer` reservation from topo's copper gives the same 66-67 unrouted as detail alone.
+- `examples/sdr/sdr.pcb.toml` has `# plan route` with no `# end plan route`, so `agentee layout`
+  cannot strip it: the old route stays as fixed copper and only about 53 leftovers reroute.
