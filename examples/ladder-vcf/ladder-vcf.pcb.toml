@@ -434,6 +434,9 @@ rotation = 270
 net = "GND"
 layers = ["B.Cu"]
 
+[engine.place]
+seed = 31
+
 # plan route
 [[tracks]]
 net = "P12_IN"
@@ -1474,9 +1477,6 @@ via = "std"
 net = "GND"
 at = [39.025, 66.675]
 via = "std"
-
-[engine.place]
-seed = 31
 
 # agentee route INV_N
 

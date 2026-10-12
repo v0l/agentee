@@ -133,6 +133,9 @@ label = { at = [46.75, 37.93] }
 net = "GND"
 layers = ["B.Cu"]
 
+[engine.place]
+seed = 12
+
 # plan route
 [[tracks]]
 net = "VBAT"
@@ -264,8 +267,6 @@ net = "OUT"
 layer = "B.Cu"
 points = [[47.4, 25.425], [50.575, 25.425]]
 
-[engine.place]
-seed = 12
 # end plan route
 
 [[fills]]

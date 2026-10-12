@@ -136,7 +136,9 @@ fn rank(t: &Tried) -> Key {
 }
 
 fn set_knob(text: &str, key: &str, value: &toml::Value) -> Result<String, String> {
-    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    let plans = crate::doc::sections_of(text);
+    let mut doc: toml_edit::DocumentMut =
+        crate::doc::strip_all(text).parse().map_err(|e| format!("{e}"))?;
     let mut path = vec!["engine".to_string()];
     path.extend(knob_path(key));
     let (last, parents) = path.split_last().ok_or("an empty knob")?;
@@ -153,7 +155,9 @@ fn set_knob(text: &str, key: &str, value: &toml::Value) -> Result<String, String
         };
     }
     node.insert(last, toml_edit::value(edit_value(value)?));
-    Ok(doc.to_string())
+    Ok(plans
+        .iter()
+        .fold(doc.to_string(), |t, (name, body)| crate::write_plan(&t, name, body.trim())))
 }
 
 fn tuned(
@@ -487,6 +491,15 @@ mod tests {
         let c = candidates(&knobs, vec![toml::Value::Integer(1)], 10, 7);
         assert_eq!(c.len(), 10);
         assert_eq!(c, candidates(&knobs, vec![toml::Value::Integer(1)], 10, 7));
+    }
+
+    #[test]
+    fn a_knob_lands_outside_the_plan_sections() {
+        let text = "name = \"x\"\n\n# plan route\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[0, 0], [1, 0]]\n# end plan route\n";
+        let out = set_knob(text, "place.seed", &toml::Value::Integer(7)).unwrap();
+        let bare = crate::doc::strip_all(&out);
+        assert!(bare.contains("seed = 7"), "{out}");
+        assert_eq!(crate::doc::sections_of(&out).len(), 1, "{out}");
     }
 
     #[test]

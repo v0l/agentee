@@ -85,7 +85,7 @@ pub struct Doc {
     section_versions: std::collections::BTreeMap<String, u64>,
 }
 
-fn sections_of(text: &str) -> Vec<(String, String)> {
+pub(crate) fn sections_of(text: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut rest = text;
     while let Some(a) = rest.find("# plan ") {
@@ -99,7 +99,7 @@ fn sections_of(text: &str) -> Vec<(String, String)> {
     out
 }
 
-fn strip_all(text: &str) -> String {
+pub(crate) fn strip_all(text: &str) -> String {
     let mut bare = text.to_string();
     for (name, _) in sections_of(text) {
         bare = crate::strip_plan(&bare, &name);
