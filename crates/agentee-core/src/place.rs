@@ -138,6 +138,17 @@ pub struct PlaceInput<'a> {
     pub tracks: &'a [crate::layout::TrackFile],
     pub vias: &'a [crate::layout::ViaFile],
     pub budgets: Vec<(String, f64)>,
+    pub regions: Vec<(String, Vec<P>)>,
+}
+
+pub fn regions(zones: &[crate::layout::ZoneFile]) -> Vec<(String, Vec<P>)> {
+    zones
+        .iter()
+        .filter_map(|z| {
+            let o = z.outline.as_ref()?;
+            (o.len() >= 3).then(|| (z.net.clone(), o.iter().map(|q| q.to_mm()).collect()))
+        })
+        .collect()
 }
 
 pub fn budgets(interfaces: &[crate::interface::InterfaceFile]) -> Vec<(String, f64)> {
@@ -511,6 +522,10 @@ const BRIDGE_W: f64 = 3.0;
 const SHEET_W: f64 = 0.3;
 const FEED_W: f64 = 8.0;
 const QUIET_W: f64 = 4.0;
+const DOMAIN_W: f64 = 20.0;
+const DOMAIN_MARGIN: f64 = 1.0;
+const REGION_W: f64 = 20.0;
+const REGION_STEP: f64 = 5.0;
 const HOLE_HARDWARE: f64 = 4.0;
 const CHAIN_FANOUT: usize = 3;
 const TOUCH: f64 = 0.01;
@@ -943,6 +958,7 @@ struct NetInfo {
     amps: f64,
     analog: bool,
     budget: Option<f64>,
+    domain: Option<usize>,
 }
 
 type Target = (usize, P, Option<(usize, P)>);
@@ -1004,6 +1020,8 @@ struct Board2 {
     edges: std::sync::Arc<EdgeIndex>,
     flex_edges: std::sync::Arc<EdgeIndex>,
     silk: Vec<WShape>,
+    barriers: HashMap<(usize, usize), f64>,
+    regions: HashMap<usize, Vec<Vec<P>>>,
 }
 
 #[derive(Clone)]
@@ -1376,13 +1394,7 @@ impl<'a> Placer<'a> {
             .loops
             .iter()
             .map(|(back, poly)| {
-                let side = if p.through {
-                    3
-                } else if *back != st.bottom {
-                    2
-                } else {
-                    1
-                };
+                let side = if *back != st.bottom { 2 } else { 1 };
                 if p.role == Role::Fiducial {
                     shape(&grow_loop(poly, TOUCH), side, false)
                 } else {
@@ -1390,6 +1402,13 @@ impl<'a> Placer<'a> {
                 }
             })
             .collect();
+        if p.through {
+            for (k, q) in p.pads.iter().enumerate() {
+                if matches!(p.fp.pads[k].kind, PadKind::Tht | PadKind::Npth) {
+                    out.extend(q.outline.iter().map(|o| shape(o, 3, false)));
+                }
+            }
+        }
         if let Some(label) = p.label.as_ref().filter(|_| !self.soft_labels) {
             out.push(shape(&label.poly, if st.bottom { 2 } else { 1 }, true));
         }
@@ -1925,6 +1944,16 @@ impl<'a> Placer<'a> {
                 cost += FACE_W * (r + half + HOLE_HARDWARE - geom::dist(h, c)).max(0.0);
             }
         }
+        if let Some(d) = self.domain_of_part(i)
+            && let Some(rings) = self.b.regions.get(&d)
+            && !rings.iter().any(|r| geom::point_in_polygon(c, r))
+        {
+            let out = rings
+                .iter()
+                .map(|r| geom::polyline_polygon_distance(&[c, c], r))
+                .fold(f64::MAX, f64::min);
+            cost += REGION_W * (out + REGION_STEP);
+        }
         cost + self.flex_penalty(i, p.st)
     }
 
@@ -2377,6 +2406,7 @@ fn with_spec<'b>(
         tracks: input.tracks,
         vias: input.vias,
         budgets: input.budgets.clone(),
+        regions: input.regions.clone(),
     }
 }
 
@@ -2546,6 +2576,28 @@ fn place_with<'a>(
             &ob,
             board.rules.flex_zone.to_mm() + FLEX_RAD,
         )),
+        regions: {
+            let mut out: HashMap<usize, Vec<Vec<P>>> = HashMap::new();
+            for (net, poly) in &input.regions {
+                let class = sch.nets.iter().find(|n| &n.name == net).map(|n| n.class.clone());
+                let class = class.unwrap_or_else(|| "Default".to_string());
+                if let Some(&d) = board.domain_of(net, &class).first()
+                    && board.barriers.iter().any(|b| b.between.contains(&d))
+                {
+                    out.entry(d).or_default().push(poly.clone());
+                }
+            }
+            out
+        },
+        barriers: board
+            .barriers
+            .iter()
+            .map(|b| {
+                let gap = [b.clearance, b.creepage].into_iter().flatten().map(Length::to_mm);
+                let [x, y] = b.between;
+                ((x.min(y), x.max(y)), gap.fold(0.0, f64::max))
+            })
+            .collect(),
         silk: input
             .silk
             .iter()
@@ -2779,6 +2831,7 @@ fn place_with<'a>(
                     .filter(|(g, _)| glob(g, &n.name) || *g == n.name)
                     .map(|b| b.1)
                     .reduce(f64::min),
+                domain: board.domain_of(&n.name, &n.class).first().copied(),
             }
         })
         .collect();
@@ -3311,6 +3364,23 @@ impl<'a> Placer<'a> {
             let s = self.parts[i].local.size();
             s[0].max(s[1]) / 2.0
         };
+        let gaps = self.b.barriers.clone();
+        let side: Vec<Option<usize>> = (0..n).map(|i| self.domain_of_part(i)).collect();
+        for i in 0..n {
+            let Some(a) = side[i] else { continue };
+            for j in i + 1..n {
+                let Some(b) = side[j] else { continue };
+                let gap = gaps.get(&(a.min(b), a.max(b))).copied().unwrap_or(0.0);
+                if a != b && gap > 0.0 {
+                    let thr = half(i) + half(j) + gap + DOMAIN_MARGIN;
+                    links.push((
+                        End::Centre(i),
+                        End::Centre(j),
+                        LinkKind::Repel { w: DOMAIN_W, thr },
+                    ));
+                }
+            }
+        }
         let hot: Vec<usize> = (0..n).filter(|i| self.parts[*i].hot).collect();
         for i in (0..n).filter(|i| self.parts[*i].electrolytic) {
             for &j in hot.iter().filter(|j| **j != i) {
@@ -3365,6 +3435,19 @@ impl<'a> Placer<'a> {
         for (a, b, k) in links {
             self.add_link(a, b, k);
         }
+    }
+
+    fn domain_of_part(&self, i: usize) -> Option<usize> {
+        let mut found = None;
+        for q in &self.parts[i].pads {
+            let Some(d) = q.net.and_then(|x| self.nets[x].domain) else { continue };
+            match found {
+                None => found = Some(d),
+                Some(f) if f != d => return None,
+                _ => {}
+            }
+        }
+        found
     }
 
     fn owner(&self, i: usize) -> Option<usize> {

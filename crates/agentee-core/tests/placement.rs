@@ -196,6 +196,7 @@ fn run_place(dir: &Path, opts: &PlaceOptions) -> place::PlaceResult {
         tracks: &file.tracks,
         vias: &file.vias,
         budgets: Vec::new(),
+        regions: Vec::new(),
     };
     place::place(&input, opts).unwrap()
 }

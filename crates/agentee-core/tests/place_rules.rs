@@ -96,6 +96,7 @@ fn laid(name: &str, seed: u64) -> Laid {
         tracks: &file.tracks,
         vias: &file.vias,
         budgets: place::budgets(&file.interfaces),
+        regions: agentee_core::place::regions(&file.zones),
     };
     let r = place::place(&input, &PlaceOptions { seed, ..Default::default() }).unwrap();
     assert!(r.failed.is_empty(), "seed {seed}: {:?}", r.failed);

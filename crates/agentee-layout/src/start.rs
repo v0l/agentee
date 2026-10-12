@@ -145,6 +145,7 @@ pub fn place_text(
         tracks: &file.tracks,
         vias: &file.vias,
         budgets: pl::budgets(&file.interfaces),
+        regions: pl::regions(&file.zones),
     };
     let r = pl::place(&input, opts)?;
     let mut doc: DocumentMut = text.parse().map_err(|e| format!("{e}"))?;

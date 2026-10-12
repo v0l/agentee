@@ -1934,6 +1934,7 @@ fn solve_place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Solved, String>
         tracks: &file.tracks,
         vias: &file.vias,
         budgets: pl::budgets(&file.interfaces),
+        regions: pl::regions(&file.zones),
     };
     let opts = pl::PlaceOptions {
         parts: a.parts.clone(),

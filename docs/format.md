@@ -579,6 +579,12 @@ part is tried at is checked with its pads at that spot against the copper around
 that breaks a rule is passed over. Tracks and vias on nets that touch a part being placed are
 ignored, since moving the part leaves them to be routed again.
 
+Parts whose nets all sit in one domain are kept apart from the parts of a domain it has a barrier
+with, by the barrier's distance. A zone with an `outline` marks where its net's domain lives: a
+part of that domain placed outside every such outline pays for the distance, so drawing the
+primary and secondary pours first settles which side of the slots each domain goes. The back of a
+through-hole part is open to parts on the other side, apart from its holes.
+
 ```toml
 [drc]                          # in the board file
 disable = ["silk-width"]       # rule ids to skip; their checks are not computed, so with silk-text

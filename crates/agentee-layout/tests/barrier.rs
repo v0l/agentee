@@ -162,6 +162,13 @@ fn agentee_route_keeps_the_barrier_from_a_pad_in_another_domain() {
 }
 
 fn placed_gap(board: &str) -> f64 {
+    placed_gap_in(board, Vec::new()).0
+}
+
+fn placed_gap_in(
+    board: &str,
+    regions: Vec<(String, Vec<[f64; 2]>)>,
+) -> (f64, Vec<(String, [f64; 2])>) {
     let parts =
         [("U1", [15.0, 10.0]), ("U2", [15.0, 10.0]), ("U3", [15.0, 10.0]), ("U4", [15.0, 10.0])];
     let nets = [("P_A", ["U1.1", "U2.1"]), ("S_B", ["U3.1", "U4.1"])];
@@ -188,6 +195,7 @@ fn placed_gap(board: &str) -> f64 {
         tracks: &[],
         vias: &[],
         budgets: Vec::new(),
+        regions,
     };
     let r = agentee_core::place::place(&input, &Default::default()).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
@@ -203,7 +211,7 @@ fn placed_gap(board: &str) -> f64 {
             gap = gap.min(d);
         }
     }
-    gap
+    (gap, r.placements.iter().map(|q| (q.reference.clone(), q.at)).collect())
 }
 
 #[test]
@@ -213,4 +221,20 @@ fn the_placer_keeps_parts_in_other_domains_apart() {
     assert!(close < 4.0, "the parts land {close:.2} mm apart with no barrier");
     let gap = placed_gap(BOARD);
     assert!(gap >= 4.0 - 1e-6, "the parts land {gap:.2} mm apart across the barrier");
+}
+
+#[test]
+fn each_domain_is_placed_inside_its_own_pour() {
+    let rect = |x0: f64, x1: f64| vec![[x0, 1.0], [x1, 1.0], [x1, 19.0], [x0, 19.0]];
+    for (p_side, s_side) in [((1.0, 12.0), (18.0, 29.0)), ((18.0, 29.0), (1.0, 12.0))] {
+        let regions = vec![
+            ("P_A".to_string(), rect(p_side.0, p_side.1)),
+            ("S_B".to_string(), rect(s_side.0, s_side.1)),
+        ];
+        let (_, at) = placed_gap_in(BOARD, regions);
+        for (r, q) in at {
+            let (lo, hi) = if r == "U1" || r == "U2" { p_side } else { s_side };
+            assert!(q[0] >= lo && q[0] <= hi, "{r} at {q:?}, its pour runs {lo} to {hi}");
+        }
+    }
 }

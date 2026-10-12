@@ -484,6 +484,7 @@ fn global_place(
             tracks: &model.file.tracks,
             vias: &model.file.vias,
             budgets: place::budgets(&model.file.interfaces),
+            regions: place::regions(&model.file.zones),
         };
         let opts = place::PlaceOptions {
             parts: parts.clone(),
