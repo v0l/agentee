@@ -245,10 +245,13 @@ fn board_and_layout_edits_write_the_keys() {
             "Mains",
             "--own-voltage",
             "15VDC",
+            "--description",
+            "line, neutral and the fuse",
         ],
     );
     let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();
     assert!(board.contains("own_voltage = \"15VDC\""), "{board}");
+    assert!(board.contains("description = \"line, neutral and the fuse\""), "{board}");
 
     edit(&d, &["board", "b", "outline", "--size", "40,25", "--corner-radius", "2mm"]);
     let board = std::fs::read_to_string(d.join("b.board.toml")).unwrap();

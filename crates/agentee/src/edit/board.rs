@@ -95,7 +95,7 @@ fn class(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     let via = o.words("via")?;
     let layers = o.words("layers")?;
     let width_words = o.words("width")?;
-    let description = o.words("description")?.join(" ");
+    let description = o.take("description").unwrap_or_default();
     let solver_field = o.flag("solver-field");
     o.done("class", 0)?;
     let doc = s.read(path)?;
