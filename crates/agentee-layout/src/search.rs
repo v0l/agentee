@@ -361,6 +361,10 @@ pub fn search(
         if stopped() {
             return Err("stopped".into());
         }
+        let stage_started = std::time::Instant::now();
+        if let Some(w) = a.watch {
+            w(crate::Event::Start(stage));
+        }
         let here: Vec<usize> = (0..knobs.len()).filter(|&k| level[k] == li).collect();
         let per = tries.div_ceil(frontier.len()).max(1);
         let mut specs: Vec<(usize, Vec<toml::Value>, EngineFile, bool)> = Vec::new();
@@ -453,6 +457,15 @@ pub fn search(
         }
         for n in &next {
             tried[n.tried].kept = true;
+        }
+        if let Some(w) = a.watch {
+            let at_stage = tried.iter().filter(|t| t.stage == *stage).count();
+            w(crate::Event::Done(&crate::PhaseReport {
+                phase: stage.clone(),
+                ms: stage_started.elapsed().as_millis(),
+                notes: vec![format!("{at_stage} tried, {} kept", next.len())],
+                ..Default::default()
+            }));
         }
         if next.is_empty() {
             let why: Vec<String> = tried.iter().filter_map(|t| t.error.clone()).take(3).collect();

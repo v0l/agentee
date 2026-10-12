@@ -1755,9 +1755,44 @@ impl<'a> Placer<'a> {
                 }
             }
         }
+        let barriers = self.barrier_near(i, st, &seen, cu);
         let plan = crate::rules::Plan { parts: vec![mv(me, st)], ..Default::default() };
         let planned = crate::rules::Planned::hiding(&cu.base, &cu.hidden, &kept, plan);
-        crate::rules::legal(&planned).is_ok()
+        !crate::rules::breaks_with(&planned, barriers)
+    }
+
+    fn barrier_near(&self, i: usize, st: St, near: &[usize], cu: &Copper) -> bool {
+        let Some(d) = self.domain_of_part(i) else { return true };
+        let reach = self.b.barriers.values().copied().fold(0.0, f64::max) + GRID;
+        let pad_box = |j: usize, st: St| {
+            let t = st.transform();
+            let mut b = Bounds::EMPTY;
+            for q in &self.parts[j].pads {
+                q.outline.iter().flatten().for_each(|p| b.add(t.apply(*p)));
+            }
+            b
+        };
+        let mine = pad_box(i, st);
+        if mine.is_empty() {
+            return false;
+        }
+        let grown = Bounds {
+            min: [mine.min[0] - reach, mine.min[1] - reach],
+            max: [mine.max[0] + reach, mine.max[1] + reach],
+        };
+        if cu.fixed_near(&mine, reach) {
+            return true;
+        }
+        let barred = |e: usize| e != d && self.b.barriers.contains_key(&(d.min(e), d.max(e)));
+        near.iter().any(|&j| {
+            let other = pad_box(j, self.parts[j].st);
+            !other.is_empty()
+                && strict_overlap(&grown, &other)
+                && self.parts[j]
+                    .pads
+                    .iter()
+                    .any(|q| q.net.and_then(|x| self.nets[x].domain).is_some_and(barred))
+        })
     }
 
     fn too_hot(&self, i: usize, sh: &[WShape], skip: &[usize]) -> bool {

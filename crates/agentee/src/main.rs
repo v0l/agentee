@@ -1223,7 +1223,7 @@ fn run(cli: Cli) -> Result<bool, String> {
             let r = ops::layout_engine(
                 &project,
                 &name,
-                &ops::LayoutArgs { from, to, only, write: !dry_run, search },
+                &ops::LayoutArgs { progress: true, from, to, only, write: !dry_run, search },
             )?;
             if json {
                 print_json(&r);

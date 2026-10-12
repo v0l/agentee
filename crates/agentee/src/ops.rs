@@ -2052,6 +2052,7 @@ pub fn stackup(name: &str) -> Result<Value, String> {
 }
 
 pub struct LayoutArgs {
+    pub progress: bool,
     pub from: Option<String>,
     pub to: Option<String>,
     pub only: Option<String>,
@@ -2066,11 +2067,24 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
     let inputs = p.layout_inputs(i)?;
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let (text, seeded) = seed_unplaced(root, name, &p, i, a, text)?;
+    let started = std::time::Instant::now();
+    let progress = |e: agentee_layout::Event| {
+        let at = started.elapsed().as_secs_f64();
+        match e {
+            agentee_layout::Event::Start(stage) => eprintln!("{at:7.1} s  {stage} ..."),
+            agentee_layout::Event::Done(r) => eprintln!(
+                "{at:7.1} s  {} done in {:.1} s{}",
+                r.phase,
+                r.ms as f64 / 1000.0,
+                r.notes.first().map(|n| format!(": {n}")).unwrap_or_default()
+            ),
+        }
+    };
     let run = agentee_layout::Run {
         from: a.from.clone(),
         to: a.to.clone(),
         only: a.only.clone(),
-        watch: None,
+        watch: a.progress.then_some(&progress as &dyn Fn(agentee_layout::Event)),
         stop: None,
     };
     let searched = a

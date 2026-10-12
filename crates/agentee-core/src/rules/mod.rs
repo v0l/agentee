@@ -80,6 +80,28 @@ pub fn check<C: Context>(cx: &C, out: &mut Vec<Violation>) {
     KeepoutArea.eval(cx, out);
 }
 
+pub fn breaks_with<C: Context>(cx: &C, barriers: bool) -> bool {
+    let mut out = Vec::new();
+    let mut run = |r: &dyn Fn(&C, &mut Vec<Violation>)| {
+        r(cx, &mut out);
+        !out.is_empty()
+    };
+    run(&|cx, out| NetClearance.eval(cx, out))
+        || run(&|cx, out| CopperToEdge.eval(cx, out))
+        || run(&|cx, out| HoleToCopper(Which::Plated).eval(cx, out))
+        || run(&|cx, out| HoleToCopper(Which::Inner).eval(cx, out))
+        || run(&|cx, out| HoleToCopper(Which::Npth).eval(cx, out))
+        || run(&|cx, out| HoleToHole.eval(cx, out))
+        || run(&|cx, out| ViaCutsPad.eval(cx, out))
+        || run(&|cx, out| ViaInPadFill.eval(cx, out))
+        || run(&|cx, out| HoleToSmdPad.eval(cx, out))
+        || run(&|cx, out| StackedVia.eval(cx, out))
+        || run(&|cx, out| TrackOverlap.eval(cx, out))
+        || run(&|cx, out| KeepoutArea.eval(cx, out))
+        || barriers && run(&|cx, out| IsolationClearance.eval(cx, out))
+        || barriers && run(&|cx, out| Creepage.eval(cx, out))
+}
+
 pub fn legal<C: Context>(cx: &C) -> Result<(), Vec<Violation>> {
     let mut out = Vec::new();
     check(cx, &mut out);

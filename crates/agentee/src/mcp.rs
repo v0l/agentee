@@ -491,6 +491,7 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 root,
                 arg(a, "name").ok_or("name is required")?,
                 &ops::LayoutArgs {
+                    progress: false,
                     from: arg(a, "from").map(String::from),
                     to: arg(a, "to").map(String::from),
                     only: arg(a, "only").map(String::from),
