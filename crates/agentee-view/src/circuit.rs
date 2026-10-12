@@ -82,8 +82,12 @@ pub fn props(ui: &mut Ui, s: &Sim, rail: Color32) {
 
 pub fn canvas(ui: &mut Ui, r: &CircuitResult) {
     let w = ui.available_width();
-    let shares =
-        [(!r.times.is_empty(), 1.0), (!r.freqs.is_empty(), 1.7), (!r.noise_freqs.is_empty(), 1.0)];
+    let shares = [
+        (!r.times.is_empty(), 1.0),
+        (!r.spectrum_freqs.is_empty(), 0.7),
+        (!r.freqs.is_empty(), 1.7),
+        (!r.noise_freqs.is_empty(), 1.0),
+    ];
     let plots = shares.iter().filter(|s| s.0).count() + usize::from(!r.freqs.is_empty());
     let weight: f32 = shares.iter().filter(|s| s.0).map(|s| s.1).sum::<f32>().max(1.0);
     let h = ((ui.available_height() - SECTION * plots as f32) / weight).clamp(140.0, 420.0);
@@ -91,6 +95,13 @@ pub fn canvas(ui: &mut Ui, r: &CircuitResult) {
         if !r.times.is_empty() {
             section(ui, "transient", "node voltages against time", |ui| {
                 plot(ui, &r.times, &r.waves, false, "s", "V", 1.0, Vec2::new(w, h));
+            });
+            ui.add_space(8.0);
+        }
+        if !r.spectrum_freqs.is_empty() {
+            let shown = floored(&r.spectrum, SPECTRUM_FLOOR_DB);
+            section(ui, "spectrum", "dBV over the second half of the transient", |ui| {
+                plot(ui, &r.spectrum_freqs, &shown, true, "Hz", "dBV", 1.0, Vec2::new(w, h * 0.7));
             });
             ui.add_space(8.0);
         }
@@ -132,6 +143,18 @@ pub fn canvas(ui: &mut Ui, r: &CircuitResult) {
 }
 
 const DEAD_DB: f64 = -200.0;
+const SPECTRUM_FLOOR_DB: f64 = -140.0;
+
+fn floored(curves: &[Curve], floor: f64) -> Vec<Curve> {
+    curves
+        .iter()
+        .filter(|c| c.values.iter().any(|&v| v > floor))
+        .map(|c| Curve {
+            name: c.name.clone(),
+            values: c.values.iter().map(|&v| v.max(floor)).collect(),
+        })
+        .collect()
+}
 const SECTION: f32 = 52.0;
 
 fn live_phase(gain: &[Curve], phase: &[Curve]) -> Vec<Curve> {

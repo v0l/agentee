@@ -206,7 +206,21 @@ pub struct CheckFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noise: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trough: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rms: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freq: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -357,6 +371,24 @@ pub enum Measure {
     Amps(usize),
     Phase(Node),
     Noise(Node),
+    Peak(Node),
+    Trough(Node),
+    Rms(Node),
+    Freq(Node),
+    Thd(Node),
+}
+
+impl Measure {
+    pub fn over_window(&self) -> bool {
+        matches!(
+            self,
+            Measure::Peak(_)
+                | Measure::Trough(_)
+                | Measure::Rms(_)
+                | Measure::Freq(_)
+                | Measure::Thd(_)
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
@@ -365,6 +397,7 @@ pub enum At {
     Op,
     Time(f64),
     Freq(f64),
+    Window(f64, f64),
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -425,6 +458,10 @@ pub struct CircuitResult {
     pub times: Vec<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub waves: Vec<Curve>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spectrum_freqs: Vec<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spectrum: Vec<Curve>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub noise_freqs: Vec<f64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1092,12 +1129,36 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
     let mut checks = Vec::new();
     for (i, c) in file.checks.iter().enumerate() {
         let at = format!("checks[{i}]");
-        let given = [&c.v, &c.i, &c.phase, &c.noise].iter().filter(|x| x.is_some()).count();
+        let given = [&c.v, &c.i, &c.phase, &c.noise, &c.peak, &c.trough, &c.rms, &c.freq, &c.thd]
+            .iter()
+            .filter(|x| x.is_some())
+            .count();
         if given != 1 {
-            cx.d.error(&at, "a check names exactly one of `v`, `i`, `phase` and `noise`");
+            cx.d.error(
+                &at,
+                "a check names exactly one of `v`, `i`, `phase`, `noise`, `peak`, `trough`, `rms`, `freq` and `thd`",
+            );
+            continue;
+        }
+        let windowed = [&c.peak, &c.trough, &c.rms, &c.freq, &c.thd].iter().any(|x| x.is_some());
+        if windowed && c.at.is_some() {
+            cx.d.error(&at, "`peak`, `trough`, `rms`, `freq` and `thd` read a span: give `from` and `to`, not `at`");
+            continue;
+        }
+        if !windowed && (c.from.is_some() || c.to.is_some()) {
+            cx.d.error(&at, "`from` and `to` go with `peak`, `trough`, `rms`, `freq` and `thd`");
             continue;
         }
         let when = match &c.at {
+            None if windowed => {
+                let from = cx.opt(&c.from, &["s"], &at, "from").unwrap_or(0.0);
+                let to = cx.opt(&c.to, &["s"], &at, "to").unwrap_or(f64::INFINITY);
+                if to <= from {
+                    cx.d.error(&at, "`to` comes before `from`");
+                    continue;
+                }
+                At::Window(from, to)
+            }
             None => At::Op,
             Some(Quantity::Text(s)) if s.eq_ignore_ascii_case("op") => At::Op,
             Some(q) => {
@@ -1128,6 +1189,21 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
         } else if let Some(nn) = &c.noise {
             let Some(nd) = node_of(&mut cx, nn, &at) else { continue };
             (Measure::Noise(nd), format!("noise({nn})"), &["v/rthz", "v/√hz", "v"])
+        } else if let Some(w) = &c.peak {
+            let Some(nd) = node_of(&mut cx, w, &at) else { continue };
+            (Measure::Peak(nd), format!("peak({w})"), &["v"])
+        } else if let Some(w) = &c.trough {
+            let Some(nd) = node_of(&mut cx, w, &at) else { continue };
+            (Measure::Trough(nd), format!("trough({w})"), &["v"])
+        } else if let Some(w) = &c.rms {
+            let Some(nd) = node_of(&mut cx, w, &at) else { continue };
+            (Measure::Rms(nd), format!("rms({w})"), &["v"])
+        } else if let Some(w) = &c.freq {
+            let Some(nd) = node_of(&mut cx, w, &at) else { continue };
+            (Measure::Freq(nd), format!("freq({w})"), &["hz"])
+        } else if let Some(w) = &c.thd {
+            let Some(nd) = node_of(&mut cx, w, &at) else { continue };
+            (Measure::Thd(nd), format!("thd({w})"), &["%"])
         } else {
             let name = c.i.as_deref().unwrap_or_default();
             match elements.iter().position(|e| e.name == name && e.nodes.len() == 2) {
@@ -1163,6 +1239,9 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
             At::Time(_) if tran.is_none() => {
                 cx.d.error(&at, "a check at a time needs a [tran] analysis")
             }
+            At::Window(..) if tran.is_none() => {
+                cx.d.error(&at, "`peak`, `trough`, `rms`, `freq` and `thd` need a [tran] analysis")
+            }
             _ => {}
         }
         let min = cx.opt(&c.min, units, &at, "min");
@@ -1174,6 +1253,11 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
             At::Op => label,
             At::Time(t) => format!("{label} at {}", fmt_si(t, "s")),
             At::Freq(f) => format!("{label} at {}", fmt_si(f, "Hz")),
+            At::Window(a, b) if b.is_finite() => {
+                format!("{label} from {} to {}", fmt_si(a, "s"), fmt_si(b, "s"))
+            }
+            At::Window(a, _) if a > 0.0 => format!("{label} from {}", fmt_si(a, "s")),
+            At::Window(..) => label,
         };
         checks.push(Check { label, measure, at: when, min, max });
     }

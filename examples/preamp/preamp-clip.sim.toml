@@ -47,3 +47,18 @@ ref = "D1"
 kind = "diode"
 is = "5.56nA"
 n = 1.974
+
+[[checks]]
+peak = "GAIN_OUT"
+from = "1ms"
+max = "7V"
+
+[[checks]]
+trough = "GAIN_OUT"
+from = "1ms"
+min = "1.4V"
+
+[[checks]]
+thd = "GAIN_OUT"
+from = "1ms"
+min = "15%"

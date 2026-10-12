@@ -383,3 +383,41 @@ fn a_half_wave_rectifier_peaks_a_diode_drop_below_the_sine() {
     assert!(hi < 4.6 && hi > 4.1, "peak {hi}");
     assert!(hi - lo > 0.4 && hi - lo < 0.9, "ripple {}", hi - lo);
 }
+
+#[test]
+fn a_sine_through_a_divider_reads_its_peak_rms_frequency_and_thd() {
+    let r = sim(
+        "divider-sine",
+        &[("R1", "R", "10k"), ("R2", "R", "10k")],
+        &[("VIN", &["R1.1"]), ("OUT", &["R1.2", "R2.1"]), ("GND", &["R2.2"])],
+        "[[drives]]\nnet = \"VIN\"\nsine = { offset = \"2V\", amplitude = \"1V\", frequency = \"1kHz\" }\n\n[tran]\nstop = \"10ms\"\nstep = \"5us\"\n\n[[checks]]\npeak = \"OUT\"\nmin = 1.49\nmax = 1.51\n\n[[checks]]\ntrough = \"OUT\"\nfrom = \"1ms\"\nto = \"9ms\"\nmin = 0.49\nmax = 0.51\n\n[[checks]]\nrms = \"OUT\"\nmin = 0.35\nmax = 0.357\n\n[[checks]]\nfreq = \"OUT\"\nfrom = \"1ms\"\nmin = \"999Hz\"\nmax = \"1001Hz\"\n\n[[checks]]\nthd = \"OUT\"\nmax = \"0.1%\"\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
+    assert_eq!(r.checks[1].label, "trough(OUT) from 1ms to 9ms");
+}
+
+#[test]
+fn a_span_check_needs_a_transient_and_no_at() {
+    let dir = std::env::temp_dir().join(format!("agentee-circuit-bad-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("symbols")).unwrap();
+    for (n, text) in symbols() {
+        std::fs::write(dir.join(format!("symbols/{n}.sym.toml")), text).unwrap();
+    }
+    std::fs::write(
+        dir.join("t.sch.toml"),
+        "name = \"t\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [25.4, 25.4]\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n[[nets]]\nname = \"GND\"\npins = [\"R1.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("t.sim.toml"),
+        "name = \"t\"\nkind = \"circuit\"\n[[drives]]\nnet = \"A\"\ndc = \"1V\"\n[[checks]]\npeak = \"A\"\nat = \"1ms\"\nmax = 2\n[[checks]]\nrms = \"A\"\nmax = 2\n[[checks]]\nv = \"A\"\nfrom = \"1ms\"\nmax = 2\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let errors: Vec<String> = p.sims[0].diags.iter().map(|d| d.message.clone()).collect();
+    assert!(errors.iter().any(|e| e.contains("not `at`")), "{errors:?}");
+    assert!(errors.iter().any(|e| e.contains("need a [tran]")), "{errors:?}");
+    assert!(errors.iter().any(|e| e.contains("`from` and `to` go with")), "{errors:?}");
+}

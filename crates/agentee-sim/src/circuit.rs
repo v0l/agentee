@@ -1073,11 +1073,14 @@ pub fn run(spec: &CircuitSpec, name: &str, hash: u64) -> CircuitResult {
             }
         }
         res.times = tran_times.clone();
+        let settled = tran_times.last().copied().unwrap_or(0.0) / 2.0;
         for &k in &spec.record {
-            res.waves.push(Curve {
-                name: spec.nets[k].clone(),
-                values: tran_x.iter().map(|x| x[k]).collect(),
-            });
+            let values: Vec<f64> = tran_x.iter().map(|x| x[k]).collect();
+            if let Some((f, db)) = crate::wave::spectrum(&tran_times, &values, settled, 4096) {
+                res.spectrum_freqs = f;
+                res.spectrum.push(Curve { name: spec.nets[k].clone(), values: db });
+            }
+            res.waves.push(Curve { name: spec.nets[k].clone(), values });
         }
     }
 
@@ -1114,17 +1117,40 @@ pub fn run(spec: &CircuitSpec, name: &str, hash: u64) -> CircuitResult {
                     continue;
                 }
             }
+            (
+                m @ (Measure::Peak(n)
+                | Measure::Trough(n)
+                | Measure::Rms(n)
+                | Measure::Freq(n)
+                | Measure::Thd(n)),
+                At::Window(a, b),
+            ) => {
+                let ys: Vec<f64> = tran_x.iter().map(|x| v(x, *n)).collect();
+                crate::wave::Window::new(&tran_times, &ys, a, b).and_then(|w| match m {
+                    Measure::Peak(_) => Some(w.peak()),
+                    Measure::Trough(_) => Some(w.trough()),
+                    Measure::Rms(_) => Some(w.rms()),
+                    Measure::Freq(_) => w.freq(),
+                    _ => w.thd(),
+                })
+            }
             _ => None,
         };
         let unit = match (&c.measure, c.at) {
             (Measure::Volts(_), At::Freq(_)) => "dB",
-            (Measure::Volts(_), _) => "V",
+            (Measure::Volts(_) | Measure::Peak(_) | Measure::Trough(_) | Measure::Rms(_), _) => "V",
             (Measure::Amps(_), _) => "A",
             (Measure::Phase(_), _) => "deg",
             (Measure::Noise(_), _) => "V/rtHz",
+            (Measure::Freq(_), _) => "Hz",
+            (Measure::Thd(_), _) => "%",
         };
         let Some(value) = value else {
-            res.failures.push(format!("{}: outside the analysed range", c.label));
+            let why = match c.measure {
+                Measure::Freq(_) | Measure::Thd(_) => "fewer than one full period in the span",
+                _ => "outside the analysed range",
+            };
+            res.failures.push(format!("{}: {why}", c.label));
             continue;
         };
         let passed = c.min.is_none_or(|m| value >= m) && c.max.is_none_or(|m| value <= m);

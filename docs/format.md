@@ -2489,6 +2489,15 @@ min = 19.5
 # phase = "OUT"                # degrees at a frequency
 # noise = "OUT"                # V/rtHz at a frequency, at the [noise] output
 
+[[checks]]
+thd = "OUT"                    # over the transient: peak, trough, rms, freq or thd
+from = "2ms"                   # the span read, default the whole transient
+# to = "10ms"
+max = "1%"
+# peak = "OUT"                 # highest voltage in the span; trough is the lowest
+# rms = "OUT"                  # RMS about the span's mean, V
+# freq = "OUT"                 # from the rising crossings of the mean, Hz
+
 [[blocks]]                     # a model for a part, by `ref` or by `value` (every such part)
 ref = "U1"
 kind = "opamp"
@@ -2500,6 +2509,14 @@ gbw = "1MHz"
 # headroom = "0.1V"            # how close the output swings to its rails
 # pins = { inp = "3", inn = "2", out = "1", vcc = "8", vee = "4" }
 ```
+
+`thd` is the harmonics 2 to 10 against the fundamental, in percent, over the whole periods
+between the first and last rising crossing of the mean in the span. `freq` and `thd` need at
+least one full period there. Start the span after the circuit settles, or the start-up step
+reads as distortion.
+
+A transient also stores the spectrum of each recorded net over its second half (a Hann window,
+in dBV, 2048 bins), drawn under the transient in the viewer.
 
 The built-in device models below are generic stand-ins (a silicon diode, a small-signal BJT, a
 logic-level MOSFET), not the part on the schematic. Give each part that matters a block with
