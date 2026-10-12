@@ -1976,7 +1976,7 @@ impl LayoutFile {
         }
         let floating = floating_islands(&items, &island_nodes, &mut uf);
         let drop_floating = !pour::keep_floating();
-        let mut cut: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut cut: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
         for (n, touched) in island_nodes.iter().enumerate() {
             if drop_floating && floating[n] {
                 let (zi, k) = island_of[n];
