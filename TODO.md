@@ -57,3 +57,8 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `render pcb:NAME --hide F.Cu` draws no B.Cu copper unless `--show B.Cu` is also given.
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
   U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`).
+
+## Topological router (taken: topo-port)
+
+- Port `topo.rs` from the `layout-engine` branch (5952707) onto master's stages, as a router or a
+  `prefer` guide for the negotiated detail router.
