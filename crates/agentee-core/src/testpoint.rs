@@ -653,6 +653,9 @@ fn via_room(
     bb.add_circle(at, vr);
     for k in cx.items_near(&bb, vr + OWN_ROOM) {
         let it = &items[k];
+        if matches!(it.owner, crate::drc::Owner::Pad(..)) && it.shape.circle_gap(at, vr) < 0.0 {
+            return false;
+        }
         if it.net == Some(net) && !matches!(it.owner, crate::drc::Owner::Pad(..)) {
             let g = it.shape.circle_gap(at, vr);
             if g > -1e-3 && g < OWN_ROOM {

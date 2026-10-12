@@ -270,3 +270,38 @@ fn a_net_with_copper_on_the_probe_side_gets_a_stub_and_no_via() {
     let on_pad = agentee_core::geom::dist(stub, c);
     assert!(on_track < 1e-3 || on_pad < 1e-3, "stub from {at:?} ends at {stub:?}");
 }
+
+#[test]
+fn a_probe_via_stays_out_of_every_pad() {
+    let nets: &[(&str, &str, &[&str])] = &[
+        ("3V3", "Default", &["R1.1", "R2.1", "R4.2"]),
+        ("1V8", "Default", &["R1.2", "R2.2"]),
+        ("VBUS", "Default", &["R3.1", "R4.1"]),
+        ("VBAT", "Default", &["R3.2"]),
+    ];
+    let mut bad = Vec::new();
+    for dx in [0.0, 0.3, 0.6, 0.9] {
+        let parts = [
+            part("R1", [20.0 + dx, 15.0]),
+            part("R2", [21.5, 15.0 + dx]),
+            part("R3", [20.5, 16.5]),
+            part("R4", [19.0, 16.0 + dx]),
+        ];
+        let p = load("", &parts, nets, "");
+        let layout = &p.layouts[0].item;
+        let targets: Vec<usize> = (0..layout.nets.len()).collect();
+        let spots = testpoint::place(layout, &p.boards[0].item, &layout.test, &targets, 1.27);
+        for v in spots.iter().filter_map(|s| s.via) {
+            for q in layout.parts.iter().flat_map(|x| x.pads.iter()) {
+                for ring in &q.outlines {
+                    let inside = agentee_core::geom::point_in_polygon(v, ring);
+                    let edge = agentee_core::drc::edge_distance(ring, v);
+                    if inside || edge < 0.3 {
+                        bad.push((dx, v));
+                    }
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "vias in pads: {bad:?}");
+}

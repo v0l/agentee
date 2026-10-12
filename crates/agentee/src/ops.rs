@@ -1439,9 +1439,12 @@ fn add_to_sheet(path: &Path, reference: &str, net: &str) -> Result<bool, String>
         parts.map(|a| a.iter().filter(|t| !is_tp(t)).filter_map(at).collect()).unwrap_or_default();
     let x = others.iter().map(|p| p.0).fold(0.0, f64::max) + 12.7;
     let x = (x / 2.54).ceil() * 2.54;
-    let column = placed.iter().filter(|p| (p.0 - x).abs() < 1e-6).count();
-    let y = others.iter().map(|p| p.1).fold(f64::MAX, f64::min);
-    let y = if y == f64::MAX { 20.32 } else { (y / 2.54).round() * 2.54 } + column as f64 * 7.62;
+    let top = others.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+    let top = if top == f64::MAX { 20.32 } else { (top / 2.54).round() * 2.54 };
+    let y = (0..)
+        .map(|k| top + k as f64 * 7.62)
+        .find(|y| !placed.iter().any(|p| (p.0 - x).abs() < 2.54 && (p.1 - y).abs() < 5.08))
+        .unwrap_or(top);
     let mut part = toml_edit::Table::new();
     part["ref"] = toml_edit::value(reference);
     part["symbol"] = toml_edit::value(agentee_core::testpoint::SYMBOL);
@@ -2378,4 +2381,41 @@ pub fn bom_cost(
     let most = *counts.last().unwrap_or(&1);
     let r = parts(p, name, &PartsQuery { boards: most, alternatives: false, ..*q })?;
     Ok(agentee_parts::cost::of(name, &counts, &r))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_new_test_point_takes_a_free_spot_in_the_column() {
+        let dir = std::env::temp_dir().join(format!("agentee-tp-sheet-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("mcu.sch.toml");
+        let tp = |r: &str, y: f64| {
+            format!(
+                "\n[[parts]]\nref = \"{r}\"\nsymbol = \"TestPoint\"\nvalue = \"TP\"\nat = [22.86, {y}]\n"
+            )
+        };
+        let text = format!(
+            "name = \"mcu\"\n\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 10.16]\n{}{}\n[[nets]]\nname = \"A\"\npins = [\"R1.1\"]\n",
+            tp("TP1", 10.16),
+            tp("TP2", 25.4)
+        );
+        std::fs::write(&path, text).unwrap();
+        assert!(super::add_to_sheet(&path, "TP3", "A").unwrap());
+        assert!(super::add_to_sheet(&path, "TP4", "A").unwrap());
+        let doc: toml_edit::DocumentMut = std::fs::read_to_string(&path).unwrap().parse().unwrap();
+        let at = |r: &str| {
+            let t = doc["parts"]
+                .as_array_of_tables()
+                .unwrap()
+                .iter()
+                .find(|t| t["ref"].as_str() == Some(r))
+                .unwrap();
+            let a = t["at"].as_array().unwrap();
+            [a.get(0).unwrap().as_float().unwrap(), a.get(1).unwrap().as_float().unwrap()]
+        };
+        assert_eq!(at("TP3"), [22.86, 17.78]);
+        assert_eq!(at("TP4"), [22.86, 33.02]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
