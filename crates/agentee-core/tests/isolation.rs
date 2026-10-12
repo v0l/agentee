@@ -424,3 +424,54 @@ fn spacing_answers_the_same_gap_the_barrier_checks() {
     assert_eq!(s.gap(hot, None, 0), b.netclass("Mains").unwrap().clearance.to_mm());
     assert!(s.reach(hot) >= creepage);
 }
+
+const HIGH_SIDE: &str = "[[netclasses]]\nname = \"HighSide\"\ntrack_width = \"0.3mm\"\nvia = \"std\"\nvoltage = \"430VDC\"\nown_voltage = \"15VDC\"\n[[netclasses]]\nname = \"Bus\"\ntrack_width = \"0.5mm\"\nvia = \"std\"\nvoltage = \"430VDC\"\n";
+
+fn high_side(gap: f64, other: &str) -> Project {
+    let (fps, pcb) = across(gap);
+    load(&Board {
+        rules: HIGH_SIDE,
+        cutouts: "",
+        footprints: &fps,
+        parts: &[("U1", "ONE", 1), ("U2", "ONE", 1)],
+        nets: &[
+            ("HB", "HighSide", &["U1.1"]),
+            (other, if other == "SW" { "HighSide" } else { "Bus" }, &["U2.1"]),
+        ],
+        pcb: &pcb,
+    })
+}
+
+#[test]
+fn nets_that_ride_together_keep_their_own_voltage_apart() {
+    let p = high_side(1.0, "SW");
+    let class = p.boards[0].item.netclass("HighSide").unwrap();
+    assert_eq!(class.clearance.to_mm(), 2.5, "voltage still sets the class clearance");
+    assert_eq!(class.own_clearance, Some(p.boards[0].item.rules.min_clearance));
+    assert!(hits(&p, "clearance").is_empty(), "{:?}", hits(&p, "clearance"));
+    let p = high_side(1.0, "BUS");
+    let e = hits(&p, "clearance");
+    assert!(e.iter().any(|m| m.contains("needs 2.5mm")), "{e:?}");
+}
+
+#[test]
+fn an_own_voltage_above_the_voltage_is_an_error() {
+    let rules = HIGH_SIDE.replace("own_voltage = \"15VDC\"", "own_voltage = \"500VDC\"");
+    let (fps, pcb) = across(3.0);
+    let p = load(&Board {
+        rules: &rules,
+        cutouts: "",
+        footprints: &fps,
+        parts: &[("U1", "ONE", 1), ("U2", "ONE", 1)],
+        nets: &[("HB", "HighSide", &["U1.1"]), ("SW", "HighSide", &["U2.1"])],
+        pcb: &pcb,
+    });
+    assert!(
+        p.boards[0]
+            .diags
+            .iter()
+            .any(|d| d.severity == Severity::Error && d.message.contains("above its `voltage`")),
+        "{:?}",
+        p.boards[0].diags
+    );
+}

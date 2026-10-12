@@ -203,7 +203,9 @@ Order of work, each stage passing check before the next:
    defaults DC sim supplies, makes the power nets of the class rails for the level check (a rail
    named for its voltage, `1V8`, `3V3_PLL`, takes that voltage instead) and checks capacitor
    ratings. Above SELV, one class per conductor that can differ: `DC+`/`DC-` with signed
-   voltages, `L1`, `L2`, `L3` each `"230VAC"`, never two phases in one class. Do not write `[[domains]]` or `[[barriers]]`
+   voltages, `L1`, `L2`, `L3` each `"230VAC"`, never two phases in one class. Nets that ride
+   together on a switch node (a half-bridge high side) share a class with `own_voltage`, the most
+   they differ from each other. Do not write `[[domains]]` or `[[barriers]]`
    for what a voltage already covers.
    `agentee edit board` does all of this, and check names the width a class needs.
 2. **Parts.** Import rather than draw (see below). Every symbol pin number needs a pad of the same

@@ -7,6 +7,7 @@ pub struct ClassClearance {
     pub of: Vec<f64>,
     pub unconnected: f64,
     widest: f64,
+    own: Vec<Option<(usize, f64)>>,
 }
 
 impl ClassClearance {
@@ -17,7 +18,14 @@ impl ClassClearance {
             .map(|c| c.clearance.to_mm())
             .unwrap_or(board.rules.min_clearance.to_mm());
         let widest = of.iter().copied().fold(unconnected, f64::max);
-        ClassClearance { of, unconnected, widest }
+        let own = nets
+            .iter()
+            .map(|n| {
+                let k = board.netclasses.iter().position(|c| c.name == n.class)?;
+                Some((k, board.netclasses[k].own_clearance?.to_mm()))
+            })
+            .collect();
+        ClassClearance { of, unconnected, widest, own }
     }
 
     pub fn of(&self, net: Option<usize>) -> f64 {
@@ -25,6 +33,18 @@ impl ClassClearance {
             Some(n) => self.of.get(n).copied().unwrap_or(self.unconnected),
             None => self.unconnected,
         }
+    }
+
+    pub fn own(&self, a: Option<usize>, b: Option<usize>) -> Option<f64> {
+        let own = |n: Option<usize>| n.and_then(|n| self.own.get(n).copied().flatten());
+        match (own(a), own(b)) {
+            (Some((x, c)), Some((y, _))) if x == y => Some(c),
+            _ => None,
+        }
+    }
+
+    pub fn between(&self, a: Option<usize>, b: Option<usize>) -> f64 {
+        self.own(a, b).unwrap_or_else(|| self.of(a).max(self.of(b)))
     }
 }
 
@@ -37,7 +57,7 @@ impl Spacing for ClassClearance {
         if a.is_some() && a == b {
             return 0.0;
         }
-        self.of(a).max(self.of(b))
+        self.between(a, b)
     }
 
     fn reach(&self, net: Option<usize>) -> f64 {
@@ -94,12 +114,15 @@ pub fn need<C: super::Context>(
         board.domain_of(&net.name, &net.class).first().is_some_and(|&d| !board.domains[d].implicit)
     };
     Some(match (footprint(owner), footprint(b.owner)) {
-        (None, None) if same_part => [net, b.net]
-            .into_iter()
-            .flatten()
-            .filter(|&n| explicit(n))
-            .map(|n| cx.nets()[n].clearance)
-            .fold(min_clearance, f64::max),
+        (None, None) if same_part => match spacing.class.own(net, b.net) {
+            Some(own) => own.max(min_clearance),
+            None => [net, b.net]
+                .into_iter()
+                .flatten()
+                .filter(|&n| explicit(n))
+                .map(|n| cx.nets()[n].clearance)
+                .fold(min_clearance, f64::max),
+        },
         (None, None) => spacing.class.gap(net, b.net, spacing.layer(0)),
         (x, y) => x.unwrap_or(0.0).max(y.unwrap_or(0.0)).max(min_clearance),
     })

@@ -26,7 +26,7 @@ pub fn bool_flags(name: &str) -> &'static [&'static str] {
 pub fn usage(name: &str) -> &'static str {
     match name {
         "class" => {
-            "class NAME [--track-width 0.2mm] [--clearance 0.2mm] [--voltage 48VDC|230VAC] [--via std] [--current 1A] [--max-temp-rise 10C] [--impedance 50ohm] [--impedance-tolerance 10%] [--solver field] [--diff-gap 0.15mm] [--coplanar-gap 0.2mm] [--layers F.Cu] [--max-skew 1mm] [--max-uncoupled 1mm] [--neckdown 1mm] [--width LAYER=WIDTH ...] [--description TEXT]"
+            "class NAME [--track-width 0.2mm] [--clearance 0.2mm] [--voltage 48VDC|230VAC] [--own-voltage 15VDC] [--via std] [--current 1A] [--max-temp-rise 10C] [--impedance 50ohm] [--impedance-tolerance 10%] [--solver field] [--diff-gap 0.15mm] [--coplanar-gap 0.2mm] [--layers F.Cu] [--max-skew 1mm] [--max-uncoupled 1mm] [--neckdown 1mm] [--width LAYER=WIDTH ...] [--description TEXT]"
         }
         "unclass" => "unclass NAME ...",
         "via" => {
@@ -71,6 +71,7 @@ fn class(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         ("track-width", "track_width"),
         ("clearance", "clearance"),
         ("voltage", "voltage"),
+        ("own-voltage", "own_voltage"),
         ("current", "current"),
         ("max-temp-rise", "max_temp_rise"),
         ("impedance", "impedance"),
@@ -83,7 +84,7 @@ fn class(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         ("neckdown", "neckdown"),
     ] {
         if let Some(v) = o.take(flag) {
-            if key == "voltage" {
+            if key == "voltage" || key == "own_voltage" {
                 agentee_core::insulation::Voltage::parse(&v)?;
                 found.push((key, toml_edit::Value::from(v).into()));
                 continue;

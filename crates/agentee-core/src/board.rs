@@ -463,6 +463,8 @@ pub struct NetclassFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voltage: Option<Voltage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own_voltage: Option<Voltage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub track_width: Option<Length>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clearance: Option<Length>,
@@ -1227,8 +1229,10 @@ pub struct Netclass {
     pub name: String,
     pub description: String,
     pub voltage: Option<Voltage>,
+    pub own_voltage: Option<Voltage>,
     pub track_width: Length,
     pub clearance: Length,
+    pub own_clearance: Option<Length>,
     pub via: Vec<String>,
     pub current: Option<Amps>,
     pub max_temp_rise: Kelvin,
@@ -1413,13 +1417,15 @@ impl BoardFile {
                         .unwrap_or(rules.min_track_width)
                 });
                 let rated = n.voltage.map(|v| Length::mm(crate::insulation::own_clearance(v)));
+                let between =
+                    if n.own_voltage.is_some() { "to other classes" } else { "between its own nets" };
                 if let (Some(need), Some(set), Some(v)) = (rated, n.clearance, n.voltage)
                     && set < need
                 {
                     d.error(
                         &at,
                         format!(
-                            "netclass `{}` carries {v}, which needs {need} between its own nets on an outer layer (IPC-2221B table 6-1, uncoated); `clearance` is {set}, raise it or leave it out",
+                            "netclass `{}` carries {v}, which needs {need} {between} on an outer layer (IPC-2221B table 6-1, uncoated); `clearance` is {set}, raise it or leave it out",
                             n.name
                         ),
                     );
@@ -1427,12 +1433,36 @@ impl BoardFile {
                 let clearance = n
                     .clearance
                     .unwrap_or_else(|| rated.map_or(rules.min_clearance, |r| r.max(rules.min_clearance)));
+                let own_clearance = n.own_voltage.map(|own| {
+                    match n.voltage {
+                        None => d.error(
+                            &at,
+                            format!(
+                                "netclass `{}` has `own_voltage` but no `voltage`: `voltage` is what its nets reach against ground and sets the spacing to other classes, `own_voltage` only the spacing among its own nets",
+                                n.name
+                            ),
+                        ),
+                        Some(v) if own.peak() > v.peak() + 1e-9 => d.error(
+                            &at,
+                            format!(
+                                "netclass `{}` has `own_voltage` {own} above its `voltage` {v}: nets that ride together sit closer to each other than to ground",
+                                n.name
+                            ),
+                        ),
+                        Some(_) => {}
+                    }
+                    Length::mm(crate::insulation::own_clearance(own))
+                        .max(rules.min_clearance)
+                        .min(clearance)
+                });
                 Netclass {
                     name: n.name.clone(),
                     description: n.description.clone(),
                     voltage: n.voltage,
+                    own_voltage: n.own_voltage,
                     track_width,
                     clearance,
+                    own_clearance,
                     via: n.via.as_ref().map(ViaNames::list).unwrap_or_default(),
                     current: n.current,
                     max_temp_rise: n.max_temp_rise.unwrap_or(Kelvin(10.0)),

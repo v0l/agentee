@@ -95,6 +95,7 @@ track_width = "1mm"
 current = "3A"                 # checked against IPC-2221 on every layer
 max_temp_rise = "10C"          # default 10C
 voltage = "48VDC"              # or "-12VDC", "230VAC" (rms); sets spacing, see Net class voltage
+# own_voltage = "15VDC"        # nets that ride together, see Net class voltage
 
 [[netclasses]]
 name = "USB"
@@ -472,6 +473,15 @@ Give each conductor that can stand at a different voltage its own class: `DC+ = 
 are only held to that class's own clearance, so L1 and L2 in one `Mains` class would miss the
 line to line voltage. Two AC classes are taken as in antiphase (L1 to L2 at 460 V rather than
 398 V), which errs on the safe side.
+
+The opposite case is a group of nets that move together: the high side of a half bridge, where
+the bootstrap, the gate drive and the gate sit within 15 V of the switch node while the node
+swings over the whole bus. Put them in one class with `voltage = "430VDC"`, what they reach
+against ground, and `own_voltage = "15VDC"`, the most they differ from each other. `voltage` keeps
+setting the class clearance to every other class and the barriers; `own_voltage` sets the
+clearance between two nets of the class (IPC-2221B B2 for its peak, never under the fab's
+`min_clearance`), on tracks and between pads of one footprint. Pours keep the class clearance,
+and `agentee route` keeps it too, so route these few nets by hand or let them take the wider gap.
 
 The voltage reaches further than spacing:
 
