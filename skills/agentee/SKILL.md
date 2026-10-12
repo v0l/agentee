@@ -72,7 +72,7 @@ agentee library add S2B-PH-K-S --name JST-PH-2 --role connector \
     --manufacturer JST --rating "2 A, 100 V"
 agentee library show JST-PH-2      # files, where they came from, datasheet, stock
 agentee library refresh            # stock and price of every part, one lookup each
-agentee library verify             # symbol vs footprint vs datasheet, model vs footprint, hashes
+agentee library verify             # symbol vs footprint vs datasheet, model, fab minimums, hashes
 ```
 
 `add` copies the symbol, footprint and 3D model in, sets the footprint `height` from the model,

@@ -516,6 +516,7 @@ impl Footprint {
             d.warn("pads", "footprint has no pads");
         }
         let mut small_drills: Vec<(&str, Length)> = Vec::new();
+        let mut narrow_slots: Vec<(&str, Length, Length)> = Vec::new();
         let mut unnumbered = 0;
         let mut tht_on_smd = 0;
         for (i, p) in self.pads.iter().enumerate() {
@@ -562,6 +563,16 @@ impl Footprint {
                 }
                 _ => {}
             }
+            if let (PadKind::Tht | PadKind::Npth, Some(dr @ Drill::Slot(_))) = (p.kind, p.drill) {
+                let floor = if p.kind == PadKind::Tht {
+                    rules.min_plated_slot_width
+                } else {
+                    rules.min_npth_slot_width
+                };
+                if dr.min() < floor {
+                    narrow_slots.push((&p.number, dr.min(), floor));
+                }
+            }
             if p.kind == PadKind::Tht && self.mount == Mount::Smd {
                 tht_on_smd += 1;
             }
@@ -577,6 +588,16 @@ impl Footprint {
                     "{} holes are under the fab minimum drill {} (smallest {smallest}, pads {pads})",
                     small_drills.len(),
                     rules.min_drill
+                ),
+            );
+        }
+        if let Some(&(_, smallest, floor)) = narrow_slots.iter().min_by_key(|x| x.1) {
+            let pads = list(narrow_slots.iter().map(|x| x.0));
+            d.error(
+                "pads",
+                format!(
+                    "{} slots are under the fab minimum slot width {floor} (narrowest {smallest}, pads {pads})",
+                    narrow_slots.len()
                 ),
             );
         }
@@ -886,6 +907,24 @@ size = [0.6, 1.14]
             "{:?}",
             d.list
         );
+    }
+
+    #[test]
+    fn a_slot_narrower_than_the_fab_takes_is_an_error() {
+        let pad = |w: f64| {
+            format!(
+                "name = \"t\"\n[[pads]]\nnumber = \"1\"\nkind = \"tht\"\nshape = \"oval\"\nat = [0, 0]\nsize = [{}, 2.5]\ndrill = [{w}, 1.5]\n",
+                w + 0.6
+            )
+        };
+        let errors = |w: f64| {
+            let f: FootprintFile = toml::from_str(&pad(w)).unwrap();
+            let mut d = Diags::new("t");
+            f.resolve(&mut d).check(&fab_rules("jlcpcb").unwrap(), &mut d);
+            d.list.into_iter().filter(|x| x.message.contains("slot")).count()
+        };
+        assert_eq!(errors(0.4), 1);
+        assert_eq!(errors(0.7), 0);
     }
 
     #[test]

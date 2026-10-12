@@ -954,6 +954,20 @@ fn verify_one(e: &Entry, cache: &Cache) -> Vec<Finding> {
                     .map(|f| f.resolve(&mut agentee_core::diag::Diags::new(&f.name)))
             },
         );
+    if let Some(fp) = &fp
+        && let Some(rules) = agentee_core::board::fab_rules("jlcpcb")
+    {
+        let mut d = agentee_core::diag::Diags::new(&fp.name);
+        fp.check(&rules, &mut d);
+        let mut seen = std::collections::BTreeMap::new();
+        for x in d.list.iter().filter(|x| x.severity == agentee_core::Severity::Error) {
+            *seen.entry(x.message.clone()).or_insert(0) += 1;
+        }
+        for (m, n) in seen {
+            let times = if n > 1 { format!(", {n} pads") } else { String::new() };
+            push(false, format!("{}: {m}{times} (jlcpcb rules)", fp.name));
+        }
+    }
     if let Some(fp) = &fp {
         let pads: std::collections::BTreeSet<String> =
             fp.pad_numbers().into_iter().filter(|n| !n.is_empty()).map(str::to_string).collect();

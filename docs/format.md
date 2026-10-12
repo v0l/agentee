@@ -2930,7 +2930,8 @@ API call, as of that date.
 
 `verify` checks each part: every symbol pin has a pad, the pinned datasheet names the part number
 and the package (or a pin count), the symbol's pin names appear in it, the model's outline fits
-the courtyard, and each file still has the hash it was added with. It exits 1 when one fails.
+the courtyard, the footprint's holes, slots and rings meet JLCPCB's minimums, and each file still
+has the hash it was added with. It exits 1 when one fails.
 
 `check` warns (rule `library`) when a design uses a part outside the library for a role the
 library holds, naming the library part to use: the one with the same pin count, the preferred one
