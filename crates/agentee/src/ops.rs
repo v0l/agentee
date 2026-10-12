@@ -393,6 +393,22 @@ pub fn write_fills(p: &Project, name: &str) -> Result<Value, String> {
     Ok(report)
 }
 
+fn leading_comments(doc: &toml_edit::DocumentMut) -> String {
+    let prefix = doc
+        .get("fills")
+        .and_then(|i| i.as_array_of_tables())
+        .and_then(|a| a.get(0))
+        .and_then(|t| t.decor().prefix())
+        .and_then(|p| p.as_str())
+        .unwrap_or_default();
+    prefix
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with('#'))
+        .map(|l| format!("{l}\n"))
+        .collect()
+}
+
 fn with_fills(
     text: &str,
     layout: &agentee_core::layout::Layout,
@@ -411,9 +427,13 @@ fn with_fills(
             .collect(),
     };
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("{e}"))?;
+    let lead = leading_comments(&doc);
     doc.remove("fills");
     let mut out = doc.to_string().trim_end().to_string();
     out.push('\n');
+    if !lead.is_empty() {
+        out += &lead;
+    }
     if !fills.fills.is_empty() {
         out.push('\n');
         out += &toml::to_string(&fills).map_err(|e| e.to_string())?;
@@ -2386,6 +2406,13 @@ pub fn bom_cost(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_plan_end_marker_before_the_fills_survives_a_refill() {
+        let text = "name = \"x\"\n\n# plan route\n[[tracks]]\nnet = \"A\"\nlayer = \"F.Cu\"\npoints = [[0, 0], [1, 0]]\n# end plan route\n\n[[fills]]\nzone = 0\nlayer = \"B.Cu\"\nhash = \"0\"\nrings = []\n";
+        let doc: toml_edit::DocumentMut = text.parse().unwrap();
+        assert_eq!(super::leading_comments(&doc), "# end plan route\n");
+    }
+
     #[test]
     fn a_new_test_point_takes_a_free_spot_in_the_column() {
         let dir = std::env::temp_dir().join(format!("agentee-tp-sheet-{}", std::process::id()));
