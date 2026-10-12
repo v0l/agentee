@@ -29,6 +29,94 @@ pub struct BoardFile {
     pub pollution_degree: Option<u8>,
     #[serde(default)]
     pub drc: DrcFile,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fab_notes: Option<FabNotesFile>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FabNotesFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ipc_class: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hole_tolerance: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub npth_tolerance: Option<Length>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remove_unused_pads: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marking: Option<MarkingFile>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MarkingFile {
+    Word(String),
+    At(Point),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Marking {
+    Omit,
+    Anywhere,
+    At([f64; 2]),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct FabNotes {
+    pub ipc_class: u8,
+    pub hole_tolerance: f64,
+    pub npth_tolerance: f64,
+    pub remove_unused_pads: bool,
+    pub marking: Marking,
+}
+
+impl FabNotesFile {
+    fn resolve(&self, outline: Option<&Outline>, d: &mut Diags) -> FabNotes {
+        let ipc_class = self.ipc_class.unwrap_or(2);
+        if !(1..=3).contains(&ipc_class) {
+            d.error("fab_notes.ipc_class", "`ipc_class` is 1, 2 or 3 (IPC-6012)");
+        }
+        let marking = match &self.marking {
+            None => Marking::Anywhere,
+            Some(MarkingFile::At(p)) => {
+                let at = p.to_mm();
+                if outline.is_some_and(|o| !crate::geom::point_in_polygon(at, &o.points())) {
+                    d.error(
+                        "fab_notes.marking",
+                        format!("marking spot [{}, {}] is off the board outline", at[0], at[1]),
+                    );
+                }
+                Marking::At(at)
+            }
+            Some(MarkingFile::Word(w)) => match w.as_str() {
+                "omit" => Marking::Omit,
+                "anywhere" => Marking::Anywhere,
+                _ => {
+                    d.error(
+                        "fab_notes.marking",
+                        format!("marking `{w}` is \"omit\", \"anywhere\" or a spot [x, y]"),
+                    );
+                    Marking::Anywhere
+                }
+            },
+        };
+        let tolerance = |v: Option<Length>, default: f64, key: &str, d: &mut Diags| {
+            let v = v.map_or(default, Length::to_mm);
+            if v <= 0.0 {
+                d.error(format!("fab_notes.{key}"), format!("`{key}` is a plus or minus, above 0"));
+            }
+            v
+        };
+        FabNotes {
+            ipc_class,
+            hole_tolerance: tolerance(self.hole_tolerance, 0.08, "hole_tolerance", d),
+            npth_tolerance: tolerance(self.npth_tolerance, 0.05, "npth_tolerance", d),
+            remove_unused_pads: self.remove_unused_pads.unwrap_or(true),
+            marking,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1174,6 +1262,7 @@ pub struct Board {
     pub domains: Vec<Domain>,
     pub barriers: Vec<Barrier>,
     pub drc: DrcFile,
+    pub fab_notes: FabNotes,
 }
 
 impl Board {
@@ -1370,6 +1459,7 @@ impl BoardFile {
         }
         let (mut domains, mut barriers) = self.resolve_isolation(d);
         implicit_isolation(&netclasses, pollution_degree, &mut domains, &mut barriers);
+        let fab_notes = self.fab_notes.clone().unwrap_or_default().resolve(outline.as_ref(), d);
         Board {
             pollution_degree,
             name: self.name.clone(),
@@ -1384,6 +1474,7 @@ impl BoardFile {
             domains,
             barriers,
             drc: self.drc.clone(),
+            fab_notes,
         }
     }
 

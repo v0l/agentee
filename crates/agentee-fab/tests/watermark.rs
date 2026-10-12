@@ -195,3 +195,45 @@ fn the_title_rule_only_applies_to_a_layout_with_a_title() {
     assert!(!applies(""));
     assert!(applies("title = \"T\"\n"));
 }
+
+#[test]
+fn the_notes_carry_the_class_tolerances_and_marking() {
+    let (p, dir) = project([40.0, 20.0], "");
+    let out = dir.join("fab");
+    package(&p, &out).unwrap();
+    let notes = std::fs::read_to_string(out.join("fab-notes.txt")).unwrap();
+    assert!(notes.contains("IPC-6012 class 2\n"), "{notes}");
+    assert!(notes.contains("plated +/-0.08 mm, non-plated +/-0.05 mm"), "{notes}");
+    assert!(notes.contains("Fab marking (logo, date code, order number): anywhere"), "{notes}");
+    assert!(!notes.contains("non-functional"), "{notes}");
+
+    let asked = format!(
+        "{PRESET}[fab_notes]\nipc_class = 3\nhole_tolerance = \"0.05mm\"\nmarking = [30, 10]\n"
+    );
+    let (p, dir) = project_with([40.0, 20.0], &asked, "");
+    let out = dir.join("fab");
+    package(&p, &out).unwrap();
+    let notes = std::fs::read_to_string(out.join("fab-notes.txt")).unwrap();
+    assert!(notes.contains("IPC-6012 class 3\n"), "{notes}");
+    assert!(notes.contains("plated +/-0.05 mm"), "{notes}");
+    assert!(notes.contains("at [30.00, 10.00] mm only"), "{notes}");
+
+    let four = "preset = \"jlcpcb-4l-1.6mm-7628\"\n[fab_notes]\nmarking = \"omit\"\n";
+    let (p, dir) = project_with([40.0, 20.0], four, "");
+    let out = dir.join("fab");
+    package(&p, &out).unwrap();
+    let notes = std::fs::read_to_string(out.join("fab-notes.txt")).unwrap();
+    assert!(notes.contains("Remove non-functional pads on inner layers"), "{notes}");
+    assert!(notes.contains("leave it off the board"), "{notes}");
+
+    for bad in ["ipc_class = 4\n", "marking = [90, 10]\n", "marking = \"logo\"\n"] {
+        let (p, _) = project_with([40.0, 20.0], &format!("{PRESET}[fab_notes]\n{bad}"), "");
+        let errors: Vec<&str> = p.boards[0]
+            .diags
+            .iter()
+            .filter(|d| d.severity == agentee_core::diag::Severity::Error)
+            .map(|d| d.message.as_str())
+            .collect();
+        assert_eq!(errors.len(), 1, "{bad}: {errors:?}");
+    }
+}

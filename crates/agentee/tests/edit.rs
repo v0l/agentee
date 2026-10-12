@@ -685,7 +685,9 @@ fn label_sets_and_clears_the_silk_reference() {
 #[test]
 fn a_net_goes_on_the_sheet_that_holds_its_pins() {
     let d = dir("netsheet");
-    let part = |r: &str| format!("\n[[parts]]\nref = \"{r}\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [0, 0]\n");
+    let part = |r: &str| {
+        format!("\n[[parts]]\nref = \"{r}\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [0, 0]\n")
+    };
     std::fs::write(
         d.join("other.sch.toml"),
         format!("name = \"other\"\n{}\n[[nets]]\nname = \"+5V\"\npins = [\"R9.1\"]\n", part("R9")),

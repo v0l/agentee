@@ -742,6 +742,19 @@ saturated near-end crosstalk of a long line (half the coupling). The two modes l
 Cohn's exact edge-coupled stripline. A difference between the odd and even delays is what drives
 far-end crosstalk on microstrip.
 
+`[fab_notes]` sets what `fab-notes.txt` asks of the fab beyond the stackup. Every key is optional
+and the notes always carry the defaults:
+
+```toml
+[fab_notes]
+ipc_class = 2                      # IPC-6012 class, 1, 2 or 3, default 2
+hole_tolerance = "0.08mm"          # finished plated hole, plus or minus, default 0.08mm
+npth_tolerance = "0.05mm"          # non-plated holes, default 0.05mm
+remove_unused_pads = true          # non-functional pads off inner layers, default true (4+ layers)
+marking = "anywhere"               # fab logo, date code, order number: "omit", "anywhere" or a
+                                   # spot [x, y] on the board where it may go
+```
+
 ## Symbol (`*.sym.toml`)
 
 ```toml
@@ -2609,7 +2622,7 @@ imported layout lands where KiCad's own IPC-D-356 export puts it (2089 and 165 p
 | `drill-backdrill-FROM-TO.drl` | the backdrill holes of each side and stop layer, non-plated, at the backdrill diameter, with the stop layer and `max_stub` in a comment |
 | `bom.csv`, `bom-jlcpcb.csv` | grouped by value, footprint, `mpn` and `lcsc` fields |
 | `cpl.csv` | placement, JLCPCB columns |
-| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, each via type with its span, laser, mechanical or controlled depth drill, sizes, hole count, IPC-4761 fill and drill file, and each backdrill with its side, stop layer and stub, vias in pads to fill, edge pads to keep |
+| `fab-notes.txt` | the agentee version and watermark spot, stackup, finish, impedance classes, each via type with its span, laser, mechanical or controlled depth drill, sizes, hole count, IPC-4761 fill and drill file, and each backdrill with its side, stop layer and stub, vias in pads to fill, edge pads to keep, and the `[fab_notes]` IPC class, hole tolerances, non-functional pads and fab marking |
 | `NAME.d356` | IPC-D-356A netlist for the fab's bare-board electrical test, columns as KiCad writes them; test point pads are end points with the probe side access code (`A01` top, the copper layer count for the bottom, `A02` on 2 layers and `A08` on 8), vias are tented mid points unless `[test] vias = true` makes them probe side access; an unprobed via's access code follows the layers its copper reaches (a backdrill takes its side away): `A00` through, `A01` from the top, the bottom layer number from the bottom, the first layer's number for a buried via |
 | `testpoints.csv` | every test point pad for the fixture builder: ref, pad, net, X, Y (mm, Y up), side, pad diameter |
 | `NAME-gerbers.zip` | every Gerber and drill file, ready to upload to the fab |

@@ -481,6 +481,30 @@ fn notes(layout: &Layout, board: &Board) -> String {
     if let Some(p) = &st.preset {
         let _ = writeln!(out, "Stackup preset {p}");
     }
+    let asked = &board.fab_notes;
+    let _ = writeln!(out, "IPC-6012 class {}", asked.ipc_class);
+    let _ = writeln!(
+        out,
+        "Finished hole tolerance: plated +/-{} mm, non-plated +/-{} mm",
+        agentee_core::units::trim(asked.hole_tolerance, 3),
+        agentee_core::units::trim(asked.npth_tolerance, 3)
+    );
+    if layout.copper.len() > 2 {
+        let _ = writeln!(
+            out,
+            "{} non-functional pads on inner layers",
+            if asked.remove_unused_pads { "Remove" } else { "Keep" }
+        );
+    }
+    let _ = writeln!(
+        out,
+        "Fab marking (logo, date code, order number): {}",
+        match asked.marking {
+            agentee_core::board::Marking::Omit => "leave it off the board".to_string(),
+            agentee_core::board::Marking::Anywhere => "anywhere clear of pads and silk".to_string(),
+            agentee_core::board::Marking::At(p) => format!("at [{:.2}, {:.2}] mm only", p[0], p[1]),
+        }
+    );
     out += "\nStackup, top to bottom:\n";
     for l in &st.layers {
         let extra = if l.kind.is_dielectric() {
