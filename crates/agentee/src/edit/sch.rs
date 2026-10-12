@@ -438,39 +438,11 @@ fn net(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     if let Some(c) = &class {
         s.check_class(board.as_deref(), c)?;
     }
-    let sheets: Vec<PathBuf> = s
-        .docs
-        .keys()
-        .filter(|p| Kind::of(p) == Some(Kind::Schematic))
-        .filter(|p| {
-            s.read(p)
-                .ok()
-                .and_then(|d| d.get("nets"))
-                .and_then(|v| v.as_array_of_tables())
-                .is_some_and(|a| {
-                    a.iter().any(|t| text(t, "name").as_deref() == Some(name.as_str()))
-                })
-        })
-        .cloned()
-        .collect();
     let here = match &sheet {
         Some(sheet) => s.target(Kind::Schematic, sheet)?,
-        None if !sheets.is_empty() => sheets[0].clone(),
-        None => path.to_path_buf(),
+        None => net_sheet(s, path, &name, &pins)?,
     };
-    let existing = s
-        .read(path)?
-        .get("nets")
-        .and_then(|v| v.as_array_of_tables())
-        .and_then(|a| a.iter().position(|t| text(t, "name").as_deref() == Some(name.as_str())));
-    let index = if existing.is_some() {
-        existing
-    } else {
-        s.read(&here)?
-            .get("nets")
-            .and_then(|v| v.as_array_of_tables())
-            .and_then(|a| a.iter().position(|t| text(t, "name").as_deref() == Some(name.as_str())))
-    };
+    let index = net_index(s.read(&here)?, &name);
     let mut joined = Joined { added: Vec::new(), moved: Vec::new() };
     let mut here_pins: Vec<String> = index
         .and_then(|i| {
@@ -485,7 +457,7 @@ fn net(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         if here_pins.contains(&label) {
             continue;
         }
-        if let Some((old, _)) = owner(s.read(path)?, &label) {
+        if let Some((old, _)) = owner(s.read(&here)?, &label) {
             let _ = old;
             s.detach(&here, &old, &label)?;
             joined.moved.push(format!("{label} left net {old}"));
@@ -540,6 +512,69 @@ fn net(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
         log,
         facts: vec![json!({ "net": name, "pins": joined.added, "moved_from": joined.moved })],
     })
+}
+
+fn net_index(doc: &DocumentMut, name: &str) -> Option<usize> {
+    doc.get("nets")
+        .and_then(|v| v.as_array_of_tables())
+        .and_then(|a| a.iter().position(|t| text(t, "name").as_deref() == Some(name)))
+}
+
+fn sheet_name(s: &Session, path: &Path) -> String {
+    s.read(path)
+        .ok()
+        .and_then(|d| d.get("name"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or_default()
+}
+
+fn family(s: &Session, path: &Path) -> Vec<PathBuf> {
+    let mut root = sheet_name(s, path);
+    let mut seen = vec![root.clone()];
+    while let Some(parent) = s
+        .docs
+        .keys()
+        .filter(|p| Kind::of(p) == Some(Kind::Schematic))
+        .find(|p| s.read(p).is_ok_and(|d| texts(d, "sheets").contains(&root)))
+    {
+        let name = sheet_name(s, parent);
+        if seen.contains(&name) {
+            break;
+        }
+        seen.push(name.clone());
+        root = name;
+    }
+    let tree: Vec<PathBuf> = s.sheet_tree(&root).into_iter().map(|(_, p)| p).collect();
+    let mut out = vec![path.to_path_buf()];
+    out.extend(tree.into_iter().filter(|p| p != path));
+    out
+}
+
+fn net_sheet(s: &Session, path: &Path, net: &str, pins: &[String]) -> Result<PathBuf, String> {
+    let family = family(s, path);
+    let holder = |r: &str| {
+        family.iter().find(|p| s.read(p).is_ok_and(|d| part_index(d, r).is_ok())).cloned()
+    };
+    let refs: Vec<&str> = pins.iter().filter_map(|p| p.rsplit_once('.').map(|(r, _)| r)).collect();
+    let Some(first) = refs.first() else {
+        return Ok(family
+            .iter()
+            .find(|p| s.read(p).is_ok_and(|d| net_index(d, net).is_some()))
+            .cloned()
+            .unwrap_or_else(|| path.to_path_buf()));
+    };
+    let Some(here) = holder(first) else { return Ok(path.to_path_buf()) };
+    for r in &refs[1..] {
+        if let Some(other) = holder(r).filter(|o| *o != here) {
+            return Err(format!(
+                "{first} is on {} and {r} on {}; a net's pins must be parts of one sheet, so name the net once on each",
+                sheet_name(s, &here),
+                sheet_name(s, &other)
+            ));
+        }
+    }
+    Ok(here)
 }
 
 fn label_of(given: &str, number: &str) -> String {

@@ -108,7 +108,7 @@ fn board_name(s: &Session, path: &Path) -> Result<String, String> {
 }
 
 impl Session {
-    fn sheet_tree(&self, root: &str) -> Vec<(String, PathBuf)> {
+    pub(super) fn sheet_tree(&self, root: &str) -> Vec<(String, PathBuf)> {
         let mut out = Vec::new();
         let mut queue: Vec<String> = vec![root.to_string()];
         let mut seen: Vec<String> = Vec::new();

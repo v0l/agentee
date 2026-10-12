@@ -681,3 +681,48 @@ fn label_sets_and_clears_the_silk_reference() {
         assert_eq!(before, pcb(), "{all:?} wrote the file anyway");
     }
 }
+
+#[test]
+fn a_net_goes_on_the_sheet_that_holds_its_pins() {
+    let d = dir("netsheet");
+    let part = |r: &str| format!("\n[[parts]]\nref = \"{r}\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [0, 0]\n");
+    std::fs::write(
+        d.join("other.sch.toml"),
+        format!("name = \"other\"\n{}\n[[nets]]\nname = \"+5V\"\npins = [\"R9.1\"]\n", part("R9")),
+    )
+    .unwrap();
+    std::fs::write(d.join("top.sch.toml"), "name = \"top\"\nsheets = [\"power\", \"mcu\"]\n")
+        .unwrap();
+    std::fs::write(
+        d.join("mcu.sch.toml"),
+        format!("name = \"mcu\"\n{}\n[[nets]]\nname = \"+5V\"\npins = [\"U2.1\"]\n", part("U2")),
+    )
+    .unwrap();
+    std::fs::write(d.join("power.sch.toml"), format!("name = \"power\"\n{}", part("R67"))).unwrap();
+
+    edit(&d, &["sch", "power", "net", "+5V", "R67.1"]);
+    assert!(
+        sch(&d, "power.sch.toml").contains("pins = [\"R67.1\"]"),
+        "{}",
+        sch(&d, "power.sch.toml")
+    );
+    edit(&d, &["sch", "power", "net", "+5V", "U2.2"]);
+    assert!(
+        sch(&d, "mcu.sch.toml").contains("pins = [\"U2.1\", \"U2.2\"]"),
+        "{}",
+        sch(&d, "mcu.sch.toml")
+    );
+    assert!(sch(&d, "other.sch.toml").contains("pins = [\"R9.1\"]"));
+
+    let script = d.join("build.txt");
+    std::fs::write(&script, "add R3 R 1k\nnet +5V R3.1\n").unwrap();
+    edit(&d, &["sch", "power", script.to_str().unwrap()]);
+    assert!(
+        sch(&d, "power.sch.toml").contains("pins = [\"R67.1\", \"R3.1\"]"),
+        "{}",
+        sch(&d, "power.sch.toml")
+    );
+
+    let (_, err, ok) = run(&d, &["edit", "sch", "power", "net", "SPAN", "R67.2", "U2.2"]);
+    assert!(!ok && err.contains("R67 is on power and U2 on mcu"), "{err}");
+}
