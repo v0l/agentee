@@ -645,7 +645,12 @@ fn candidates(
             continue;
         }
         let unit = o.cost(need.max(1)).map(|c| (c.unit, o.currency.clone()));
-        match by.iter_mut().find(|c| datasheet::normal(&c.mpn) == datasheet::normal(&o.mpn)) {
+        match by.iter_mut().find(|c| {
+            datasheet::normal(&c.mpn) == datasheet::normal(&o.mpn)
+                && (c.manufacturer.is_empty()
+                    || o.manufacturer.is_empty()
+                    || datasheets::same_maker(&c.manufacturer, &o.manufacturer))
+        }) {
             Some(c) => {
                 c.stock += o.stock;
                 if !c.at.contains(&o.distributor) {
@@ -1206,6 +1211,36 @@ pub fn datasheet_of(project_root: Option<&Path>, name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_part_number_from_two_makers_stays_two_candidates() {
+        let offer = |at: &str, maker: &str, url: &str| agentee_parts::offer::Offer {
+            distributor: at.into(),
+            manufacturer: maker.into(),
+            mpn: "1N5817G".into(),
+            stock: 100,
+            currency: "EUR".into(),
+            datasheet: Some(url.into()),
+            ..Default::default()
+        };
+        let offers = [
+            offer("Mouser", "Comchip Technology", "comchip.pdf"),
+            offer("Farnell", "onsemi", "onsemi.pdf"),
+            offer("Mouser", "ON Semiconductor", "onsemi-2.pdf"),
+        ];
+        let lib = Library {
+            dirs: Vec::new(),
+            entries: Vec::new(),
+            config: Default::default(),
+            errors: Vec::new(),
+        };
+        let got = candidates(&offers, &lib, 1, 10);
+        let row = |m: &str| got.iter().find(|c| c.manufacturer == m).unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(row("Comchip Technology").datasheet.as_deref(), Some("comchip.pdf"));
+        assert_eq!(row("onsemi").datasheet.as_deref(), Some("onsemi.pdf"));
+        assert_eq!(row("onsemi").stock, 200);
+    }
 
     #[test]
     fn a_vendor_bundle_places_its_model_by_the_pads() {

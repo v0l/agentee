@@ -315,7 +315,7 @@ fn maker_key(name: &str) -> String {
     }
 }
 
-fn same_maker(a: &str, b: &str) -> bool {
+pub(crate) fn same_maker(a: &str, b: &str) -> bool {
     let (a, b) = (maker_key(a), maker_key(b));
     !a.is_empty() && !b.is_empty() && (a == b || a.contains(&b) || b.contains(&a))
 }
