@@ -19,7 +19,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   so nothing goes on B.Cu under the bulk caps, which check allows.
 - `agentee layout mains` (ubench, 2.5 mm HV classes) ran 30 min with no output and was killed.
 
-## Circuit sim
+## Circuit sim (taken: circuit-sim)
 
 - No THD or spectrum of a transient, so clipping shows only as a waveform and checks read a
   voltage at a fixed time (`examples/preamp` `preamp-clip`). No peak, RMS or frequency over a
