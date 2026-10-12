@@ -35,11 +35,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `render sim:NAME` at the default 900 px cuts off the noise panel when there is a transient or
   AC plot above it; `preamp-ac` needed `--height 1800` (`crates/agentee-view/src/circuit.rs`).
 
-## Schematic edit (taken: todo-fixes)
-
-- `edit sch remove D1` left `pins = [ "C1.1", ...]` with a stray space after the bracket.
-- `edit sch` wrote a batch while the schematic had a load error (unknown key `title`).
-
 ## Library
 
 - `library add --datasheet URL` pins the URL in `part.toml` but leaves the KiCad symbol's
@@ -53,11 +48,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Layout
 
-- `agentee layout NAME --search` places nothing while parts are unplaced (only placed parts
-  reach `model.layout.parts`), so `agentee place NAME` has to run first. SKILL.md's layout loop
-  says the engine places them. (taken: todo-fixes)
-- `render pcb:NAME --hide F.Cu` draws no B.Cu copper unless `--show B.Cu` is also given.
-  (taken: todo-fixes)
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
   U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`). On
   `examples/ladder-vcf` the unlocked first run scattered the ladder transistors across the
@@ -77,6 +67,3 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   `phases = ["global", "topo"]` and `AGENTEE_UNROUTED_DEBUG=1`.
 - Topo as a guide (`topo` and `detail` both in `phases`) changes nothing on `sdr`: detail's
   `prefer` reservation from topo's copper gives the same 66-67 unrouted as detail alone.
-- `examples/sdr/sdr.pcb.toml` has `# plan route` with no `# end plan route`, so `agentee layout`
-  cannot strip it: the old route stays as fixed copper and only about 53 leftovers reroute.
-  (taken: todo-fixes)
