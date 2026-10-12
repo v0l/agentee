@@ -8,6 +8,11 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   that has a net of that name, even one of another board (`crates/agentee/src/edit/sch.rs`,
   `here = sheets[0]`). In buggy-guard `edit sch power net +5V R67.1` failed with "no net `+5V` in
   pendant.sch.toml" and `net +5V U2.1` with "no part `U2`".
+- `edit pcb track ... --width 0.2621mm` on a net whose class width is 0.2621 mm fails
+  `class-width` ("0.2621mm is narrower than the USB class width 0.2621mm"); leaving `--width` off
+  works. The class width is `calc impedance`'s 0.26214.
+- A batch that adds a part with `add` and then nets it in the same `edit sch` script fails with
+  "no part R3" (rotator, 2026-10-11).
 
 ## View
 
@@ -58,11 +63,3 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   while checking rotator's library, and keeps going.
 - The `library` check suggested a 330 uF capacitor for 100 nF parts before the passives were in
   the library (rotator, 2026-10-11).
-
-## Edit (more)
-
-- `edit pcb track ... --width 0.2621mm` on a net whose class width is 0.2621 mm fails
-  `class-width` ("0.2621mm is narrower than the USB class width 0.2621mm"); leaving `--width` off
-  works. The class width is `calc impedance`'s 0.26214.
-- A batch that adds a part with `add` and then nets it in the same `edit sch` script fails with
-  "no part R3" (rotator, 2026-10-11).
