@@ -22,7 +22,13 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 ## Circuit sim
 
 - No THD or spectrum of a transient, so clipping shows only as a waveform and checks read a
-  voltage at a fixed time (`examples/preamp` `preamp-clip`).
+  voltage at a fixed time (`examples/preamp` `preamp-clip`). No peak, RMS or frequency over a
+  time window either: `examples/ladder-vcf` `vcf-osc` oscillates at 441 Hz but can only check
+  an operating point.
+- A pot (`RV`) has no model: a 3-pin pot needs a `vcvs` block, which has no wiper resistance
+  (`examples/ladder-vcf` RV2, RV3). A `potentiometer` kind with `resistance` and `position`.
+- The AC phase plot draws noise for nets with no AC signal (gain near -400 dB); `vcf-ac-3v`
+  with SUM_OUT and QA_B recorded (`crates/agentee-view/src/circuit.rs`).
 - Op-amp block has one `headroom` for both rails; the LM358 swings to within mV of ground but
   1.5 V of V+, so `preamp-clip` clips low at 1.5 V. No slew rate, input bias current or PSRR,
   and `en` is flat with no 1/f corner (`crates/agentee-sim/src/circuit.rs` Buffer).
@@ -33,7 +39,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 - `edit sch add U1 ... --unit 2` fails with "`U1` is already a part here", and `net` only
   resolves pins of the first placed unit ("`U1` has no pin `8`; it has 3, 2, 1"). U1 units 2
-  and 3 of `examples/preamp` were written by hand.
+  and 3 of `examples/preamp` were written by hand. Fixed on branch `analog-example` (c976b24).
 - `edit sch remove D1` left `pins = [ "C1.1", ...]` with a stray space after the bracket.
 - `edit sch` wrote a batch while the schematic had a load error (unknown key `title`).
 
@@ -55,10 +61,16 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   says the engine places them.
 - After `edit pcb unplace ...` then `agentee place`, `examples/preamp/preamp.pcb.toml` had two
   `# plan route` headers and one `# end plan route`; the next `layout --search` kept the old
-  plan's tracks and check found 30 shorts. A second `layout --search` cleaned it. Not reproduced.
+  plan's tracks and check found 30 shorts. Cause: the end marker was the comment in front of
+  `[[fills]]`, dropped with them on a refill. Fixed on branch `analog-example` (6128890).
 - `render pcb:NAME --hide F.Cu` draws no B.Cu copper unless `--show B.Cu` is also given.
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
-  U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`).
+  U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`). On
+  `examples/ladder-vcf` the unlocked first run scattered the ladder transistors across the
+  board (169 crossings) and put D1/D2 70 mm from J1; the ladder, expo pair and diodes are locked
+  by hand there. 100n decouplers still land 7-14 mm from their TL072 pins.
+- `layout ladder-vcf --search 64 --keep 8` scored worse than `--search 32` and left GND
+  unrouted (RV3.1 cut off from the pour).
 
 ## Topological router
 
