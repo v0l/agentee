@@ -1973,3 +1973,18 @@ fn a_label_prints_its_own_text_and_hole_labels_start_hidden() {
     let (_, errors) = silk("R1", "label = { text = \" \" }\n");
     assert_eq!(errors.len(), 1, "{errors:?}");
 }
+
+#[test]
+fn a_stitching_strip_narrower_than_the_pitch_gets_a_column() {
+    let stitch = "\n[[zones]]\nnet = \"A\"\nlayers = [\"F.Cu\", \"B.Cu\"]\n\n[[stitching]]\nnet = \"A\"\npitch = \"2.5mm\"\noutline = [[20.2, 5.0], [20.6, 5.0], [20.6, 16.0], [20.2, 16.0]]\n";
+    let p = load(&Fixture { pcb: stitch, ..Default::default() });
+    let mut at: Vec<[f64; 2]> = p.layouts[0].item.vias.iter().map(|v| v.at).collect();
+    at.sort_by(|a, b| a[1].total_cmp(&b[1]));
+    assert_eq!(at.len(), 5, "{at:?}");
+    for (k, q) in at.iter().enumerate() {
+        assert!(
+            (q[0] - 20.4).abs() < 1e-9 && (q[1] - (5.5 + 2.5 * k as f64)).abs() < 1e-9,
+            "{at:?}"
+        );
+    }
+}

@@ -1437,10 +1437,17 @@ impl LayoutFile {
                     .unwrap_or_else(|| outline.clone());
                 let mut b = Bounds::EMPTY;
                 area.iter().for_each(|q| b.add(*q));
-                let mut y = (b.min[1] / pitch).ceil() * pitch;
-                while y <= b.max[1] {
-                    let mut x = (b.min[0] / pitch).ceil() * pitch;
-                    while x <= b.max[0] {
+                let start = |k: usize| match st.outline {
+                    Some(_) => {
+                        let extent = b.max[k] - b.min[k];
+                        b.min[k] + (extent - (extent / pitch + 1e-9).floor() * pitch) / 2.0
+                    }
+                    None => (b.min[k] / pitch).ceil() * pitch,
+                };
+                let mut y = start(1);
+                while y <= b.max[1] + 1e-9 {
+                    let mut x = start(0);
+                    while x <= b.max[0] + 1e-9 {
                         if geom::point_in_polygon([x, y], &area) {
                             candidates.push([x, y]);
                         }

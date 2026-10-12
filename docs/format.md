@@ -1074,7 +1074,8 @@ ref = "U3"                     # * and ? globs: ref = "*" with nets = [...] fans
 net = "GND"
 # via = "std"                  # default the net's first class via
 # pitch = "2.5mm"              # grid pitch, or the spacing along a fence (default 1mm)
-# outline = [[x, y], ...]      # default the board outline
+# outline = [[x, y], ...]      # default the board outline; a grid in an outline is centred
+                               # in it, so a strip narrower than the pitch gets one row
 # margin = "0.6mm"             # extra distance from the board edge
 # fence = ["RF_*"]             # instead of a grid: a row either side of these nets' tracks
 # offset = "0.5mm"             # fence row distance from the track centre, default just past
