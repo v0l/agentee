@@ -15,6 +15,6 @@ truck-topology = "0.6"
 ruststep = "0.4"
 ureq = "3"
 flate2 = "1"
-
-[dev-dependencies]
+serde_json.workspace = true
 toml.workspace = true
+

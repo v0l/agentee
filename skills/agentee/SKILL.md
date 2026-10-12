@@ -59,8 +59,8 @@ Every part on a board comes from the user's parts library. For each part a desig
    --symbol ... --footprint ... --rating "..."` (MCP `library_add`), then `library use`. Tell
    the user which part you added and why. `add` notes when the part is not in stock as an active
    part, and when no datasheet was reachable: then ask the user for the PDF. When KiCad has no
-   model, ask the user for the vendor's KiCad ZIP and pass it as `--model part.zip`: the model is
-   placed on our footprint by matching pad numbers.
+   model, `add` takes the EasyEDA one by the LCSC number and places it by the pads; failing that,
+   ask the user for the vendor's KiCad ZIP and pass it as `--model part.zip`.
 
 Never place a part that is not in the library, and never pick one from memory without a
 distributor listing. `check` warns (rule `library`) when a design strays from the library.

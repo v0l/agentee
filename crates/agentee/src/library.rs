@@ -146,6 +146,45 @@ fn unzip(zip: &Path) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+enum Vendor {
+    KiCad(PathBuf),
+    Placed(Box<agentee_core::footprint::Footprint>, String),
+}
+
+struct Model {
+    path: PathBuf,
+    source: String,
+    vendor: Option<Vendor>,
+    note: Option<String>,
+}
+
+fn local_model(m: &str, root: &Path) -> Result<Model, String> {
+    if let Some((path, kicad)) = vendor_bundle(m)? {
+        return Ok(Model {
+            path,
+            source: m.to_string(),
+            vendor: kicad.map(Vendor::KiCad),
+            note: None,
+        });
+    }
+    if Path::new(m).is_file() {
+        return Ok(Model {
+            path: PathBuf::from(m),
+            source: m.to_string(),
+            vendor: None,
+            note: None,
+        });
+    }
+    let (path, near) = agentee_3d::resolve(m, root)?;
+    let note = near.as_ref().map(|n| {
+        format!(
+            "KiCad has no model {}; stored the nearest body {n}, check it with agentee library verify",
+            agentee_3d::relative(m)
+        )
+    });
+    Ok(Model { path, source: near.unwrap_or_else(|| m.to_string()), vendor: None, note })
+}
+
 fn vendor_bundle(spec: &str) -> Result<Option<(PathBuf, Option<PathBuf>)>, String> {
     let path = Path::new(spec);
     let dir = if path.is_dir() {
@@ -173,10 +212,19 @@ fn vendor_bundle(spec: &str) -> Result<Option<(PathBuf, Option<PathBuf>)>, Strin
 fn fit_to(ft: &str, vendor: &Path) -> Result<(String, String), String> {
     let theirs = agentee_kicad::import_footprint(&vendor.to_string_lossy())?;
     let theirs = theirs.resolve(&mut agentee_core::diag::Diags::new(&theirs.name));
+    let name = vendor.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+    fit_footprint(ft, &theirs, &format!("the vendor footprint {name}"))
+}
+
+fn fit_footprint(
+    ft: &str,
+    theirs: &agentee_core::footprint::Footprint,
+    what: &str,
+) -> Result<(String, String), String> {
     let ours: agentee_core::footprint::FootprintFile =
         toml::from_str(ft).map_err(|e| e.to_string())?;
     let ours = ours.resolve(&mut agentee_core::diag::Diags::new(&ours.name));
-    let f = agentee_3d::fit::fit(&theirs, &ours)?;
+    let f = agentee_3d::fit::fit(theirs, &ours)?;
     let mut doc: toml_edit::DocumentMut = ft.parse().map_err(|e| format!("{e}"))?;
     let mut offset = toml_edit::Array::new();
     for v in f.model_offset {
@@ -196,11 +244,8 @@ fn fit_to(ft: &str, vendor: &Path) -> Result<(String, String), String> {
         doc["model_scale"] = toml_edit::value(scale);
     }
     let note = format!(
-        "model placed by the vendor footprint {}: {} pads matched within {:.3} mm, turned {} degrees",
-        vendor.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
-        f.pads,
-        f.rms,
-        f.turn
+        "model placed by {what}: {} pads matched within {:.3} mm, turned {} degrees",
+        f.pads, f.rms, f.turn
     );
     Ok((doc.to_string(), note))
 }
@@ -313,45 +358,68 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let mut files = Vec::new();
     let mut model_rel = None;
+    let mut lcsc = None;
     let root = project.map(|p| p.root.clone()).unwrap_or_else(|| PathBuf::from("."));
     let model_spec = a
         .model
         .map(str::to_string)
         .or_else(|| fp_text.as_deref().and_then(|t| get_key(t, "model")));
-    if let (Some(m), Some(ft)) = (model_spec, fp_text.as_mut()) {
-        let bundle = vendor_bundle(&m)?;
-        let found = match &bundle {
-            Some((model, _)) => Ok((model.clone(), None)),
-            None if Path::new(&m).is_file() => Ok((PathBuf::from(&m), None)),
-            None => agentee_3d::resolve(&m, &root),
-        };
-        match found {
-            Ok((path, near)) => {
-                if let Some((_, Some(vendor))) = &bundle {
-                    match fit_to(ft, vendor) {
-                        Ok((text, note)) => {
-                            *ft = text;
-                            notes.push(note);
-                        }
-                        Err(e) => notes.push(format!("model from {m} stored unfitted: {e}")),
-                    }
+    if let Some(ft) = fp_text.as_mut() {
+        let mut tried = Vec::new();
+        let mut got: Option<Model> = None;
+        if let Some(m) = &model_spec {
+            match local_model(m, &root) {
+                Ok(found) => got = Some(found),
+                Err(e) => tried.push(format!("model {m}: {e}")),
+            }
+        }
+        if got.is_none() && a.distributors && !a.generic {
+            match agentee_3d::easyeda::find(a.mpn.trim()) {
+                Ok(f) => {
+                    lcsc = Some(f.lcsc.clone());
+                    got = Some(Model {
+                        path: f.model,
+                        source: format!("EasyEDA {} (easyeda.com)", f.lcsc),
+                        vendor: Some(Vendor::Placed(
+                            Box::new(f.footprint),
+                            format!("the EasyEDA footprint of {}", f.lcsc),
+                        )),
+                        note: None,
+                    })
                 }
-                if let Some(n) = &near {
-                    notes.push(format!(
-                        "KiCad has no model {}; stored the nearest body {n}, check it with agentee library verify",
-                        agentee_3d::relative(&m)
-                    ));
-                }
+                Err(e) => tried.push(format!("EasyEDA: {e}")),
+            }
+        }
+        let fitted = got.as_ref().and_then(|model| match &model.vendor {
+            Some(Vendor::KiCad(path)) => Some(fit_to(ft, path)),
+            Some(Vendor::Placed(fp, what)) => Some(fit_footprint(ft, fp, what)),
+            None => None,
+        });
+        match fitted {
+            Some(Ok((text, note))) => {
+                *ft = text;
+                notes.push(note);
+            }
+            Some(Err(e)) => {
+                let source = got.take().map(|m| m.source).unwrap_or_default();
+                tried.push(format!("{source}: {e}"));
+            }
+            None => {}
+        }
+        match got {
+            Some(model) => {
+                notes.extend(model.note.clone());
+                let path = &model.path;
                 let file =
                     path.file_name().and_then(|f| f.to_str()).unwrap_or("model.step").to_string();
                 let rel = format!("3dmodels/{file}");
                 std::fs::create_dir_all(dir.join("3dmodels")).map_err(|e| e.to_string())?;
-                let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
                 std::fs::write(dir.join(&rel), &bytes).map_err(|e| e.to_string())?;
                 *ft = set_key(ft, "model", &rel)?;
                 if get_key(ft, "height").is_none()
                     && let Ok(file) = toml::from_str::<agentee_core::footprint::FootprintFile>(ft)
-                    && let Ok(mesh) = agentee_3d::load(&path)
+                    && let Ok(mesh) = agentee_3d::load(path)
                 {
                     let f = file.resolve(&mut agentee_core::diag::Diags::new(&file.name));
                     if let Some(h) = agentee_3d::model_height(&f, &mesh) {
@@ -360,12 +428,15 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
                 }
                 files.push(Provenance {
                     path: rel.clone(),
-                    source: near.clone().unwrap_or_else(|| m.clone()),
+                    source: model.source.clone(),
                     sha256: datasheet::sha256(&bytes),
                 });
                 model_rel = Some(rel);
             }
-            Err(e) => notes.push(format!("model {m} not stored: {e}")),
+            None if !tried.is_empty() => {
+                notes.push(format!("no 3D model stored: {}", tried.join("; ")))
+            }
+            None => {}
         }
     }
     std::fs::write(dir.join(&sym.file), &sym_text).map_err(|e| e.to_string())?;
@@ -461,10 +532,14 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     if let Some(d) = &datasheet {
         pin_datasheet(&name, &d.sha256)?;
     }
+    if lcsc.is_none() && a.distributors {
+        lcsc = agentee_3d::easyeda::lcsc_code(&mpn).ok();
+    }
     let part = PartFile {
         role: a.role.trim().to_lowercase(),
         mpn: Some(mpn.clone()),
         manufacturer,
+        lcsc,
         value: a.value.map(str::to_string),
         rating: a.rating.map(str::to_string),
         pins: a.pins,
@@ -762,6 +837,9 @@ pub fn use_part(lib: &Library, name: &str, root: &Path, force: bool) -> Result<V
     if let Some(m) = &e.part.manufacturer {
         fields.insert("mfr".into(), json!(m));
     }
+    if let Some(c) = &e.part.lcsc {
+        fields.insert("lcsc".into(), json!(c));
+    }
     fields.insert("library".into(), json!(e.name));
     let symbol = e.symbol_name.clone().unwrap_or_default();
     let value = e.part.value.clone().or(e.part.mpn.clone()).unwrap_or_default();
@@ -811,8 +889,11 @@ pub fn refresh(lib: &Library, name: Option<&str>, config: Option<&Path>) -> Resu
         });
         part.stock.extend(fresh);
         part.stock.sort_by(|a, b| a.distributor.cmp(&b.distributor).then(a.sku.cmp(&b.sku)));
+        if part.lcsc.is_none() && !part.generic {
+            part.lcsc = agentee_3d::easyeda::lcsc_code(mpn).ok();
+        }
         library::write_entry(&e.dir, &part)?;
-        done.push(json!({ "part": e.name, "stock": part.stock.iter().map(Stock::line).collect::<Vec<_>>() }));
+        done.push(json!({ "part": e.name, "lcsc": part.lcsc, "stock": part.stock.iter().map(Stock::line).collect::<Vec<_>>() }));
     }
     Ok(json!({ "refreshed": done, "errors": errors }))
 }
@@ -1007,24 +1088,41 @@ fn verify_one(e: &Entry, cache: &Cache) -> Vec<Finding> {
             Err(err) => push(false, format!("model {m}: {err}")),
             Ok(mesh) => {
                 let (lo, hi) = mesh.bounds();
-                let mw = f64::from(hi[0] - lo[0]) * fp.model_scale[0];
-                let mh = f64::from(hi[1] - lo[1]) * fp.model_scale[1];
+                let frame = agentee_3d::export::model_frame(fp);
+                let mut placed = agentee_core::graphic::Bounds::EMPTY;
+                for k in 0..8 {
+                    let c =
+                        [0, 1, 2].map(|i| f64::from(if k >> i & 1 == 0 { lo[i] } else { hi[i] }));
+                    let q = [0, 1]
+                        .map(|i| (0..3).map(|j| frame[i][j] * c[j]).sum::<f64>() + frame[i][3]);
+                    placed.add([q[0], -q[1]]);
+                }
+                let (mw, mh) = (placed.max[0] - placed.min[0], placed.max[1] - placed.min[1]);
                 let cy = fp.courtyard("F");
                 let b = if cy.is_empty() { fp.bounds() } else { cy };
                 let (fw, fh) = (b.max[0] - b.min[0], b.max[1] - b.min[1]);
-                let fits =
-                    |w: f64, h: f64| w <= fw + 0.5 && h <= fh + 0.5 && w * h >= 0.25 * fw * fh;
-                let ok = fits(mw, mh) || fits(mh, mw);
+                let centre = placed.center();
+                let inside = centre[0] >= b.min[0]
+                    && centre[0] <= b.max[0]
+                    && centre[1] >= b.min[1]
+                    && centre[1] <= b.max[1];
+                let ok = mw <= fw + 0.5 && mh <= fh + 0.5 && mw * mh >= 0.25 * fw * fh && inside;
                 push(
                     ok,
                     format!(
-                        "model {:.2} x {:.2} mm against the {} {:.2} x {:.2} mm{}",
+                        "model {:.2} x {:.2} mm as placed, centred at [{:.2}, {:.2}], against the {} {:.2} x {:.2} mm{}",
                         mw,
                         mh,
+                        centre[0],
+                        centre[1],
                         if cy.is_empty() { "footprint" } else { "courtyard" },
                         fw,
                         fh,
-                        if ok { "" } else { ": wrong model or a model_offset/scale problem" }
+                        if ok {
+                            ""
+                        } else {
+                            ": wrong model or a model_offset, model_rotate or model_scale problem"
+                        }
                     ),
                 );
             }

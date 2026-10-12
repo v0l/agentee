@@ -113,6 +113,8 @@ pub struct PartFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lcsc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rating: Option<String>,

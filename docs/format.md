@@ -2815,6 +2815,7 @@ JST-PH-2/
 role = "connector"
 mpn = "S2B-PH-K-S"
 manufacturer = "JST"
+lcsc = "C131337"               # the JLCPCB/LCSC part number, looked up by `add` and `refresh`
 value = "PH 2-pin"
 rating = "2 A, 100 V"
 preferred = true               # the first choice for its role
@@ -2880,7 +2881,12 @@ plain body of a `_ThermalVias` footprint), and says so; the 3D view and `models`
 `--model` also takes a vendor download, a ZIP or folder holding a `.kicad_mod` and its STEP or
 VRML model (SamacSys, SnapMagic and Ultra Librarian ship these): it matches the vendor
 footprint's pads to ours by number, refuses when they sit more than 0.1 mm apart, and writes the
-`model_offset` and `model_rotate` that put the vendor model on our footprint. It fetches the datasheet (`--datasheet` URL or PDF,
+`model_offset` and `model_rotate` that put the vendor model on our footprint. With no model from
+KiCad or `--model`, `add` looks the part number up in the JLCPCB/LCSC parts list and takes the
+EasyEDA model, placed the same way by the EasyEDA footprint's pads after checking the model
+against that footprint's outline; the part's `files` record it as `EasyEDA C258169
+(easyeda.com)`. `add` and `refresh` store the LCSC number as `lcsc`, and `use` passes it on as the
+part's `lcsc` field, which `bom-jlcpcb.csv` reads. `--no-distributors` skips both lookups. It fetches the datasheet (`--datasheet` URL or PDF,
 else the symbol's URL, else the distributors'), pins it in the datasheet cache so `datasheet
 purge` never removes it, and records each listing's stock and price breaks. Its notes say when no distributor has the part
 in stock as an active part. `--local` adds to the

@@ -1,3 +1,4 @@
+pub mod easyeda;
 pub mod export;
 pub mod fit;
 mod nearest;
