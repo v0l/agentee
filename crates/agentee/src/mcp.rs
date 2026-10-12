@@ -111,7 +111,7 @@ fn tools() -> Value {
                 "hidden_pins": { "type": "boolean" },
                 "save_to": { "type": "string", "description": "also write the PNG here, relative to the project" },
                 "show": { "type": "array", "items": { "type": "string" }, "description": "layers to turn on, e.g. F.Fab, F.Mask, In1.Cu" },
-                "hide": { "type": "array", "items": { "type": "string" } },
+                "hide": { "type": "array", "items": { "type": "string" }, "description": "layers to turn off; hiding a copper layer with no copper in show shows every other copper layer" },
                 "region": { "type": "array", "items": { "type": "number" }, "description": "zoom to [x0, y0, x1, y1] in mm" },
                 "focus": { "type": "array", "items": { "type": "string" }, "description": "schematic or layout only: zoom to these parts, nets or pins (U1, SPI_*, U1.3) and fade the rest" },
                 "context": { "type": "string", "enum": ["dim", "hide", "show"], "default": "dim", "description": "what happens to everything outside focus" },

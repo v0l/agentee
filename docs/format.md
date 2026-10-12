@@ -2607,7 +2607,7 @@ text.
 | `--focus A,B,...` | schematics and layouts: zoom to these references, net names or `REF.PIN`, `*` matching any run of characters. A net brings in the parts it touches, a pin its net |
 | `--context dim\|hide\|show` | what happens to everything outside `--focus` (default `dim`) |
 | `--rulers` | label mm coordinates along the top and left edges |
-| `--show` / `--hide` | layers to turn on or off, e.g. `--hide F.Cu --show In1.Cu` |
+| `--show` / `--hide` | layers to turn on or off, e.g. `--hide F.Cu --show In1.Cu`; `--hide F.Cu` alone shows every other copper layer |
 
 A name that matches nothing is an error. `--region` with `--focus` keeps the filter and uses the
 region for the zoom.

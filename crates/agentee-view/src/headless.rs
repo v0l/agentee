@@ -123,8 +123,7 @@ pub fn render_rgba(
         st.pcb_layers.mirror();
     }
     for layers in [&mut st.layers, &mut st.pcb_layers] {
-        layers.hidden.retain(|h| !opts.show.contains(h));
-        layers.hidden.extend(opts.hide.iter().cloned());
+        apply_layers(layers, &opts.show, &opts.hide);
     }
     st.view_3d = opts.show.iter().any(|x| x == "3d" || x == "3d-top" || x == "3d-bottom");
     st.show_parts = !opts.hide.iter().any(|x| x == "parts");
@@ -209,4 +208,35 @@ pub fn render_rgba(
     };
     rgba.truncate(pw * ph * 4);
     Ok((pw, ph, rgba))
+}
+
+fn apply_layers(layers: &mut crate::paint::Layers, show: &[String], hide: &[String]) {
+    let copper = |l: &String| l.ends_with(".Cu");
+    let other_copper = hide.iter().any(copper) && !show.iter().any(copper);
+    layers.hidden.retain(|h| !show.contains(h) && !(other_copper && copper(h)));
+    layers.hidden.extend(hide.iter().cloned());
+}
+
+#[cfg(test)]
+mod layer_tests {
+    use super::*;
+
+    fn shown(show: &[&str], hide: &[&str]) -> Vec<&'static str> {
+        let mut l = crate::pcb::default_layers();
+        let s: Vec<String> = show.iter().map(|x| x.to_string()).collect();
+        let h: Vec<String> = hide.iter().map(|x| x.to_string()).collect();
+        apply_layers(&mut l, &s, &h);
+        ["F.Cu", "In1.Cu", "B.Cu", "F.SilkS"].into_iter().filter(|x| l.shows(x)).collect()
+    }
+
+    #[test]
+    fn hiding_the_top_copper_shows_the_rest() {
+        assert_eq!(shown(&[], &["F.Cu"]), ["In1.Cu", "B.Cu", "F.SilkS"]);
+    }
+
+    #[test]
+    fn named_copper_in_show_wins() {
+        assert_eq!(shown(&["In1.Cu"], &["F.Cu"]), ["In1.Cu", "F.SilkS"]);
+        assert_eq!(shown(&[], &["F.SilkS"]), ["F.Cu"]);
+    }
 }

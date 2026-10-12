@@ -105,7 +105,8 @@ enum Cmd {
         /// Layers to turn on, comma separated (F.Fab,F.Mask,In1.Cu)
         #[arg(long, value_delimiter = ',')]
         show: Vec<String>,
-        /// Layers to turn off, comma separated
+        /// Layers to turn off, comma separated. Hiding a copper layer with no copper in --show
+        /// shows every other copper layer
         #[arg(long, value_delimiter = ',')]
         hide: Vec<String>,
         /// Zoom to x0,y0,x1,y1 in mm
