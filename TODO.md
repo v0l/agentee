@@ -8,16 +8,14 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   and Ultra Librarian need an account for an automatic model lookup; their search endpoints
   return 403 without one. Their KiCad ZIPs already work as `library add --model part.zip`.
 
-## Spacing (taken: spacing)
+## Spacing
 
-- A footprint `clearance` relaxes its pads but not the tracks that run into them: the
-  UCC256404 RVCC (pin 12) and HB (pin 14) pads are 1.94 mm apart, so the two tracks leaving
-  them are always under a 2.5 mm class clearance. `[[drc.waive]]` cannot take one such pair
-  either, since every clearance finding has `at = "clearance"`. Seen on ubench `mains`.
-- `agentee place mains --parts ...` (ubench) put the PFC controller cluster on the secondary
-  side of the primary/secondary barrier, and treats THT courtyards as blocking the other side
-  so nothing goes on B.Cu under the bulk caps, which check allows.
-- `agentee layout mains` (ubench, 2.5 mm HV classes) ran 30 min with no output and was killed.
+- `agentee layout mains` (ubench) never finishes the detail stage: round 0 of the negotiated
+  router runs past 10 min on a 2725x2805x4 grid with 237 connections. Access reports 190 of 351
+  pads with no legal exit and global an overflow of 7518 mm, so most searches can only fail, and
+  each exhausts its window first. Detail should fail connections to pads with no exit up front
+  (`access_report` in `crates/agentee-layout/src/negotiate/mod.rs` already finds them). The
+  footprint clearance zones in `negotiate/rules.rs` also raise the track buckets from 52 to 92.
 
 ## Layout
 
