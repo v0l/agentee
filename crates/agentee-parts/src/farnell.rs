@@ -71,6 +71,23 @@ impl Farnell {
     }
 
     fn get(&self, term: &str, results: u32) -> Result<Value, String> {
+        let mut wait = GAP;
+        for _ in 0..RETRIES {
+            match self.get_once(term, results)? {
+                Reply::Body(v) => return Ok(v),
+                Reply::Busy(_) => {
+                    std::thread::sleep(wait);
+                    wait *= 2;
+                }
+            }
+        }
+        match self.get_once(term, results)? {
+            Reply::Body(v) => Ok(v),
+            Reply::Busy(why) => Err(format!("Farnell: {why}")),
+        }
+    }
+
+    fn get_once(&self, term: &str, results: u32) -> Result<Reply, String> {
         {
             let mut last = self.last.lock().unwrap();
             if let Some(t) = *last {
@@ -97,10 +114,25 @@ impl Farnell {
         let body = resp.body_mut().read_to_string().map_err(|e| format!("Farnell: {e}"))?;
         if status != 200 {
             let snippet: String = body.chars().take(200).collect();
-            return Err(format!("Farnell: HTTP {status}: {snippet}"));
+            let why = format!("HTTP {status}: {snippet}");
+            if rate_limited(status, &body) {
+                return Ok(Reply::Busy(why));
+            }
+            return Err(format!("Farnell: {why}"));
         }
-        serde_json::from_str(&body).map_err(|e| format!("Farnell: {e}"))
+        serde_json::from_str(&body).map(Reply::Body).map_err(|e| format!("Farnell: {e}"))
     }
+}
+
+enum Reply {
+    Body(Value),
+    Busy(String),
+}
+
+const RETRIES: usize = 4;
+
+fn rate_limited(status: u16, body: &str) -> bool {
+    status == 429 || (status == 403 && body.contains("Over Queries Per Second"))
 }
 
 impl Distributor for Farnell {
@@ -230,5 +262,21 @@ fn product(p: &Value, store: &str, currency: &str) -> Offer {
             .map(str::to_string),
         attributes,
         replacement: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rate_limited;
+
+    #[test]
+    fn a_queries_per_second_403_is_retried_and_a_bad_key_is_not() {
+        assert!(rate_limited(
+            403,
+            "<h1>Developer Over Rate</h1>Account Over Queries Per Second Limit"
+        ));
+        assert!(rate_limited(429, ""));
+        assert!(!rate_limited(403, "Developer Inactive"));
+        assert!(!rate_limited(500, "Over Queries Per Second"));
     }
 }
