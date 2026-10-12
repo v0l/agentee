@@ -143,7 +143,8 @@ edits before checking them.
 
 `agentee list` names every item with its error count. `agentee drc NAME` prints a layout's rule
 messages alone, and `--list` every rule id with whether it applies to this board; turn one off
-with `[drc] disable = ["id"]` in the board file.
+with `[drc] disable = ["id"]` in the board file. To accept one finding that is meant to be there,
+add a `[[drc.waive]]` with its `rule`, the `at` DRC prints (`part J1`, `net GND`) and a `reason`.
 
 Every diagnostic names the file, the item and the place (`tracks[1] RF_IN`, `U1.1`, a coordinate).
 Fix the named thing, rerun check. When a silk label fails, check prints a `label = { at = [...] }`

@@ -575,7 +575,15 @@ disable = ["silk-width"]       # rule ids to skip; their checks are not computed
                                # and silk-hidden off `agentee silk` has nothing to move
 severity = { "starved-thermal" = "error", "via-in-pad" = "warning" }   # info | warning | error
 tombstone_ratio = 3            # copper or feed width one chip pad may have over the other
+
+[[drc.waive]]                  # accept one finding as reviewed: it is dropped from the report
+rule = "pad-off-board"         # the rule id
+at = "part J1"                 # the place DRC prints before the message: part J1, net GND, pad U1.3
+reason = "milled edge-card socket"
 ```
+
+A waived finding shows as an info line with its reason. A waiver that matches nothing is a
+warning, so one left behind after the geometry changes is noticed.
 
 | id | severity | runs when | checks |
 |---|---|---|---|
@@ -2595,7 +2603,7 @@ region for the zoom.
 | `NAME.board.toml` | the Edge.Cuts outline (closed loops inside it become `[[outline.cutouts]]`, loops outside it are left out and reported), the stackup with thickness, er and loss tangent, the copper finish and mask colour, the design rules and net classes from `NAME.kicad_pro` |
 | `NAME.pcb.toml` | footprint placements, tracks (arcs as short segments), vias and zones, with agentee's zone fills stored, and the silk and fab text and lines drawn on the board, with `${TITLE}`, `${DATE}` and the project's text variables filled in |
 | `NAME.sch.toml` | every part with its value, and each net as a list of pins, drawn with net labels |
-| `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept |
+| `footprints/` | each footprint as it sits on the board, bottom-side ones flipped back to the top, pad drill offsets kept; copper pads that cross or touch the board outline or a cutout, and pads KiCad marks castellated, get `edge = true` |
 | `symbols/` | one box symbol per footprint with a pin per pad number |
 
 KiCad vias keep their type: `micro` becomes a microvia, `blind` a blind or buried via by its span,

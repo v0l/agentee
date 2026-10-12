@@ -753,6 +753,16 @@ pub struct DrcFile {
     pub tombstone_ratio: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<crate::place::PlacementLimits>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waive: Vec<Waiver>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Waiver {
+    pub rule: String,
+    pub at: String,
+    pub reason: String,
 }
 
 pub fn stackup_preset(name: &str) -> Option<Vec<LayerFile>> {
@@ -1774,6 +1784,21 @@ impl Board {
         for id in self.drc.disable.iter().chain(self.drc.severity.keys()) {
             if crate::drc::find(id).is_none() {
                 d.warn("drc", format!("no DRC rule `{id}`, `agentee drc NAME --list` lists them"));
+            }
+        }
+        for (i, w) in self.drc.waive.iter().enumerate() {
+            let at = format!("drc.waive[{i}]");
+            if crate::drc::find(&w.rule).is_none() {
+                d.error(
+                    &at,
+                    format!("no DRC rule `{}`, `agentee drc NAME --list` lists them", w.rule),
+                );
+            }
+            if w.at.trim().is_empty() {
+                d.error(&at, "a waiver names the finding it waives in `at`, as DRC prints it (`part J1`, `net GND`)");
+            }
+            if w.reason.trim().is_empty() {
+                d.error(&at, "a waiver needs a `reason`");
             }
         }
 

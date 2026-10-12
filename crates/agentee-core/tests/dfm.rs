@@ -1056,6 +1056,48 @@ fn a_board_cutout_is_board_edge_for_copper_pads_and_holes() {
 }
 
 #[test]
+fn a_waiver_drops_one_finding_and_reports_it() {
+    let waive = |rule: &str, at: &str, reason: &str| {
+        format!("\n[[drc.waive]]\nrule = \"{rule}\"\nat = \"{at}\"\nreason = \"{reason}\"\n")
+    };
+    let board = [
+        waive("pad-off-board", "part R1", "milled edge-card socket"),
+        waive("unrouted", "net A", "joined by the mating card"),
+        waive("unrouted", "net Q", "stale"),
+    ]
+    .concat();
+    let p = load(&Fixture {
+        board: &board,
+        parts: &[
+            ("R1", "TWO", [29.5, 10.0]),
+            ("R2", "TWO", [29.5, 15.0]),
+            ("R3", "TWO", [10.0, 10.0]),
+        ],
+        nets: &[("A", &["R1.1", "R3.1"]), ("B", &["R2.1", "R3.2"])],
+        ..Default::default()
+    });
+    let at = |rule: &str, sev: Severity| -> Vec<String> {
+        let d = p.layouts[0].diags.iter();
+        d.filter(|d| d.rule.as_deref() == Some(rule) && d.severity == sev)
+            .map(|d| format!("{}: {}", d.at, d.message))
+            .collect()
+    };
+    assert_eq!(at("pad-off-board", Severity::Error), ["part R2: pads 2 hang off the board"]);
+    assert_eq!(at("pad-off-board", Severity::Info), ["part R1: waived: milled edge-card socket"]);
+    assert_eq!(at("unrouted", Severity::Error).len(), 1);
+    assert!(at("unrouted", Severity::Error)[0].starts_with("net B:"));
+    assert_eq!(at("unrouted", Severity::Info), ["net A: waived: joined by the mating card"]);
+    let stale = at("unrouted", Severity::Warning);
+    assert!(stale.len() == 1 && stale[0].starts_with("net Q: waived in [[drc.waive]] but nothing"));
+
+    let p = load(&Fixture { board: &waive("no-such-rule", " ", ""), ..Default::default() });
+    let d: Vec<&str> = p.boards[0].diags.iter().map(|d| d.message.as_str()).collect();
+    assert!(d.iter().any(|m| m.contains("no DRC rule `no-such-rule`")), "{d:?}");
+    assert!(d.iter().any(|m| m.contains("names the finding it waives")), "{d:?}");
+    assert!(d.iter().any(|m| m.contains("needs a `reason`")), "{d:?}");
+}
+
+#[test]
 fn part_bodies_keep_off_a_board_cutout() {
     let fab = format!("{TWO_PADS}{FAB_BODY}");
     let p = load(&Fixture {

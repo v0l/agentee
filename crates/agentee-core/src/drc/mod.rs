@@ -722,10 +722,17 @@ pub struct Report<'a> {
     d: &'a mut Diags,
     rule: &'static str,
     severity: Severity,
+    waivers: &'a [crate::board::Waiver],
+    waived: &'a mut [usize],
 }
 
 impl Report<'_> {
     pub fn emit(&mut self, at: impl Into<String>, message: impl Into<String>) {
+        let at = at.into();
+        if let Some(k) = self.waivers.iter().position(|w| w.rule == self.rule && w.at == at) {
+            self.waived[k] += 1;
+            return;
+        }
         self.d.push_rule(self.severity, self.rule, at, message);
     }
 }
@@ -773,19 +780,47 @@ pub fn messages(rule: &Rule, cx: &Ctx) -> Vec<crate::diag::Diagnostic> {
         return Vec::new();
     }
     let mut d = Diags::new("");
-    let mut report = Report { d: &mut d, rule: rule.id, severity: severity_of(cx.board, rule) };
+    let waivers = &cx.board.drc.waive;
+    let mut waived = vec![0; waivers.len()];
+    let mut report = Report {
+        d: &mut d,
+        rule: rule.id,
+        severity: severity_of(cx.board, rule),
+        waivers,
+        waived: &mut waived,
+    };
     (rule.check)(cx, &mut report);
     d.list
 }
 
 pub fn run(cx: &Ctx, d: &mut Diags) {
     let setup = Setup::of(cx);
+    let waivers = &cx.board.drc.waive;
+    let mut waived = vec![0; waivers.len()];
     for rule in registry() {
         if !(rule.applies)(&setup) || !enabled(cx.board, rule) {
             continue;
         }
-        let mut report = Report { d, rule: rule.id, severity: severity_of(cx.board, rule) };
+        let mut report = Report {
+            d,
+            rule: rule.id,
+            severity: severity_of(cx.board, rule),
+            waivers,
+            waived: &mut waived,
+        };
         (rule.check)(cx, &mut report);
+    }
+    for (w, n) in waivers.iter().zip(waived) {
+        if n == 0 {
+            d.push_rule(
+                Severity::Warning,
+                &w.rule,
+                &w.at,
+                "waived in [[drc.waive]] but nothing here breaks the rule, drop the waiver",
+            );
+        } else {
+            d.push_rule(Severity::Info, &w.rule, &w.at, format!("waived: {}", w.reason));
+        }
     }
 }
 
