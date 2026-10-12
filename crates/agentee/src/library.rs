@@ -439,19 +439,10 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
             None => {}
         }
     }
-    std::fs::write(dir.join(&sym.file), &sym_text).map_err(|e| e.to_string())?;
-    files.insert(
-        0,
-        Provenance {
-            path: sym.file.clone(),
-            source: sym.source.clone(),
-            sha256: datasheet::sha256(sym_text.as_bytes()),
-        },
-    );
     if let (Some(f), Some(t)) = (&fp, &fp_text) {
         std::fs::write(dir.join(&f.file), t).map_err(|e| e.to_string())?;
         files.insert(
-            1,
+            0,
             Provenance {
                 path: f.file.clone(),
                 source: f.source.clone(),
@@ -532,6 +523,22 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     if let Some(d) = &datasheet {
         pin_datasheet(&name, &d.sha256)?;
     }
+    let sym_text = match datasheet.as_ref().and_then(|d| d.url.as_deref()) {
+        Some(url) if get_key(&sym_text, "datasheet").as_deref() != Some(url) => {
+            notes.push(format!("the symbol's datasheet now points at {url}"));
+            set_key(&sym_text, "datasheet", url)?
+        }
+        _ => sym_text,
+    };
+    std::fs::write(dir.join(&sym.file), &sym_text).map_err(|e| e.to_string())?;
+    files.insert(
+        0,
+        Provenance {
+            path: sym.file.clone(),
+            source: sym.source.clone(),
+            sha256: datasheet::sha256(sym_text.as_bytes()),
+        },
+    );
     if lcsc.is_none() && a.distributors {
         lcsc = agentee_3d::easyeda::lcsc_code(&mpn).ok();
     }
