@@ -967,7 +967,8 @@ impl Project {
             pins.sort_by(|a, b| natural_cmp(a, b));
             pins.dedup();
             let missing: Vec<&str> = pins.iter().filter(|n| !pads.contains(n)).copied().collect();
-            let unused: Vec<&str> = pads.iter().filter(|n| !pins.contains(n)).copied().collect();
+            let unused: Vec<&str> =
+                pads.iter().filter(|n| !pins.contains(n) && **n != "MP").copied().collect();
             if !missing.is_empty() {
                 notes.push((
                     i,
