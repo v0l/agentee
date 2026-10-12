@@ -89,6 +89,27 @@ fn net_of(n: &Node, table: &HashMap<i64, String>) -> Option<String> {
     }
 }
 
+fn reaches_edge(
+    pad: &[Vec<P>],
+    place: &agentee_core::geom::Transform,
+    outline: &[P],
+    holes: &[&Vec<P>],
+) -> bool {
+    use agentee_core::geom::{point_in_polygon, point_segment_distance};
+    let on_board =
+        |p: P| point_in_polygon(p, outline) && !holes.iter().any(|h| point_in_polygon(p, h));
+    let gap = |p: P| {
+        std::iter::once(outline)
+            .chain(holes.iter().map(|h| h.as_slice()))
+            .flat_map(|l| (0..l.len()).map(move |i| (l[i], l[(i + 1) % l.len()])))
+            .map(|(a, b)| point_segment_distance(p, a, b))
+            .fold(f64::MAX, f64::min)
+    };
+    let points: Vec<P> = pad.iter().flatten().map(|p| place.apply(*p)).collect();
+    let inside = points.iter().filter(|p| on_board(**p)).count();
+    inside > 0 && (inside < points.len() || points.iter().any(|p| gap(*p) <= 0.01))
+}
+
 fn normalize_footprint(fp: &Node, bottom: bool, rot: f64) -> Node {
     fn walk(n: &Node, bottom: bool, rot: f64, parent: Option<&str>) -> Node {
         let Node::List(items) = n else { return n.clone() };
@@ -557,6 +578,11 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
     let mut parts = Vec::new();
     let mut pins: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut symbols: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let holes: Vec<&Vec<P>> = loops
+        .iter()
+        .skip(1)
+        .filter(|l| l.iter().all(|p| agentee_core::geom::point_in_polygon(*p, &outline)))
+        .collect();
     let mut used: BTreeSet<String> = BTreeSet::new();
     for (idx, fp) in footprints_nodes.iter().enumerate() {
         let at = fp.find("at");
@@ -599,7 +625,10 @@ pub fn import_board(text: &str, project: Option<&str>, name: &str) -> Result<Boa
         let lib_id = fp.arg(0).unwrap_or("footprint");
         let base = sanitize(lib_id.rsplit(':').next().unwrap_or(lib_id));
         let local = normalize_footprint(fp, bottom, rot);
-        let mut def = footprint::convert(&local)?;
+        let place = agentee_core::geom::Transform { at: origin, rotation: rot, mirror: bottom };
+        let mut def = footprint::convert_marking_edges(&local, |pad| {
+            reaches_edge(&pad.outlines(), &place, &outline, &holes)
+        })?;
         def.name = base.clone();
         let shapes: Vec<_> = def.graphics.iter().filter(|g| g.text.is_none()).collect();
         let text = format!("{:?}{:?}", def.pads, shapes);
@@ -1226,6 +1255,29 @@ mod tests {
         let b_mask = &b.board.stackup.layers[6];
         assert_eq!(b_mask.thickness, Some(agentee_core::units::Length::mm(0.02)));
         assert!(b.notes.iter().any(|n| n.contains("B.SilkS")), "{:?}", b.notes);
+    }
+
+    #[test]
+    fn pads_reaching_the_board_edge_are_marked_edge() {
+        let src = BOARD.replacen(
+            "  (segment",
+            r#"  (footprint "Lib:Tab" (layer "F.Cu") (at 19 10 90)
+    (property "Reference" "J1" (at 0 0 0) (layer "F.SilkS"))
+    (pad "1" smd rect (at 1 0 90) (size 1 1) (layers "F.Cu" "F.Mask"))
+    (pad "2" smd rect (at 0 -1.5 90) (size 1 1) (layers "F.Cu" "F.Mask"))
+    (pad "3" smd rect (at 0 1 90) (size 1 1) (layers "F.Cu" "F.Mask"))
+    (pad "4" smd rect (at -1 0 90) (size 1 1) (layers "F.Cu" "F.Mask") (property pad_prop_castellated))
+    (pad "5" smd rect (at 0 3 90) (size 1 1) (layers "F.Cu" "F.Mask")))
+  (segment"#,
+            1,
+        );
+        let b = import_board(&src, None, "t").unwrap();
+        let edge = |fp: &str| -> Vec<String> {
+            let f = b.footprints.iter().find(|f| f.name == fp).unwrap();
+            f.pads.iter().filter(|p| p.edge).map(|p| p.number.clone()).collect()
+        };
+        assert_eq!(edge("Tab"), ["3", "4"]);
+        assert!(edge("R_1206").is_empty() && edge("TO-92").is_empty());
     }
 
     #[test]

@@ -228,7 +228,7 @@ fn pad(n: &Node, footprint: &Node) -> Option<PadFile> {
         count: None,
         pitch: None,
         number_step: None,
-        edge: false,
+        edge: n.property("pad_prop_castellated").is_some(),
         zone_connect: zone_connect(n, kind).or_else(|| zone_connect(footprint, kind)),
     })
 }
@@ -351,6 +351,7 @@ fn same_template(a: &PadFile, b: &PadFile) -> bool {
         && a.drill == b.drill
         && a.layers == b.layers
         && a.zone_connect == b.zone_connect
+        && a.edge == b.edge
         && a.points.is_none()
         && b.points.is_none()
 }
@@ -395,6 +396,13 @@ pub fn collapse(pads: Vec<PadFile>) -> Vec<PadFile> {
 }
 
 pub fn convert(root: &Node) -> Result<FootprintFile, String> {
+    convert_marking_edges(root, |_| false)
+}
+
+pub fn convert_marking_edges(
+    root: &Node,
+    reaches_edge: impl Fn(&agentee_core::footprint::Pad) -> bool,
+) -> Result<FootprintFile, String> {
     if !matches!(root.head(), Some("footprint" | "module")) {
         return Err("not a KiCad footprint".into());
     }
@@ -413,7 +421,7 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
             graphics.extend(graphic(item));
         }
     }
-    Ok(FootprintFile {
+    let mut fp = FootprintFile {
         name: name.to_string(),
         description: root.find("descr").and_then(|d| d.arg(0)).unwrap_or("").to_string(),
         tags: root
@@ -445,9 +453,15 @@ pub fn convert(root: &Node) -> Result<FootprintFile, String> {
                     .collect()
             })
             .unwrap_or_default(),
-        pads: collapse(pads),
+        pads,
         graphics,
-    })
+    };
+    let resolved = fp.resolve(&mut agentee_core::diag::Diags::new(""));
+    for (p, r) in fp.pads.iter_mut().zip(&resolved.pads) {
+        p.edge |= r.is_copper() && reaches_edge(r);
+    }
+    fp.pads = collapse(fp.pads);
+    Ok(fp)
 }
 
 fn model_xyz(root: &Node, key: &str, default: f64) -> Option<[f64; 3]> {
