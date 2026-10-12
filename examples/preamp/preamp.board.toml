@@ -1,0 +1,49 @@
+name = "preamp"
+description = "9 V battery audio preamp: x11 gain and a 1 kHz Butterworth low-pass, through-hole, 2 layer"
+fab = "jlcpcb"
+
+[outline]
+size = [60.0, 40.0]
+corner_radius = "2"
+
+[stackup]
+preset = "jlcpcb-2l-1.6mm"
+finish = "ENIG"
+mask_color = "green"
+
+[[vias]]
+name = "std"
+drill = "0.4mm"
+diameter = "0.8mm"
+
+[[netclasses]]
+name = "Default"
+voltage = "9VDC"
+track_width = "0.3mm"
+clearance = "0.25mm"
+via = "std"
+
+[[netclasses]]
+name = "Signal"
+voltage = "9VDC"
+track_width = "0.3mm"
+clearance = "0.25mm"
+via = "std"
+description = "Audio signal and bias nets"
+
+[[netclasses]]
+name = "Ground"
+voltage = "0VDC"
+track_width = "0.6mm"
+clearance = "0.25mm"
+via = "std"
+
+[[netclasses]]
+name = "Power"
+voltage = "9VDC"
+track_width = "0.5mm"
+clearance = "0.25mm"
+current = "0.1A"
+max_temp_rise = "10C"
+via = "std"
+description = "9 V battery rail about 1 mA"

@@ -1,0 +1,267 @@
+name = "preamp"
+description = """
+9 V battery audio preamp: AC coupled x11 gain stage, then a unity gain Sallen-Key low-pass at 1 kHz
+Battery input: D1 blocks a reversed 9 V clip Mid-rail bias: R1, R2, C3"""
+board = "preamp"
+no_connect = ["J2.R"]
+
+[[parts]]
+ref = "J1"
+symbol = "B2B-PH-K-S"
+at = [12.7, 25.4]
+value = "BATTERY"
+footprint = "JST_PH_B2B-PH-K_1x02_P2.00mm_Vertical"
+fields = { library = "B2B-PH-K-S", mfr = "JST", mpn = "B2B-PH-K-S(LF)(SN)" }
+
+[[parts]]
+ref = "C1"
+symbol = "ESK107M025AE3EA"
+at = [43.18, 30.48]
+value = "100u"
+footprint = "CP_Radial_D6.3mm_P2.50mm"
+fields = { lcsc = "C1587782", library = "ESK107M025AE3EA", mfr = "KEMET", mpn = "ESK107M025AE3EA" }
+
+[[parts]]
+ref = "C2"
+symbol = "C320C104K5R5TA"
+at = [53.34, 30.48]
+value = "100n"
+footprint = "C_Rect_L4.6mm_W3.8mm_P2.50mm_MKS02_FKP02"
+fields = { lcsc = "C600221", library = "C320C104K5R5TA", mfr = "KEMET", mpn = "C320C104K5R5TA" }
+
+[[parts]]
+ref = "R1"
+symbol = "MFR-25FBF52-100K"
+at = [66.04, 27.94]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "R2"
+symbol = "MFR-25FBF52-100K"
+at = [66.04, 40.64]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "C3"
+symbol = "ESK106M050AC3AA"
+at = [76.2, 40.64]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "J2"
+symbol = "SJ1-3523N"
+at = [12.7, 76.2]
+value = "SJ1-3523N"
+footprint = "Jack_3.5mm_CUI_SJ1-3523N_Horizontal"
+fields = { lcsc = "C20182914", library = "SJ1-3523N", mfr = "Same Sky", mpn = "SJ1-3523N" }
+
+[[parts]]
+ref = "C4"
+symbol = "R82DC4100AA60J"
+at = [27.94, 73.66]
+value = "1u"
+footprint = "C_Rect_L7.2mm_W5.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C600444", library = "R82DC4100AA60J", mfr = "KEMET", mpn = "R82DC4100AA60J" }
+
+[[parts]]
+ref = "R3"
+symbol = "MFR-25FBF52-100K"
+at = [38.1, 83.82000000000001]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "U1"
+symbol = "LM358P"
+at = [55.88, 76.2]
+value = "LM358P"
+footprint = "DIP-8_W7.62mm"
+unit = 1
+fields = { lcsc = "C5213", library = "LM358P", mfr = "Texas Instruments", mpn = "LM358P" }
+
+[[parts]]
+ref = "R4"
+symbol = "MFR-25FBF52-100K"
+at = [55.88, 63.5]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "R5"
+symbol = "MFR-25FBF52-10K"
+at = [45.72, 91.44]
+value = "10k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1519255", library = "MFR-25FBF52-10K", mfr = "Yageo", mpn = "MFR-25FBF52-10K" }
+
+[[parts]]
+ref = "C5"
+symbol = "ESK106M050AC3AA"
+at = [45.72, 101.6]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "R6"
+symbol = "MFR-25FBF52-10K"
+at = [73.66, 76.2]
+value = "10k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1519255", library = "MFR-25FBF52-10K", mfr = "Yageo", mpn = "MFR-25FBF52-10K" }
+
+[[parts]]
+ref = "R7"
+symbol = "MFR-25FBF52-10K"
+at = [86.36, 76.2]
+value = "10k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+rotation = 90.0
+fields = { lcsc = "C1519255", library = "MFR-25FBF52-10K", mfr = "Yageo", mpn = "MFR-25FBF52-10K" }
+
+[[parts]]
+ref = "C6"
+symbol = "R82EC2220DQ50K"
+at = [81.28, 63.5]
+value = "22n"
+footprint = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+rotation = 90.0
+fields = { lcsc = "C600465", library = "R82EC2220DQ50K", mfr = "KEMET", mpn = "R82EC2220DQ50K" }
+
+[[parts]]
+ref = "C7"
+symbol = "R82EC2100AA50J"
+at = [93.98, 86.36]
+value = "10n"
+footprint = "C_Rect_L7.2mm_W2.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+fields = { lcsc = "C600459", library = "R82EC2100AA50J", mfr = "KEMET", mpn = "R82EC2100AA50J" }
+
+[[parts]]
+ref = "C8"
+symbol = "ESK106M050AC3AA"
+at = [124.46000000000001, 76.2]
+value = "10u"
+footprint = "CP_Radial_D5.0mm_P2.00mm"
+rotation = 90.0
+fields = { lcsc = "C5113355", library = "ESK106M050AC3AA", mfr = "KEMET", mpn = "ESK106M050AC3AA" }
+
+[[parts]]
+ref = "R8"
+symbol = "MFR-25FBF52-100K"
+at = [132.08, 86.36]
+value = "100k"
+footprint = "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"
+fields = { lcsc = "C1364475", library = "MFR-25FBF52-100K", mfr = "Yageo", mpn = "MFR-25FBF52-100K" }
+
+[[parts]]
+ref = "J3"
+symbol = "SJ1-3523N"
+at = [144.78, 76.2]
+value = "SJ1-3523N"
+footprint = "Jack_3.5mm_CUI_SJ1-3523N_Horizontal"
+fields = { lcsc = "C20182914", library = "SJ1-3523N", mfr = "Same Sky", mpn = "SJ1-3523N" }
+
+[[parts]]
+ref = "U1"
+symbol = "LM358P"
+at = [106.68, 78.74]
+value = "LM358P"
+footprint = "DIP-8_W7.62mm"
+unit = 2
+fields = { lcsc = "C5213", library = "LM358P", mfr = "Texas Instruments", mpn = "LM358P" }
+
+[[parts]]
+ref = "U1"
+symbol = "LM358P"
+at = [91.44, 30.48]
+value = "LM358P"
+footprint = "DIP-8_W7.62mm"
+unit = 3
+fields = { lcsc = "C5213", library = "LM358P", mfr = "Texas Instruments", mpn = "LM358P" }
+
+[[parts]]
+ref = "D1"
+symbol = "1N4148TR"
+at = [30.48, 22.86]
+value = "1N4148TR"
+footprint = "D_DO-35_SOD27_P7.62mm_Horizontal"
+rotation = 180.0
+fields = { lcsc = "C84410", library = "1N4148TR", mfr = "onsemi", mpn = "1N4148TR" }
+
+[[nets]]
+name = "VBAT"
+class = "Power"
+pins = ["J1.1", "D1.2"]
+
+[[nets]]
+name = "VCC"
+class = "Power"
+style = "power"
+pins = ["C1.1", "C2.1", "R1.1", "U1.8", "D1.1"]
+
+[[nets]]
+name = "GND"
+class = "Ground"
+style = "power"
+pins = ["J1.2", "C1.2", "C2.2", "R2.2", "C3.2", "J2.S", "J3.S", "C5.2", "C7.2", "R8.2", "U1.4"]
+
+[[nets]]
+name = "VREF"
+class = "Signal"
+pins = ["R1.2", "R2.1", "C3.1", "R3.2"]
+
+[[nets]]
+name = "IN"
+class = "Signal"
+pins = ["J2.T", "C4.1"]
+
+[[nets]]
+name = "IN_B"
+class = "Signal"
+pins = ["C4.2", "R3.1", "U1.3"]
+
+[[nets]]
+name = "FB"
+class = "Signal"
+pins = ["U1.2", "R4.2", "R5.1"]
+
+[[nets]]
+name = "GAIN_OUT"
+class = "Signal"
+pins = ["U1.1", "R4.1", "R6.1"]
+
+[[nets]]
+name = "FB_AC"
+class = "Signal"
+pins = ["R5.2", "C5.1"]
+
+[[nets]]
+name = "SK1"
+class = "Signal"
+pins = ["R6.2", "R7.1", "C6.1"]
+
+[[nets]]
+name = "SK2"
+class = "Signal"
+pins = ["R7.2", "C7.1", "U1.5"]
+
+[[nets]]
+name = "FILT_OUT"
+class = "Signal"
+pins = ["C6.2", "C8.1", "U1.7", "U1.6"]
+
+[[nets]]
+name = "OUT"
+class = "Signal"
+pins = ["C8.2", "R8.1", "J3.T", "J3.R"]

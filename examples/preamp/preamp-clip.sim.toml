@@ -1,0 +1,49 @@
+name = "preamp-clip"
+kind = "circuit"
+description = "A 1 kHz sine of 400 mV peak from a 100 ohm source, more than the gain stage can pass: it clips at U1's headroom, 1.5 V inside each rail. 245 mV peak is the most the input takes cleanly. U1 and D1 are modelled as in preamp-ac, from the LM358 and 1N4148 datasheets."
+record = ["IN", "GAIN_OUT", "FILT_OUT", "OUT"]
+
+[[drives]]
+net = "VBAT"
+dc = "9V"
+
+[[drives]]
+net = "VCC"
+current = true
+dc = "-0.7mA"
+
+[[drives]]
+net = "IN"
+resistance = "100ohm"
+sine = { offset = "0V", amplitude = "400mV", frequency = "1kHz" }
+
+[tran]
+stop = "5ms"
+step = "2us"
+
+[[checks]]
+v = "GAIN_OUT"
+at = "2.25ms"
+min = 6.6
+max = 6.95
+
+[[checks]]
+v = "GAIN_OUT"
+at = "2.75ms"
+min = 1.45
+max = 1.8
+
+[[blocks]]
+ref = "U1"
+kind = "opamp"
+gain = 1e5
+gbw = "0.7MHz"
+en = "40n"
+vos = "3mV"
+headroom = "1.5V"
+
+[[blocks]]
+ref = "D1"
+kind = "diode"
+is = "5.56nA"
+n = 1.974

@@ -1,0 +1,406 @@
+# imported from KiCad Connector_Audio:Jack_3.5mm_CUI_SJ1-3523N_Horizontal
+name = "Jack_3.5mm_CUI_SJ1-3523N_Horizontal"
+description = "TRS 3.5mm, horizontal, through-hole, slots 1.5 x 0.7 mm: the Same Sky SJ1-352XN datasheet rev 1.06 (product re-engineered 2022) asks 1.5 x 0.8, narrowed so a fab mills it as a slot, https://www.sameskydevices.com/product/resource/pdf/sj1-352xn.pdf"
+tags = ["TRS", "audio", "jack", "stereo", "horizontal"]
+mount = "tht"
+model = "3dmodels/Jack_3.5mm_CUI_SJ1-3523N_Horizontal.step"
+height = "5.50mm"
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [-5.0, 0.0]
+size = [1.2, 1.2]
+drill = 1.2
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [-5.0, 2.5]
+size = [1.2, 1.2]
+drill = 1.2
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [0.0, -5.0]
+size = [1.2, 1.2]
+drill = 1.2
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [5.0, 0.0]
+size = [1.2, 1.2]
+drill = 1.2
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+kind = "npth"
+shape = "circle"
+at = [5.0, 2.5]
+size = [1.2, 1.2]
+drill = 1.2
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "R"
+kind = "tht"
+shape = "oval"
+at = [-5.0, -5.0]
+size = [1.4, 2.2]
+drill = [0.7, 1.5]
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "S"
+kind = "tht"
+shape = "oval"
+at = [0.0, 0.0]
+size = [2.2, 1.4]
+drill = [1.5, 0.7]
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "T"
+kind = "tht"
+shape = "oval"
+at = [5.0, -5.0]
+size = [1.4, 2.2]
+rotation = 180.0
+drill = [0.7, 1.5]
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [0.0, -8.8]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -10.0]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-6.0, -7.7]
+end = [6.0, -7.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-6.0, 3.3]
+end = [-6.0, -7.7]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.5, 3.3]
+end = [-6.0, 3.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-4.5, 4.5]
+end = [-4.5, 3.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.0, 4.5]
+end = [-4.5, 4.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-3.0, 6.3]
+end = [-3.0, 4.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.0, 3.3]
+end = [-2.0, 6.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.0, 3.3]
+end = [-2.0, 3.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.0, 6.3]
+end = [2.0, 3.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.0, 4.5]
+end = [3.0, 6.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.0, 6.3]
+end = [-3.0, 6.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.5, 3.3]
+end = [4.5, 4.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.5, 4.5]
+end = [3.0, 4.5]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.0, -7.7]
+end = [6.0, 3.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.0, 3.3]
+end = [4.5, 3.3]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "Edge.Cuts"
+start = [-2.2, 3.5]
+end = [-2.2, 4.5]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "Edge.Cuts"
+start = [-2.2, 4.5]
+end = [-6.5, 4.5]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "Edge.Cuts"
+start = [1.8, 3.1]
+end = [-1.8, 3.1]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "Edge.Cuts"
+start = [2.2, 3.5]
+end = [2.2, 4.5]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "Edge.Cuts"
+start = [2.2, 4.5]
+end = [6.5, 4.5]
+width = 0.12
+
+[[graphics]]
+kind = "arc"
+layer = "Edge.Cuts"
+start = [-2.2, 3.5]
+mid = [-2.082843, 3.217158]
+end = [-1.8, 3.1]
+width = 0.12
+
+[[graphics]]
+kind = "arc"
+layer = "Edge.Cuts"
+start = [1.8, 3.1]
+mid = [2.082843, 3.217157]
+end = [2.2, 3.5]
+width = 0.12
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-6.25, -7.95]
+end = [-6.25, 4.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-6.25, 4.75]
+end = [-3.25, 4.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.25, 4.75]
+end = [-3.25, 6.55]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [-3.25, 6.55]
+end = [3.25, 6.55]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.25, 4.75]
+end = [6.25, 4.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [3.25, 6.55]
+end = [3.25, 4.75]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.25, -7.95]
+end = [-6.25, -7.95]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.25, 4.5]
+end = [6.25, -7.95]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.CrtYd"
+start = [6.25, 4.75]
+end = [6.25, 4.5]
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-6.0, -7.7]
+end = [6.0, -7.7]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-6.0, 3.3]
+end = [-6.0, -7.7]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.5, 3.3]
+end = [-6.0, 3.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.5, 4.5]
+end = [-4.5, 3.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-4.5, 4.5]
+end = [-3.0, 4.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.0, 4.5]
+end = [-3.0, 6.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-3.0, 6.3]
+end = [3.0, 6.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [3.0, 4.5]
+end = [3.0, 6.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.5, 3.3]
+end = [6.0, 3.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.5, 4.5]
+end = [3.0, 4.5]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [4.5, 4.5]
+end = [4.5, 3.3]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [6.0, 3.3]
+end = [6.0, -7.7]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "Dwgs.User"
+at = [0.0, 3.65]
+text = "PCB edge"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [0.0, -1.5]
+text = "${REFERENCE}"
+size = 1.0

@@ -1,0 +1,40 @@
+name = "preamp-power"
+kind = "circuit"
+description = "Clipping a fresh 9 V battery on: how long the mid-rail bias takes to settle through R1, R2 and C3, and the thump it pushes out of the output jack through C8 and R8 while it does. U1 and D1 are modelled as in preamp-ac, from the LM358 and 1N4148 datasheets. U1's quiescent current is left out, it moves VCC by 30 mV."
+record = ["VCC", "VREF", "GAIN_OUT", "FILT_OUT", "OUT"]
+
+[[drives]]
+net = "VBAT"
+dc = "9V"
+steps = [["0s", "0V"], ["10ms", "0V"], ["10.1ms", "9V"]]
+
+[tran]
+stop = "8s"
+step = "2ms"
+
+[[checks]]
+v = "VREF"
+at = "8s"
+min = 4.15
+max = 4.3
+
+[[checks]]
+v = "OUT"
+at = "8s"
+min = -0.05
+max = 0.05
+
+[[blocks]]
+ref = "U1"
+kind = "opamp"
+gain = 1e5
+gbw = "0.7MHz"
+en = "40n"
+vos = "3mV"
+headroom = "1.5V"
+
+[[blocks]]
+ref = "D1"
+kind = "diode"
+is = "5.56nA"
+n = 1.974

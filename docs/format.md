@@ -2539,8 +2539,12 @@ Block kinds and their fields:
 
 An op-amp is a single pole: a transconductance into a node with `gain` ohms and a capacitor that
 puts unity gain at `gbw`, then a buffer clamped smoothly between its rails less `headroom` (no
-clamp without both rail pins) behind `rout`. Every unit of a multi-unit op-amp with the three
-signal pins is its own op-amp sharing the rail pins. An LDO holds `vout` above `gnd` until the
+clamp without both rail pins) behind `rout`. The gain node stops a little past the clamp, so a
+clipped op-amp comes back off its rail as soon as its input asks it to, as a real one does,
+rather than winding up. The clamp and its `headroom` are the same on both rails. Every unit of a
+multi-unit op-amp with the three signal pins is its own op-amp sharing the rail pins, the output
+found by name or, when it has none, as the unit's one output pin. One block covers every unit of
+a part; a second block for the same `ref` is an error. An LDO holds `vout` above `gnd` until the
 input comes within `dropout`, then follows the input down, and the input supplies the output
 current plus `iq`.
 
@@ -2553,7 +2557,9 @@ when the spec or the schematic's netlist changes. `examples/lna` holds two: `lna
 OR-ing of the 5 V input through a Schottky to U1's bias current, and `lna-biastee`, how far the
 bias tee keeps RF on the output off VBIAS. Both take U1 as its 90 mA quiescent current and the
 BAT60A from its typical VF, from the two datasheets; the LED, which has no part number, is left
-out.
+out. `examples/preamp` is an op-amp design run through every analysis: the operating point, gain
+and noise of a gain stage and Sallen-Key filter on a dual LM358, the power-up thump as the
+mid-rail bias settles, clipping, and the reverse battery diode.
 
 ## Graphics
 

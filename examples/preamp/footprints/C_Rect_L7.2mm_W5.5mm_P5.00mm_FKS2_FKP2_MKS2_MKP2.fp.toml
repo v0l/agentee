@@ -1,0 +1,88 @@
+# imported from KiCad Capacitor_THT:C_Rect_L7.2mm_W5.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2
+name = "C_Rect_L7.2mm_W5.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2"
+description = "C, Rect series, Radial, pin pitch=5.00mm, length*width=7.2*5.5mm^2, Capacitor, http://www.wima.com/EN/WIMA_FKS_2.pdf"
+tags = ["C", "Rect", "series", "Radial", "pin", "pitch", "5.00mm", "length", "7.2mm", "width", "5.5mm", "Capacitor"]
+mount = "tht"
+model = "3dmodels/C_Rect_L7.2mm_W5.5mm_P5.00mm_FKS2_FKP2_MKS2_MKP2.step"
+height = "9.00mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "circle"
+at = [0.0, 0.0]
+size = [1.6, 1.6]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [5.0, 0.0]
+size = [1.6, 1.6]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [2.5, -4.0]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [2.5, 4.0]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.22, -2.87]
+end = [-1.22, 2.87]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.22, -2.87]
+end = [6.22, -2.87]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.22, 2.87]
+end = [6.22, 2.87]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [6.22, -2.87]
+end = [6.22, 2.87]
+width = 0.15
+
+[[graphics]]
+kind = "rect"
+layer = "F.CrtYd"
+start = [-1.35, -3.0]
+end = [6.35, 3.0]
+width = 0.05
+
+[[graphics]]
+kind = "rect"
+layer = "F.Fab"
+start = [-1.1, -2.75]
+end = [6.1, 2.75]
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [2.5, 0.0]
+text = "${REFERENCE}"
+size = 1.0

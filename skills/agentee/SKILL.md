@@ -538,4 +538,6 @@ per line. Send `commands = "help"` for the list.
   BGAs, USB 3 pairs with an FDTD and eye, DC drop on the core rail, thermal, and `DESIGN.md`.
 - `examples/hdi`: a 1+4+1 HDI coupon with microvias in the pads of a 0.5 mm BGA.
 - `examples/logic`: logic sims of a counter and an I2C write, with their VCDs.
+- `examples/preamp`: a through-hole op-amp board on a 9 V battery, with circuit sims of its
+  operating point, gain, noise, power-up, clipping and reverse battery.
 - `examples/hackrf-pro`: the HackRF Pro main board, imported from KiCad with `import board`.

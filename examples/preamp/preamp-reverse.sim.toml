@@ -1,0 +1,33 @@
+name = "preamp-reverse"
+kind = "circuit"
+description = "The battery clip on backwards: D1 has to hold VCC near 0 V. The 1N4148 fit gives 5.6 nA of reverse current, inside the datasheet's 25 nA maximum at 20 V. U1 and D1 are modelled as in preamp-ac, from the LM358 and 1N4148 datasheets. U1's quiescent current is left out: a constant sink would pull a dead rail below ground."
+record = ["VBAT", "VCC", "VREF"]
+
+[[drives]]
+net = "VBAT"
+dc = "-9V"
+
+[[checks]]
+v = "VCC"
+min = -0.05
+max = 0.001
+
+[[checks]]
+i = "D1"
+min = "-100nA"
+max = "100nA"
+
+[[blocks]]
+ref = "U1"
+kind = "opamp"
+gain = 1e5
+gbw = "0.7MHz"
+en = "40n"
+vos = "3mV"
+headroom = "1.5V"
+
+[[blocks]]
+ref = "D1"
+kind = "diode"
+is = "5.56nA"
+n = 1.974

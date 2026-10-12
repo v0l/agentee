@@ -1,0 +1,60 @@
+# imported from KiCad Connector_Audio:AudioJack3
+name = "SJ1-3523N"
+reference = "J"
+description = "Audio Jack, 3 Poles (Stereo / TRS)"
+keywords = ["audio", "jack", "receptacle", "stereo", "headphones", "phones", "TRS", "connector"]
+footprint_filters = ["Jack*"]
+footprint = "Jack_3.5mm_CUI_SJ1-3523N_Horizontal"
+
+[[graphics]]
+kind = "rect"
+start = [-5.08, 5.08]
+end = [-6.35, 2.54]
+width = 0.254
+fill = "solid"
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.905, 2.54], [-1.27, 3.175], [-0.635, 2.54], [-0.635, 0.0], [2.54, 0.0]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[0.0, 2.54], [0.635, 3.175], [1.27, 2.54], [2.54, 2.54]]
+width = 0.254
+
+[[graphics]]
+kind = "rect"
+start = [2.54, -3.81]
+end = [-5.08, 5.08]
+width = 0.254
+fill = "background"
+
+[[graphics]]
+kind = "polyline"
+points = [[2.54, -2.54], [-2.54, -2.54], [-2.54, 2.54], [-3.175, 3.175], [-3.81, 2.54]]
+width = 0.254
+
+[[pins]]
+number = "S"
+type = "passive"
+at = [5.08, -2.54]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "R"
+type = "passive"
+at = [5.08, 0.0]
+side = "right"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "T"
+type = "passive"
+at = [5.08, 2.54]
+side = "right"
+length = 2.54
+unit = 1

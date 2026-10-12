@@ -1,0 +1,1034 @@
+# imported from KiCad Capacitor_THT:CP_Radial_D6.3mm_P2.50mm
+name = "CP_Radial_D6.3mm_P2.50mm"
+description = "CP, Radial series, Radial, pin pitch=2.50mm, diameter=6.3mm, height=7mm, Electrolytic Capacitor"
+tags = ["CP", "Radial", "series", "Radial", "pin", "pitch", "2.50mm", "diameter", "6.3mm", "height", "7mm", "Electrolytic", "Capacitor"]
+mount = "tht"
+model = "3dmodels/CP_Radial_D6.3mm_P2.50mm.step"
+height = "6.30mm"
+
+[[pads]]
+number = "1"
+kind = "tht"
+shape = "roundrect"
+at = [0.0, 0.0]
+size = [1.6, 1.6]
+roundrect_ratio = 0.15625
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[pads]]
+number = "2"
+kind = "tht"
+shape = "circle"
+at = [2.5, 0.0]
+size = [1.6, 1.6]
+drill = 0.8
+layers = ["*.Cu", "*.Mask"]
+
+[[graphics]]
+kind = "text"
+layer = "F.SilkS"
+at = [1.25, -4.4]
+text = "${REFERENCE}"
+size = 1.0
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [1.25, 4.4]
+text = "${VALUE}"
+size = 1.0
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-2.250241, -1.839]
+end = [-1.620241, -1.839]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [-1.935241, -2.154]
+end = [-1.935241, -1.524]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.25, -3.23]
+end = [1.25, 3.23]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.29, -3.23]
+end = [1.29, 3.23]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.33, -3.229]
+end = [1.33, 3.229]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.37, -3.228]
+end = [1.37, 3.228]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.41, -3.226]
+end = [1.41, 3.226]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.45, -3.224]
+end = [1.45, 3.224]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.49, -3.221]
+end = [1.49, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.49, 1.04]
+end = [1.49, 3.221]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.53, -3.218]
+end = [1.53, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.53, 1.04]
+end = [1.53, 3.218]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.57, -3.214]
+end = [1.57, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.57, 1.04]
+end = [1.57, 3.214]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.61, -3.21]
+end = [1.61, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.61, 1.04]
+end = [1.61, 3.21]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.65, -3.205]
+end = [1.65, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.65, 1.04]
+end = [1.65, 3.205]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.69, -3.2]
+end = [1.69, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.69, 1.04]
+end = [1.69, 3.2]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.73, -3.195]
+end = [1.73, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.73, 1.04]
+end = [1.73, 3.195]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.77, -3.188]
+end = [1.77, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.77, 1.04]
+end = [1.77, 3.188]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.81, -3.182]
+end = [1.81, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.81, 1.04]
+end = [1.81, 3.182]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.85, -3.174]
+end = [1.85, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.85, 1.04]
+end = [1.85, 3.174]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.89, -3.167]
+end = [1.89, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.89, 1.04]
+end = [1.89, 3.167]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.93, -3.159]
+end = [1.93, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.93, 1.04]
+end = [1.93, 3.159]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.97, -3.15]
+end = [1.97, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [1.97, 1.04]
+end = [1.97, 3.15]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.01, -3.14]
+end = [2.01, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.01, 1.04]
+end = [2.01, 3.14]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.05, -3.131]
+end = [2.05, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.05, 1.04]
+end = [2.05, 3.131]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.09, -3.12]
+end = [2.09, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.09, 1.04]
+end = [2.09, 3.12]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.13, -3.109]
+end = [2.13, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.13, 1.04]
+end = [2.13, 3.109]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.17, -3.098]
+end = [2.17, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.17, 1.04]
+end = [2.17, 3.098]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.21, -3.086]
+end = [2.21, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.21, 1.04]
+end = [2.21, 3.086]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.25, -3.073]
+end = [2.25, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.25, 1.04]
+end = [2.25, 3.073]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.29, -3.06]
+end = [2.29, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.29, 1.04]
+end = [2.29, 3.06]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.33, -3.047]
+end = [2.33, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.33, 1.04]
+end = [2.33, 3.047]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.37, -3.032]
+end = [2.37, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.37, 1.04]
+end = [2.37, 3.032]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.41, -3.017]
+end = [2.41, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.41, 1.04]
+end = [2.41, 3.017]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.45, -3.002]
+end = [2.45, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.45, 1.04]
+end = [2.45, 3.002]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.49, -2.986]
+end = [2.49, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.49, 1.04]
+end = [2.49, 2.986]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.53, -2.969]
+end = [2.53, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.53, 1.04]
+end = [2.53, 2.969]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.57, -2.952]
+end = [2.57, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.57, 1.04]
+end = [2.57, 2.952]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.61, -2.934]
+end = [2.61, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.61, 1.04]
+end = [2.61, 2.934]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.65, -2.915]
+end = [2.65, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.65, 1.04]
+end = [2.65, 2.915]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.69, -2.896]
+end = [2.69, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.69, 1.04]
+end = [2.69, 2.896]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.73, -2.876]
+end = [2.73, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.73, 1.04]
+end = [2.73, 2.876]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.77, -2.855]
+end = [2.77, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.77, 1.04]
+end = [2.77, 2.855]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.81, -2.834]
+end = [2.81, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.81, 1.04]
+end = [2.81, 2.834]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.85, -2.812]
+end = [2.85, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.85, 1.04]
+end = [2.85, 2.812]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.89, -2.789]
+end = [2.89, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.89, 1.04]
+end = [2.89, 2.789]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.93, -2.765]
+end = [2.93, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.93, 1.04]
+end = [2.93, 2.765]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.97, -2.741]
+end = [2.97, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [2.97, 1.04]
+end = [2.97, 2.741]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.01, -2.716]
+end = [3.01, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.01, 1.04]
+end = [3.01, 2.716]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.05, -2.69]
+end = [3.05, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.05, 1.04]
+end = [3.05, 2.69]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.09, -2.663]
+end = [3.09, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.09, 1.04]
+end = [3.09, 2.663]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.13, -2.636]
+end = [3.13, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.13, 1.04]
+end = [3.13, 2.636]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.17, -2.607]
+end = [3.17, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.17, 1.04]
+end = [3.17, 2.607]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.21, -2.577]
+end = [3.21, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.21, 1.04]
+end = [3.21, 2.577]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.25, -2.547]
+end = [3.25, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.25, 1.04]
+end = [3.25, 2.547]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.29, -2.516]
+end = [3.29, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.29, 1.04]
+end = [3.29, 2.516]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.33, -2.483]
+end = [3.33, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.33, 1.04]
+end = [3.33, 2.483]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.37, -2.45]
+end = [3.37, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.37, 1.04]
+end = [3.37, 2.45]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.41, -2.415]
+end = [3.41, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.41, 1.04]
+end = [3.41, 2.415]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.45, -2.379]
+end = [3.45, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.45, 1.04]
+end = [3.45, 2.379]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.49, -2.342]
+end = [3.49, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.49, 1.04]
+end = [3.49, 2.342]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.53, -2.304]
+end = [3.53, -1.04]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.53, 1.04]
+end = [3.53, 2.304]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.57, -2.264]
+end = [3.57, 2.264]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.61, -2.223]
+end = [3.61, 2.223]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.65, -2.181]
+end = [3.65, 2.181]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.69, -2.137]
+end = [3.69, 2.137]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.73, -2.091]
+end = [3.73, 2.091]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.77, -2.044]
+end = [3.77, 2.044]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.81, -1.995]
+end = [3.81, 1.995]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.85, -1.943]
+end = [3.85, 1.943]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.89, -1.89]
+end = [3.89, 1.89]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.93, -1.834]
+end = [3.93, 1.834]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [3.97, -1.775]
+end = [3.97, 1.775]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.01, -1.714]
+end = [4.01, 1.714]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.05, -1.649]
+end = [4.05, 1.649]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.09, -1.581]
+end = [4.09, 1.581]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.13, -1.509]
+end = [4.13, 1.509]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.17, -1.432]
+end = [4.17, 1.432]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.21, -1.35]
+end = [4.21, 1.35]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.25, -1.261]
+end = [4.25, 1.261]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.29, -1.165]
+end = [4.29, 1.165]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.33, -1.058]
+end = [4.33, 1.058]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.37, -0.939]
+end = [4.37, 0.939]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.41, -0.801]
+end = [4.41, 0.801]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.45, -0.633]
+end = [4.45, 0.633]
+width = 0.15
+
+[[graphics]]
+kind = "line"
+layer = "F.SilkS"
+start = [4.49, -0.402]
+end = [4.49, 0.402]
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.SilkS"
+center = [1.25, 0.0]
+radius = 3.27
+width = 0.15
+
+[[graphics]]
+kind = "circle"
+layer = "F.CrtYd"
+center = [1.25, 0.0]
+radius = 3.4
+width = 0.05
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.443972, -1.3735]
+end = [-0.813972, -1.3735]
+width = 0.1
+
+[[graphics]]
+kind = "line"
+layer = "F.Fab"
+start = [-1.128972, -1.6885]
+end = [-1.128972, -1.0585]
+width = 0.1
+
+[[graphics]]
+kind = "circle"
+layer = "F.Fab"
+center = [1.25, 0.0]
+radius = 3.15
+width = 0.1
+
+[[graphics]]
+kind = "text"
+layer = "F.Fab"
+at = [1.25, 0.0]
+text = "${REFERENCE}"
+size = 1.0

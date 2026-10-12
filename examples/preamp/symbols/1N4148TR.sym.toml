@@ -1,0 +1,42 @@
+# imported from KiCad Diode:1N4148
+name = "1N4148TR"
+reference = "D"
+description = "100V 0.15A standard switching diode, DO-35"
+datasheet = "https://assets.nexperia.com/documents/data-sheet/1N4148_1N4448.pdf"
+keywords = ["diode"]
+footprint = "D_DO-35_SOD27_P7.62mm_Horizontal"
+footprint_filters = ["D*DO?35*"]
+pin_names = "hidden"
+hide_pin_numbers = true
+
+[[graphics]]
+kind = "polyline"
+points = [[-1.27, -1.27], [-1.27, 1.27]]
+width = 0.254
+
+[[graphics]]
+kind = "polygon"
+points = [[1.27, -1.27], [1.27, 1.27], [-1.27, 0.0]]
+width = 0.254
+
+[[graphics]]
+kind = "polyline"
+points = [[1.27, 0.0], [-1.27, 0.0]]
+
+[[pins]]
+number = "1"
+name = "K"
+type = "passive"
+at = [-3.81, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "A"
+type = "passive"
+at = [3.81, 0.0]
+side = "right"
+length = 2.54
+unit = 1

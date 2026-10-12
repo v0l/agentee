@@ -1,0 +1,109 @@
+[[parts]]
+key = "1N4148TR"
+manufacturer = "onsemi"
+refs = ["D1"]
+url = "http://www.farnell.com/datasheets/4499079.pdf"
+source = "Farnell"
+sha256 = "4d5b685040de3fa5882c6f34c717ff8ddab9e9ef8d7350631b23ab063addc863"
+revision = "September, 2024 − Rev. 6 1N914/D"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "B2B-PH-K-S(LF)(SN)"
+manufacturer = "JST"
+refs = ["J1"]
+url = "http://www.farnell.com/datasheets/4648554.pdf"
+source = "Farnell"
+sha256 = "dd60971fa074f07ada7b147e1f352e4f5fb0ff4918e2fe7b0daa34120df0dabc"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "C320C104K5R5TA"
+manufacturer = "KEMET"
+refs = ["C2"]
+url = "https://www.yageogroup.com/component-documentation/download/specsheet/C320C104K5R5TA?lang=en"
+source = "Farnell"
+sha256 = "b8eff1181da6534630bebe8077b13366173a84faf78b8dfa9e9187476b4bcda2"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "ESK106M050AC3AA"
+manufacturer = "KEMET"
+refs = ["C3", "C5", "C8"]
+url = "https://www.yageogroup.com/component-documentation/download/specsheet/ESK106M050AC3AA?lang=en"
+source = "Farnell"
+sha256 = "1674dcddefaf4262d53c624a48f031e341793bf78a928a40422dcbc07bc4975c"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "ESK107M025AE3EA"
+manufacturer = "KEMET"
+refs = ["C1"]
+url = "https://www.yageogroup.com/component-documentation/download/specsheet/ESK107M025AE3EA?lang=en"
+source = "Farnell"
+sha256 = "9c6e4c105aa9547f3436468e4f0e1924ad4bf53e96ea5f76b801659bb934d50c"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "LM358P"
+manufacturer = "Texas Instruments"
+refs = ["U1"]
+url = "https://www.ti.com/lit/ds/symlink/lm358.pdf"
+source = "given"
+sha256 = "95fd2cc9c87014b32c2939009266e2c5938fc3c11a61d52015fa53fdeef5ab70"
+revision = "SLOS068AB – JUNE 1976 – REVISED OCTOBER 2024"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-100K"
+manufacturer = "Yageo"
+refs = ["R1", "R2", "R3", "R4", "R8"]
+url = "https://www.yageogroup.com/content/datasheet/asset/file/YAGEO-MFR_DATASHEET"
+source = "Farnell"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "MFR-25FBF52-10K"
+manufacturer = "Yageo"
+refs = ["R5", "R6", "R7"]
+url = "https://www.yageogroup.com/content/datasheet/asset/file/YAGEO-MFR_DATASHEET"
+source = "Farnell"
+sha256 = "b460acdb476469774e0785a8ef85aec79e2d95fe41beaa79c5a414e4e95e3fe0"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "R82DC4100AA60J"
+manufacturer = "KEMET"
+refs = ["C4"]
+url = "https://yageogroup.com/download/specsheet/R82DC4100AA60J"
+source = "Farnell"
+sha256 = "671eca64ed87eb59a626365482ca42b18b14c2705b535f4deebad90b51bdf12b"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "R82EC2100AA50J"
+manufacturer = "KEMET"
+refs = ["C7"]
+url = "https://yageogroup.com/download/specsheet/R82EC2100AA50J"
+source = "Farnell"
+sha256 = "5d2faa1b4ef495eac7a1d2e48175e39ca0fe9d7dac2bfec0a4b0feddd879d537"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "R82EC2220DQ50K"
+manufacturer = "KEMET"
+refs = ["C6"]
+url = "https://yageogroup.com/download/specsheet/R82EC2220DQ50K"
+source = "Farnell"
+sha256 = "df700bac545a3a11e708fae8cc102c2140ac75affc2e0ce495a06473a5fc5964"
+fetched = "2026-10-12"
+
+[[parts]]
+key = "SJ1-3523N"
+manufacturer = "Same Sky"
+refs = ["J2", "J3"]
+url = "https://www.sameskydevices.com/product/resource/farnellpdf/sj1-352xn.pdf"
+source = "Farnell"
+sha256 = "41bbbcd746865e84925c7d111639c3086cfd4f8fc19014b7e3e96052f66b64e2"
+fetched = "2026-10-12"

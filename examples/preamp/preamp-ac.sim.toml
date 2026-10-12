@@ -1,0 +1,91 @@
+name = "preamp-ac"
+kind = "circuit"
+description = "Operating point, gain and noise from a 100 ohm line source on the input jack to the output jack. U1 is the LM358 from the TI datasheet (SLOS068AB, table 5.7, VS = 5 V, 25 C, typ): AOL 100 V/mV, GBW 0.7 MHz, en 40 nV/rtHz at 1 kHz (taken as flat), VOS 3 mV, and 1.5 V of headroom, its worst swing from the positive rail at RL >= 2 kohm, applied to both rails. Its quiescent current is a 0.7 mA sink on VCC, 2 x 350 uA typ. D1 is the 1N4148 fitted to the onsemi 1N914/D figure 4 typical curve at 25 C, 500 mV at 0.1 mA and 617 mV at 1 mA (n 1.97, Is 5.6 nA)."
+record = ["VCC", "VREF", "IN", "GAIN_OUT", "FILT_OUT", "OUT"]
+
+[[drives]]
+net = "VBAT"
+dc = "9V"
+
+[[drives]]
+net = "VCC"
+current = true
+dc = "-0.7mA"
+
+[[drives]]
+net = "IN"
+ac = 1
+resistance = "100ohm"
+
+[ac]
+from = "1Hz"
+to = "1MHz"
+points = 20
+
+[noise]
+output = "OUT"
+input = "IN"
+from = "20Hz"
+to = "20kHz"
+
+[[checks]]
+v = "VCC"
+min = 8.3
+max = 8.5
+
+[[checks]]
+v = "VREF"
+min = 4.1
+max = 4.3
+
+[[checks]]
+v = "FILT_OUT"
+min = 4.1
+max = 4.3
+
+[[checks]]
+v = "OUT"
+min = -0.01
+max = 0.01
+
+[[checks]]
+v = "OUT"
+at = "20Hz"
+min = 20
+
+[[checks]]
+v = "OUT"
+at = "100Hz"
+min = 20.5
+max = 21.1
+
+[[checks]]
+v = "OUT"
+at = "1kHz"
+min = 18.3
+max = 19.3
+
+[[checks]]
+v = "OUT"
+at = "10kHz"
+max = -16
+
+[[checks]]
+noise = "OUT"
+at = "1kHz"
+max = "500n"
+
+[[blocks]]
+ref = "U1"
+kind = "opamp"
+gain = 1e5
+gbw = "0.7MHz"
+en = "40n"
+vos = "3mV"
+headroom = "1.5V"
+
+[[blocks]]
+ref = "D1"
+kind = "diode"
+is = "5.56nA"
+n = 1.974
