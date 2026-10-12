@@ -82,7 +82,11 @@ pub fn props(ui: &mut Ui, s: &Sim, rail: Color32) {
 
 pub fn canvas(ui: &mut Ui, r: &CircuitResult) {
     let w = ui.available_width();
-    let h = (ui.available_height() / 2.0 - 40.0).clamp(220.0, 420.0);
+    let shares =
+        [(!r.times.is_empty(), 1.0), (!r.freqs.is_empty(), 1.7), (!r.noise_freqs.is_empty(), 1.0)];
+    let plots = shares.iter().filter(|s| s.0).count() + usize::from(!r.freqs.is_empty());
+    let weight: f32 = shares.iter().filter(|s| s.0).map(|s| s.1).sum::<f32>().max(1.0);
+    let h = ((ui.available_height() - SECTION * plots as f32) / weight).clamp(140.0, 420.0);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         if !r.times.is_empty() {
             section(ui, "transient", "node voltages against time", |ui| {
@@ -95,8 +99,9 @@ pub fn canvas(ui: &mut Ui, r: &CircuitResult) {
                 plot(ui, &r.freqs, &r.gain_db, true, "Hz", "dB", 1.0, Vec2::new(w, h));
             });
             ui.add_space(8.0);
-            section(ui, "phase", "degrees", |ui| {
-                plot(ui, &r.freqs, &r.phase_deg, true, "Hz", "deg", 1.0, Vec2::new(w, h * 0.7));
+            let phase = live_phase(&r.gain_db, &r.phase_deg);
+            section(ui, "phase", "degrees, where the gain is above -200 dB", |ui| {
+                plot(ui, &r.freqs, &phase, true, "Hz", "deg", 1.0, Vec2::new(w, h * 0.7));
             });
             ui.add_space(8.0);
         }
@@ -124,6 +129,28 @@ pub fn canvas(ui: &mut Ui, r: &CircuitResult) {
             },
         );
     });
+}
+
+const DEAD_DB: f64 = -200.0;
+const SECTION: f32 = 52.0;
+
+fn live_phase(gain: &[Curve], phase: &[Curve]) -> Vec<Curve> {
+    phase
+        .iter()
+        .map(|c| {
+            let g = gain.iter().find(|g| g.name == c.name);
+            let values = c
+                .values
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| match g.and_then(|g| g.values.get(i)) {
+                    Some(&db) if db < DEAD_DB => f64::NAN,
+                    _ => v,
+                })
+                .collect();
+            Curve { name: c.name.clone(), values }
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -248,5 +275,20 @@ fn plot(
             }
         }
         resp.on_hover_text(lines.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+
+    #[test]
+    fn phase_is_dropped_where_the_net_carries_no_signal() {
+        let c = |n: &str, v: &[f64]| Curve { name: n.into(), values: v.to_vec() };
+        let gain = [c("OUT", &[-3.0, -6.0]), c("DEAD", &[-400.0, -390.0])];
+        let phase = [c("OUT", &[-45.0, -90.0]), c("DEAD", &[137.0, -12.0])];
+        let shown = live_phase(&gain, &phase);
+        assert_eq!(shown[0].values, [-45.0, -90.0]);
+        assert!(shown[1].values.iter().all(|v| v.is_nan()));
     }
 }
