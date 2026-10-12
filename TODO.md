@@ -2,7 +2,7 @@
 
 Shared list of open work. See `AGENTS.md` for how to log, take and finish an item.
 
-## Edit
+## Edit (taken: master)
 
 - `edit sch NAME net NET PIN` without `--sheet` writes into the first schematic in the project
   that has a net of that name, even one of another board (`crates/agentee/src/edit/sch.rs`,
@@ -14,18 +14,18 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - A batch that adds a part with `add` and then nets it in the same `edit sch` script fails with
   "no part R3" (rotator, 2026-10-11).
 
-## View
+## View (taken: master)
 
 - `the_engine_runs_into_the_editor_and_waits_for_save` in `crates/agentee-view/tests/edit.rs`
   fails on master (ef65ccf): "the editor never settled" after 400 frames at line 120.
 
-## Check
+## Check (taken: master)
 
 - `testpoint::is_rail` takes any name starting `VBAT`/`VBUS` as a rail, so the level check calls
   `VBAT_ADC` and `VBUS_SENSE` ADC pins overdriven at the class voltage
   (`crates/agentee-core/src/testpoint.rs:221`). buggy-guard works round it with `rails` entries.
 
-## Layout
+## Layout (taken: master)
 
 - No routing keepout: `route` and `layout` cannot be kept off an area of a layer, such as a buck
   switch node. buggy-guard v0.4.0 dropped temporary 4 mm GND tracks there and removed them after.
@@ -35,12 +35,12 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `testpoints` put TP29's via inside F1.2 on buggy-guard, which made the fab notes ask to fill
   and cap it, and put TP30 at the same schematic spot as TP24 on the mcu sheet.
 
-## Fab
+## Fab (taken: master)
 
 - `fab-notes.txt` has no IPC class, finished hole tolerance, removal of non-functional pads or
   fab logo keepout, and the board file has no key to set them; practice.md asks for all four.
 
-## Library
+## Library (taken: master)
 
 - 3D model resolver: one chain behind `library add`, `models` and the 3D view that tries KiCad
   (project, local libs, kicad-packages3D) then vendor sources, and fits a vendor model to our
