@@ -27,25 +27,14 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   an operating point.
 - A pot (`RV`) has no model: a 3-pin pot needs a `vcvs` block, which has no wiper resistance
   (`examples/ladder-vcf` RV2, RV3). A `potentiometer` kind with `resistance` and `position`.
-- The AC phase plot draws noise for nets with no AC signal (gain near -400 dB); `vcf-ac-3v`
-  with SUM_OUT and QA_B recorded (`crates/agentee-view/src/circuit.rs`). (taken: todo-fixes-2)
 - Op-amp block has one `headroom` for both rails; the LM358 swings to within mV of ground but
   1.5 V of V+, so `preamp-clip` clips low at 1.5 V. No slew rate, input bias current or PSRR,
   and `en` is flat with no 1/f corner (`crates/agentee-sim/src/circuit.rs` Buffer).
-- `render sim:NAME` at the default 900 px cuts off the noise panel when there is a transient or
-  AC plot above it; `preamp-ac` needed `--height 1800` (`crates/agentee-view/src/circuit.rs`).
-  (taken: todo-fixes-2)
 
-## Library (taken: todo-fixes-2)
+## Library
 
-- `library add --datasheet URL` pins the URL in `part.toml` but leaves the KiCad symbol's
-  `datasheet`: LM358P kept `lm2904-n.pdf`, 1N5817G kept Vishay's for an onsemi part.
-- `datasheet fetch LM358P` without `--url` cached ST's LM358 (DocID2163) for TI's LM358P, and
-  1N5817G (onsemi 1N5817/D) was cached under `comchip-technology/`.
-- `library find` run 4 at a time gets Farnell `403 Account Over Queries Per Second Limit` and
-  drops Farnell from the result instead of retrying.
-- `library verify` passes a footprint whose slots break the fab minimum (KiCad's SJ1-3523N has
-  0.4 mm slots); only `check` on a placed layout catches it.
+- `library find` merges offers by part number across makers: 1N5817G shows as onsemi with
+  Mouser's Comchip PDF (`QW_BG016_1N5817_G...`) as its datasheet link.
 
 ## Layout
 
