@@ -227,7 +227,7 @@ fn label_room(
     inward: bool,
 ) -> Option<LabelBox> {
     let file = placed.and_then(|f| f.label.as_ref());
-    if file.is_some_and(|l| l.hide) {
+    if file.is_some_and(|l| l.hide == Some(true)) {
         return None;
     }
     let (layer, at, text, size, rotation, anchor) =
@@ -240,6 +240,7 @@ fn label_room(
             _ => None,
         })?;
     let size = file.and_then(|l| l.size).map_or(size, |s| s.to_mm());
+    let text = file.and_then(|l| l.text.as_deref()).unwrap_or(text.as_str());
     let text = text.replace("${REFERENCE}", reference);
     let pen = crate::font::default_thickness(size);
     let (w, h) = (crate::font::ink_width(&text, size) + pen, size + pen);

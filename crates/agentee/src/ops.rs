@@ -1776,6 +1776,15 @@ pub fn testpoints(root: &Path, name: &str, o: &TestpointOptions) -> Result<Value
                         continue;
                     };
                     let mut label = toml_edit::InlineTable::new();
+                    for key in ["text", "hide"] {
+                        if let Some(v) = t
+                            .get("label")
+                            .and_then(|l| l.get(key))
+                            .and_then(toml_edit::Item::as_value)
+                        {
+                            label.insert(key, v.clone());
+                        }
+                    }
                     match fx.at {
                         Some(at) if pass == 0 => {
                             let mut pt = toml_edit::Array::new();

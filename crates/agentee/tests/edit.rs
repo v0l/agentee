@@ -630,3 +630,54 @@ fn untrack_takes_only_the_named_net_or_span() {
     let (_, err, ok) = run(&d, &["edit", "pcb", "t", "untrack", "A"]);
     assert!(!ok && err.contains("no track of net `A`"), "{err}");
 }
+
+#[test]
+fn label_sets_and_clears_the_silk_reference() {
+    let d = dir("label");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.sch.toml"),
+        "name = \"t\"\nboard = \"b\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [10.16, 20.32]\n\
+         footprint = \"R_0402_1005Metric\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d.join("t.pcb.toml"),
+        "name = \"t\"\nboard = \"b\"\nschematic = \"t\"\n[[footprints]]\nref = \"R1\"\nat = [10, 10]\n",
+    )
+    .unwrap();
+    let pcb = || std::fs::read_to_string(d.join("t.pcb.toml")).unwrap();
+
+    edit(&d, &["pcb", "t", "label", "R1", "--text", "RX", "--size", "0.8mm"]);
+    assert!(pcb().contains("label = { text = \"RX\", size = \"0.8mm\" }"), "{}", pcb());
+    edit(&d, &["pcb", "t", "label", "R1", "--hide"]);
+    assert!(pcb().contains("text = \"RX\", size = \"0.8mm\", hide = true"), "{}", pcb());
+    edit(&d, &["pcb", "t", "label", "R1", "--show"]);
+    assert!(pcb().contains("text = \"RX\", size = \"0.8mm\", hide = false"), "{}", pcb());
+    edit(&d, &["pcb", "t", "label", "R1", "--clear", "hide"]);
+    assert!(pcb().contains("label = { text = \"RX\", size = \"0.8mm\" }"), "{}", pcb());
+    edit(&d, &["pcb", "t", "label", "R1", "--at", "10,8.5", "--clear", "text,size"]);
+    assert!(pcb().contains("label = { at = [10.0, 8.5] }"), "{}", pcb());
+    let (out, _, _) = run(&d, &["edit", "pcb", "t", "label", "R1", "--clear", "at"]);
+    assert!(out.contains("R1 label back to the footprint's"), "{out}");
+    assert!(!pcb().contains("label"), "{}", pcb());
+
+    let before = pcb();
+    for args in [
+        vec!["pcb", "t", "label", "R9", "--text", "X"],
+        vec!["pcb", "t", "label", "R1", "--text", " "],
+        vec!["pcb", "t", "label", "R1", "--hide", "--show"],
+        vec!["pcb", "t", "label", "R1", "--clear", "colour"],
+    ] {
+        let mut all = vec!["edit"];
+        all.extend(args.iter().copied());
+        let (_, err, ok) = run(&d, &all);
+        assert!(!ok && !err.is_empty(), "agentee {all:?} should have failed");
+        assert_eq!(before, pcb(), "{all:?} wrote the file anyway");
+    }
+}

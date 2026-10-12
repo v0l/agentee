@@ -1042,6 +1042,7 @@ at = [13.0, 8.05]
 rotation = 90                  # degrees, counter-clockwise
 # side = "bottom"              # mirrors the footprint and swaps F./B. layers
 label = { at = [9.9, 7.4], rotation = 90 }   # move the silk reference; size = 0.8, hide = true
+# label = { text = "PWR" }     # print this instead of the reference; ${REFERENCE} and ${VALUE} expand
 # mlcc = false                 # this part is not a ceramic capacitor, over the footprint's `mlcc`
 # locked = true                # `agentee place` never moves it
 
@@ -1199,6 +1200,13 @@ another part's body, which is a warning. When a reference label fails, check nam
 spot that passes every rule, as a `label = { at = [...] }` line to paste. `agentee silk NAME`
 (MCP `silk`) pastes them all for you and repeats until the labels settle; `--hide` hides the
 references that have no clear spot, typically small passives under a BGA.
+
+`label.text` prints its own words in place of the footprint's reference text, with
+`${REFERENCE}` and `${VALUE}` expanded, and gets the same checks. A label with only `text` keeps
+the footprint's spot, rotation and size. Mounting holes start with their reference hidden;
+`hide = false` shows it. `agentee edit pcb NAME label REF` sets `--text`, `--at`, `--rotation`,
+`--size`, `--hide` or `--show`, and `--clear text,at,rotation,size,hide` drops keys again. The
+fab layer keeps the real reference for assembly.
 
 A fill piece is kept only if it touches two items of its net, or one and is at least
 `min_island_area`; the rest reach nothing new and are removed. Check verifies every fill against

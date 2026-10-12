@@ -1278,6 +1278,10 @@ pub fn write_moves(text: &str, moves: &[placement::Move]) -> Result<String, Stri
         }
         if m.hide_label {
             let mut hidden = toml_edit::InlineTable::new();
+            if let Some(own) = t.get("label").and_then(|l| l.get("text")).and_then(|v| v.as_value())
+            {
+                hidden.insert("text", own.clone());
+            }
             hidden.insert("hide", true.into());
             t["label"] = toml_edit::value(hidden);
             continue;

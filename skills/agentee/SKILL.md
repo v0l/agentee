@@ -288,6 +288,8 @@ Tools for the last few connections and for touch-ups, each with `--dry-run`:
 - `agentee tune NAME` meanders pairs over their skew and match groups short of their length.
 - `agentee neck NAME` necks tracks down where they enter a narrower pad.
 - `agentee silk NAME` moves failing reference labels, `--hide` hides the ones with nowhere to go.
+- `agentee edit pcb NAME label REF --text PWR` prints other words in place of a reference; mounting
+  hole references start hidden, `--show` brings one back.
 - `agentee fill NAME` fills the zones and stores the copper in the file.
 
 Check reports the ratsnest for every unrouted connection, so the layout is done when `unrouted`

@@ -38,12 +38,14 @@ pub fn reset(text: &str, r: &Reset) -> Result<String, String> {
         && let Some(parts) = doc.get_mut("footprints").and_then(Item::as_array_of_tables_mut)
     {
         for t in parts.iter_mut() {
-            let hidden =
-                t.get("label").and_then(|l| l.get("hide")).and_then(Item::as_bool).unwrap_or(false);
+            let mut l = toml_edit::InlineTable::new();
+            for key in ["text", "hide"] {
+                if let Some(v) = t.get("label").and_then(|l| l.get(key)).and_then(Item::as_value) {
+                    l.insert(key, v.clone());
+                }
+            }
             t.remove("label");
-            if hidden {
-                let mut l = toml_edit::InlineTable::new();
-                l.insert("hide", true.into());
+            if !l.is_empty() {
                 t["label"] = value(l);
             }
         }

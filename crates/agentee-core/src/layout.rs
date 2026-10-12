@@ -64,22 +64,61 @@ pub struct PlacementFile {
 #[serde(deny_unknown_fields)]
 pub struct LabelFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Point>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<Length>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub hide: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide: Option<bool>,
+}
+
+pub fn label_hidden(label: Option<&LabelFile>, hole: bool) -> bool {
+    label.and_then(|l| l.hide).unwrap_or(hole)
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Label {
+    pub text: Option<String>,
     pub at: P,
     pub rotation: f64,
     pub size: f64,
     pub hide: bool,
     pub moved: bool,
+    pub styled: bool,
+}
+
+fn label_of(f: &PlacementFile, hole: bool) -> Option<Label> {
+    let hide = label_hidden(f.label.as_ref(), hole);
+    let Some(l) = &f.label else {
+        return hide.then(|| Label {
+            text: None,
+            at: f.at.to_mm(),
+            rotation: 0.0,
+            size: 1.0,
+            hide,
+            moved: false,
+            styled: false,
+        });
+    };
+    Some(Label {
+        text: l.text.clone(),
+        at: l.at.map(|p| p.to_mm()).unwrap_or(f.at.to_mm()),
+        rotation: l.rotation.unwrap_or(0.0),
+        size: l.size.map(Length::to_mm).unwrap_or(1.0),
+        hide,
+        moved: l.at.is_some(),
+        styled: l.rotation.is_some() || l.size.is_some(),
+    })
+}
+
+impl Label {
+    fn moved(old: Option<Label>, at: P, rotation: f64) -> Label {
+        let (text, size) = old.map_or((None, 1.0), |l| (l.text, l.size));
+        Label { text, at, rotation, size, hide: false, moved: true, styled: true }
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -437,6 +476,10 @@ impl Placed {
                 continue;
             };
             let is_ref = text.contains("${REFERENCE}");
+            let text = match self.label.as_ref().and_then(|l| l.text.as_ref()) {
+                Some(own) if is_ref => own,
+                _ => text,
+            };
             let text =
                 text.replace("${REFERENCE}", &self.reference).replace("${VALUE}", &self.value);
             let mut st = SilkText {
@@ -457,8 +500,10 @@ impl Placed {
                     st.at = l.at;
                     st.anchor = crate::graphic::Anchor::Center;
                 }
-                st.rotation = l.rotation;
-                st.size = l.size;
+                if l.styled || l.moved {
+                    st.rotation = l.rotation;
+                    st.size = l.size;
+                }
             }
             out.push(st);
         }
@@ -694,8 +739,7 @@ impl Layout {
                 let Some(p) = parts.iter_mut().find(|p| p.reference == f.reference) else {
                     continue;
                 };
-                let size = p.label.as_ref().map_or(1.0, |l| l.size);
-                p.label = Some(Label { at, rotation: f.rotation, size, hide: false, moved: true });
+                p.label = Some(Label::moved(p.label.take(), at, f.rotation));
                 moved.insert(f.reference.clone(), f);
                 changed += 1;
             }
@@ -712,8 +756,7 @@ impl Layout {
             let Some(p) = self.parts.iter_mut().find(|p| p.reference == f.reference) else {
                 continue;
             };
-            let size = p.label.as_ref().map_or(1.0, |l| l.size);
-            p.label = Some(Label { at, rotation: f.rotation, size, hide: false, moved: true });
+            p.label = Some(Label::moved(p.label.take(), at, f.rotation));
         }
     }
 
@@ -966,6 +1009,11 @@ impl LayoutFile {
                 d.error(&at, format!("{} has no footprint in the schematic", f.reference));
                 continue;
             };
+            if let Some(t) = f.label.as_ref().and_then(|l| l.text.as_deref())
+                && t.trim().is_empty()
+            {
+                d.error(&at, "label text is empty; use `hide = true` to print no reference");
+            }
             let Some(fp) = cx.footprints.get(fp_name.as_str()) else {
                 d.error(&at, format!("footprint `{fp_name}` is not in this project"));
                 continue;
@@ -973,6 +1021,7 @@ impl LayoutFile {
             let bottom = f.side == Some(BoardSide::Bottom);
             let rotation = f.rotation.unwrap_or(0.0);
             let t = Transform { at: f.at.to_mm(), rotation, mirror: bottom };
+            let hole = crate::place::role_of(&f.reference, fp_name, fp) == crate::place::Role::Hole;
             let pads = fp
                 .pads
                 .iter()
@@ -1032,13 +1081,7 @@ impl LayoutFile {
                 rotation,
                 bottom,
                 pads,
-                label: f.label.as_ref().map(|l| Label {
-                    at: l.at.map(|p| p.to_mm()).unwrap_or(f.at.to_mm()),
-                    rotation: l.rotation.unwrap_or(0.0),
-                    size: l.size.map(Length::to_mm).unwrap_or(1.0),
-                    hide: l.hide,
-                    moved: l.at.is_some(),
-                }),
+                label: label_of(f, hole),
                 mlcc: f.mlcc.or(fp.mlcc),
             });
         }

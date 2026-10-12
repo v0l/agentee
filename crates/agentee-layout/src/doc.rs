@@ -198,7 +198,14 @@ impl Doc {
             f.rotation = (rot.abs() >= 1e-6).then_some(rot);
             f.side = m.bottom.then_some(agentee_core::layout::BoardSide::Bottom);
             if m.hide_label {
-                f.label = Some(LabelFile { at: None, rotation: None, size: None, hide: true });
+                let text = f.label.take().and_then(|l| l.text);
+                f.label = Some(LabelFile {
+                    text,
+                    at: None,
+                    rotation: None,
+                    size: None,
+                    hide: Some(true),
+                });
                 continue;
             }
             if let Some(label) = f.label.as_mut()
@@ -228,10 +235,11 @@ impl Doc {
                 continue;
             };
             let label = f.label.get_or_insert(LabelFile {
+                text: None,
                 at: None,
                 rotation: None,
                 size: None,
-                hide: false,
+                hide: None,
             });
             label.at = Some(Point::mm(at[0], at[1]));
             label.rotation = (fix.rotation != 0.0).then_some(fix.rotation);
@@ -247,12 +255,13 @@ impl Doc {
                 continue;
             };
             let label = f.label.get_or_insert(LabelFile {
+                text: None,
                 at: None,
                 rotation: None,
                 size: None,
-                hide: false,
+                hide: None,
             });
-            label.hide = true;
+            label.hide = Some(true);
         }
         if !refs.is_empty() {
             self.changed();
@@ -384,10 +393,13 @@ fn sync_footprints(
                         label.remove("rotation");
                     }
                 }
-                if l.hide {
-                    label.insert("hide", true.into());
-                } else {
-                    label.remove("hide");
+                match l.hide {
+                    Some(h) => {
+                        label.insert("hide", h.into());
+                    }
+                    None => {
+                        label.remove("hide");
+                    }
                 }
                 t["label"] = value(label);
             }

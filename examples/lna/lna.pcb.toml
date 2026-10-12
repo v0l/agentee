@@ -91,22 +91,18 @@ label = { at = [12.6, 23.35] }
 [[footprints]]
 ref = "H1"
 at = [2.7, 2.7]
-label = { hide = true }
 
 [[footprints]]
 ref = "H2"
 at = [33.3, 2.7]
-label = { hide = true }
 
 [[footprints]]
 ref = "H3"
 at = [2.7, 21.3]
-label = { hide = true }
 
 [[footprints]]
 ref = "H4"
 at = [33.3, 21.3]
-label = { hide = true }
 
 [[footprints]]
 ref = "R1"

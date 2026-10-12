@@ -14,6 +14,7 @@ pub const COMMANDS: &[&str] = &[
     "uncutout",
     "pair",
     "text",
+    "label",
     "fanout",
     "stitch",
     "watermark",
@@ -37,6 +38,7 @@ pub fn command(name: &str) -> Option<Cmd> {
         "uncutout" => uncutout,
         "pair" => pair,
         "text" => text_cmd,
+        "label" => label,
         "fanout" => fanout,
         "stitch" => stitch,
         "watermark" => watermark,
@@ -54,6 +56,7 @@ pub fn bool_flags(name: &str) -> &'static [&'static str] {
         "track" => &[],
         "zone" => &["relief", "no-relief", "relief-tht-only"],
         "watermark" => &["hide"],
+        "label" => &["hide", "show"],
         "title" => &["clear"],
         "test" => &["through-holes", "no-vias"],
         _ => &[],
@@ -77,6 +80,9 @@ pub fn usage(name: &str) -> &'static str {
         "pair" => "pair NET+ NET- [--max-skew 1mm]",
         "text" => {
             "text STRING [--layer F.SilkS] [--at X,Y] [--size 1.0] [--rotation 90] [--locked]"
+        }
+        "label" => {
+            "label REF [--text TEXT] [--at X,Y] [--rotation 90] [--size 0.8mm] [--hide | --show] [--clear text,at,rotation,size,hide]"
         }
         "fanout" => {
             "fanout REF [--via bga] [--skip-rings 2] [--always GND] [--skip A1] [--nets GND,3V3] [--exclude C2?]"
@@ -868,6 +874,67 @@ fn stitch(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     }
     insert(s.doc(path)?, "stitching", t);
     Ok(Report::log(format!("{net} stitched with vias")))
+}
+
+fn label(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let reference = o.word("a reference")?;
+    let body = o.take("text");
+    let at = o.at("at")?;
+    let rotation = o.typed("rotation")?;
+    let size = o.take("size").map(|v| length(&v, "--size")).transpose()?;
+    let (hide, show) = (o.flag("hide"), o.flag("show"));
+    let clear = o.words("clear")?;
+    o.done("label", 0)?;
+    if hide && show {
+        return Err("label: --hide and --show cannot go together".into());
+    }
+    if body.as_deref().is_some_and(|b| b.trim().is_empty()) {
+        return Err("label: the text is empty; --hide prints no reference".into());
+    }
+    let keys = ["text", "at", "rotation", "size", "hide"];
+    if let Some(k) = clear.iter().find(|k| !keys.contains(&k.as_str())) {
+        return Err(format!("label: cannot clear `{k}`, only {}", keys.join(", ")));
+    }
+    let doc = s.doc(path)?;
+    let Some(t) = doc
+        .get_mut("footprints")
+        .and_then(|v| v.as_array_of_tables_mut())
+        .and_then(|a| a.iter_mut().find(|t| text(t, "ref").as_deref() == Some(reference.as_str())))
+    else {
+        return Err(format!("{reference} is not placed in this layout; `place {reference}` first"));
+    };
+    let mut l = t.get("label").and_then(|v| v.as_inline_table()).cloned().unwrap_or_default();
+    for k in &clear {
+        l.remove(k);
+    }
+    let hidden = hide.then_some(true).or(show.then_some(false));
+    for (k, v) in [
+        ("text", body.clone().map(TValue::from)),
+        ("at", at),
+        ("rotation", rotation),
+        ("size", size),
+        ("hide", hidden.map(TValue::from)),
+    ] {
+        if let Some(v) = v {
+            l.insert(k, v);
+        }
+    }
+    l.fmt();
+    if l.is_empty() {
+        t.remove("label");
+    } else {
+        t["label"] = Item::Value(TValue::InlineTable(l.clone()));
+    }
+    let shown =
+        l.iter().map(|(k, v)| format!("{k} = {}", v.to_string().trim())).collect::<Vec<_>>();
+    let log = match shown.is_empty() {
+        true => format!("{reference} label back to the footprint's"),
+        false => format!("{reference} label {{ {} }}", shown.join(", ")),
+    };
+    Ok(Report {
+        log: vec![log],
+        facts: vec![json!({ "ref": reference, "text": body, "hide": hidden })],
+    })
 }
 
 fn watermark(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {

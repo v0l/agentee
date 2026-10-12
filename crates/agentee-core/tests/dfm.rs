@@ -1918,3 +1918,58 @@ fn a_routed_via_onto_copper_the_net_already_joins_is_not_kept() {
     let r = agentee_core::route::drop_spare_vias(l, b, r);
     assert!(r.vias.is_empty() && r.tracks.is_empty(), "{:?} {:?}", r.vias, r.tracks);
 }
+
+#[test]
+fn a_label_prints_its_own_text_and_hole_labels_start_hidden() {
+    let with_ref = |body: &str| {
+        format!(
+            "{body}\n[[graphics]]\nkind = \"text\"\nlayer = \"F.SilkS\"\nat = [0, -2.5]\ntext = \"${{REFERENCE}}\"\nsize = 0.8\nrotation = 90\n"
+        )
+    };
+    let r = with_ref(&chip([0.96, 0.0], [0.56, 0.62]));
+    let h = with_ref(HOLE);
+    let silk = |last: &str, pcb: &str| {
+        let (first, last) = match last {
+            "H1" => {
+                (("R1", "R_0402_1005Metric", [20.0, 10.0]), ("H1", "MountingHole_3mm", [5.0, 5.0]))
+            }
+            _ => {
+                (("H1", "MountingHole_3mm", [5.0, 5.0]), ("R1", "R_0402_1005Metric", [20.0, 10.0]))
+            }
+        };
+        let p = load(&Fixture {
+            footprints: &[("R_0402_1005Metric", r.as_str()), ("MountingHole_3mm", h.as_str())],
+            parts: &[first, last],
+            nets: &[],
+            pcb,
+            ..Default::default()
+        });
+        let errors: Vec<String> = p.layouts[0]
+            .diags
+            .iter()
+            .filter(|d| d.message.contains("label text"))
+            .map(|d| d.message.clone())
+            .collect();
+        let texts: Vec<(String, f64, f64)> = p.layouts[0]
+            .item
+            .parts
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| p.silk_texts(i))
+            .map(|t| (t.text, t.rotation, t.size))
+            .collect();
+        (texts, errors)
+    };
+    let (plain, _) = silk("R1", "");
+    assert_eq!(plain.iter().map(|t| t.0.as_str()).collect::<Vec<_>>(), ["R1"], "{plain:?}");
+    let (own, _) = silk("R1", "label = { text = \"${VALUE} ohm\" }\n");
+    assert_eq!(own, [("0 ohm".to_string(), plain[0].1, 0.8)]);
+    let (styled, _) = silk("R1", "label = { text = \"X\", size = 1.2 }\n");
+    assert_eq!((styled[0].0.as_str(), styled[0].2), ("X", 1.2));
+    let (shown, _) = silk("H1", "label = { hide = false, text = \"M3\" }\n");
+    let mut names: Vec<&str> = shown.iter().map(|t| t.0.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["M3", "R1"]);
+    let (_, errors) = silk("R1", "label = { text = \" \" }\n");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+}
