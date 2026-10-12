@@ -2874,7 +2874,13 @@ stock; `--limit` caps the list (default 15). A listed part already in the librar
 of the project (`-p`), or a KiCad `Library:Name`; the footprint defaults to the symbol's. It
 copies the footprint's 3D model in (from the KiCad model directories, the model cache or a
 download), points the footprint at the copy and sets its `height` from the model when it has none, so a part works offline and keeps working when a
-KiCad install or a vendor download changes. It fetches the datasheet (`--datasheet` URL or PDF,
+KiCad install or a vendor download changes. When KiCad has no model of that name, it takes the
+nearest body in the same `.3dshapes` folder, the same package with the closest exposed pad (or the
+plain body of a `_ThermalVias` footprint), and says so; the 3D view and `models` do the same.
+`--model` also takes a vendor download, a ZIP or folder holding a `.kicad_mod` and its STEP or
+VRML model (SamacSys, SnapMagic and Ultra Librarian ship these): it matches the vendor
+footprint's pads to ours by number, refuses when they sit more than 0.1 mm apart, and writes the
+`model_offset` and `model_rotate` that put the vendor model on our footprint. It fetches the datasheet (`--datasheet` URL or PDF,
 else the symbol's URL, else the distributors'), pins it in the datasheet cache so `datasheet
 purge` never removes it, and records each listing's stock and price breaks. Its notes say when no distributor has the part
 in stock as an active part. `--local` adds to the

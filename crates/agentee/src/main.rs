@@ -560,7 +560,7 @@ struct LibraryAdd {
     /// A .fp.toml file, a project footprint or a KiCad Library:Name; default the symbol's footprint
     #[arg(long)]
     footprint: Option<String>,
-    /// A STEP or VRML file or URL; default the footprint's model
+    /// A STEP or VRML file or URL, or a vendor ZIP or folder with a .kicad_mod and its model; default the footprint's model
     #[arg(long)]
     model: Option<String>,
     /// A datasheet URL or PDF; default the symbol's URL, then the distributors'

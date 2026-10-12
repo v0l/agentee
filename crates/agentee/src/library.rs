@@ -112,6 +112,99 @@ fn get_key(text: &str, key: &str) -> Option<String> {
     doc.get(key)?.as_str().map(str::to_string)
 }
 
+fn find_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(read) = std::fs::read_dir(dir) else { return };
+    for e in read.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            find_files(&p, out);
+        } else {
+            out.push(p);
+        }
+    }
+}
+
+fn unzip(zip: &Path) -> Result<PathBuf, String> {
+    let bytes = std::fs::read(zip).map_err(|e| format!("{}: {e}", zip.display()))?;
+    let dir =
+        std::env::temp_dir().join(format!("agentee-model-{}", &datasheet::sha256(&bytes)[..16]));
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|e| format!("{}: {e}", zip.display()))?;
+    for i in 0..archive.len() {
+        let mut f = archive.by_index(i).map_err(|e| e.to_string())?;
+        let Some(name) = f.enclosed_name() else { continue };
+        if f.is_dir() {
+            continue;
+        }
+        let out = dir.join(name);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let mut w = std::fs::File::create(&out).map_err(|e| e.to_string())?;
+        std::io::copy(&mut f, &mut w).map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
+fn vendor_bundle(spec: &str) -> Result<Option<(PathBuf, Option<PathBuf>)>, String> {
+    let path = Path::new(spec);
+    let dir = if path.is_dir() {
+        path.to_path_buf()
+    } else if path.is_file() && spec.to_ascii_lowercase().ends_with(".zip") {
+        unzip(path)?
+    } else {
+        return Ok(None);
+    };
+    let mut files = Vec::new();
+    find_files(&dir, &mut files);
+    files.sort();
+    let ext = |p: &PathBuf| {
+        p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default()
+    };
+    let model = ["step", "stp", "wrl"]
+        .iter()
+        .find_map(|want| files.iter().find(|p| ext(p) == *want))
+        .cloned()
+        .ok_or(format!("{spec} holds no STEP or VRML model"))?;
+    let footprint = files.iter().find(|p| ext(p) == "kicad_mod").cloned();
+    Ok(Some((model, footprint)))
+}
+
+fn fit_to(ft: &str, vendor: &Path) -> Result<(String, String), String> {
+    let theirs = agentee_kicad::import_footprint(&vendor.to_string_lossy())?;
+    let theirs = theirs.resolve(&mut agentee_core::diag::Diags::new(&theirs.name));
+    let ours: agentee_core::footprint::FootprintFile =
+        toml::from_str(ft).map_err(|e| e.to_string())?;
+    let ours = ours.resolve(&mut agentee_core::diag::Diags::new(&ours.name));
+    let f = agentee_3d::fit::fit(&theirs, &ours)?;
+    let mut doc: toml_edit::DocumentMut = ft.parse().map_err(|e| format!("{e}"))?;
+    let mut offset = toml_edit::Array::new();
+    for v in f.model_offset {
+        offset.push(format!("{}mm", agentee_core::units::trim(v, 4)));
+    }
+    doc["model_offset"] = toml_edit::value(offset);
+    let mut rotate = toml_edit::Array::new();
+    for v in f.model_rotate {
+        rotate.push(v);
+    }
+    doc["model_rotate"] = toml_edit::value(rotate);
+    if f.model_scale != [1.0; 3] {
+        let mut scale = toml_edit::Array::new();
+        for v in f.model_scale {
+            scale.push(v);
+        }
+        doc["model_scale"] = toml_edit::value(scale);
+    }
+    let note = format!(
+        "model placed by the vendor footprint {}: {} pads matched within {:.3} mm, turned {} degrees",
+        vendor.file_name().and_then(|n| n.to_str()).unwrap_or_default(),
+        f.pads,
+        f.rms,
+        f.turn
+    );
+    Ok((doc.to_string(), note))
+}
+
 pub struct AddArgs<'a> {
     pub mpn: &'a str,
     pub name: Option<&'a str>,
@@ -226,13 +319,23 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
         .map(str::to_string)
         .or_else(|| fp_text.as_deref().and_then(|t| get_key(t, "model")));
     if let (Some(m), Some(ft)) = (model_spec, fp_text.as_mut()) {
-        let found = if Path::new(&m).is_file() {
-            Ok((PathBuf::from(&m), None))
-        } else {
-            agentee_3d::resolve(&m, &root)
+        let bundle = vendor_bundle(&m)?;
+        let found = match &bundle {
+            Some((model, _)) => Ok((model.clone(), None)),
+            None if Path::new(&m).is_file() => Ok((PathBuf::from(&m), None)),
+            None => agentee_3d::resolve(&m, &root),
         };
         match found {
             Ok((path, near)) => {
+                if let Some((_, Some(vendor))) = &bundle {
+                    match fit_to(ft, vendor) {
+                        Ok((text, note)) => {
+                            *ft = text;
+                            notes.push(note);
+                        }
+                        Err(e) => notes.push(format!("model from {m} stored unfitted: {e}")),
+                    }
+                }
                 if let Some(n) = &near {
                     notes.push(format!(
                         "KiCad has no model {}; stored the nearest body {n}, check it with agentee library verify",
@@ -984,6 +1087,68 @@ pub fn datasheet_of(project_root: Option<&Path>, name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_vendor_bundle_places_its_model_by_the_pads() {
+        let dir = std::env::temp_dir().join(format!("agentee-bundle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("KiCad")).unwrap();
+        std::fs::create_dir_all(dir.join("3D")).unwrap();
+        std::fs::write(dir.join("3D/part.stp"), "ISO-10303-21;\n").unwrap();
+        std::fs::write(
+            dir.join("KiCad/part.kicad_mod"),
+            "(footprint \"V\" (pad \"1\" smd rect (at -1 0) (size 0.5 0.5) (layers \"F.Cu\")) (pad \"2\" smd rect (at 1 0) (size 0.5 0.5) (layers \"F.Cu\")) (pad \"3\" smd rect (at 0 2) (size 0.5 0.5) (layers \"F.Cu\")) (model \"part.stp\" (offset (xyz 0.5 0 0)) (rotate (xyz 0 0 90))))",
+        )
+        .unwrap();
+        let (model, vendor) = vendor_bundle(dir.to_str().unwrap()).unwrap().unwrap();
+        assert!(model.ends_with("3D/part.stp"));
+        let zip_path = dir.with_extension("zip");
+        let mut w = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+        for name in ["3D/part.stp", "KiCad/part.kicad_mod"] {
+            w.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            std::io::Write::write_all(&mut w, &std::fs::read(dir.join(name)).unwrap()).unwrap();
+        }
+        w.finish().unwrap();
+        let (zm, zv) = vendor_bundle(zip_path.to_str().unwrap()).unwrap().unwrap();
+        assert!(
+            zm.ends_with("3D/part.stp") && zv.is_some_and(|v| v.ends_with("KiCad/part.kicad_mod"))
+        );
+        let _ = std::fs::remove_file(&zip_path);
+        let vendor = vendor.unwrap();
+        let pad = |n: &str, at: [f64; 2]| {
+            let q = agentee_core::geom::rotate(at, 90.0);
+            format!(
+                "\n[[pads]]\nnumber = \"{n}\"\nkind = \"smd\"\nshape = \"rect\"\nat = [{}, {}]\nsize = [0.5, 0.5]\n",
+                q[0] + 2.0,
+                q[1] + 3.0
+            )
+        };
+        let ours = format!(
+            "name = \"P\"\nmodel = \"x.step\"\n{}{}{}",
+            pad("1", [-1.0, 0.0]),
+            pad("2", [1.0, 0.0]),
+            pad("3", [0.0, 2.0])
+        );
+        let (text, note) = fit_to(&ours, &vendor).unwrap();
+        assert!(note.contains("3 pads matched") && note.contains("turned 90 degrees"), "{note}");
+        let fp: agentee_core::footprint::FootprintFile = toml::from_str(&text).unwrap();
+        let fp = fp.resolve(&mut agentee_core::diag::Diags::new("P"));
+        let theirs = agentee_kicad::import_footprint(&vendor.to_string_lossy()).unwrap();
+        let theirs = theirs.resolve(&mut agentee_core::diag::Diags::new("V"));
+        let at = |f: &agentee_core::footprint::Footprint| {
+            let r = agentee_3d::export::rotation(f.model_rotate);
+            let m = [1.0, 0.5, 0.0];
+            let q = [0, 1].map(|i| (0..3).map(|k| r[i][k] * m[k]).sum::<f64>() + f.model_offset[i]);
+            [q[0], -q[1]]
+        };
+        let want = agentee_core::geom::rotate(at(&theirs), 90.0);
+        let got = at(&fp);
+        assert!(
+            agentee_core::geom::dist([want[0] + 2.0, want[1] + 3.0], got) < 1e-3,
+            "{want:?} {got:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn find_keeps_current_stocked_parts_merged_by_part_number() {

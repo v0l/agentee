@@ -1,4 +1,5 @@
 pub mod export;
+pub mod fit;
 mod nearest;
 pub mod parametric;
 pub mod step;
