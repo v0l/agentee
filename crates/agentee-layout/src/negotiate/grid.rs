@@ -180,6 +180,7 @@ struct Obstacle {
     net: u16,
     clr: f64,
     edge: bool,
+    fixed: bool,
 }
 
 struct KeepMap {
@@ -243,7 +244,17 @@ impl Grid {
         }
     }
 
-    fn record(&mut self, shape: &Shape, layers: u64, net: u16, clr: f64, edge: bool, reach: f64) {
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        &mut self,
+        shape: &Shape,
+        layers: u64,
+        net: u16,
+        clr: f64,
+        edge: bool,
+        fixed: bool,
+        reach: f64,
+    ) {
         let (lo, hi) = shape.bounds();
         let k = self.obstacles.len() as u32;
         let b =
@@ -255,7 +266,7 @@ impl Grid {
                 self.bins[y * self.bw + x].push(k);
             }
         }
-        self.obstacles.push(Obstacle { shape: shape.clone(), layers, net, clr, edge });
+        self.obstacles.push(Obstacle { shape: shape.clone(), layers, net, clr, edge, fixed });
     }
 
     pub fn exact(&self, l: usize, p: P, net: u16) -> (f64, f64) {
@@ -278,7 +289,7 @@ impl Grid {
             let v = o.shape.dist(p);
             let apart = self.isolation.apart(self.domain(net), self.domain(o.net), l);
             q = q.min(v - o.clr.max(apart));
-            if !o.edge {
+            if !o.edge && !o.fixed {
                 d = d.min(v);
             }
         }
@@ -312,10 +323,18 @@ impl Grid {
         }
     }
 
-    fn stamp(&mut self, shape: &Shape, layers: &[usize], net: u16, clr: f64, reach: f64) {
+    fn stamp(
+        &mut self,
+        shape: &Shape,
+        layers: &[usize],
+        net: u16,
+        clr: f64,
+        fixed: bool,
+        reach: f64,
+    ) {
         let mask = layers.iter().fold(0u64, |m, &l| m | 1 << l);
         let extra = self.isolation.widest(self.domain(net));
-        self.record(shape, mask, net, clr, false, reach + extra);
+        self.record(shape, mask, net, clr, false, fixed, reach + extra);
         if extra > 0.0 && !self.iso.is_empty() {
             self.stamp_iso(shape, layers, net, reach + extra);
         }
@@ -325,14 +344,16 @@ impl Grid {
         for (c, d) in hits {
             for &l in layers {
                 let i = l * plane + c;
-                self.d[i].put(um(d), net);
+                if !fixed {
+                    self.d[i].put(um(d), net);
+                }
                 self.q[i].put(um((d - clr).max(0.0)), net);
             }
         }
     }
 
     fn stamp_edge(&mut self, shape: &Shape, clr: f64, reach: f64) {
-        self.record(shape, u64::MAX, NONE, clr, true, reach);
+        self.record(shape, u64::MAX, NONE, clr, true, false, reach);
         let plane = self.plane();
         let mut hits = Vec::new();
         self.near(shape, reach, |x, y, d| hits.push((y * self.w + x, d)));
@@ -459,8 +480,9 @@ impl Grid {
                 _ => k.gap,
             };
             let net = if k.every { NONE } else { net_id(k.net) };
+            let own_rating = k.fixed;
             for shape in shapes(&k.shape) {
-                grid.stamp(&shape, &layers, net, clr, reach);
+                grid.stamp(&shape, &layers, net, clr, own_rating, reach);
             }
         }
         let hole_reach =
@@ -485,6 +507,7 @@ impl Grid {
                         &[l],
                         NONE,
                         clr,
+                        false,
                         reach,
                     );
                 }
