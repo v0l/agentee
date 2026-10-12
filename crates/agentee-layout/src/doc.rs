@@ -107,8 +107,30 @@ fn strip_all(text: &str) -> String {
     bare
 }
 
+fn unclosed(text: &str) -> Option<(usize, String)> {
+    let mut open: Option<(usize, String)> = None;
+    for (i, line) in text.lines().enumerate() {
+        if let Some(name) = line.strip_prefix("# end plan ") {
+            if open.as_ref().is_some_and(|(_, n)| n == name.trim()) {
+                open = None;
+            }
+        } else if let Some(name) = line.strip_prefix("# plan ") {
+            if open.is_some() {
+                return open;
+            }
+            open = Some((i + 1, name.trim().to_string()));
+        }
+    }
+    open
+}
+
 impl Doc {
     pub fn new(text: &str) -> Result<Doc, String> {
+        if let Some((line, name)) = unclosed(text) {
+            return Err(format!(
+                "line {line}: `# plan {name}` has no `# end plan {name}`; add it where the section ends"
+            ));
+        }
         let base: LayoutFile = agentee_core::project::parse(&strip_all(text))
             .map_err(|(at, m)| format!("{at}: {m}"))?;
         let mut sections: Vec<(String, Section)> = Vec::new();
@@ -423,6 +445,34 @@ fn sync_graphics(doc: &mut DocumentMut, was: &LayoutFile, now: &LayoutFile) {
         }
         if let (Some(t), Some(at)) = (graphics.get_mut(k), n.at) {
             t["at"] = point_value(at);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plan_with_no_end_is_refused() {
+        let text = "name = \"x\"\n\n# plan route\n[[vias]]\nnet = \"A\"\nat = [1, 2]\n\n[[fills]]\nzone = 0\nlayer = \"F.Cu\"\nhash = \"0\"\nrings = []\n";
+        let e = Doc::new(text).err().expect("refused");
+        assert!(e.contains("line 3") && e.contains("# end plan route"), "{e}");
+        assert_eq!(unclosed("# plan a\n# end plan a\n# plan b\n# end plan b\n"), None);
+        assert_eq!(unclosed("# plan a\n# plan b\n# end plan b\n"), Some((1, "a".into())));
+    }
+
+    #[test]
+    fn the_examples_close_every_plan() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        for e in std::fs::read_dir(root).unwrap().flatten() {
+            for f in std::fs::read_dir(e.path()).into_iter().flatten().flatten() {
+                let p = f.path();
+                if p.to_string_lossy().ends_with(".pcb.toml") {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    assert_eq!(unclosed(&text), None, "{}", p.display());
+                }
+            }
         }
     }
 }

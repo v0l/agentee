@@ -9718,6 +9718,8 @@ net = "GND"
 at = [9.95, 37.65]
 via = "bga"
 
+# end plan route
+
 [[fills]]
 zone = 75
 layer = "F.Cu"
