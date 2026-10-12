@@ -507,6 +507,7 @@ const SHADOW_MARGIN: f64 = 1.0;
 const SMALL_DECAP: f64 = 0.67;
 const ATTACH_W: [f64; 3] = [6.0, 4.0, 3.0];
 const ATTACH_THR: f64 = 2.0;
+const BRIDGE_W: f64 = 3.0;
 const SHEET_W: f64 = 0.3;
 const FEED_W: f64 = 8.0;
 const QUIET_W: f64 = 4.0;
@@ -981,6 +982,7 @@ struct Attach {
     to: End,
     rank: u8,
     depth: usize,
+    bridge: bool,
 }
 
 #[derive(Clone)]
@@ -3325,7 +3327,8 @@ impl<'a> Placer<'a> {
         }
         for a in &self.attached {
             let amps = self.parts[a.part].pads[a.pad].net.map_or(0.0, |x| self.nets[x].amps);
-            let w = ATTACH_W[a.rank as usize] * (1.0 + amps);
+            let w =
+                ATTACH_W[a.rank as usize] * (1.0 + amps) * if a.bridge { BRIDGE_W } else { 1.0 };
             let pull = LinkKind::Pull { w, thr: ATTACH_THR, extra: 5.0, near: self.b.standoff };
             links.push((End::Pad(a.part, a.pad), a.to, pull));
         }
@@ -3381,11 +3384,14 @@ impl<'a> Placer<'a> {
     }
 
     fn free_follower(&self, j: usize) -> bool {
+        self.served_free(j) && !self.attached_to(j)
+    }
+
+    fn served_free(&self, j: usize) -> bool {
         let p = &self.parts[j];
         let rf = p.pads.iter().any(|q| q.net.is_some_and(|x| self.nets[x].rf));
         !p.facing
             && !rf
-            && !self.attached_to(j)
             && !self.cluster_of[j].is_some_and(|c| self.clusters[c].served.contains_key(&j))
             && (p.role == Role::Passive || self.protector(j))
     }
@@ -3453,7 +3459,14 @@ impl<'a> Placer<'a> {
                     self.attach_protector(j, k, from, depth);
                     continue;
                 }
-                self.attached.push(Attach { part: j, pad: k, to: from, rank: 0, depth });
+                self.attached.push(Attach {
+                    part: j,
+                    pad: k,
+                    to: from,
+                    rank: 0,
+                    depth,
+                    bridge: false,
+                });
                 if let Some((a, b)) = self.parts[j].ends {
                     let k2 = if k == a { b } else { a };
                     if let Some(y) = self.parts[j].pads[k2].net.filter(|y| !self.nets[*y].ground) {
@@ -3490,7 +3503,14 @@ impl<'a> Placer<'a> {
                     if let Some(c) = self.cluster_of[j] {
                         self.clusters[c].served.remove(&j);
                     }
-                    self.attached.push(Attach { part: j, pad: k, to: from, rank: 0, depth });
+                    self.attached.push(Attach {
+                        part: j,
+                        pad: k,
+                        to: from,
+                        rank: 0,
+                        depth,
+                        bridge: false,
+                    });
                 }
             }
         }
@@ -3523,6 +3543,7 @@ impl<'a> Placer<'a> {
                     to: End::Pad(c, q),
                     rank: 2,
                     depth: 0,
+                    bridge: false,
                 });
             }
         }
@@ -3551,13 +3572,21 @@ impl<'a> Placer<'a> {
         for (rank, x, c, q) in nodes {
             let pins = self.nets[x].pins.clone();
             for (j, k) in pins {
-                if j != c && self.free_follower(j) && self.parts[j].role == Role::Passive {
+                let bridges = self.served_free(j)
+                    && self.attached.iter().any(|a| {
+                        a.part == j && a.pad != k && a.depth == 0 && Self::end_part(a.to) == c
+                    });
+                if j != c
+                    && (self.free_follower(j) || bridges)
+                    && self.parts[j].role == Role::Passive
+                {
                     self.attached.push(Attach {
                         part: j,
                         pad: k,
                         to: End::Pad(c, q),
                         rank,
                         depth: 0,
+                        bridge: bridges,
                     });
                 }
             }
@@ -3573,10 +3602,22 @@ impl<'a> Placer<'a> {
                 .find(|&&(c, _)| self.parts[c].role == Role::Connector)
                 .map(|&(c, p)| End::Pad(c, p));
             match at {
-                _ if k2 == k => {
-                    self.attached.push(Attach { part: j, pad: k, to: from, rank: 0, depth })
-                }
-                Some(to) => self.attached.push(Attach { part: j, pad: k2, to, rank: 0, depth }),
+                _ if k2 == k => self.attached.push(Attach {
+                    part: j,
+                    pad: k,
+                    to: from,
+                    rank: 0,
+                    depth,
+                    bridge: false,
+                }),
+                Some(to) => self.attached.push(Attach {
+                    part: j,
+                    pad: k2,
+                    to,
+                    rank: 0,
+                    depth,
+                    bridge: false,
+                }),
                 None => {}
             }
         }
