@@ -19,18 +19,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   so nothing goes on B.Cu under the bulk caps, which check allows.
 - `agentee layout mains` (ubench, 2.5 mm HV classes) ran 30 min with no output and was killed.
 
-## Circuit sim (taken: circuit-sim)
-
-- No THD or spectrum of a transient, so clipping shows only as a waveform and checks read a
-  voltage at a fixed time (`examples/preamp` `preamp-clip`). No peak, RMS or frequency over a
-  time window either: `examples/ladder-vcf` `vcf-osc` oscillates at 441 Hz but can only check
-  an operating point.
-- A pot (`RV`) has no model: a 3-pin pot needs a `vcvs` block, which has no wiper resistance
-  (`examples/ladder-vcf` RV2, RV3). A `potentiometer` kind with `resistance` and `position`.
-- Op-amp block has one `headroom` for both rails; the LM358 swings to within mV of ground but
-  1.5 V of V+, so `preamp-clip` clips low at 1.5 V. No slew rate, input bias current or PSRR,
-  and `en` is flat with no 1/f corner (`crates/agentee-sim/src/circuit.rs` Buffer).
-
 ## Layout
 
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
