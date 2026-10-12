@@ -37,9 +37,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Schematic edit
 
-- `edit sch add U1 ... --unit 2` fails with "`U1` is already a part here", and `net` only
-  resolves pins of the first placed unit ("`U1` has no pin `8`; it has 3, 2, 1"). U1 units 2
-  and 3 of `examples/preamp` were written by hand. Fixed on branch `analog-example` (c976b24).
 - `edit sch remove D1` left `pins = [ "C1.1", ...]` with a stray space after the bracket.
 - `edit sch` wrote a batch while the schematic had a load error (unknown key `title`).
 
@@ -59,10 +56,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `agentee layout NAME --search` places nothing while parts are unplaced (only placed parts
   reach `model.layout.parts`), so `agentee place NAME` has to run first. SKILL.md's layout loop
   says the engine places them.
-- After `edit pcb unplace ...` then `agentee place`, `examples/preamp/preamp.pcb.toml` had two
-  `# plan route` headers and one `# end plan route`; the next `layout --search` kept the old
-  plan's tracks and check found 30 shorts. Cause: the end marker was the comment in front of
-  `[[fills]]`, dropped with them on a refill. Fixed on branch `analog-example` (6128890).
 - `render pcb:NAME --hide F.Cu` draws no B.Cu copper unless `--show B.Cu` is also given.
 - Engine leaves small THT parts far from their op-amp pin on `examples/preamp`: R4 13.6 mm from
   U1.2, R5 11.5 mm (`placement-cluster-spread` notes after `--search 40 --keep 8`). On
