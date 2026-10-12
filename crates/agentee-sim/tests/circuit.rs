@@ -12,6 +12,27 @@ fn symbol(name: &str, reference: &str, pins: &[(&str, &str)]) -> String {
     s
 }
 
+fn dual_opamp() -> String {
+    let mut s = String::from("name = \"DUAL_OPAMP\"\nreference = \"U\"\n");
+    let pins = [
+        ("3", "+", "input", 1),
+        ("2", "-", "input", 1),
+        ("1", "", "output", 1),
+        ("5", "+", "input", 2),
+        ("6", "-", "input", 2),
+        ("7", "", "output", 2),
+        ("8", "V+", "power_in", 0),
+        ("4", "V-", "power_in", 0),
+    ];
+    for (i, (number, name, kind, unit)) in pins.iter().enumerate() {
+        s += &format!(
+            "[[pins]]\nnumber = \"{number}\"\nname = \"{name}\"\ntype = \"{kind}\"\nat = [-7.62, {}]\nside = \"left\"\nunit = {unit}\n",
+            i as f64 * 2.54
+        );
+    }
+    s
+}
+
 fn symbols() -> Vec<(&'static str, String)> {
     vec![
         ("R", symbol("R", "R", &[("1", "~"), ("2", "~")])),
@@ -24,6 +45,7 @@ fn symbols() -> Vec<(&'static str, String)> {
             "OPAMP",
             symbol("OPAMP", "U", &[("3", "+"), ("2", "-"), ("1", "~"), ("8", "V+"), ("4", "V-")]),
         ),
+        ("DUAL_OPAMP", dual_opamp()),
         ("LDO", symbol("LDO", "U", &[("1", "VIN"), ("2", "GND"), ("3", "VOUT")])),
         ("CONN", symbol("CONN", "J", &[("1", "1")])),
     ]
@@ -43,8 +65,12 @@ fn sim(
     }
     let mut sch = String::from("name = \"t\"\n");
     for (i, (r, sym, value)) in parts.iter().enumerate() {
+        let (sym, unit) = match sym.split_once('#') {
+            Some((s, u)) => (s, format!("unit = {u}\n")),
+            None => (*sym, String::new()),
+        };
         sch += &format!(
-            "\n[[parts]]\nref = \"{r}\"\nsymbol = \"{sym}\"\nvalue = \"{value}\"\nat = [{}, 25.4]\n",
+            "\n[[parts]]\nref = \"{r}\"\nsymbol = \"{sym}\"\nvalue = \"{value}\"\nat = [{}, 25.4]\n{unit}",
             25.4 * (i + 1) as f64
         );
     }
@@ -148,6 +174,49 @@ fn an_inverting_amplifier_has_gain_ten_and_clips_at_its_rails() {
         ),
     );
     assert!(clipped.passed, "{:?} {:?}", clipped.failures, clipped.checks);
+}
+
+#[test]
+fn a_single_supply_dual_opamp_with_unnamed_outputs_settles() {
+    let r = sim(
+        "dual",
+        &[
+            ("R1", "R", "10k"),
+            ("R2", "R", "10k"),
+            ("U1", "DUAL_OPAMP#1", "LM358"),
+            ("U1", "DUAL_OPAMP#2", "LM358"),
+        ],
+        &[
+            ("VIN", &["U1.3"]),
+            ("INN", &["U1.2", "R1.2", "R2.1"]),
+            ("GND", &["R1.1", "U1.4"]),
+            ("OUTA", &["U1.1", "R2.2", "U1.5"]),
+            ("OUTB", &["U1.7", "U1.6"]),
+            ("VP", &["U1.8"]),
+        ],
+        "[[blocks]]\nref = \"U1\"\nkind = \"opamp\"\ngain = 1e5\ngbw = \"1MHz\"\nheadroom = \"1.5V\"\n\n[[drives]]\nnet = \"VP\"\ndc = \"9V\"\n\n[[drives]]\nnet = \"VIN\"\ndc = \"2.2V\"\n\n[[checks]]\nv = \"OUTA\"\nmin = 4.39\nmax = 4.41\n\n[[checks]]\nv = \"OUTB\"\nmin = 4.39\nmax = 4.41\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
+}
+
+#[test]
+fn a_clipped_amplifier_comes_out_of_its_rail_when_the_input_crosses_zero() {
+    let parts = [("R1", "R", "1k"), ("R2", "R", "10k"), ("U1", "OPAMP", "TLV9001")];
+    let nets: [(&str, &[&str]); 6] = [
+        ("VIN", &["R1.1"]),
+        ("INN", &["R1.2", "R2.1", "U1.2"]),
+        ("OUT", &["R2.2", "U1.1"]),
+        ("GND", &["U1.3"]),
+        ("VP", &["U1.8"]),
+        ("VN", &["U1.4"]),
+    ];
+    let r = sim(
+        "windup",
+        &parts,
+        &nets,
+        "[[blocks]]\nref = \"U1\"\nkind = \"opamp\"\ngain = 1e5\ngbw = \"1MHz\"\n\n[[drives]]\nnet = \"VP\"\ndc = \"5V\"\n\n[[drives]]\nnet = \"VN\"\ndc = \"-5V\"\n\n[[drives]]\nnet = \"VIN\"\nsine = { amplitude = \"1V\", frequency = \"1kHz\" }\n\n[tran]\nstop = \"1ms\"\nstep = \"1us\"\n\n[[checks]]\nv = \"OUT\"\nat = \"0.25ms\"\nmax = -4.8\n\n[[checks]]\nv = \"OUT\"\nat = \"0.5ms\"\nmin = -0.2\nmax = 0.2\n",
+    );
+    assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
 }
 
 #[test]
@@ -264,6 +333,35 @@ fn a_part_with_no_model_is_an_error() {
     let entry = p.sims.iter().find(|s| s.name == "t").unwrap();
     assert!(
         entry.diags.iter().any(|d| d.message.contains("has no circuit model")),
+        "{:?}",
+        entry.diags
+    );
+}
+
+#[test]
+fn a_second_block_for_the_same_part_is_an_error() {
+    let dir =
+        std::env::temp_dir().join(format!("agentee-circuit-{}-twoblocks", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("symbols")).unwrap();
+    for (n, text) in symbols() {
+        std::fs::write(dir.join(format!("symbols/{n}.sym.toml")), text).unwrap();
+    }
+    std::fs::write(
+        dir.join("t.sch.toml"),
+        "name = \"t\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [25.4, 25.4]\n[[nets]]\nname = \"GND\"\npins = [\"R1.1\", \"R1.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("t.sim.toml"),
+        "name = \"t\"\nkind = \"circuit\"\n[[blocks]]\nref = \"R1\"\nkind = \"resistor\"\nresistance = \"1k\"\n[[blocks]]\nref = \"R1\"\nkind = \"resistor\"\nresistance = \"2k\"\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let entry = p.sims.iter().find(|s| s.name == "t").unwrap();
+    assert!(
+        entry.diags.iter().any(|d| d.message.contains("already has a block")),
         "{:?}",
         entry.diags
     );

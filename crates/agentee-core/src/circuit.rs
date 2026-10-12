@@ -476,6 +476,7 @@ struct Pin {
     number: String,
     name: String,
     unit: u32,
+    output: bool,
     net: Option<usize>,
 }
 
@@ -617,6 +618,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                     number: pin.number.clone(),
                     name: pin.name.clone(),
                     unit: part.unit,
+                    output: pin.kind == crate::symbol::PinType::Output,
                     net,
                 }),
             }
@@ -649,6 +651,11 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
             (None, Some(v)) if !refs.iter().any(|x| &x.value == v) => {
                 d.error(&at, format!("no part has value `{v}`"))
             }
+            (Some(r), _) if blocks[..*i].iter().any(|(_, o)| o.reference.as_ref() == Some(r)) => d
+                .error(
+                    &at,
+                    format!("`{r}` already has a block; one block covers every unit of a part"),
+                ),
             _ => {}
         }
     }
@@ -882,7 +889,9 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                     let (Some(ip), Some(im), Some(o)) = (
                         pick("inp", &["+", "IN+", "+IN", "INP", "NONINV", "VIN+"]),
                         pick("inn", &["-", "IN-", "-IN", "INN", "INV", "VIN-"]),
-                        pick("out", &["~", "OUT", "VOUT", "O", "OUTPUT"]),
+                        pick("out", &["~", "OUT", "VOUT", "O", "OUTPUT"]).or_else(|| {
+                            r.pins.iter().filter(only).find(|p| p.output && (p.name.is_empty() || p.name == "~"))
+                        }),
                     ) else {
                         continue;
                     };

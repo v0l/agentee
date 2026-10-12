@@ -48,6 +48,10 @@ fn image(m: &LayerMap, values: &[f32]) -> ColorImage {
 
 fn fmt(v: f32, unit: &str) -> String {
     let a = v.abs();
+    if a > 0.0 && a < 1e-3 && !unit.starts_with("dB") {
+        let step = 10f64.powf((a as f64).log10().floor() - 2.0);
+        return agentee_core::circuit::fmt_si((v as f64 / step).round() * step, unit);
+    }
     let s = if unit.starts_with("dB") || a >= 100.0 {
         format!("{v:.1}")
     } else if a >= 1.0 {
@@ -277,6 +281,12 @@ pub fn readings(ui: &mut Ui, list: &[agentee_core::sim::Reading]) {
 mod tests {
     use super::*;
     use egui::{Event, Modifiers, PointerButton, RawInput};
+
+    #[test]
+    fn a_reading_below_a_millivolt_keeps_its_digits() {
+        assert_eq!(fmt(3.743673e-7, "V/rtHz"), "374nV/rtHz");
+        assert_eq!(fmt(4.2, "V"), "4.200 V");
+    }
 
     #[test]
     fn a_layer_toggle_redraws_the_map_of_that_layer() {

@@ -50,6 +50,34 @@ pub struct Net {
     noise: Vec<NoiseSrc>,
     mems: usize,
     vt: f64,
+    integrators: Vec<Integrator>,
+}
+
+struct Integrator {
+    node: usize,
+    vcc: Ix,
+    vee: Ix,
+    headroom: f64,
+}
+
+impl Integrator {
+    fn limit(&self, new: f64, old: f64, x: &[f64]) -> f64 {
+        let (hi, lo) = (v(x, self.vcc), v(x, self.vee));
+        let half = (hi - lo) / 2.0 - self.headroom;
+        if half <= 1e-3 {
+            return old + (new - old).clamp(-10.0, 10.0);
+        }
+        let mid = (hi + lo) / 2.0;
+        let (uo, un) = ((old - mid) / half, (new - mid) / half);
+        let u = if uo.abs() <= WINDUP_SPAN {
+            uo + (un - uo).clamp(-1.0, 1.0)
+        } else if un.signum() != uo.signum() || un.abs() < WINDUP_SPAN {
+            WINDUP_SPAN * uo.signum()
+        } else {
+            un
+        };
+        mid + u * half
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -171,6 +199,20 @@ fn mos(vgs: f64, vds: f64, vth: f64, k: f64, lambda: f64, vt: f64) -> (f64, f64,
     }
 }
 
+const WINDUP_SPAN: f64 = 3.0;
+const WINDUP_G: f64 = 1.0;
+const WINDUP_KNEE: f64 = 0.1;
+
+fn hinge(e: f64) -> (f64, f64) {
+    if e <= 0.0 {
+        (0.0, 0.0)
+    } else if e < WINDUP_KNEE {
+        (e * e / (2.0 * WINDUP_KNEE), e / WINDUP_KNEE)
+    } else {
+        (e - WINDUP_KNEE / 2.0, 1.0)
+    }
+}
+
 fn soft_min(a: f64, b: f64) -> (f64, f64) {
     let r = ((a - b).powi(2) + EPS_SOFT * EPS_SOFT).sqrt();
     ((a + b - r) / 2.0, (1.0 - (b - a) / r) / 2.0)
@@ -193,6 +235,7 @@ impl Net {
         let mut owner = Vec::new();
         let mut noise = Vec::new();
         let mut mems = 0;
+        let mut integrators = Vec::new();
         let mut pending: Vec<(Option<usize>, Unit)> = Vec::new();
         for (ei, e) in spec.elements.iter().enumerate() {
             let n = &e.nodes;
@@ -240,6 +283,9 @@ impl Net {
                 ElemKind::Opamp { gain, gbw, rout, vos, en, headroom } => {
                     let n1 = node(&mut size);
                     let n2 = node(&mut size);
+                    if let (Some(node), true) = (n1, n.len() >= 5) {
+                        integrators.push(Integrator { node, vcc: n[3], vee: n[4], headroom });
+                    }
                     push(
                         Unit::Gm { p: None, n: n1, cp: n[0], cn: n[1], gm: 1.0, offset: vos },
                         true,
@@ -307,7 +353,7 @@ impl Net {
             owner.push(own);
         }
         let vt = BOLTZMANN * (spec.temperature + 273.15) / CHARGE;
-        Net { size, nodes, units, owner, noise, mems, vt }
+        Net { size, nodes, units, owner, noise, mems, vt, integrators }
     }
 
     fn seed(&self, x: &[f64]) -> Vec<f64> {
@@ -474,6 +520,23 @@ impl Net {
                     s.add(Some(j), vcc, -dc);
                     s.add(Some(j), vee, -de);
                     s.rhs(Some(j), f - d1 * vi - dc * hi - de * lo);
+                    if half > 1e-3 {
+                        let top = mid + WINDUP_SPAN * half;
+                        let bot = mid - WINDUP_SPAN * half;
+                        let (f1, g1) = hinge(vi - top);
+                        let (f2, g2) = hinge(bot - vi);
+                        let k = (WINDUP_SPAN + 1.0) / 2.0;
+                        let m = (WINDUP_SPAN - 1.0) / 2.0;
+                        let di = WINDUP_G * (g1 + g2);
+                        let dhi = WINDUP_G * (m * g2 - k * g1);
+                        let dlo = WINDUP_G * (m * g1 - k * g2);
+                        let i0 = WINDUP_G * (f1 - f2);
+                        s.ctrl(
+                            input,
+                            i0 - di * vi - dhi * hi - dlo * lo,
+                            &[(input, None, di), (vcc, None, dhi), (vee, None, dlo)],
+                        );
+                    }
                 }
                 Unit::Ldo { vin, g, out, vout, dropout, iq, j } => {
                     let vscale = match mode {
@@ -546,13 +609,22 @@ impl Net {
                 };
                 worst = worst.max((n - o).abs() / tol);
             }
-            let jump =
-                new.iter().zip(&x).take(self.nodes).map(|(n, o)| (n - o).abs()).fold(0.0, f64::max);
+            let jump = new
+                .iter()
+                .zip(&x)
+                .take(self.nodes)
+                .enumerate()
+                .filter(|(i, _)| !self.integrators.iter().any(|g| g.node == *i))
+                .map(|(_, (n, o))| (n - o).abs())
+                .fold(0.0, f64::max);
             if jump > 10.0 {
                 let k = 10.0 / jump;
                 for (n, o) in new.iter_mut().zip(&x) {
                     *n = o + (*n - o) * k;
                 }
+            }
+            for g in &self.integrators {
+                new[g.node] = g.limit(new[g.node], x[g.node], &new);
             }
             x = new;
             if worst <= 1.0 && it > 0 && !sys.limited {
