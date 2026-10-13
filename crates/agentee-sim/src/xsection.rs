@@ -1,5 +1,6 @@
 use crate::gpu::{Gpu, gpu};
 use agentee_core::board::{Board, LayerKind};
+use fieldgrid::grid::{Grading, graded};
 use serde::Serialize;
 
 pub const ETA0: f64 = 376.730_313_668;
@@ -28,32 +29,8 @@ pub struct Rect {
     pub y1: f64,
 }
 
-pub fn lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
-    let mut fixed: Vec<f64> = fixed.to_vec();
-    fixed.sort_by(f64::total_cmp);
-    fixed.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let size = |x: f64| {
-        features.iter().map(|(at, s)| s + (ratio - 1.0) * (x - at).abs()).fold(coarse, f64::min)
-    };
-    let mut out = vec![fixed[0]];
-    for w in fixed.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let steps = 256;
-        let mut acc = vec![0.0; steps + 1];
-        for k in 0..steps {
-            let x = a + (b - a) * (k as f64 + 0.5) / steps as f64;
-            acc[k + 1] = acc[k] + (b - a) / steps as f64 / size(x);
-        }
-        let n = acc[steps].ceil().max(1.0) as usize;
-        for c in 1..n {
-            let target = acc[steps] * c as f64 / n as f64;
-            let k = acc.partition_point(|v| *v < target).clamp(1, steps);
-            let t = (target - acc[k - 1]) / (acc[k] - acc[k - 1]).max(1e-30);
-            out.push(a + (b - a) * ((k - 1) as f64 + t) / steps as f64);
-        }
-        out.push(b);
-    }
-    out
+fn lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
+    graded(fixed, &Grading { features, coarse: &|_| coarse, ratio, fill: 0.0 })
 }
 
 impl Grid {
@@ -320,7 +297,7 @@ pub fn solve_gpu(gpu: &Gpu, g: &Grid, vacuum: bool, tol: f64) -> Solve {
         }
         gpu.queue.submit([enc.finish()]);
         iterations += batch;
-        let out: Vec<f32> = gpu.read(&phi, g.nx * g.ny);
+        let out: Vec<f32> = gpu.read(&phi, 0..g.nx * g.ny).expect("reading the potential");
         let s = g.energy(&out, &ex, &ey);
         if ((s - last) / s).abs() < tol || iterations > 400_000 {
             return Solve { phi: out, sum: s, iterations };

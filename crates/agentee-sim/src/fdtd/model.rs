@@ -7,6 +7,7 @@ use agentee_core::graphic::Bounds;
 use agentee_core::layout::{Layout, ZoneFill};
 use agentee_core::rf::Cx;
 use agentee_core::sim::{Model, Sim as Spec};
+use fieldgrid::grid::{Grading, graded, pad};
 
 #[derive(Clone, Debug)]
 pub struct Sheet {
@@ -533,7 +534,7 @@ impl PcbModel {
             let fixed = spaced;
             let features: Vec<(f64, f64)> = fixed.iter().map(|v| (*v, opt.cell)).collect();
             let inner = mesh_lines(&fixed, &features, coarse, ratio);
-            pad_pml(inner, opt.pml)
+            pad(inner, opt.pml)
         };
         let pinned = |f: &dyn Fn(P) -> f64| -> Vec<f64> {
             let mut v: Vec<f64> = self.ports.iter().map(|p| f(p.at)).collect();
@@ -569,7 +570,7 @@ impl PcbModel {
             }
         }
         let fz = kept;
-        let z = pad_pml(mesh_lines(&fz, &feat_z, coarse, ratio), opt.pml);
+        let z = pad(mesh_lines(&fz, &feat_z, coarse, ratio), opt.pml);
         let insets: Vec<f64> = self
             .sheets
             .iter()
@@ -1126,46 +1127,7 @@ const VIA_REACH: f64 = 1.5;
 const VIA_CELLS: f64 = 2.0;
 
 fn mesh_lines(fixed: &[f64], features: &[(f64, f64)], coarse: f64, ratio: f64) -> Vec<f64> {
-    let mut fixed: Vec<f64> = fixed.to_vec();
-    fixed.sort_by(f64::total_cmp);
-    fixed.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    let size = |x: f64| {
-        features.iter().map(|(at, s)| s + (ratio - 1.0) * (x - at).abs()).fold(coarse, f64::min)
-    };
-    let mut out = vec![fixed[0]];
-    for w in fixed.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let steps = 256;
-        let mut acc = vec![0.0; steps + 1];
-        for k in 0..steps {
-            let x = a + (b - a) * (k as f64 + 0.5) / steps as f64;
-            acc[k + 1] = acc[k] + (b - a) / steps as f64 / size(x);
-        }
-        let fine = acc[steps].ceil().max(1.0) as usize;
-        let n = if acc[steps] / fine as f64 >= FILL {
-            fine
-        } else {
-            ((acc[steps] / FILL).floor() as usize).max(1)
-        };
-        for c in 1..n {
-            let target = acc[steps] * c as f64 / n as f64;
-            let k = acc.partition_point(|v| *v < target).clamp(1, steps);
-            let t = (target - acc[k - 1]) / (acc[k] - acc[k - 1]).max(1e-30);
-            out.push(a + (b - a) * ((k - 1) as f64 + t) / steps as f64);
-        }
-        out.push(b);
-    }
-    out
-}
-
-fn pad_pml(mut line: Vec<f64>, pml: usize) -> Vec<f64> {
-    let first = line[1] - line[0];
-    let last = line[line.len() - 1] - line[line.len() - 2];
-    let mut pre: Vec<f64> = (1..=pml).rev().map(|i| line[0] - first * i as f64).collect();
-    let post: Vec<f64> = (1..=pml).map(|i| line[line.len() - 1] + last * i as f64).collect();
-    pre.append(&mut line);
-    pre.extend(post);
-    pre
+    graded(fixed, &Grading { features, coarse: &|_| coarse, ratio, fill: FILL })
 }
 
 #[cfg(test)]

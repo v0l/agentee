@@ -383,13 +383,13 @@ impl Problem {
             }
             g.queue.submit([enc.finish()]);
             it += batch;
-            let s: Vec<f32> = g.read(&b_scalars, 8);
+            let s: Vec<f32> = g.read(&b_scalars, 0..8).expect("reading the residual");
             residual = (s[4] as f64 / rr0).max(0.0).sqrt();
             if !residual.is_finite() || residual < tol {
                 break;
             }
         }
-        let x: Vec<f32> = g.read(&b_x, n);
+        let x: Vec<f32> = g.read(&b_x, 0..n).expect("reading the solution");
         Solution {
             phi: self.finish(&x),
             delta: x.iter().map(|v| *v as f64).collect(),

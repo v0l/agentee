@@ -5,46 +5,7 @@ pub const EPS0: f64 = 8.854_187_812_8e-12;
 pub const MU0: f64 = 1.256_637_062_12e-6;
 pub const ETA0: f64 = 376.730_313_668;
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Grid {
-    pub x: Vec<f64>,
-    pub y: Vec<f64>,
-    pub z: Vec<f64>,
-    pub pml: usize,
-}
-
-impl Grid {
-    pub fn axis(&self, a: usize) -> &[f64] {
-        match a {
-            0 => &self.x,
-            1 => &self.y,
-            _ => &self.z,
-        }
-    }
-
-    pub fn dims(&self) -> [usize; 3] {
-        [self.x.len(), self.y.len(), self.z.len()]
-    }
-
-    pub fn cells(&self) -> usize {
-        (self.x.len() - 1) * (self.y.len() - 1) * (self.z.len() - 1)
-    }
-
-    pub fn nearest(&self, a: usize, v: f64) -> usize {
-        let ax = self.axis(a);
-        let i = ax.partition_point(|x| *x < v);
-        match (i.checked_sub(1), ax.get(i)) {
-            (Some(j), Some(x)) if (v - ax[j]).abs() <= (x - v).abs() => j,
-            (Some(j), None) => j,
-            _ => i.min(ax.len() - 1),
-        }
-    }
-
-    pub fn cell_of(&self, a: usize, v: f64) -> usize {
-        let ax = self.axis(a);
-        ax.partition_point(|x| *x <= v).saturating_sub(1).min(ax.len() - 2)
-    }
-}
+pub use fieldgrid::Grid;
 
 pub fn idx(n: [usize; 3], i: usize, j: usize, k: usize) -> usize {
     (i * n[1] + j) * n[2] + k

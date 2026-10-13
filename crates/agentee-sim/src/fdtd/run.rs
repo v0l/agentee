@@ -157,7 +157,9 @@ fn kernel_timer(g: &Gpu) -> Option<(wgpu::QuerySet, wgpu::Buffer)> {
 }
 
 fn report_kernel_times(g: &Gpu, resolved: &wgpu::Buffer, timed: &[usize], pipes: &[(usize, &str)]) {
-    let ticks: Vec<u64> = g.read(resolved, 2 * timed.len());
+    let Ok(ticks) = g.read::<u64>(resolved, 0..2 * timed.len()) else {
+        return;
+    };
     let ns = g.queue.get_timestamp_period() as f64;
     let mut sums = vec![(0.0f64, 0usize); pipes.len()];
     for (w, p) in ticks.chunks(2).zip(timed) {
@@ -605,7 +607,7 @@ pub fn run(
             report_kernel_times(g, resolved, &timed_pipes, &names);
         }
         steps += k;
-        let part: Vec<f32> = g.read(&b_partial, 1024);
+        let part: Vec<f32> = g.read(&b_partial, 0..1024)?;
         let e: f64 = part.iter().map(|v| *v as f64).sum();
         if !e.is_finite() {
             return Err("the FDTD run went unstable".into());
@@ -620,9 +622,10 @@ pub fn run(
             break;
         }
     }
-    let series: Vec<f32> = g.read(&b_series, steps * ports * 2);
-    let plane = if plane_len > 0 { g.read(&b_plane, plane_len) } else { Vec::new() };
-    let ntff = if patches > 0 && nf > 0 { g.read(&b_ntff, patches * nf * 12) } else { Vec::new() };
+    let series: Vec<f32> = g.read(&b_series, 0..steps * ports * 2)?;
+    let plane = if plane_len > 0 { g.read(&b_plane, 0..plane_len)? } else { Vec::new() };
+    let ntff =
+        if patches > 0 && nf > 0 { g.read(&b_ntff, 0..patches * nf * 12)? } else { Vec::new() };
     Ok(Record { steps, ports, series, decay_db: decay, plane, ntff })
 }
 

@@ -8,9 +8,9 @@ description = "GPU field solvers for agentee: cross-section and FDTD on wgpu"
 
 [dependencies]
 agentee-core.workspace = true
+fieldgrid.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 wgpu = "29"
-pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
 faer = "0.24"
