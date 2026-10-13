@@ -18,7 +18,7 @@ agentee-fab = { path = "crates/agentee-fab" }
 agentee-layout = { path = "crates/agentee-layout" }
 agentee-3d = { path = "crates/agentee-3d" }
 agentee-parts = { path = "crates/agentee-parts" }
-fieldgrid = { path = "../fieldgrid" }
+fieldgrid = { git = "https://github.com/v0l/fieldgrid", rev = "7d0ec7a47ef1022ef3be567468db57623c576b6e" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
@@ -26,6 +26,6 @@ toml_edit = "0.25"
 thiserror = "2"
 anyhow = "1"
 egui = "0.35"
-eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
-egui_bench = "0.2.1"
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
+egui_bench = "0.3.0"
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }

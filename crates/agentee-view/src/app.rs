@@ -66,6 +66,9 @@ impl App {
         view_3d: bool,
     ) -> Self {
         egui_bench::install(&cc.egui_ctx);
+        if let Some(state) = &cc.wgpu_render_state {
+            egui_bench::viewer3d::install(state);
+        }
         let repaint = cc.egui_ctx.clone();
         agentee_3d::set_waker(move || repaint.request_repaint());
         let mut app = App {
@@ -577,8 +580,6 @@ pub fn run(path: PathBuf, select: Option<String>, view_3d: bool) -> eframe::Resu
                 eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png"))
                     .unwrap_or_default(),
             ),
-        depth_buffer: 24,
-        multisampling: 4,
         ..Default::default()
     };
     eframe::run_native(
