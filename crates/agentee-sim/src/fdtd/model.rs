@@ -7,7 +7,7 @@ use agentee_core::graphic::Bounds;
 use agentee_core::layout::{Layout, ZoneFill};
 use agentee_core::rf::Cx;
 use agentee_core::sim::{Model, Sim as Spec};
-use fieldgrid::grid::{Grading, graded, pad};
+use sims_field::grid::{Grading, graded, pad};
 
 #[derive(Clone, Debug)]
 pub struct Sheet {

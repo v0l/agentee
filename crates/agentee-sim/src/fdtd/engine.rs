@@ -1,4 +1,4 @@
-pub use fieldgrid::fdtd::{
+pub use sims_field::fdtd::{
     Axis, C0, Debye, EPS0, ETA0, Edge, Element, Grid, Lumped, MU0, Materials, Media, PortDef,
     Resistive, SheetEdge, Sheets, Sim, axis, gaussian, idx, psi_len, pulse_shape, time_step, unidx,
 };

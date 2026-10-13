@@ -73,6 +73,8 @@ dependencies = [
  "i_overlay",
  "serde",
  "serde_json",
+ "sims-circuit",
+ "sims-rf",
  "thiserror 2.0.21",
  "toml 0.9.12+spec-1.1.0",
  "usvg",
@@ -129,11 +131,12 @@ name = "agentee-sim"
 version = "0.3.0"
 dependencies = [
  "agentee-core",
- "bytemuck",
  "faer",
- "fieldgrid",
  "serde",
  "serde_json",
+ "sims-circuit",
+ "sims-field",
+ "sims-quasistatic",
  "wgpu",
 ]
 
@@ -1365,17 +1368,6 @@ name = "fearless_simd"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
-
-[[package]]
-name = "fieldgrid"
-version = "0.1.0"
-source = "git+https://github.com/v0l/fieldgrid?rev=8056ef00eebbc609bec669ac7138a92389a9dc8b#8056ef00eebbc609bec669ac7138a92389a9dc8b"
-dependencies = [
- "bytemuck",
- "pollster",
- "rayon",
- "wgpu",
-]
 
 [[package]]
 name = "find-msvc-tools"
@@ -4073,6 +4065,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a9c6883ca9c3c7c90e888de77b7a5c849c779d25d74a1269b0218b14e8b136c"
 dependencies = [
  "log",
+]
+
+[[package]]
+name = "sims-circuit"
+version = "0.1.0"
+source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+dependencies = [
+ "faer",
+ "serde",
+]
+
+[[package]]
+name = "sims-field"
+version = "0.1.0"
+source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+dependencies = [
+ "bytemuck",
+ "pollster",
+ "rayon",
+ "wgpu",
+]
+
+[[package]]
+name = "sims-quasistatic"
+version = "0.1.0"
+source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+dependencies = [
+ "bytemuck",
+ "faer",
+ "serde",
+ "sims-field",
+ "sims-rf",
+ "wgpu",
+]
+
+[[package]]
+name = "sims-rf"
+version = "0.1.0"
+source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

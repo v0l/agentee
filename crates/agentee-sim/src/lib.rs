@@ -2,7 +2,6 @@ pub mod boardsim;
 pub mod cascade;
 pub mod channel;
 pub mod checks;
-pub mod circuit;
 pub mod fdtd;
 pub mod gpu;
 pub mod logic;
@@ -10,5 +9,9 @@ pub mod loss;
 pub mod nodal;
 pub mod pdn;
 pub mod runner;
-pub mod wave;
 pub mod xsection;
+
+pub use sims_circuit::wave;
+pub mod circuit {
+    pub use sims_circuit::run;
+}

@@ -1,7 +1,7 @@
 use super::engine::Sim;
 use crate::gpu::gpu;
 
-pub use fieldgrid::fdtd::{Extras, Pulse, Record};
+pub use sims_field::fdtd::{Extras, Pulse, Record};
 
 pub fn fused_update() -> bool {
     std::env::var("AGENTEE_FDTD_FUSED").is_ok_and(|v| v != "0")
@@ -20,7 +20,7 @@ pub fn run(
 ) -> Result<Record, String> {
     let g = gpu().ok_or("no GPU adapter for the FDTD run")?;
     let extras = Extras { profile: extras.profile || profiled(), ..extras.clone() };
-    fieldgrid::fdtd::run_blocking(g, sim, driven, pulse, &extras, &mut |n, db| {
+    sims_field::fdtd::run_blocking(g, sim, driven, pulse, &extras, &mut |n, db| {
         progress(n, db);
         !crate::runner::cancelled()
     })

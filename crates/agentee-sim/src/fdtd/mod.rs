@@ -553,7 +553,7 @@ mod tests {
         let trace = crate::xsection::Trace { width: w, diff_gap: None, coplanar_gap: None };
         let res = &crate::xsection::Resolution::FAST;
         let (g, _) = crate::xsection::build(&stack, &trace, res).unwrap();
-        let geom = crate::loss::wheeler(&stack, &trace, res, false, 1e-8).unwrap();
+        let geom = crate::loss::wheeler(&stack, &trace, res, false, crate::gpu::gpu(), 1e-8).unwrap();
         let f0 = 3.5e9;
         let sweep = crate::loss::sweep(
             &g,
@@ -563,6 +563,7 @@ mod tests {
             &Default::default(),
             &[f0],
             "single",
+            crate::gpu::gpu(),
             1e-8,
         );
         let field = sweep.points[0].conductor_db_per_m * len * 1e-3;
@@ -613,7 +614,7 @@ mod tests {
         let trace = crate::xsection::Trace { width: w, diff_gap: None, coplanar_gap: None };
         let res = &crate::xsection::Resolution::FAST;
         let (g, _) = crate::xsection::build(&stack, &trace, res).unwrap();
-        let geom = crate::loss::wheeler(&stack, &trace, res, false, 1e-8).unwrap();
+        let geom = crate::loss::wheeler(&stack, &trace, res, false, crate::gpu::gpu(), 1e-8).unwrap();
         let sweep = crate::loss::sweep(
             &g,
             false,
@@ -622,6 +623,7 @@ mod tests {
             &Default::default(),
             &[3.5e9],
             "single",
+            crate::gpu::gpu(),
             1e-8,
         );
         let field = sweep.points[0].conductor_db_per_m * len * 1e-3;

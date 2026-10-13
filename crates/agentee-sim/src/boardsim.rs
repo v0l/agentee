@@ -604,7 +604,7 @@ pub fn thermal(layout: &Layout, board: &Board, spec: &Sim, hash: u64) -> Result<
         }
         mount_nodes.push((nodes, g));
     }
-    let sol = p.solve(1e-7, 50_000);
+    let sol = p.solve(crate::gpu::gpu(), 1e-7, 50_000);
     let t = &sol.phi;
     let grid = MapGrid { origin: r.origin, cell: r.cell, width: r.nx, height: r.ny };
     let mut maps = Vec::new();

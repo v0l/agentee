@@ -4,13 +4,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "GPU field solvers for agentee: cross-section and FDTD on wgpu"
+description = "Simulation runners for agentee boards and schematics, on the sims solvers"
 
 [dependencies]
 agentee-core.workspace = true
-fieldgrid.workspace = true
+sims-field.workspace = true
 serde.workspace = true
+sims-quasistatic.workspace = true
+sims-circuit.workspace = true
 serde_json.workspace = true
 wgpu = "29"
-bytemuck = { version = "1", features = ["derive"] }
 faer = "0.24"

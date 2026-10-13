@@ -1,4 +1,4 @@
-pub use fieldgrid::fdtd::{C, Far, Patches, patches};
+pub use sims_field::fdtd::{C, Far, Patches, patches};
 
 pub fn fcc_class_b_dbuv(f: f64) -> f64 {
     match f {

@@ -1,7 +1,7 @@
-use fieldgrid::gpu::{Options, Software};
+use sims_field::gpu::{Options, Software};
 use std::sync::OnceLock;
 
-pub use fieldgrid::Gpu;
+pub use sims_field::Gpu;
 
 static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
 

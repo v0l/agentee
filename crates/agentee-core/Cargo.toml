@@ -8,6 +8,8 @@ description = "Board spec, symbol and footprint model for agentee"
 
 [dependencies]
 serde.workspace = true
+sims-circuit.workspace = true
+sims-rf.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true

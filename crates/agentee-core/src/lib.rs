@@ -22,12 +22,10 @@ pub mod neck;
 pub mod place;
 pub mod project;
 pub mod prune;
-pub mod rf;
 pub mod route;
 pub mod rules;
 pub mod schematic;
 pub mod sim;
-pub mod sparam;
 pub mod stackups;
 pub mod symbol;
 pub mod testpoint;
@@ -38,3 +36,5 @@ pub mod version;
 
 pub use diag::{Diagnostic, Severity};
 pub use project::{ItemRef, Kind, Project};
+pub use sims_rf::network as rf;
+pub use sims_rf::sparam;
