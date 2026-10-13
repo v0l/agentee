@@ -572,7 +572,11 @@ pub fn run(path: PathBuf, select: Option<String>, view_3d: bool) -> eframe::Resu
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1500.0, 950.0])
-            .with_title(title.clone()),
+            .with_title(title.clone())
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png"))
+                    .unwrap_or_default(),
+            ),
         depth_buffer: 24,
         multisampling: 4,
         ..Default::default()

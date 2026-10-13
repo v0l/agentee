@@ -1,9 +1,14 @@
+<img src="assets/icon.svg" width="64" alt="">
+
 # agentee
 
 Electronic design for agents. The design is plain TOML that an agent writes and edits; agentee
 checks it, computes what the stackup gives you, and draws it. The window is where the human
 watches, and on a layout they can move parts, route tracks and place vias by hand, saved back
 into the same TOML.
+
+Part of the [bench suite](https://github.com/v0l/bench-suite), a launcher that installs, updates
+and starts it alongside the other bench tools.
 
 This first cut covers the board spec (stackup, fab rules, vias, net classes with impedance and
 current targets) and the parts library (schematic symbols and footprints), with an importer for
