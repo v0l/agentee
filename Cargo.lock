@@ -4070,32 +4070,44 @@ dependencies = [
 [[package]]
 name = "sims-circuit"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+source = "git+https://github.com/v0l/sims?rev=55e5363796275454b35308334fae5b89e3e89aa4#55e5363796275454b35308334fae5b89e3e89aa4"
 dependencies = [
  "faer",
  "serde",
+ "sims-progress",
+ "web-time",
 ]
 
 [[package]]
 name = "sims-field"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+source = "git+https://github.com/v0l/sims?rev=55e5363796275454b35308334fae5b89e3e89aa4#55e5363796275454b35308334fae5b89e3e89aa4"
 dependencies = [
  "bytemuck",
  "pollster",
  "rayon",
+ "sims-progress",
  "wgpu",
+]
+
+[[package]]
+name = "sims-progress"
+version = "0.1.0"
+source = "git+https://github.com/v0l/sims?rev=55e5363796275454b35308334fae5b89e3e89aa4#55e5363796275454b35308334fae5b89e3e89aa4"
+dependencies = [
+ "web-time",
 ]
 
 [[package]]
 name = "sims-quasistatic"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+source = "git+https://github.com/v0l/sims?rev=55e5363796275454b35308334fae5b89e3e89aa4#55e5363796275454b35308334fae5b89e3e89aa4"
 dependencies = [
  "bytemuck",
  "faer",
  "serde",
  "sims-field",
+ "sims-progress",
  "sims-rf",
  "wgpu",
 ]
@@ -4103,7 +4115,7 @@ dependencies = [
 [[package]]
 name = "sims-rf"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=f4784d0a2603c8878cb009b660d8ef5f108b76e3#f4784d0a2603c8878cb009b660d8ef5f108b76e3"
+source = "git+https://github.com/v0l/sims?rev=55e5363796275454b35308334fae5b89e3e89aa4#55e5363796275454b35308334fae5b89e3e89aa4"
 dependencies = [
  "serde",
 ]
