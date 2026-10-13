@@ -764,6 +764,10 @@ impl PcbModel {
     }
 
     pub fn build(&self, opt: &Meshing) -> Result<Sim, String> {
+        self.build_with_surface(opt).map(|(sim, _)| sim)
+    }
+
+    pub fn build_with_surface(&self, opt: &Meshing) -> Result<(Sim, Surface), String> {
         let grid = self.mesh(opt);
         let n = grid.dims();
         let mut mats = Materials::new(&grid);
@@ -1076,15 +1080,12 @@ impl PcbModel {
                 .collect();
             Surface::fit(&targets, &omega, omega0, 4 * decades.ceil() as usize)
         };
-        Ok(Sim::new(
-            metres,
-            &mats,
-            &pec,
-            &lumped,
-            ports,
-            &resistive,
-            engine::Media { surface, debye },
-        ))
+        let sheets = engine::Sheets {
+            table: surface.sheet_table(engine::time_step(&metres)),
+            states: surface.real.len() + 2 * surface.pairs.len(),
+        };
+        let media = engine::Media { sheets, debye };
+        Ok((Sim::new(metres, &mats, &pec, &lumped, ports, &resistive, media), surface))
     }
 
     fn faces(&self) -> (Vec<(crate::loss::Face, f64)>, Vec<[usize; 2]>) {

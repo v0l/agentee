@@ -296,9 +296,10 @@ mod tests {
             ..Default::default()
         };
         let opt = Meshing { cell: 0.1, f_max: 6e9, margin: 1.0, pml: 4, f0: 3e9 };
-        let masked = model(Exposure::Pads(vec![pad.clone()])).build(&opt).unwrap();
+        let (masked, surface) =
+            model(Exposure::Pads(vec![pad.clone()])).build_with_surface(&opt).unwrap();
         let w = 2.0 * std::f64::consts::PI * 6e9;
-        let (copper, enig) = (masked.surface.impedance(0, w), masked.surface.impedance(1, w));
+        let (copper, enig) = (surface.impedance(0, w), surface.impedance(1, w));
         assert!(enig.re > 1.5 * copper.re, "{enig:?} {copper:?}");
         let top_k = masked.grid.nearest(2, 0.0);
         let n = masked.dims();

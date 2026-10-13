@@ -127,6 +127,7 @@ pub fn execute(
             plane_k: if plan.fields.is_empty() { None } else { plan.plane_k },
             ntff: patches.as_ref().map(|p| p.gpu.clone()),
             fused_e: run::fused_update(),
+            ..Default::default()
         };
         let rec = run::run(sim, j, &pulse, &extras, &mut |n, db| progress(&label, n, db))?;
         extra_outputs(plan, &rec, j, &label, &patches, &mut maps, &mut readings);
@@ -274,19 +275,7 @@ fn extra_outputs(
         let a = incident(*f);
         let norm = std::f64::consts::SQRT_2 / (a.0 * a.0 + a.1 * a.1).max(1e-60);
         let (ar, ai) = (a.0 * norm, -a.1 * norm);
-        let n_p = p.pos.len();
-        let mut jv = Vec::with_capacity(n_p);
-        let mut mv = Vec::with_capacity(n_p);
-        for q in 0..n_p {
-            let o = (q * nf + k) * 12;
-            let c = |x: usize| {
-                let (re, im) = (rec.ntff[o + x] as f64, rec.ntff[o + x + 1] as f64);
-                (re * ar - im * ai, re * ai + im * ar)
-            };
-            jv.push([c(0), c(2), c(4)]);
-            mv.push([c(6), c(8), c(10)]);
-        }
-        let far = ntff::Far { pos: &p.pos, area: &p.area, j: jv, m: mv, freq: *f };
+        let far = ntff::Far::load(p, &rec.ntff, nf, k, *f, (ar, ai));
         let (prad, umax) = far.radiated(18);
         let e3 = (engine::ETA0 * umax * 1e-3).sqrt() / 3.0;
         let dbuv = 20.0 * (e3 * 1e6).max(1e-30).log10();
