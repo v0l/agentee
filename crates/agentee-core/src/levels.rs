@@ -222,11 +222,11 @@ fn build(
     } else {
         nets.iter().enumerate().map(|(i, &n)| (n, i)).collect()
     };
-    let end = |c: &mut Cluster, net: usize| -> End {
-        match rail_of(net) {
+    let end = |c: &mut Cluster, net: usize| -> Option<End> {
+        Some(match rail_of(net) {
             Some(range) => End::Rail(c.rail(net, range)),
-            None => End::Node(local[&net]),
-        }
+            None => End::Node(*local.get(&net)?),
+        })
     };
     let mut seen_parts: HashSet<usize> = HashSet::new();
     for &net in nets {
@@ -241,7 +241,7 @@ fn build(
                         .filter_map(|ni| net_of.get(&PinRef { part: r.part, pin: ni }).copied())
                         .collect();
                     if ends.len() == 2 && ends[0] != ends[1] {
-                        let (a, b) = (end(&mut c, ends[0]), end(&mut c, ends[1]));
+                        let (a, b) = (end(&mut c, ends[0])?, end(&mut c, ends[1])?);
                         let var = c.var([ohms * (1.0 - tol), ohms * (1.0 + tol)], ohms);
                         c.resistors.push(Resistor { a, b, var });
                     }
@@ -254,7 +254,7 @@ fn build(
                     let mut pins = Vec::new();
                     for (ni, pin) in p.symbol.pins.iter().enumerate() {
                         if let Some(&n) = net_of.get(&PinRef { part: r.part, pin: ni }) {
-                            pins.push((pin.number.clone(), end(&mut c, n)));
+                            pins.push((pin.number.clone(), end(&mut c, n)?));
                         }
                     }
                     c.switches.push(Switch { label: p.reference.clone(), pins });
@@ -263,7 +263,7 @@ fn build(
                 Role::Pins => {
                     let pin = &s.parts[r.part].symbol.pins[r.pin];
                     if let Some(levels) = pin_levels(s, r) {
-                        let at = end(&mut c, net);
+                        let at = end(&mut c, net)?;
                         let supply = match &levels.supply {
                             Some(name) => match supply_net(s, r, name, net_of) {
                                 Some(n) => match rail_of(n) {
@@ -325,7 +325,7 @@ fn build(
                     match pin.kind {
                         PinType::Input | PinType::NoConnect => {}
                         PinType::OpenCollector => {
-                            let at = end(&mut c, net);
+                            let at = end(&mut c, net)?;
                             c.zero();
                             c.pulls.push(OpenCollector { label: s.pin_label(r), at });
                         }
