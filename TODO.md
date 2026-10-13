@@ -12,6 +12,15 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias and VQFN-28-1EP_5x5mm_P0.5mm_EP3.7x3.7mm_ThermalVias
   (0.15 mm thermal vias). Seen from `examples/preamp`.
 
+- `library add --model` ignores a `${KICAD9_3DMODEL_DIR}/...` path or a gitlab URL and still
+  places the EasyEDA model (ubench IXTH75N10L2 on TO-247-3_Horizontal_TabUp); only a local STEP
+  file took. KiCad ships no STEP for the horizontal TO-247 footprints.
+- `library add STM32H743BIT6` says "not in stock as an active part at any distributor" while
+  `library find STM32H743BIT6 --search` lists 1014 at Farnell.
+- `library use` stops with "footprint exists and differs" when the project copy differs only in
+  `model` path and `height` (R_0603_1608Metric, SOT-23, SOIC-8 in ubench), after it has already
+  written the symbol, so a half-done use is left behind.
+
 ## Spacing
 
 - `agentee layout mains` (ubench) never finishes the detail stage: round 0 of the negotiated
@@ -59,3 +68,22 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - The op-amp output stage is a tanh soft clip about mid-rail, so its slope is under 1 well
   inside the rails: a 1 V/us slew limited follower ramps at 0.97 V/us between 3 and 6 V on 10 V
   rails (`crates/agentee-sim/src/circuit.rs` `Unit::Buffer`).
+- A circuit sim can only reference a net whose name holds GND, 0V or VSS (`is_ground` in
+  `crates/agentee-core/src/circuit.rs`); a floating domain's common (ubench `P_COM`) had to be
+  renamed. A `ground = "NET"` key on the sim would cover it.
+- BJT polarity comes from the symbol or value text, so an `MMBT3906` with no "PNP" in either
+  simulates as NPN until a `pnp` block is given (ubench `main-psu-cv`).
+- The operating point does not converge for two op-amp integrators diode-ORed onto one node with
+  the CC loop idle (ubench `main-psu-cc` with ISET 0.46 V); starting from a gate-off state with
+  steps works.
+- No varistor block, so a MOV clamp cannot be modelled for a mains surge sim, and no IEC
+  61000-4-5 combination wave (1.2/50 us, 8/20 us) or 61000-4-4 burst drive.
+- No LISN or conducted-emission readout (dBuV at 150 kHz to 30 MHz against CISPR 11 limits), so
+  an input filter cannot be checked against the limit lines.
+- No harmonic readout against EN 61000-3-2 class A limits for a mains input current, nor a Pst
+  readout for flicker (EN 61000-3-3) from a switched load.
+
+## Edit
+
+- `agentee edit sch help` documents `remove net NAME`, but `remove` takes the net name alone:
+  `remove net P_COM` fails with "nothing named `net`".
