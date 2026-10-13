@@ -18,7 +18,7 @@ agentee-fab = { path = "crates/agentee-fab" }
 agentee-layout = { path = "crates/agentee-layout" }
 agentee-3d = { path = "crates/agentee-3d" }
 agentee-parts = { path = "crates/agentee-parts" }
-fieldgrid = { git = "https://github.com/v0l/fieldgrid", rev = "7853776cb2b591ddc2a217a325e2e8eb128c33ea" }
+fieldgrid = { git = "https://github.com/v0l/fieldgrid", rev = "8056ef00eebbc609bec669ac7138a92389a9dc8b" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
