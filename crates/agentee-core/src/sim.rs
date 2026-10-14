@@ -608,14 +608,7 @@ pub fn unbase64(s: &str) -> Vec<u8> {
     out
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Reading {
-    pub label: String,
-    pub value: f64,
-    pub unit: String,
-    #[serde(default)]
-    pub detail: String,
-}
+pub use sims_logic::Reading;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MapResult {

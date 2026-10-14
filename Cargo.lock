@@ -74,6 +74,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sims-circuit",
+ "sims-logic",
  "sims-rf",
  "thiserror 2.0.21",
  "toml 0.9.12+spec-1.1.0",
@@ -136,6 +137,7 @@ dependencies = [
  "serde_json",
  "sims-circuit",
  "sims-field",
+ "sims-logic",
  "sims-progress",
  "sims-quasistatic",
  "wgpu",
@@ -4071,7 +4073,7 @@ dependencies = [
 [[package]]
 name = "sims-circuit"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=30117522898b493eaec490004a180f1b2001fed1#30117522898b493eaec490004a180f1b2001fed1"
+source = "git+https://github.com/v0l/sims?rev=0858b756fc9f20f7c231f014251e4c5922d6dcc3#0858b756fc9f20f7c231f014251e4c5922d6dcc3"
 dependencies = [
  "faer",
  "serde",
@@ -4082,7 +4084,7 @@ dependencies = [
 [[package]]
 name = "sims-field"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=30117522898b493eaec490004a180f1b2001fed1#30117522898b493eaec490004a180f1b2001fed1"
+source = "git+https://github.com/v0l/sims?rev=0858b756fc9f20f7c231f014251e4c5922d6dcc3#0858b756fc9f20f7c231f014251e4c5922d6dcc3"
 dependencies = [
  "bytemuck",
  "pollster",
@@ -4092,9 +4094,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sims-logic"
+version = "0.1.0"
+source = "git+https://github.com/v0l/sims?rev=0858b756fc9f20f7c231f014251e4c5922d6dcc3#0858b756fc9f20f7c231f014251e4c5922d6dcc3"
+dependencies = [
+ "serde",
+ "sims-progress",
+]
+
+[[package]]
 name = "sims-progress"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=30117522898b493eaec490004a180f1b2001fed1#30117522898b493eaec490004a180f1b2001fed1"
+source = "git+https://github.com/v0l/sims?rev=0858b756fc9f20f7c231f014251e4c5922d6dcc3#0858b756fc9f20f7c231f014251e4c5922d6dcc3"
 dependencies = [
  "web-time",
 ]
@@ -4102,7 +4113,7 @@ dependencies = [
 [[package]]
 name = "sims-quasistatic"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=30117522898b493eaec490004a180f1b2001fed1#30117522898b493eaec490004a180f1b2001fed1"
+source = "git+https://github.com/v0l/sims?rev=0858b756fc9f20f7c231f014251e4c5922d6dcc3#0858b756fc9f20f7c231f014251e4c5922d6dcc3"
 dependencies = [
  "bytemuck",
  "faer",
@@ -4116,7 +4127,7 @@ dependencies = [
 [[package]]
 name = "sims-rf"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=30117522898b493eaec490004a180f1b2001fed1#30117522898b493eaec490004a180f1b2001fed1"
+source = "git+https://github.com/v0l/sims?rev=0858b756fc9f20f7c231f014251e4c5922d6dcc3#0858b756fc9f20f7c231f014251e4c5922d6dcc3"
 dependencies = [
  "serde",
 ]
