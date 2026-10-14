@@ -18,11 +18,11 @@ agentee-fab = { path = "crates/agentee-fab" }
 agentee-layout = { path = "crates/agentee-layout" }
 agentee-3d = { path = "crates/agentee-3d" }
 agentee-parts = { path = "crates/agentee-parts" }
-sims-rf = { git = "https://github.com/v0l/sims", rev = "69e32670809973449cddce9f760412774caf13d1" }
-sims-progress = { git = "https://github.com/v0l/sims", rev = "69e32670809973449cddce9f760412774caf13d1" }
-sims-circuit = { git = "https://github.com/v0l/sims", rev = "69e32670809973449cddce9f760412774caf13d1" }
-sims-quasistatic = { git = "https://github.com/v0l/sims", rev = "69e32670809973449cddce9f760412774caf13d1" }
-sims-field = { git = "https://github.com/v0l/sims", rev = "69e32670809973449cddce9f760412774caf13d1" }
+sims-rf = { git = "https://github.com/v0l/sims", rev = "30117522898b493eaec490004a180f1b2001fed1" }
+sims-progress = { git = "https://github.com/v0l/sims", rev = "30117522898b493eaec490004a180f1b2001fed1" }
+sims-circuit = { git = "https://github.com/v0l/sims", rev = "30117522898b493eaec490004a180f1b2001fed1" }
+sims-quasistatic = { git = "https://github.com/v0l/sims", rev = "30117522898b493eaec490004a180f1b2001fed1" }
+sims-field = { git = "https://github.com/v0l/sims", rev = "30117522898b493eaec490004a180f1b2001fed1" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"

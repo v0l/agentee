@@ -550,3 +550,81 @@ fn a_burst_drive_reaches_its_peak_on_each_pulse() {
     assert!(r.failures.is_empty(), "{:?}", r.failures);
     assert!((r.checks[0].value - 1000.0).abs() < 20.0, "{:?}", r.checks);
 }
+
+fn mains_load(name: &str, rectified: bool) -> CircuitResult {
+    let spec = "[[drives]]\nnet = \"L\"\nresistance = \"0.3ohm\"\nsine = { amplitude = \"325V\", frequency = \"50Hz\" }\n\n[tran]\nstop = \"200ms\"\nstep = \"20us\"\n\n[[checks]]\nharmonics = \"RS\"\nfrom = \"100ms\"\nto = \"200ms\"\nmax = 100\n";
+    if rectified {
+        sim(
+            name,
+            &[
+                ("RS", "R", "10m"),
+                ("D1", "D", "1N4007"),
+                ("D2", "D", "1N4007"),
+                ("D3", "D", "1N4007"),
+                ("D4", "D", "1N4007"),
+                ("C1", "C", "470u"),
+                ("RL", "R", "100"),
+            ],
+            &[
+                ("L", &["RS.1"]),
+                ("LI", &["RS.2", "D1.2", "D3.1"]),
+                ("GND", &["D2.2", "D4.1"]),
+                ("P", &["D1.1", "D2.1", "C1.1", "RL.1"]),
+                ("M", &["D3.2", "D4.2", "C1.2", "RL.2"]),
+            ],
+            spec,
+        )
+    } else {
+        sim(
+            name,
+            &[("RS", "R", "10m"), ("RL", "R", "100")],
+            &[("L", &["RS.1"]), ("LI", &["RS.2", "RL.1"]), ("GND", &["RL.2"])],
+            spec,
+        )
+    }
+}
+
+#[test]
+fn a_capacitor_input_rectifier_fails_class_a_and_a_resistor_passes() {
+    let resistive = mains_load("resistive", false);
+    assert!(resistive.failures.is_empty(), "{:?}", resistive.failures);
+    assert!(resistive.checks[0].value < 1.0, "{:?}", resistive.checks);
+    let bridge = mains_load("bridge", true);
+    assert!(bridge.harmonics[0].values[2] > 2.3, "3rd {:?}", &bridge.harmonics[0].values[..5]);
+    assert!(!bridge.passed && bridge.checks[0].value > 100.0, "{:?}", bridge.checks);
+}
+
+#[test]
+fn a_switching_load_reads_its_first_harmonic_through_a_lisn() {
+    let r = sim(
+        "lisn",
+        &[("L1", "L", "50u"), ("C1", "C", "100n"), ("R1", "R", "50")],
+        &[
+            ("SUP", &["L1.1"]),
+            ("EUT", &["L1.2", "C1.1"]),
+            ("PORT", &["C1.2", "R1.1"]),
+            ("GND", &["R1.2"]),
+        ],
+        "[[drives]]\nnet = \"SUP\"\ndc = \"12V\"\n\n[[drives]]\nnet = \"EUT\"\ncurrent = true\npulse = { low = \"0A\", high = \"1A\", rise = \"10ns\", fall = \"10ns\", width = \"2.49us\", period = \"5us\" }\n\n[tran]\nstop = \"700us\"\nstep = \"10ns\"\n\n[[checks]]\nemission = \"PORT\"\nfrom = \"200us\"\nto = \"700us\"\nmax = 100\n",
+    );
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let w = std::f64::consts::TAU * 200e3;
+    let (zl, zc) = ((0.0, w * 50e-6), (50.0, -1.0 / (w * 100e-9)));
+    let div = |a: (f64, f64), b: (f64, f64)| {
+        let d = b.0 * b.0 + b.1 * b.1;
+        ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+    };
+    let mul = |a: (f64, f64), b: (f64, f64)| (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0);
+    let parallel = div(mul(zl, zc), (zl.0 + zc.0, zl.1 + zc.1));
+    let to_port = div((50.0, 0.0), zc);
+    let v = mul(parallel, to_port);
+    let peak = 2.0 / std::f64::consts::PI * v.0.hypot(v.1);
+    let want = 20.0 * (peak / std::f64::consts::SQRT_2 / 1e-6).log10();
+    let k = (0..r.emission_freqs.len())
+        .min_by(|&a, &b| {
+            (r.emission_freqs[a] - 200e3).abs().total_cmp(&(r.emission_freqs[b] - 200e3).abs())
+        })
+        .expect("a spectrum");
+    let got = r.emission[0].values[k];
+    assert!((got - want).abs() < 0.5, "{got:.2} dBuV at 200 kHz against {want:.2}");
+}

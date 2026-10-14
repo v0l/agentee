@@ -2512,6 +2512,22 @@ max = "1%"
 # rms = "OUT"                  # RMS about the span's mean, V
 # freq = "OUT"                 # from the rising crossings of the mean, Hz
 
+[[checks]]
+harmonics = "F1"               # the current in a two-pin part against EN 61000-3-2
+from = "100ms"
+to = "200ms"
+max = 100                      # the worst harmonic, in % of its limit
+# mains = "50Hz"
+# class = "a"                  # or "b", 1.5 times class A
+
+[[checks]]
+emission = "LISN_PORT"         # the 50 ohm port of a LISN you draw, against CISPR 11 group 1
+from = "200us"
+to = "1.2ms"
+max = 0                        # the worst margin in dB over the limit, 150 kHz to 30 MHz
+# class = "b"                  # or "a"
+# detector = "quasi-peak"      # or "average"
+
 [[blocks]]                     # a model for a part, by `ref` or by `value` (every such part)
 ref = "U1"
 kind = "opamp"
@@ -2540,6 +2556,19 @@ position = 0.25                # 0 puts the wiper at pin 1, 1 at pin 3; default 
 between the first and last rising crossing of the mean in the span. `freq` and `thd` need at
 least one full period there. Start the span after the circuit settles, or the start-up step
 reads as distortion.
+
+`harmonics` takes whole mains periods ending at `to`, reads orders 2 to 40 of the part's current
+in A rms, and gives the worst as a percentage of its class A limit (230 V mains, 2.30 A at the
+3rd and 1.08 A at the 2nd falling to 0.15 x 15/n and 0.23 x 8/n). The result keeps every order
+for the plot. The limits apply above 75 W of input power.
+
+`emission` resamples the span, takes a Hann-windowed spectrum and sums it over a 9 kHz receiver
+bandwidth every 4.5 kHz from 150 kHz to 30 MHz, in dBuV. It reads a steady line at its true
+level, the same in every detector, so it compares with the quasi-peak or average limit as asked;
+for broadband noise it reads high, on the safe side. The span needs at least 222 us (twice the
+receiver's 9 kHz), and the transient a `step` short enough to carry 30 MHz. The LISN is yours:
+the CISPR 16 one is 50 uH from the supply to the EUT and 0.1 uF from the EUT to the 50 ohm port.
+The result keeps the spectrum.
 
 A transient also stores the spectrum of each recorded net over its second half (a Hann window,
 in dBV, 2048 bins), drawn under the transient in the viewer.

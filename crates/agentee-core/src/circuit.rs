@@ -271,6 +271,16 @@ pub struct CheckFile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harmonics: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mains: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emission: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detector: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Quantity>,
@@ -1027,24 +1037,50 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
     let mut checks = Vec::new();
     for (i, c) in file.checks.iter().enumerate() {
         let at = format!("checks[{i}]");
-        let given = [&c.v, &c.i, &c.phase, &c.noise, &c.peak, &c.trough, &c.rms, &c.freq, &c.thd]
-            .iter()
-            .filter(|x| x.is_some())
-            .count();
+        let given = [
+            &c.v,
+            &c.i,
+            &c.phase,
+            &c.noise,
+            &c.peak,
+            &c.trough,
+            &c.rms,
+            &c.freq,
+            &c.thd,
+            &c.harmonics,
+            &c.emission,
+        ]
+        .iter()
+        .filter(|x| x.is_some())
+        .count();
         if given != 1 {
             cx.d.error(
                 &at,
-                "a check names exactly one of `v`, `i`, `phase`, `noise`, `peak`, `trough`, `rms`, `freq` and `thd`",
+                "a check names exactly one of `v`, `i`, `phase`, `noise`, `peak`, `trough`, `rms`, `freq`, `thd`, `harmonics` and `emission`",
             );
             continue;
         }
-        let windowed = [&c.peak, &c.trough, &c.rms, &c.freq, &c.thd].iter().any(|x| x.is_some());
+        let windowed = [&c.peak, &c.trough, &c.rms, &c.freq, &c.thd, &c.harmonics, &c.emission]
+            .iter()
+            .any(|x| x.is_some());
         if windowed && c.at.is_some() {
-            cx.d.error(&at, "`peak`, `trough`, `rms`, `freq` and `thd` read a span: give `from` and `to`, not `at`");
+            cx.d.error(&at, "`peak`, `trough`, `rms`, `freq`, `thd`, `harmonics` and `emission` read a span: give `from` and `to`, not `at`");
             continue;
         }
         if !windowed && (c.from.is_some() || c.to.is_some()) {
-            cx.d.error(&at, "`from` and `to` go with `peak`, `trough`, `rms`, `freq` and `thd`");
+            cx.d.error(&at, "`from` and `to` go with `peak`, `trough`, `rms`, `freq`, `thd`, `harmonics` and `emission`");
+            continue;
+        }
+        if c.harmonics.is_none() && c.mains.is_some() {
+            cx.d.error(&at, "`mains` goes with `harmonics`");
+            continue;
+        }
+        if c.harmonics.is_none() && c.emission.is_none() && c.class.is_some() {
+            cx.d.error(&at, "`class` goes with `harmonics` and `emission`");
+            continue;
+        }
+        if c.emission.is_none() && c.detector.is_some() {
+            cx.d.error(&at, "`detector` goes with `emission`");
             continue;
         }
         let when = match &c.at {
@@ -1102,6 +1138,41 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
         } else if let Some(w) = &c.thd {
             let Some(nd) = node_of(&mut cx, w, &at) else { continue };
             (Measure::Thd(nd), format!("thd({w})"), &["%"])
+        } else if let Some(name) = &c.harmonics {
+            let Some(element) = elements.iter().position(|e| &e.name == name && e.nodes.len() == 2)
+            else {
+                cx.d.error(&at, format!("`harmonics` needs a two-pin part in the circuit, `{name}` is not one"));
+                continue;
+            };
+            let class_b = match c.class.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                None | Some("a") => false,
+                Some("b") => true,
+                Some(other) => {
+                    cx.d.error(&at, format!("`class` is \"a\" or \"b\", not `{other}`"));
+                    continue;
+                }
+            };
+            let mains = cx.q(&c.mains, &["hz"], &at, "mains", 50.0);
+            (Measure::Harmonics { element, mains, class_b }, format!("harmonics({name})"), &["%"])
+        } else if let Some(w) = &c.emission {
+            let Some(node) = node_of(&mut cx, w, &at) else { continue };
+            let class_a = match c.class.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                None | Some("b") => false,
+                Some("a") => true,
+                Some(other) => {
+                    cx.d.error(&at, format!("`class` is \"a\" or \"b\", not `{other}`"));
+                    continue;
+                }
+            };
+            let average = match c.detector.as_deref() {
+                None | Some("quasi-peak") | Some("qp") => false,
+                Some("average") | Some("av") => true,
+                Some(other) => {
+                    cx.d.error(&at, format!("`detector` is \"quasi-peak\" or \"average\", not `{other}`"));
+                    continue;
+                }
+            };
+            (Measure::Emission { node, class_a, average }, format!("emission({w})"), &["db"])
         } else {
             let name = c.i.as_deref().unwrap_or_default();
             match elements.iter().position(|e| e.name == name && e.nodes.len() == 2) {
