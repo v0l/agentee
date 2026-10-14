@@ -50,6 +50,17 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   1-8 of `layout preamp --to place` (R4 and C6 lose the space round U1 to R3, R5, R6).
 - `layout ladder-vcf` seed 3 leaves 1 connection unrouted since the bridging pull (8a995cb),
   where seeds 1 and 2 route everything.
+- `agentee place` does not keep a floating domain's parts together: on ubench `main` (900
+  parts, PSU and LOAD domains with barriers) it put 180 rear parts in another domain's area.
+  Placing a domain at a time with `[place] keepouts` round its region works, but `[place]` has
+  no `edit pcb` command, so each pass edits the layout file by hand. A `region` per domain or
+  per sheet would do it.
+- `[place] keepouts` stop courtyards only. There is no height limit per area, so parts under a
+  heatsink or a fan (ubench `main`: under 2 mm and 5 mm) are kept low by hand.
+- `agentee place --parts` leaves a part it cannot fit off the board at (270, 4) and says
+  nothing: ubench `main` U1004 (SOIC-14) and D1001 (SMC) each had a free spot, found by hand.
+- `agentee layout --from access` on ubench `main` (900 parts, 4 layers) prints nothing for over
+  1.5 hours; a progress line per stage or per few hundred nets would help.
 
 ## Topological router
 
@@ -84,6 +95,9 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   readout for flicker (EN 61000-3-3) from a switched load.
 
 ## Edit
+
+- `edit pcb keepout --nets` takes no globs, so a domain keepout lists 160 nets by name.
+- `[[domains]]` and `[[barriers]]` have no `edit board` command.
 
 - `agentee edit sch help` documents `remove net NAME`, but `remove` takes the net name alone:
   `remove net P_COM` fails with "nothing named `net`".
