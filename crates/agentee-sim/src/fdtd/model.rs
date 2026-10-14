@@ -1084,7 +1084,7 @@ impl PcbModel {
             table: surface.sheet_table(engine::time_step(&metres)),
             states: surface.real.len() + 2 * surface.pairs.len(),
         };
-        let media = engine::Media { sheets, debye };
+        let media = engine::Media { sheets, debye, wires: Vec::new() };
         Ok((Sim::new(metres, &mats, &pec, &lumped, ports, &resistive, media), surface))
     }
 
