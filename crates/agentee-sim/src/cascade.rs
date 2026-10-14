@@ -1,4 +1,4 @@
-use agentee_core::rf::{self, Cx, Matrix, Network, NoiseParams};
+use agentee_core::rf::{self, Cx, Matrix, Network, NoiseParams, db};
 use agentee_core::sim::{Curve, DatasheetRow, Reading, SimResult, StageFile, datasheet_at};
 
 pub struct Placed {
@@ -25,7 +25,7 @@ fn mhz(f: f64) -> String {
 }
 
 fn is_passive(s: &Matrix) -> bool {
-    s.iter().flatten().all(|c| c.abs() <= 1.0 + 1e-6)
+    s.iter().flatten().all(|c| c.norm() <= 1.0 + 1e-6)
 }
 
 fn device_noise(d: &Placed, s: &Matrix, f: f64, kelvin: f64) -> Option<Matrix> {
@@ -100,7 +100,7 @@ fn solve_point(
     if j.s.len() == 2 {
         for (d, &out) in devices.iter().zip(&outputs) {
             let Some(k) = j.internal.iter().position(|x| *x == out) else { continue };
-            let g = j.response[k][0].norm2();
+            let g = j.response[k][0].norm_sqr();
             if let Some(oip3) = datasheet_at(&d.datasheet, f, |r| r.oip3) {
                 inv_ip3 += g / 10f64.powf(oip3 / 10.0);
                 have3 = true;
@@ -121,7 +121,7 @@ fn solve_point(
 
 fn with_after(p: &Point, after: &Option<StageFile>) -> (Option<f64>, Option<f64>) {
     let Some(a) = after else { return (p.nf, p.iip3) };
-    let g = p.s[1][0].norm2();
+    let g = p.s[1][0].norm_sqr();
     let nf = p.nf.map(|f1| f1 + (10f64.powf(a.nf / 10.0) - 1.0) / g);
     let iip3 = match (p.iip3, a.iip3) {
         (Some(x), Some(y)) => {
@@ -236,7 +236,7 @@ pub fn run(
                 continue;
             }
             let p = &points[k];
-            let g = p.s[1][0].db();
+            let g = db(p.s[1][0]);
             let (nf, iip3) = system[k];
             let mut parts = vec![format!("gain {g:.1} dB")];
             if let Some(nf) = nf {
@@ -307,8 +307,8 @@ fn two_port_readings(freqs: &[f64], s: &[Matrix]) -> Vec<Reading> {
         (best.0, freqs[best.1])
     };
     let mut r = Vec::new();
-    let (gmax, fmax) = pick(&|m| m[1][0].db(), true);
-    let (gmin, fmin) = pick(&|m| m[1][0].db(), false);
+    let (gmax, fmax) = pick(&|m| db(m[1][0]), true);
+    let (gmin, fmin) = pick(&|m| db(m[1][0]), false);
     r.push(Reading {
         label: "gain peak".into(),
         value: gmax,
@@ -321,21 +321,21 @@ fn two_port_readings(freqs: &[f64], s: &[Matrix]) -> Vec<Reading> {
         unit: "dB".into(),
         detail: format!("S21 at {}", mhz(fmin)),
     });
-    let (s11, f11) = pick(&|m| m[0][0].db(), true);
+    let (s11, f11) = pick(&|m| db(m[0][0]), true);
     r.push(Reading {
         label: "input match".into(),
         value: s11,
         unit: "dB".into(),
         detail: format!("S11 at {}", mhz(f11)),
     });
-    let (s22, f22) = pick(&|m| m[1][1].db(), true);
+    let (s22, f22) = pick(&|m| db(m[1][1]), true);
     r.push(Reading {
         label: "output match".into(),
         value: s22,
         unit: "dB".into(),
         detail: format!("S22 at {}", mhz(f22)),
     });
-    let (iso, fi) = pick(&|m| m[0][1].db(), true);
+    let (iso, fi) = pick(&|m| db(m[0][1]), true);
     r.push(Reading {
         label: "isolation".into(),
         value: iso,

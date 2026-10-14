@@ -14,7 +14,7 @@ impl Ctle {
         let jf = |c: f64| Cx::new(1.0, f / c);
         let mut h = jf(self.zero);
         for p in &self.poles {
-            h = h / jf(*p);
+            h /= jf(*p);
         }
         h * 10f64.powf(self.dc_db / 20.0)
     }
@@ -183,7 +183,7 @@ pub fn run(name: &str, freqs: &[f64], h: &[Cx], p: &Params, spec_hash: u64) -> C
     let nyquist = p.bit_rate / 2.0;
     let il = {
         let k = freqs.partition_point(|f| *f < nyquist).min(freqs.len() - 1);
-        20.0 * h[k].abs().max(1e-12).log10()
+        20.0 * h[k].norm().max(1e-12).log10()
     };
     let mv = |v: f64| v * 1e3;
     let mut readings = vec![

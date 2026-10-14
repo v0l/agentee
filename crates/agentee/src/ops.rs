@@ -757,7 +757,7 @@ pub fn sparam(p: &Project, name: &str, q: &SparamQuery) -> Result<Value, String>
         let mm: Vec<[[Cx; 4]; 4]> =
             (0..res.freqs.len()).map(|k| sp::mixed_mode(&at(k), [*a, *c], [*b, *d])).collect();
         let db = |i: usize, j: usize| -> Vec<f64> {
-            mm.iter().map(|m| (m[i][j].db() * 100.0).round() / 100.0).collect()
+            mm.iter().map(|m| (agentee_core::rf::db(m[i][j]) * 100.0).round() / 100.0).collect()
         };
         out["mixed_mode"] = json!({
             "freq_hz": res.freqs,
@@ -778,8 +778,11 @@ pub fn sparam(p: &Project, name: &str, q: &SparamQuery) -> Result<Value, String>
         let st = sp::step(&res.freqs, &s, rise, Some(40.0 * rise));
         let peak =
             st.value.iter().copied().fold(0.0f64, |a, v| if v.abs() > a.abs() { v } else { a });
-        let worst =
-            s.iter().zip(&res.freqs).map(|(c, f)| (c.db(), *f)).max_by(|a, b| a.0.total_cmp(&b.0));
+        let worst = s
+            .iter()
+            .zip(&res.freqs)
+            .map(|(c, f)| (agentee_core::rf::db(*c), *f))
+            .max_by(|a, b| a.0.total_cmp(&b.0));
         out["crosstalk"] = json!({
             "from": res.ports[*from],
             "to": res.ports[*to],

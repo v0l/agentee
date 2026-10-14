@@ -4073,7 +4073,7 @@ dependencies = [
 [[package]]
 name = "sims-circuit"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=b45568d325d9137da04e487cf7ca0819ab06aae4#b45568d325d9137da04e487cf7ca0819ab06aae4"
+source = "git+https://github.com/v0l/sims?rev=ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac#ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac"
 dependencies = [
  "faer",
  "serde",
@@ -4084,7 +4084,7 @@ dependencies = [
 [[package]]
 name = "sims-field"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=b45568d325d9137da04e487cf7ca0819ab06aae4#b45568d325d9137da04e487cf7ca0819ab06aae4"
+source = "git+https://github.com/v0l/sims?rev=ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac#ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac"
 dependencies = [
  "bytemuck",
  "pollster",
@@ -4096,7 +4096,7 @@ dependencies = [
 [[package]]
 name = "sims-logic"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=b45568d325d9137da04e487cf7ca0819ab06aae4#b45568d325d9137da04e487cf7ca0819ab06aae4"
+source = "git+https://github.com/v0l/sims?rev=ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac#ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac"
 dependencies = [
  "serde",
  "sims-progress",
@@ -4105,7 +4105,7 @@ dependencies = [
 [[package]]
 name = "sims-progress"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=b45568d325d9137da04e487cf7ca0819ab06aae4#b45568d325d9137da04e487cf7ca0819ab06aae4"
+source = "git+https://github.com/v0l/sims?rev=ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac#ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac"
 dependencies = [
  "web-time",
 ]
@@ -4113,7 +4113,7 @@ dependencies = [
 [[package]]
 name = "sims-quasistatic"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=b45568d325d9137da04e487cf7ca0819ab06aae4#b45568d325d9137da04e487cf7ca0819ab06aae4"
+source = "git+https://github.com/v0l/sims?rev=ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac#ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac"
 dependencies = [
  "bytemuck",
  "faer",
@@ -4127,8 +4127,9 @@ dependencies = [
 [[package]]
 name = "sims-rf"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=b45568d325d9137da04e487cf7ca0819ab06aae4#b45568d325d9137da04e487cf7ca0819ab06aae4"
+source = "git+https://github.com/v0l/sims?rev=ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac#ff342bc2bc39eb56172d2c5dc5fc06f5b24e24ac"
 dependencies = [
+ "num-complex",
  "serde",
 ]
 

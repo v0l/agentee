@@ -108,7 +108,7 @@ pub fn run(
                 Attach::Series { r, l, c } => {
                     let mut z = Cx::new(*r, w * l);
                     if let Some(c) = c {
-                        z = z + Cx::new(0.0, -1.0 / (w * c));
+                        z += Cx::new(0.0, -1.0 / (w * c));
                     }
                     gamma(z, z0)
                 }
@@ -127,7 +127,7 @@ pub fn run(
         let s: Matrix = order.iter().map(|i| order.iter().map(|j| s[*i][*j]).collect()).collect();
         let z = to_z(&s, z0).ok_or("the sink matrix is singular")?;
         for (i, row) in zs.iter_mut().enumerate() {
-            row.push(z[i][i].abs());
+            row.push(z[i][i].norm());
         }
         kept.push(f);
         out_s.push(s);
@@ -279,7 +279,7 @@ mod tests {
             let w = 2.0 * PI * f;
             let a = Cx::new(2e-3, w * 20e-9);
             let b = Cx::new(5e-3, w * 0.5e-9 - 1.0 / (w * 10e-6));
-            let want = (a * b / (a + b)).abs();
+            let want = (a * b / (a + b)).norm();
             let got = r.curves[0].values[k].unwrap();
             assert!((got - want).abs() / want < 1e-6, "{f}: {got} {want}");
         }

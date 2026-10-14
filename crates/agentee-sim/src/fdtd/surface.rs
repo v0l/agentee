@@ -89,7 +89,7 @@ impl Surface {
         let f = &self.faces[face];
         let mut z = Cx::new(f.d, 0.0) + s * f.e;
         for (p, r) in self.real.iter().zip(&f.real) {
-            z = z + Cx::new(*r, 0.0) / (s - Cx::new(*p, 0.0));
+            z += Cx::new(*r, 0.0) / (s - Cx::new(*p, 0.0));
         }
         for (q, c) in self.pairs.iter().zip(&f.pairs) {
             z = z + *c / (s - *q) + c.conj() / (s - q.conj());
@@ -108,8 +108,10 @@ impl Surface {
                 Cx::new(-b / 100.0, b)
             })
             .collect();
-        let weights: Vec<Vec<f64>> =
-            targets.iter().map(|t| t.iter().map(|v| 1.0 / v.abs().max(1e-300)).collect()).collect();
+        let weights: Vec<Vec<f64>> = targets
+            .iter()
+            .map(|t| t.iter().map(|v| 1.0 / v.norm().max(1e-300)).collect())
+            .collect();
         let m = targets.len();
         let put = |a: &mut Mat<f64>, r: usize, c: usize, v: Cx| {
             a[(r, c)] = v.re;
@@ -166,7 +168,7 @@ impl Surface {
                 }
             }
             real.sort_by(|a, b| b.total_cmp(a));
-            pairs.sort_by(|a, b| a.abs().total_cmp(&b.abs()));
+            pairs.sort_by(|a, b| a.norm().total_cmp(&b.norm()));
         }
         let faces = targets
             .iter()
@@ -264,7 +266,7 @@ mod tests {
             let mut worst = 0.0f64;
             for w in (0..960).map(|j| lo * (hi / lo).powf(j as f64 / 959.0)) {
                 let want = surface_impedance(faces[k], t, Cx::new(0.0, w));
-                worst = worst.max((fit.impedance(k, w) - want).abs() / want.abs());
+                worst = worst.max((fit.impedance(k, w) - want).norm() / want.norm());
             }
             eprintln!("face {k}: worst error {worst:.2e}, {} samples", target.len());
             assert!(worst < 0.01, "face {k}: {worst}");
@@ -381,14 +383,14 @@ mod tests {
                 if n >= steps - tail {
                     let ph = -w * (n as f64 + 0.5) * dt;
                     let e = Cx::new(ph.cos(), ph.sin());
-                    v_acc = v_acc + e * v;
-                    i_acc = i_acc + e * ibar;
+                    v_acc += e * v;
+                    i_acc += e * ibar;
                 }
             }
             let got = v_acc / i_acc;
             let warped = 2.0 / dt * (0.5 * w * dt).tan();
             let want = fit.impedance(0, warped);
-            let err = (got - want).abs() / want.abs();
+            let err = (got - want).norm() / want.norm();
             eprintln!("{:.1} GHz: stepped {got:?}, bilinear fit {want:?}, error {err:.1e}", w / w0);
             assert!(err < 2e-3, "{err}");
         }

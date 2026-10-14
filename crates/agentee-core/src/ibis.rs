@@ -297,9 +297,9 @@ mod tests {
     fn a_matched_thru_splits_the_source_in_half() {
         let s = [[Cx::ZERO, Cx::ONE], [Cx::ONE, Cx::ZERO]];
         let h = terminated(s, 50.0, Cx::new(50.0, 0.0), Cx::new(50.0, 0.0));
-        assert!((h - Cx::new(0.5, 0.0)).abs() < 1e-12);
+        assert!((h - Cx::new(0.5, 0.0)).norm() < 1e-12);
         let h = terminated(s, 50.0, Cx::new(20.0, 0.0), Cx::new(1e9, 0.0));
-        assert!((h - Cx::ONE).abs() < 1e-6);
+        assert!((h - Cx::ONE).norm() < 1e-6);
         let h = terminated(s, 50.0, Cx::new(20.0, 0.0), Cx::new(50.0, 0.0));
         assert!((h.re - 50.0 / 70.0).abs() < 1e-12);
     }
