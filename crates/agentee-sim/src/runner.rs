@@ -22,6 +22,7 @@ pub(crate) fn cancelled() -> bool {
 }
 
 struct Tracker {
+    _listening: sims_progress::ListeningHere,
     state: std::sync::Arc<std::sync::Mutex<agentee_core::sim::SimProgress>>,
     stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -68,7 +69,15 @@ impl Tracker {
                 }
             })
         };
-        Tracker { state, stop, thread: Some(thread), path }
+        let listening = {
+            let state = state.clone();
+            sims_progress::listen_here(move |r| {
+                if !r.finished {
+                    state.lock().unwrap_or_else(|e| e.into_inner()).phase = r.line();
+                }
+            })
+        };
+        Tracker { _listening: listening, state, stop, thread: Some(thread), path }
     }
 
     fn update(&self, f: impl FnOnce(&mut agentee_core::sim::SimProgress)) {
@@ -108,11 +117,14 @@ pub fn run(
         return Err(format!("{} has errors, fix them first (agentee check)", entry.name));
     }
     let spec = &entry.item;
-    if spec.kind == agentee_core::sim::SimKind::Logic {
-        return run_logic(entry);
-    }
-    if spec.kind == agentee_core::sim::SimKind::Circuit {
-        return run_circuit(entry);
+    if matches!(spec.kind, agentee_core::sim::SimKind::Logic | agentee_core::sim::SimKind::Circuit)
+    {
+        let _tracker = (!dry).then(|| Tracker::start(&entry.path, 1, 0));
+        return if spec.kind == agentee_core::sim::SimKind::Logic {
+            run_logic(entry)
+        } else {
+            run_circuit(entry)
+        };
     }
     let layout = p.layouts.iter().find(|l| l.name == spec.layout).ok_or("layout is missing")?;
     let board = p.boards.iter().find(|b| b.name == layout.item.board).ok_or("board is missing")?;
@@ -619,4 +631,22 @@ fn run_cascade(
         "readings": out.readings,
         "notes": notes,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tracker_shows_the_solver_stage() {
+        let dir = std::env::temp_dir().join(format!("agentee-tracker-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let tracker = Tracker::start(&dir.join("t.sim.toml"), 1, 0);
+        let stage = sims_progress::stage("AC sweep", Some(10), "frequencies");
+        let phase = tracker.state.lock().unwrap().phase.clone();
+        assert!(phase.starts_with("AC sweep, 0 of 10 frequencies"), "{phase}");
+        drop(stage);
+        drop(tracker);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -12,6 +12,7 @@ sims-field.workspace = true
 serde.workspace = true
 sims-quasistatic.workspace = true
 sims-circuit.workspace = true
+sims-progress.workspace = true
 serde_json.workspace = true
 wgpu = "29"
 faer = "0.24"
