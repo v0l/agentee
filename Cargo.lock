@@ -4071,7 +4071,7 @@ dependencies = [
 [[package]]
 name = "sims-circuit"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=af37dc74263a0b4d490a07c4fc8f930a28693320#af37dc74263a0b4d490a07c4fc8f930a28693320"
+source = "git+https://github.com/v0l/sims?rev=69e32670809973449cddce9f760412774caf13d1#69e32670809973449cddce9f760412774caf13d1"
 dependencies = [
  "faer",
  "serde",
@@ -4082,7 +4082,7 @@ dependencies = [
 [[package]]
 name = "sims-field"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=af37dc74263a0b4d490a07c4fc8f930a28693320#af37dc74263a0b4d490a07c4fc8f930a28693320"
+source = "git+https://github.com/v0l/sims?rev=69e32670809973449cddce9f760412774caf13d1#69e32670809973449cddce9f760412774caf13d1"
 dependencies = [
  "bytemuck",
  "pollster",
@@ -4094,7 +4094,7 @@ dependencies = [
 [[package]]
 name = "sims-progress"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=af37dc74263a0b4d490a07c4fc8f930a28693320#af37dc74263a0b4d490a07c4fc8f930a28693320"
+source = "git+https://github.com/v0l/sims?rev=69e32670809973449cddce9f760412774caf13d1#69e32670809973449cddce9f760412774caf13d1"
 dependencies = [
  "web-time",
 ]
@@ -4102,7 +4102,7 @@ dependencies = [
 [[package]]
 name = "sims-quasistatic"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=af37dc74263a0b4d490a07c4fc8f930a28693320#af37dc74263a0b4d490a07c4fc8f930a28693320"
+source = "git+https://github.com/v0l/sims?rev=69e32670809973449cddce9f760412774caf13d1#69e32670809973449cddce9f760412774caf13d1"
 dependencies = [
  "bytemuck",
  "faer",
@@ -4116,7 +4116,7 @@ dependencies = [
 [[package]]
 name = "sims-rf"
 version = "0.1.0"
-source = "git+https://github.com/v0l/sims?rev=af37dc74263a0b4d490a07c4fc8f930a28693320#af37dc74263a0b4d490a07c4fc8f930a28693320"
+source = "git+https://github.com/v0l/sims?rev=69e32670809973449cddce9f760412774caf13d1#69e32670809973449cddce9f760412774caf13d1"
 dependencies = [
  "serde",
 ]

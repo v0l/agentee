@@ -2468,6 +2468,8 @@ dc = "5V"
 steps = [["0s", "0V"], ["1ms", "0V"], ["2ms", "5V"]]   # piecewise linear, for the transient
 # pulse = { low = "0V", high = "5V", delay = "1ms", rise = "1us", fall = "1us", width = "1ms", period = "2ms" }
 # sine = { offset = "0V", amplitude = "1V", frequency = "1kHz", delay = "0s" }
+# surge = { peak = "2kV", delay = "10us", shape = "open" }    # IEC 61000-4-5: open is 1.2/50 us, short 8/20 us
+# burst = { peak = "1kV", rate = "5kHz", length = "15ms", period = "300ms" }  # IEC 61000-4-4 5/50 ns pulses
 
 [ac]
 from = "10Hz"
@@ -2552,6 +2554,14 @@ Values take SI prefixes and units: `"4k7"`, `"100nF"`, `"1MHz"`, `"10meg"`, or a
 The ground is every net named with GND, `0V`, `GROUND` or starting with `VSS`, unless a drive
 names it. Nets with nothing to hold them sit on a 1 pS conductance to ground.
 
+A varistor conducts `1mA * (V / v1ma)^alpha`; take `v1ma` from the datasheet's varistor voltage
+and `alpha` from its clamping voltage `Vc` at `Ip`: `alpha = ln(Ip / 1mA) / ln(Vc / v1ma)`. A
+surge drive with `resistance = "2ohm"` is the combination wave generator line to line (12 ohm
+line to earth): its open-circuit voltage is the 1.2/50 us wave; the short-circuit current comes
+out of the resistance rather than the generator's own network. A burst drive repeats 5/50 ns
+pulses at `rate` for `length` every `period`; use `resistance = "50ohm"` for the generator. The
+transient steps through every pulse front, so keep a burst run to a few pulses.
+
 The netlist becomes elements by the symbol's reference letter:
 
 | reference | element |
@@ -2576,11 +2586,13 @@ Block kinds and their fields:
 | `opamp` | `inp` (`+`, `IN+`), `inn` (`-`, `IN-`), `out` (`~`, `OUT`), `vcc` (`V+`, `VCC`), `vee` (`V-`, `VEE`) | `gain`, `gbw`, `rout`, `vos`, `en`, `headroom` |
 | `ldo` | `vin`, `vout`, `gnd` | `vout`, `dropout`, `rout`, `iq` |
 | `vcvs`, `vccs` | `p`, `n`, `cp`, `cn` (all given) | `gain` (V/V or A/V) |
+| `varistor`, `mov` | `1`, `2` | `v1ma` (the voltage at 1 mA), `alpha` (default 30), `capacitance` |
 | `open` | | leaves the part out |
 
 An op-amp is a single pole: a transconductance into a node with `gain` ohms and a capacitor that
-puts unity gain at `gbw`, then a buffer clamped smoothly between its rails less `headroom` (no
-clamp without both rail pins) behind `rout`. The gain node stops a little past the clamp, so a
+puts unity gain at `gbw`, then a buffer between its rails less `headroom` (no clamp without both
+rail pins) behind `rout`. The buffer follows its input exactly until it is within a fifth of its
+half swing of a rail, then rounds smoothly into the clamp. The gain node stops a little past the clamp, so a
 clipped op-amp comes back off its rail as soon as its input asks it to, as a real one does,
 rather than winding up. The clamp and its `headroom` are the same on both rails. Every unit of a
 multi-unit op-amp with the three signal pins is its own op-amp sharing the rail pins, the output

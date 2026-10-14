@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub use sims_circuit::{
     At, Check, CircuitResult, CircuitSpec, Curve, Drive, Elem, ElemKind, Measure, Node, Noise,
-    Reading, Sweep, Wave, fmt_si,
+    Reading, Surge, Sweep, Wave, fmt_si,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -86,6 +86,34 @@ pub struct SineFile {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SurgeFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Quantity>,
+    pub peak: Quantity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BurstFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<Quantity>,
+    pub peak: Quantity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub period: Option<Quantity>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DriveFile {
     pub net: String,
     #[serde(default, rename = "return", skip_serializing_if = "Option::is_none")]
@@ -102,6 +130,10 @@ pub struct DriveFile {
     pub pulse: Option<PulseFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sine: Option<SineFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surge: Option<SurgeFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burst: Option<BurstFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<(Quantity, Quantity)>,
 }
@@ -211,6 +243,10 @@ pub struct BlockFile {
     pub cgs: Option<Quantity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cgd: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub v1ma: Option<Quantity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alpha: Option<Quantity>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -566,6 +602,22 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                 };
                 push(&mut elements, r.reference.clone(), ElemKind::Resistor { r: rv.max(1e-6) }, nodes);
             }
+            "varistor" | "mov" => {
+                let Some(nodes) = two(&mut cx) else { continue };
+                let v1ma = match b.and_then(|b| b.v1ma.clone()) {
+                    Some(q) => cx.q(&Some(q), &["v"], &at, "v1ma", 0.0),
+                    None => {
+                        cx.d.error(&at, format!("a varistor block for {} needs `v1ma`", r.label()));
+                        continue;
+                    }
+                };
+                let kind = ElemKind::Varistor {
+                    v1ma,
+                    alpha: cx.q(&b.and_then(|b| b.alpha.clone()), &[], &at, "alpha", 30.0),
+                    c: cx.q(&b.and_then(|b| b.capacitance.clone()), &["f"], &at, "capacitance", 0.0),
+                };
+                push(&mut elements, r.reference.clone(), kind, nodes);
+            }
             "potentiometer" | "pot" => {
                 let ends = [("1", "pin 1"), ("2", "the wiper (pin 2)"), ("3", "pin 3")];
                 let mut nodes = Vec::new();
@@ -860,10 +912,13 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
         let dc = cx.q(&f.dc, units, &at, "dc", 0.0);
         let ac = cx.q(&f.ac, units, &at, "ac", 0.0);
         let r = cx.q(&f.resistance, &["ohm"], &at, "resistance", 0.0);
-        let shapes =
-            f.pulse.is_some() as usize + f.sine.is_some() as usize + (!f.steps.is_empty()) as usize;
+        let shapes = f.pulse.is_some() as usize
+            + f.sine.is_some() as usize
+            + f.surge.is_some() as usize
+            + f.burst.is_some() as usize
+            + (!f.steps.is_empty()) as usize;
         if shapes > 1 {
-            cx.d.error(&at, "give one of `pulse`, `sine` and `steps`");
+            cx.d.error(&at, "give one of `pulse`, `sine`, `surge`, `burst` and `steps`");
         }
         let time =
             |cx: &mut Ctx, v: &Option<Quantity>, field: &str| cx.q(v, &["s"], &at, field, 0.0);
@@ -883,6 +938,30 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                 amplitude: cx.q(&Some(sf.amplitude.clone()), units, &at, "sine.amplitude", 0.0),
                 frequency: cx.q(&Some(sf.frequency.clone()), &["hz"], &at, "sine.frequency", 0.0),
                 delay: time(&mut cx, &sf.delay, "sine.delay"),
+            }
+        } else if let Some(sf) = &f.surge {
+            let shape = match sf.shape.as_deref() {
+                None | Some("open") => Surge::Open,
+                Some("short") => Surge::Short,
+                Some(other) => {
+                    cx.d.error(&at, format!("surge.shape is `open` (1.2/50 us) or `short` (8/20 us), not `{other}`"));
+                    Surge::Open
+                }
+            };
+            Wave::Surge {
+                offset: cx.q(&sf.offset, units, &at, "surge.offset", dc),
+                peak: cx.q(&Some(sf.peak.clone()), units, &at, "surge.peak", 0.0),
+                delay: time(&mut cx, &sf.delay, "surge.delay"),
+                shape,
+            }
+        } else if let Some(bf) = &f.burst {
+            Wave::Burst {
+                offset: cx.q(&bf.offset, units, &at, "burst.offset", dc),
+                peak: cx.q(&Some(bf.peak.clone()), units, &at, "burst.peak", 0.0),
+                delay: time(&mut cx, &bf.delay, "burst.delay"),
+                rate: cx.q(&bf.rate, &["hz"], &at, "burst.rate", 5e3),
+                length: cx.q(&bf.length, &["s"], &at, "burst.length", 15e-3),
+                period: cx.q(&bf.period, &["s"], &at, "burst.period", 300e-3),
             }
         } else if !f.steps.is_empty() {
             let mut points = Vec::new();

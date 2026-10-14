@@ -519,3 +519,34 @@ fn input_noise_rises_below_its_flicker_corner() {
     );
     assert!(r.passed, "{:?} {:?}", r.failures, r.checks);
 }
+
+#[test]
+fn a_varistor_clamps_a_combination_wave_surge() {
+    let r = sim(
+        "mov",
+        &[("RV1", "R", "S14K275")],
+        &[("SRG", &["RV1.1"]), ("GND", &["RV1.2"])],
+        "[[drives]]\nnet = \"SRG\"\nresistance = \"2ohm\"\nsurge = { peak = \"2kV\", delay = \"1us\" }\n\n[[blocks]]\nref = \"RV1\"\nkind = \"varistor\"\nv1ma = \"430V\"\nalpha = 30\n\n[tran]\nstop = \"100us\"\nstep = \"1us\"\n\n[[checks]]\npeak = \"SRG\"\nmax = 2000\n",
+    );
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let current = |v: f64| 1e-3 * (v / 430.0).powf(30.0);
+    let (mut lo, mut hi) = (430.0, 2000.0);
+    for _ in 0..100 {
+        let mid = 0.5 * (lo + hi);
+        if current(mid) * 2.0 + mid > 2000.0 { hi = mid } else { lo = mid }
+    }
+    let clamp = r.checks[0].value;
+    assert!((clamp / lo - 1.0).abs() < 0.01, "clamped at {clamp} V against {lo} V");
+}
+
+#[test]
+fn a_burst_drive_reaches_its_peak_on_each_pulse() {
+    let r = sim(
+        "eft",
+        &[("R1", "R", "50")],
+        &[("EFT", &["R1.1"]), ("GND", &["R1.2"])],
+        "[[drives]]\nnet = \"EFT\"\nburst = { peak = \"1kV\", rate = \"100kHz\", length = \"50us\", period = \"1ms\" }\n\n[tran]\nstop = \"40us\"\nstep = \"1us\"\n\n[[checks]]\npeak = \"EFT\"\nfrom = \"25us\"\nmax = 2000\n",
+    );
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    assert!((r.checks[0].value - 1000.0).abs() < 20.0, "{:?}", r.checks);
+}
