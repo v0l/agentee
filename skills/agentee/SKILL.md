@@ -72,6 +72,7 @@ agentee library add S2B-PH-K-S --name JST-PH-2 --role connector \
     --manufacturer JST --rating "2 A, 100 V"
 agentee library show JST-PH-2      # files, where they came from, datasheet, stock
 agentee library refresh            # stock and price of every part, one lookup each
+agentee library stock JST-PH-2 40  # 40 on the shelf; parts, bom and --order subtract it
 agentee library verify             # symbol vs footprint vs datasheet, model, fab minimums, hashes
 ```
 
@@ -79,6 +80,10 @@ agentee library verify             # symbol vs footprint vs datasheet, model, fa
 fetches and pins the datasheet and records stock. Give it the real part number and the
 datasheet's rating; `--datasheet URL|PDF` when the distributors have none. `--generic` makes a
 resistor or capacitor series cover any value on that footprint; leave `--preferred` to the user.
+`stock NAME N` records how many of the part you have on hand (0 removes it) in a
+`[[stock]]` listing with `distributor = "home"` and an `own` count; it survives `refresh`,
+`parts` and `bom` print the shelf under the part, and the order sheets count it first, so a
+line the shelf covers is marked in your own stock instead of ordered.
 `--local` adds to the project's `.agentee/library` instead of the user's
 `~/.config/agentee/library`. Run `verify` after adding and fix what it reports before using the
 part: a pin that does not match the datasheet, or a model that does not fit the footprint. Run

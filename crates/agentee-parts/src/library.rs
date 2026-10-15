@@ -43,6 +43,12 @@ pub struct Stock {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     pub checked: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub own: u64,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 fn one() -> u32 {
@@ -66,6 +72,7 @@ impl Stock {
             lifecycle: o.lifecycle.clone(),
             url: o.url.clone(),
             checked: checked.to_string(),
+            own: 0,
         }
     }
 
@@ -89,6 +96,15 @@ impl Stock {
     }
 
     pub fn line(&self) -> String {
+        if self.own > 0 {
+            return format!(
+                "{distributor} {sku}: {own} in your own stock, checked {checked}",
+                distributor = self.distributor,
+                sku = self.sku,
+                own = self.own,
+                checked = self.checked
+            );
+        }
         let price = self
             .unit_at(1)
             .map(|u| match self.offer().order_qty(1) {
@@ -181,6 +197,11 @@ impl Entry {
             bits.push(self.part.notes.clone());
         }
         bits.join(", ")
+    }
+
+    pub fn self_stock(&self) -> Option<u64> {
+        let n: u64 = self.part.stock.iter().map(|s| s.own).sum();
+        (n > 0).then_some(n)
     }
 
     pub fn best_stock(&self) -> Option<&Stock> {
@@ -329,6 +350,10 @@ impl Library {
                 .then(a.name.cmp(&b.name))
         });
         lib
+    }
+
+    pub fn self_stock(&self, mpn: &str) -> Option<u64> {
+        self.get(mpn).and_then(|e| e.self_stock())
     }
 
     pub fn get(&self, name: &str) -> Option<&Entry> {

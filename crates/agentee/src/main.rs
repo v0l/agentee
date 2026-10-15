@@ -655,6 +655,14 @@ enum LibraryCmd {
         #[arg(long)]
         force: bool,
     },
+    /// Record how many you have on hand; it is subtracted from what needs ordering, 0 removes it
+    Stock {
+        name: String,
+        /// Units you have on hand
+        count: u32,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Check stock and price of every library part, or one, at the distributors
     Refresh {
         name: Option<String>,
@@ -1427,6 +1435,10 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
         }
         LibraryCmd::Use { name, project, force } => {
             print_json(&library::use_part(&library::open(Some(&project)), &name, &project, force)?);
+            Ok(true)
+        }
+        LibraryCmd::Stock { name, count, project } => {
+            print!("{}\n", library::set_stock(&library::open(Some(&project)), &name, count)?);
             Ok(true)
         }
         LibraryCmd::Refresh { name, project, config } => {

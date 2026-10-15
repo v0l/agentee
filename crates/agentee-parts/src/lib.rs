@@ -9,6 +9,7 @@ pub mod offer;
 pub mod order;
 pub mod spec;
 
+use crate::library::Library;
 use agentee_core::schematic::Schematic;
 use offer::{Break, Cost, Offer};
 use serde::Serialize;
@@ -188,6 +189,8 @@ pub struct Line {
     pub chosen: Option<Priced>,
     pub offers: Vec<Priced>,
     pub alternatives: Vec<Alternative>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub self_stock: Option<u64>,
     pub notes: Vec<String>,
 }
 
@@ -234,7 +237,12 @@ fn cheapest_in_stock(offers: &[Offer], need: u32) -> Option<(&Offer, Cost)> {
         .min_by(|a, b| a.1.total.total_cmp(&b.1.total))
 }
 
-pub fn report(lines: &[BomLine], sources: &[&dyn Distributor], opts: &Options) -> Report {
+pub fn report(
+    lines: &[BomLine],
+    sources: &[&dyn Distributor],
+    opts: &Options,
+    lib: &Library,
+) -> Report {
     let mut errors = Vec::new();
     let mpns: Vec<String> = lines.iter().filter_map(|l| l.mpn.clone()).collect();
     let mut by_source: Vec<Vec<Offer>> = Vec::new();
@@ -279,8 +287,18 @@ pub fn report(lines: &[BomLine], sources: &[&dyn Distributor], opts: &Options) -
             }
         }
         let chosen = cheapest_in_stock(&offers, need);
-        if chosen.is_none() && !offers.is_empty() {
-            notes.push(format!("no distributor has {need} in stock"));
+        let self_stock = l.mpn.as_deref().and_then(|m| lib.self_stock(m));
+        if chosen.is_none() {
+            match self_stock {
+                Some(n) if n >= u64::from(need) => {
+                    notes.push(format!("covered by your own stock ({n})"))
+                }
+                Some(n) => notes.push(format!("{n} in your own stock, short of the {need} needed")),
+                None if !offers.is_empty() => {
+                    notes.push(format!("no distributor has {need} in stock"))
+                }
+                _ => {}
+            }
         }
         let priced: Vec<Priced> =
             offers.iter().filter_map(|o| o.cost(need).map(|c| Priced::new(o, c))).collect();
@@ -385,6 +403,7 @@ pub fn report(lines: &[BomLine], sources: &[&dyn Distributor], opts: &Options) -
             chosen: chosen.map(|(o, c)| Priced::new(o, c)),
             offers: priced,
             alternatives,
+            self_stock,
             notes,
         });
     }

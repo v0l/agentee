@@ -2372,12 +2372,13 @@ fn bom_lines(
 pub fn parts(p: &Project, name: &str, q: &PartsQuery) -> Result<agentee_parts::Report, String> {
     let lines = bom_lines(p, name, q)?;
     let d = Distributors::open(q)?;
+    let lib = crate::library::open(Some(&p.root));
     let opts = agentee_parts::Options {
         boards: q.boards.max(1),
         alternatives: q.alternatives,
         ..Default::default()
     };
-    Ok(agentee_parts::report(&lines, &d.list(), &opts))
+    Ok(agentee_parts::report(&lines, &d.list(), &opts, &lib))
 }
 
 pub fn order(
@@ -2390,8 +2391,9 @@ pub fn order(
     use agentee_parts::order;
     let lines = bom_lines(p, name, q)?;
     let d = Distributors::open(q)?;
+    let lib = crate::library::open(Some(&p.root));
     let sources = d.list();
-    let (rows, errors) = order::plan(order::items(&lines, q.boards, spares), &sources);
+    let (rows, errors) = order::plan(order::items(&lines, q.boards, spares, &lib), &sources);
     if !errors.is_empty() {
         return Err(errors.join("; "));
     }
@@ -2449,6 +2451,9 @@ pub fn parts_text(r: &agentee_parts::Report) -> String {
             None => {
                 let _ = writeln!(s, "  now      no stocked offer");
             }
+        }
+        if let Some(n) = &l.self_stock {
+            let _ = writeln!(s, "  shelf    {n} in your own stock");
         }
         for a in &l.alternatives {
             let saves = a.saves.map(|v| format!(", saves {v:.2}")).unwrap_or_default();

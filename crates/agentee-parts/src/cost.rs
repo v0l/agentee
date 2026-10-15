@@ -19,6 +19,8 @@ pub struct BomRow {
     pub mpn: Option<String>,
     pub per_board: u32,
     pub costs: Vec<Option<BomBuy>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shelf: Option<u64>,
     pub notes: Vec<String>,
 }
 
@@ -92,7 +94,10 @@ pub fn of(name: &str, boards: &[u32], r: &Report) -> BomCost {
             boards.iter().zip(&costs).find(|(_, c)| c.is_none()).filter(|_| !l.offers.is_empty())
         {
             let n = per_board * b;
-            notes.push(format!("no distributor has {n} in stock"));
+            let covered = l.self_stock.is_some_and(|s| s >= u64::from(n));
+            if !covered {
+                notes.push(format!("no distributor has {n} in stock"));
+            }
         }
         rows.push(BomRow {
             refs: l.bom.refs.clone(),
@@ -100,6 +105,7 @@ pub fn of(name: &str, boards: &[u32], r: &Report) -> BomCost {
             mpn: l.bom.mpn.clone(),
             per_board,
             costs,
+            shelf: l.self_stock,
             notes,
         });
     }

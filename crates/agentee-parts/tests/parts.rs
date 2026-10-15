@@ -419,6 +419,7 @@ fn reports_the_cheapest_stocked_offer_and_cheaper_equivalents() {
         &lines,
         &[&mouser, &farnell],
         &Options { boards: 1, alternatives: true, max_alternatives: 3 },
+        &empty_lib(),
     );
     let caps = &r.lines[0];
     assert_eq!(caps.need, 2);
@@ -500,7 +501,7 @@ fn a_refused_key_is_reported_once_and_stops_the_searches() {
         mpn: Some("RC0603FR-0710KL".into()),
         ..Default::default()
     }];
-    let r = report(&lines, &[&Broken], &Options::default());
+    let r = report(&lines, &[&Broken], &Options::default(), &empty_lib());
     assert_eq!(r.errors, vec!["Mouser: Invalid unique identifier. (API Key)".to_string()]);
     assert_eq!(r.lines[0].notes, vec!["not looked up, every distributor call failed".to_string()]);
 }
@@ -562,7 +563,7 @@ fn order_sheets_put_what_each_site_lacks_last() {
             ..Default::default()
         },
     ];
-    let items = agentee_parts::order::items(&lines, 1, true);
+    let items = agentee_parts::order::items(&lines, 1, true, &empty_lib());
     let qty: Vec<(Option<&str>, u32)> = items.iter().map(|i| (i.mpn.as_deref(), i.qty)).collect();
     assert_eq!(
         qty,
@@ -672,6 +673,7 @@ fn the_cost_table_prices_each_board_count_from_the_breaks() {
         &lines,
         &[&mouser, &farnell],
         &Options { boards: 100, alternatives: false, max_alternatives: 0 },
+        &empty_lib(),
     );
     let c = agentee_parts::cost::of("t", &[100, 1, 10, 10], &r);
     assert_eq!(c.boards, vec![1, 10, 100]);
@@ -806,10 +808,161 @@ fn the_digikey_sheet_leads_with_quantity_and_part_number() {
         parts: vec![offer("DigiKey", "399-1-ND", "CAP", 1000, &[(1, 0.10)], &[])],
         search: vec![],
     };
-    let (rows, _) =
-        agentee_parts::order::plan(agentee_parts::order::items(&lines, 1, false), &[&dk]);
+    let (rows, _) = agentee_parts::order::plan(
+        agentee_parts::order::items(&lines, 1, false, &empty_lib()),
+        &[&dk],
+    );
     let sheet = agentee_parts::order::site_sheet(&rows, "DigiKey");
     let mut it = sheet.lines();
     assert!(it.next().unwrap().starts_with("Quantity,Digi-Key Part Number,"));
     assert_eq!(it.next().unwrap(), "2,399-1-ND,CAP,Maker,order: 100n C1 C2,order,1000,0.1000,0.20");
+}
+
+fn empty_lib() -> agentee_parts::library::Library {
+    agentee_parts::library::Library::open(None, Some(std::path::Path::new("/nonexistent")))
+}
+
+#[test]
+fn your_own_stock_covers_the_need_so_nothing_is_ordered() {
+    use agentee_parts::library::{Entry, Library, PartFile, Stock};
+    use std::path::PathBuf;
+    let part = PartFile {
+        role: "regulator".into(),
+        mpn: Some("LM5164DDAR".into()),
+        manufacturer: None,
+        lcsc: None,
+        value: None,
+        rating: None,
+        pins: None,
+        preferred: false,
+        generic: false,
+        tags: vec![],
+        notes: String::new(),
+        symbol: "x.sym.toml".into(),
+        footprint: None,
+        model: None,
+        added: None,
+        datasheet: None,
+        files: vec![],
+        stock: vec![Stock {
+            distributor: "home".into(),
+            sku: "LM5164DDAR".into(),
+            stock: 0,
+            currency: String::new(),
+            breaks: vec![],
+            min: 1,
+            mult: 1,
+            lifecycle: None,
+            url: None,
+            checked: "2026-01-01".into(),
+            own: 5,
+        }],
+    };
+    let e = Entry {
+        name: "LM5164DDAR".into(),
+        dir: PathBuf::from("/nonexistent"),
+        scope: "global".into(),
+        part,
+        symbol_name: None,
+        footprint_name: None,
+        pin_count: None,
+    };
+    let lib =
+        Library { dirs: vec![], entries: vec![e], config: Default::default(), errors: vec![] };
+    let lines = vec![
+        BomLine {
+            refs: vec!["U1".into(), "U2".into()],
+            value: "LM5164".into(),
+            mpn: Some("LM5164DDAR".into()),
+            ..Default::default()
+        },
+        BomLine {
+            refs: (1..=10).map(|n| format!("U{n}")).collect(),
+            value: "LM5164".into(),
+            mpn: Some("LM5164DDAR".into()),
+            ..Default::default()
+        },
+    ];
+    let mouser = Fake { name: "Mouser", parts: vec![], search: vec![] };
+    let r = report(&lines, &[&mouser], &Options::default(), &lib);
+    assert_eq!(r.lines[0].self_stock, Some(5));
+    assert!(
+        r.lines[0].notes.iter().any(|n| n.contains("covered by your own stock")),
+        "{:?}",
+        r.lines[0].notes
+    );
+    assert!(
+        r.lines[1].notes.iter().any(|n| n.contains("short of the 10 needed")),
+        "{:?}",
+        r.lines[1].notes
+    );
+    let (rows, _) =
+        agentee_parts::order::plan(agentee_parts::order::items(&lines, 1, false, &lib), &[&mouser]);
+    assert_eq!(rows[0].status("Mouser"), "in your own stock (5)");
+    assert_eq!(rows[0].elsewhere(), "in your own stock (5)");
+}
+
+#[test]
+fn the_order_sheet_orders_only_what_the_shelf_does_not_cover() {
+    use std::path::PathBuf;
+    use agentee_parts::library::{Entry, Library, PartFile, Stock};
+    let part = PartFile {
+        role: "regulator".into(),
+        mpn: Some("LM5164DDAR".into()),
+        manufacturer: None,
+        lcsc: None,
+        value: None,
+        rating: None,
+        pins: None,
+        preferred: false,
+        generic: false,
+        tags: vec![],
+        notes: String::new(),
+        symbol: "x.sym.toml".into(),
+        footprint: None,
+        model: None,
+        added: None,
+        datasheet: None,
+        files: vec![],
+        stock: vec![Stock {
+            distributor: "home".into(),
+            sku: "LM5164DDAR".into(),
+            stock: 0,
+            currency: String::new(),
+            breaks: vec![],
+            min: 1,
+            mult: 1,
+            lifecycle: None,
+            url: None,
+            checked: "2026-01-01".into(),
+            own: 5,
+        }],
+    };
+    let e = Entry {
+        name: "LM5164DDAR".into(),
+        dir: PathBuf::from("/nonexistent"),
+        scope: "global".into(),
+        part,
+        symbol_name: None,
+        footprint_name: None,
+        pin_count: None,
+    };
+    let lib = Library { dirs: vec![], entries: vec![e], config: Default::default(), errors: vec![] };
+    let lines = vec![
+        BomLine { refs: (1..=4).map(|n| format!("U{n}")).collect(), value: "LM5164".into(), mpn: Some("LM5164DDAR".into()), ..Default::default() },
+        BomLine { refs: (1..=10).map(|n| format!("V{n}")).collect(), value: "LM5164".into(), mpn: Some("LM5164DDAR".into()), ..Default::default() },
+    ];
+    let mouser = Fake {
+        name: "Mouser",
+        parts: vec![offer("Mouser", "732-LM5164", "LM5164DDAR", 100, &[(1, 0.5)], &[])],
+        search: vec![],
+    };
+    let (rows, _) =
+        agentee_parts::order::plan(agentee_parts::order::items(&lines, 1, false, &lib), &[&mouser]);
+    assert_eq!(rows[0].buy_qty(), 0);
+    assert_eq!(rows[0].status("Mouser"), "in your own stock (5)");
+    assert_eq!(rows[1].buy_qty(), 5);
+    assert_eq!(rows[1].source.as_deref(), Some("Mouser"));
+    assert_eq!(rows[1].picks.get("Mouser").unwrap().buy, 5);
+    assert_eq!(rows[1].picks.get("Mouser").unwrap().total, 2.5);
 }

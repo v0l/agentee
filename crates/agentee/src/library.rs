@@ -621,6 +621,7 @@ pub fn find(lib: &Library, a: &FindArgs) -> Result<Value, String> {
         "library": ours.iter().map(|e| json!({
             "name": e.name,
             "summary": e.summary(),
+            "own_stock": e.self_stock(),
             "stock": e.best_stock().map(Stock::line),
         })).collect::<Vec<_>>(),
         "candidates": by,
@@ -763,6 +764,9 @@ pub fn list_text(entries: &[&Entry]) -> String {
             let _ = writeln!(s, "{role}");
         }
         let _ = writeln!(s, "  {:<24} {}", e.name, e.summary());
+        if let Some(n) = e.self_stock() {
+            let _ = writeln!(s, "  {:<24} {n} in your own stock", "");
+        }
         match e.best_stock() {
             Some(st) => {
                 let _ = writeln!(s, "  {:<24} {}", "", st.line());
@@ -896,8 +900,9 @@ pub fn refresh(lib: &Library, name: Option<&str>, config: Option<&Path>) -> Resu
         let mut part = e.part.clone();
         let failed: Vec<&str> = errors.iter().map(|x| x.split(':').next().unwrap_or("")).collect();
         part.stock.retain(|s| {
-            failed.contains(&s.distributor.as_str())
-                && !fresh.iter().any(|f| f.distributor == s.distributor)
+            s.own > 0
+                || failed.contains(&s.distributor.as_str())
+                    && !fresh.iter().any(|f| f.distributor == s.distributor)
         });
         part.stock.extend(fresh);
         part.stock.sort_by(|a, b| a.distributor.cmp(&b.distributor).then(a.sku.cmp(&b.sku)));
@@ -908,6 +913,33 @@ pub fn refresh(lib: &Library, name: Option<&str>, config: Option<&Path>) -> Resu
         done.push(json!({ "part": e.name, "lcsc": part.lcsc, "stock": part.stock.iter().map(Stock::line).collect::<Vec<_>>() }));
     }
     Ok(json!({ "refreshed": done, "errors": errors }))
+}
+
+pub fn set_stock(lib: &Library, name: &str, count: u32) -> Result<String, String> {
+    let e = lib.get(name).ok_or_else(|| no_part(lib, name))?;
+    let today = datasheet::today();
+    let mut part = e.part.clone();
+    part.stock.retain(|s| s.own == 0);
+    if count > 0 {
+        let sku = e.part.mpn.clone().unwrap_or_else(|| e.name.clone());
+        part.stock.push(Stock {
+            distributor: "home".into(),
+            sku,
+            stock: 0,
+            currency: String::new(),
+            breaks: Vec::new(),
+            min: 1,
+            mult: 1,
+            lifecycle: None,
+            url: None,
+            checked: today,
+            own: u64::from(count),
+        });
+    }
+    part.stock.sort_by(|a, b| a.distributor.cmp(&b.distributor).then(a.sku.cmp(&b.sku)));
+    library::write_entry(&e.dir, &part)?;
+    let n: u64 = part.stock.iter().map(|s| s.own).sum();
+    Ok(format!("{}: {n} in your own stock", e.name))
 }
 
 #[derive(serde::Serialize)]

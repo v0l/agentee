@@ -1,3 +1,4 @@
+use crate::library::Library;
 use crate::{BomLine, Distributor, ref_key, same_mpn, spec};
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -11,6 +12,8 @@ pub struct Item {
     pub per_board: u32,
     pub qty: u32,
     pub lcsc: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shelf: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,7 +52,7 @@ fn with_allowance(line: &BomLine, need: u32, spares: bool) -> u32 {
     if matches!(prefix.as_str(), "D" | "Q" | "U" | "F") { need + 1 } else { need }
 }
 
-pub fn items(lines: &[BomLine], boards: u32, spares: bool) -> Vec<Item> {
+pub fn items(lines: &[BomLine], boards: u32, spares: bool, lib: &Library) -> Vec<Item> {
     let boards = boards.max(1);
     let mut out: Vec<Item> = lines
         .iter()
@@ -63,6 +66,7 @@ pub fn items(lines: &[BomLine], boards: u32, spares: bool) -> Vec<Item> {
                 per_board,
                 qty: with_allowance(l, per_board * boards, spares),
                 lcsc: l.lcsc.clone(),
+                shelf: l.mpn.as_deref().and_then(|m| lib.self_stock(m)),
             }
         })
         .collect();
@@ -80,6 +84,7 @@ pub fn items(lines: &[BomLine], boards: u32, spares: bool) -> Vec<Item> {
                         per_board: 0,
                         qty: 0,
                         lcsc: None,
+                        shelf: None,
                     });
                     extras.last_mut().unwrap()
                 }
@@ -112,6 +117,8 @@ pub fn plan(items: Vec<Item>, sources: &[&dyn Distributor]) -> (Vec<Ordered>, Ve
     let rows = items
         .into_iter()
         .map(|item| {
+            let shelf = u32::try_from(item.shelf.unwrap_or(0)).unwrap_or(u32::MAX);
+            let effective = item.qty.saturating_sub(shelf);
             let mut stock = BTreeMap::new();
             let mut picks = BTreeMap::new();
             for s in sources {
@@ -122,12 +129,16 @@ pub fn plan(items: Vec<Item>, sources: &[&dyn Distributor]) -> (Vec<Ordered>, Ve
                     .filter(|o| item.mpn.as_deref().is_some_and(|m| same_mpn(&o.mpn, m)))
                     .collect();
                 stock.insert(site.clone(), found.iter().map(|o| o.stock).max());
-                let best = found
-                    .iter()
-                    .filter(|o| o.active())
-                    .filter_map(|o| o.cost(item.qty).map(|c| (o, c)))
-                    .filter(|(o, c)| o.stock >= c.qty as u64)
-                    .min_by(|a, b| a.1.total.total_cmp(&b.1.total));
+                let best = if effective == 0 {
+                    None
+                } else {
+                    found
+                        .iter()
+                        .filter(|o| o.active())
+                        .filter_map(|o| o.cost(effective).map(|c| (o, c)))
+                        .filter(|(o, c)| o.stock >= c.qty as u64)
+                        .min_by(|a, b| a.1.total.total_cmp(&b.1.total))
+                };
                 if let Some((o, c)) = best {
                     picks.insert(
                         site,
@@ -154,7 +165,14 @@ pub fn plan(items: Vec<Item>, sources: &[&dyn Distributor]) -> (Vec<Ordered>, Ve
 }
 
 impl Ordered {
+    pub fn buy_qty(&self) -> u32 {
+        self.item.qty.saturating_sub(u32::try_from(self.item.shelf.unwrap_or(0)).unwrap_or(u32::MAX))
+    }
+
     pub fn elsewhere(&self) -> String {
+        if self.item.shelf.is_some_and(|n| n >= u64::from(self.item.qty)) {
+            return format!("in your own stock ({})", self.item.shelf.unwrap_or(0));
+        }
         match (&self.item.lcsc, &self.item.mpn) {
             (Some(c), _) => format!("LCSC {c}"),
             (None, None) => "no mpn".into(),
@@ -163,6 +181,9 @@ impl Ordered {
     }
 
     pub fn status(&self, site: &str) -> String {
+        if self.item.shelf.is_some_and(|n| n >= u64::from(self.item.qty)) {
+            return format!("in your own stock ({})", self.item.shelf.unwrap_or(0));
+        }
         if self.source.as_deref() == Some(site) {
             return "order".into();
         }
@@ -170,7 +191,16 @@ impl Ordered {
             return format!("buying at {}", self.source.as_deref().unwrap_or(""));
         }
         match self.stock.get(site).copied().flatten() {
+            Some(n) if self.item.shelf.is_some_and(|s| s > 0 && s < u64::from(self.item.qty)) => {
+                format!(
+                    "short, {n} in stock, {} on the shelf",
+                    self.item.shelf.unwrap_or(0)
+                )
+            }
             Some(n) => format!("short, {n} in stock"),
+            None if self.item.shelf.is_some_and(|s| s < u64::from(self.item.qty)) => {
+                format!("no stock, {} on the shelf", self.item.shelf.unwrap_or(0))
+            }
             None => "not listed".into(),
         }
     }
@@ -293,7 +323,7 @@ pub fn site_sheet(rows: &[Ordered], site: &str) -> String {
     };
     for r in sorted_for(rows, site) {
         let pick = r.picks.get(site);
-        let qty = pick.map(|p| p.buy).unwrap_or(r.item.qty).to_string();
+        let qty = pick.map(|p| p.buy).unwrap_or_else(|| r.buy_qty()).to_string();
         let sku = pick.map(|p| p.sku.clone()).unwrap_or_default();
         let mpn = r.item.mpn.clone().unwrap_or_default();
         let stock = r.stock.get(site).copied().flatten().map(|n| n.to_string()).unwrap_or_default();
@@ -357,7 +387,7 @@ pub fn order_sheet(rows: &[Ordered]) -> String {
         out.push_str(&row(&[
             r.manufacturer(),
             r.item.mpn.clone().unwrap_or_default(),
-            pick.map(|p| p.buy).unwrap_or(r.item.qty).to_string(),
+            pick.map(|p| p.buy).unwrap_or_else(|| r.buy_qty()).to_string(),
             r.item.per_board.to_string(),
             r.item.refs.join(" "),
             r.item.value.clone(),

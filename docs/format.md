@@ -2954,6 +2954,12 @@ breaks = [[100.0, 0.0841], [1000.0, 0.0655]]
 min = 100
 url = "https://ie.farnell.com/search?st=9491902"
 checked = "2026-10-09"
+
+[[stock]]                      # how many you have on hand, from agentee library stock
+distributor = "home"
+sku = "S2B-PH-K-S"
+own = 40
+checked = "2026-10-12"
 ```
 
 ```sh
@@ -2968,6 +2974,7 @@ agentee library list --role connector 2-pin power
 agentee library show JST-PH-2
 agentee library use JST-PH-2 -p board/         # copy its files in, print the edit that places it
 agentee library refresh                        # stock and price of every part, one lookup each
+agentee library stock JST-PH-2 40              # 40 on the shelf, subtracted from what needs ordering
 agentee library verify
 ```
 
@@ -3009,6 +3016,14 @@ fields. `datasheet text JST-PH-2` reads the pinned copy without a network call.
 each part's `[[stock]]`; a distributor that fails keeps its last listing. `list` prints the
 cheapest listing in stock with the date it was checked, so stock and price are known without an
 API call, as of that date.
+
+`stock NAME N` records how many of the part you have on hand (`N`, or 0 to remove it). It lives
+in a `[[stock]]` listing with `distributor = "home"` and an `own` count, and survives `refresh`.
+`parts`, `bom` and `list` print the shelf under each part; when the shelf covers what a design
+needs, the line says it is covered by your own stock instead of looking for a stocked offer, and
+when it only partly covers it, the line names the gap. The order sheets count the shelf first:
+a line the shelf covers is marked in your own stock rather than ordered. The count is yours to
+set; agentee never guesses it.
 
 `verify` checks each part: every symbol pin has a pad, the pinned datasheet names the part number
 and the package (or a pin count), the symbol's pin names appear in it, the model's outline fits
