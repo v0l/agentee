@@ -673,6 +673,26 @@ enum LibraryCmd {
         #[arg(long)]
         force: bool,
     },
+    /// Change what a library part is: its part number, maker, LCSC code, value, rating, role or notes; files and stock stay
+    Set {
+        name: String,
+        #[arg(long)]
+        mpn: Option<String>,
+        #[arg(long)]
+        manufacturer: Option<String>,
+        #[arg(long)]
+        lcsc: Option<String>,
+        #[arg(long)]
+        value: Option<String>,
+        #[arg(long)]
+        rating: Option<String>,
+        #[arg(long)]
+        role: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Record how many you have on hand; it is subtracted from what needs ordering, 0 removes it
     Stock {
         name: String,
@@ -1519,6 +1539,12 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
             let (text, ok) = library::intake(&project, &codes, bin.as_deref());
             print!("{text}");
             Ok(ok)
+        }
+        LibraryCmd::Set { name, mpn, manufacturer, lcsc, value, rating, role, notes, project } => {
+            let lib = library::open(Some(&project));
+            let fields = library::Fields { mpn, manufacturer, lcsc, value, rating, role, notes };
+            print_json(&library::set_fields(&lib, &name, &fields)?);
+            Ok(true)
         }
         LibraryCmd::Stock { name, count, bin, project } => {
             let lib = library::open(Some(&project));

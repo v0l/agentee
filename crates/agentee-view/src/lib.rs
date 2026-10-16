@@ -13,6 +13,7 @@ pub mod library;
 pub mod newlayout;
 pub mod pages;
 pub mod paint;
+pub mod partdialog;
 pub mod pcb;
 pub mod plot;
 pub mod raster;

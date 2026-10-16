@@ -1090,6 +1090,59 @@ pub fn refresh(lib: &Library, name: Option<&str>, config: Option<&Path>) -> Resu
     Ok(json!({ "refreshed": done, "errors": errors }))
 }
 
+pub struct Fields {
+    pub mpn: Option<String>,
+    pub manufacturer: Option<String>,
+    pub lcsc: Option<String>,
+    pub value: Option<String>,
+    pub rating: Option<String>,
+    pub role: Option<String>,
+    pub notes: Option<String>,
+}
+
+pub fn set_fields(lib: &Library, name: &str, f: &Fields) -> Result<Value, String> {
+    let e = lib.get(name).ok_or_else(|| no_part(lib, name))?;
+    let mut part = e.part.clone();
+    let text = |v: &Option<String>| v.as_ref().map(|s| s.trim().to_string());
+    let some = |v: Option<String>| v.filter(|s| !s.is_empty());
+    if let Some(m) = text(&f.mpn) {
+        if part.mpn.as_deref() != Some(m.as_str()) {
+            let old = part.mpn.clone();
+            for s in part.stock.iter_mut().filter(|s| s.own > 0) {
+                if old.as_deref() == Some(s.sku.as_str()) || s.sku == e.name {
+                    s.sku = m.clone();
+                }
+            }
+            part.stock.retain(|s| s.own > 0 || s.distributor == "home");
+            part.datasheet = None;
+            if f.lcsc.is_none() {
+                part.lcsc = None;
+            }
+        }
+        part.mpn = some(Some(m));
+    }
+    if f.manufacturer.is_some() {
+        part.manufacturer = some(text(&f.manufacturer));
+    }
+    if f.lcsc.is_some() {
+        part.lcsc = some(text(&f.lcsc));
+    }
+    if f.value.is_some() {
+        part.value = some(text(&f.value));
+    }
+    if f.rating.is_some() {
+        part.rating = some(text(&f.rating));
+    }
+    if let Some(r) = text(&f.role).filter(|r| !r.is_empty()) {
+        part.role = r.to_lowercase();
+    }
+    if let Some(n) = text(&f.notes) {
+        part.notes = n;
+    }
+    library::write_entry(&e.dir, &part)?;
+    Ok(json!({ "part": e.name, "mpn": part.mpn, "manufacturer": part.manufacturer }))
+}
+
 pub fn set_stock(
     lib: &Library,
     name: &str,

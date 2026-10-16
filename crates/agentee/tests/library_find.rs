@@ -222,3 +222,35 @@ fn fill_pins_a_datasheet_and_stores_a_model_without_touching_the_shelf() {
     assert!(fp.contains("model = \"3dmodels/filleted_box.step\""), "{fp}");
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn set_corrects_a_part_number_and_keeps_the_shelf() {
+    let lib = std::env::temp_dir().join(format!("agentee-set-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&lib);
+    let dir = lib.join("LED-Red");
+    std::fs::create_dir_all(&dir).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    std::fs::copy(lna.join("symbols/R.sym.toml"), dir.join("R.sym.toml")).unwrap();
+    std::fs::write(
+        dir.join("part.toml"),
+        "role = \"led\"\nmpn = \"73249841\"\nsymbol = \"R.sym.toml\"\n\n[datasheet]\nsha256 = \"abc\"\n\n\
+         [[stock]]\ndistributor = \"DigiKey\"\nsku = \"X\"\nstock = 5\nchecked = \"2026-01-01\"\n\n\
+         [[stock]]\ndistributor = \"home\"\nsku = \"73249841\"\nstock = 0\nchecked = \"2026-01-01\"\nown = 30\nbin = \"C2\"\n",
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+        .args(["library", "set", "LED-Red", "--mpn", "150080RS75000"])
+        .args(["--manufacturer", "Wurth Elektronik", "-p"])
+        .arg(&lib)
+        .env("AGENTEE_LIBRARY", &lib)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let part = std::fs::read_to_string(dir.join("part.toml")).unwrap();
+    assert!(part.contains("mpn = \"150080RS75000\""), "{part}");
+    assert!(part.contains("manufacturer = \"Wurth Elektronik\""), "{part}");
+    assert!(part.contains("sku = \"150080RS75000\"") && part.contains("own = 30"), "{part}");
+    assert!(part.contains("bin = \"C2\""), "{part}");
+    assert!(!part.contains("DigiKey") && !part.contains("[datasheet]"), "{part}");
+    let _ = std::fs::remove_dir_all(&lib);
+}

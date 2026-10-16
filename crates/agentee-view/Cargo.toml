@@ -12,6 +12,7 @@ agentee-layout.workspace = true
 agentee-3d.workspace = true
 agentee-sim.workspace = true
 agentee-parts.workspace = true
+serde_json.workspace = true
 egui.workspace = true
 eframe.workspace = true
 egui_bench = { workspace = true, features = ["viewer3d"] }

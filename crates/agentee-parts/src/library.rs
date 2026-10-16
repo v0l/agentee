@@ -314,7 +314,7 @@ pub fn set_own(e: &Entry, count: u64, bin: Option<&str>) -> Result<PartFile, Str
         Some(b) => Some(b.trim()).filter(|b| !b.is_empty()).map(str::to_string),
         None => e.bin().map(str::to_string),
     };
-    part.stock.retain(|s| s.own == 0);
+    part.stock.retain(|s| s.own == 0 && s.distributor != "home");
     if count > 0 {
         part.stock.push(Stock {
             distributor: "home".into(),

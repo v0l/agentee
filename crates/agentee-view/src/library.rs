@@ -45,6 +45,8 @@ pub struct Shelf {
     count: String,
     bin: String,
     said: Option<(String, bool)>,
+    fix: Option<crate::partdialog::FixMatch>,
+    add: Option<crate::partdialog::AddPart>,
 }
 
 impl Shelf {
@@ -136,6 +138,11 @@ fn open_externally(target: &str) -> Result<(), String> {
 
 pub fn list(ui: &mut Ui, shelf: &mut Shelf, project: &Project) {
     shelf.load(project);
+    let add = Key::new("add a part").outline(READOUT).min_width(ui.available_width());
+    if ui.add(add).clicked() {
+        shelf.add = Some(Default::default());
+    }
+    ui.add_space(6.0);
     ui.horizontal(|ui| {
         field(ui, &mut shelf.filter, "filter");
     });
@@ -248,8 +255,47 @@ pub fn list(ui: &mut Ui, shelf: &mut Shelf, project: &Project) {
     }
 }
 
+fn dialogs(ui: &Ui, shelf: &mut Shelf) {
+    use crate::partdialog::{Closed, add_part, fix_match};
+    let ctx = ui.ctx().clone();
+    let root = shelf.root.clone();
+    if let Some(f) = shelf.fix.as_mut() {
+        match fix_match(&ctx, &root, f) {
+            Closed::Open => {}
+            Closed::Cancelled => shelf.fix = None,
+            Closed::Changed(_) => {
+                shelf.fix = None;
+                shelf.reload();
+                shelf.sync_fields();
+            }
+        }
+    }
+    let roles: Vec<String> = {
+        let mut r: Vec<String> =
+            shelf.lib.iter().flat_map(|l| l.entries.iter().map(|e| e.part.role.clone())).collect();
+        r.sort();
+        r.dedup();
+        r
+    };
+    if let Some(f) = shelf.add.as_mut() {
+        match add_part(&ctx, &root, &roles, f) {
+            Closed::Open => {}
+            Closed::Cancelled => shelf.add = None,
+            Closed::Changed(name) => {
+                shelf.add = None;
+                shelf.reload();
+                if let Some(n) = name {
+                    shelf.selected = None;
+                    shelf.pick(n);
+                }
+            }
+        }
+    }
+}
+
 pub fn page(ui: &mut Ui, shelf: &mut Shelf, project: &Project, details: bool) {
     shelf.load(project);
+    dialogs(ui, shelf);
     if shelf.entry().is_none() {
         let first = shelf.lib.as_ref().and_then(|l| {
             let mut names: Vec<(&str, &str)> =
@@ -342,6 +388,17 @@ fn heading_block(ui: &mut Ui, shelf: &mut Shelf, e: &Entry) {
         }
         segments(ui, &mut shelf.show, &options);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let fix = ui
+                .add(Key::new("fix match").outline(READOUT))
+                .on_hover_text("look the part up at the distributors and correct its part number");
+            if fix.clicked() {
+                shelf.fix = Some(crate::partdialog::FixMatch::new(
+                    &e.name,
+                    p.mpn.as_deref(),
+                    p.manufacturer.as_deref(),
+                    &p.notes,
+                ));
+            }
             let target = d.and_then(|d| {
                 d.datasheet.as_ref().map(|p| p.display().to_string()).or(d.url.clone())
             });
