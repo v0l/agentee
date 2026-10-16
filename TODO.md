@@ -25,8 +25,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `library fill --like` refuses an EasyEDA model when the pads sit 1.1-1.3 mm off ours (TL3342F160QG,
   105017-0001 against USB_Micro-B_Molex-105017-0001, a 3x4 mm tactile), and with no shared pad numbers
   (PJ-320D against Jack_3.5mm_KoreanHropartsElec_PJ-320D-4A_Horizontal). Unchecked whether ours or theirs is off.
-- A library part's footprint cannot be added or swapped in place: `library add --force` rebuilds the
-  entry and drops the shelf count and bin. 9 module parts in the global library have no footprint.
 
 ## Spacing
 
