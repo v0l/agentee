@@ -45,9 +45,11 @@ pub struct Scene {
 
 pub const STYLE: Style = Style {
     background: viewer3d::BACKGROUND,
-    ambient: 0.30,
-    key: 0.80,
-    fill: 0.25,
+    lighting: viewer3d::Lighting {
+        ambient: 0.30,
+        key: viewer3d::Light { intensity: 0.80, ..viewer3d::Light::KEY },
+        ..viewer3d::Lighting::STUDIO
+    },
     cap: Color32::from_rgb(237, 140, 46),
     selected: Color32::from_rgb(245, 166, 59),
     selected_tint: 0.35,
