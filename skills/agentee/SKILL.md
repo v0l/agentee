@@ -360,8 +360,9 @@ net or a placement of its own. `untrack NET` drops every track of that net; `unt
 (optionally after a net) cuts the span between two points of a track and keeps the rest.
 
 **Board** (`class NAME --track-width ... --impedance ... --via ...`, `unclass`, `via NAME --drill
-... --diameter ...`, `unvia`, `outline`, `cutout`, `stackup`). `class` edits the netclass of that
-name in place or adds it. `stackup --preset NAME` takes a name from `agentee stackups`.
+... --diameter ...`, `unvia`, `outline`, `cutout`, `stackup`, `domain NAME --classes ... --nets
+P_*`, `undomain`, `barrier A B --clearance 4mm --creepage 6.4mm`, `unbarrier A B`). `class`,
+`domain` and `barrier` edit the entry of that name in place or add it. `stackup --preset NAME` takes a name from `agentee stackups`.
 
 Pipe the commands in, or write them to a file, whenever a change is more than one command. It
 is one load and one check at the end, so it is much faster, and the half-built states that check

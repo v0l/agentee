@@ -581,9 +581,56 @@ fn help_lists_the_commands() {
         assert!(out.contains(want), "pcb help misses {want}: {out}");
     }
     let (out, _, _) = run(&d, &["edit", "board", "help"]);
-    for want in ["class", "unclass", "via", "outline", "cutout", "stackup"] {
+    for want in ["class", "unclass", "via", "outline", "cutout", "stackup", "domain", "barrier"] {
         assert!(out.contains(want), "board help misses {want}: {out}");
     }
+}
+
+#[test]
+fn domains_and_barriers_are_edited_by_name() {
+    let d = dir("domains");
+    std::fs::write(
+        d.join("b.board.toml"),
+        "name = \"b\"\nfab = \"jlcpcb\"\n[outline]\nsize = [30, 20]\n[stackup]\npreset = \"jlcpcb-2l-1.6mm\"\n\
+         [[netclasses]]\nname = \"Default\"\ntrack_width = \"0.2mm\"\nclearance = \"0.15mm\"\n\
+         [[netclasses]]\nname = \"Mains\"\ntrack_width = \"0.5mm\"\nclearance = \"0.5mm\"\n",
+    )
+    .unwrap();
+    let board = |d: &Path| sch(d, "b.board.toml");
+    let (_, err, ok) = run(&d, &["edit", "board", "b", "domain", "pri", "--classes", "Nope"]);
+    assert!(!ok && err.contains("Nope"), "{err}");
+    let (_, err, ok) = run(&d, &["edit", "board", "b", "domain", "pri"]);
+    assert!(!ok && err.contains("--classes"), "{err}");
+    edit(&d, &["board", "b", "domain", "pri", "--classes", "Mains", "--nets", "PGND,LLC_*"]);
+    edit(&d, &["board", "b", "domain", "sec", "--nets", "GND_SEC"]);
+    edit(&d, &["board", "b", "domain", "pri", "--description", "mains side"]);
+    let text = board(&d);
+    assert!(
+        text.contains("[[domains]]\nname = \"pri\"\nclasses = [\"Mains\"]\nnets = [\"PGND\", \"LLC_*\"]\ndescription = \"mains side\""),
+        "{text}"
+    );
+    let (_, err, ok) =
+        run(&d, &["edit", "board", "b", "barrier", "pri", "nope", "--clearance", "4mm"]);
+    assert!(!ok && err.contains("no domain `nope`"), "{err}");
+    let (_, err, ok) = run(&d, &["edit", "board", "b", "barrier", "pri", "sec"]);
+    assert!(!ok && err.contains("--clearance"), "{err}");
+    edit(&d, &["board", "b", "barrier", "pri", "sec", "--clearance", "4mm", "--creepage", "6.4mm"]);
+    edit(&d, &["board", "b", "barrier", "sec", "pri", "--pollution-degree", "3"]);
+    let text = board(&d);
+    assert_eq!(text.matches("[[barriers]]").count(), 1, "{text}");
+    assert!(
+        text.contains("between = [\"pri\", \"sec\"]\nclearance = \"4mm\"\ncreepage = \"6.4mm\"\npollution_degree = 3"),
+        "{text}"
+    );
+    let (out, _, ok) = run(&d, &["check"]);
+    assert!(ok, "{out}");
+    edit(&d, &["board", "b", "unbarrier", "sec", "pri"]);
+    assert!(!board(&d).contains("[[barriers]]"));
+    edit(&d, &["board", "b", "barrier", "pri", "sec", "--clearance", "4mm"]);
+    let out = edit(&d, &["board", "b", "undomain", "sec"]);
+    assert!(out.contains("and its 1 barriers"), "{out}");
+    let text = board(&d);
+    assert!(!text.contains("[[barriers]]") && !text.contains("\"sec\""), "{text}");
 }
 
 #[test]

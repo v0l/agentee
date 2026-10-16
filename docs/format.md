@@ -520,6 +520,10 @@ creepage = "6.4mm"                 # along the board surface, on F.Cu and B.Cu
 pollution_degree = 2               # 1, 2 or 3, default 2
 ```
 
+`agentee edit board NAME domain primary --classes Mains --nets PGND,LLC_*` and
+`barrier primary secondary --clearance 4mm --creepage 6.4mm` write these; `undomain` and
+`unbarrier` remove them.
+
 A net sits in one domain at most. Inside a domain, and for nets in none, the class clearances
 apply as before. Between two domains with a barrier, copper on one layer keeps the barrier's
 `clearance` (`isolation-clearance`), pads of one footprint and pours included. Everything that

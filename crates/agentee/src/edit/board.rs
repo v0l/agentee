@@ -1,7 +1,19 @@
 use super::*;
 use serde_json::json;
 
-pub const COMMANDS: &[&str] = &["class", "unclass", "via", "unvia", "outline", "cutout", "stackup"];
+pub const COMMANDS: &[&str] = &[
+    "class",
+    "unclass",
+    "via",
+    "unvia",
+    "outline",
+    "cutout",
+    "stackup",
+    "domain",
+    "undomain",
+    "barrier",
+    "unbarrier",
+];
 
 pub fn command(name: &str) -> Option<Cmd> {
     Some(match name {
@@ -12,6 +24,10 @@ pub fn command(name: &str) -> Option<Cmd> {
         "outline" => outline,
         "cutout" => cutout,
         "stackup" => stackup,
+        "domain" => domain,
+        "undomain" => undomain,
+        "barrier" => barrier,
+        "unbarrier" => unbarrier,
         _ => return None,
     })
 }
@@ -38,6 +54,12 @@ pub fn usage(name: &str) -> &'static str {
         "stackup" => {
             "stackup [--preset NAME] [--finish ENIG] [--mask-color green] [--silk-color white] [--roughness 1um] [--layer kind:name:thickness ...]"
         }
+        "domain" => "domain NAME [--classes Mains,HvBus] [--nets PGND,LLC_*] [--description TEXT]",
+        "undomain" => "undomain NAME ...",
+        "barrier" => {
+            "barrier DOMAIN DOMAIN [--clearance 4mm] [--creepage 6.4mm] [--pollution-degree 2] [--description TEXT]"
+        }
+        "unbarrier" => "unbarrier DOMAIN DOMAIN",
         _ => "",
     }
 }
@@ -446,4 +468,186 @@ fn stackup(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> 
     }
     s.doc(path)?["stackup"] = Item::Table(t);
     Ok(Report { log: vec!["stackup set".into()], facts: Vec::new() })
+}
+
+fn names(doc: &DocumentMut, key: &str, field: &str) -> Vec<String> {
+    doc.get(key)
+        .and_then(|v| v.as_array_of_tables())
+        .map(|a| a.iter().filter_map(|t| text(t, field)).collect())
+        .unwrap_or_default()
+}
+
+fn string_array(words: &[String]) -> TValue {
+    let mut a = Array::new();
+    for w in words {
+        a.push(w.as_str());
+    }
+    TValue::Array(a)
+}
+
+fn domain(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let name = o.word("a domain name")?;
+    let classes = o.words("classes")?;
+    let nets = o.words("nets")?;
+    let description = o.take("description");
+    o.done("domain", 0)?;
+    let doc = s.read(path)?;
+    let known = names(doc, "netclasses", "name");
+    if let Some(c) = classes.iter().find(|c| !known.contains(c)) {
+        return Err(format!("no netclass `{c}`; the board has {}", known.join(", ")));
+    }
+    let existing = doc
+        .get("domains")
+        .and_then(|v| v.as_array_of_tables())
+        .and_then(|a| a.iter().position(|t| text(t, "name").as_deref() == Some(name.as_str())));
+    if existing.is_none() && classes.is_empty() && nets.is_empty() {
+        return Err("domain: give --classes, --nets or both".into());
+    }
+    let doc = s.doc(path)?;
+    let mut fresh = Table::new();
+    let t = match existing {
+        Some(i) => doc
+            .get_mut("domains")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .and_then(|a| a.get_mut(i))
+            .ok_or("no such domain")?,
+        None => {
+            set(&mut fresh, "name", name.clone());
+            &mut fresh
+        }
+    };
+    if let Some(d) = description {
+        set(t, "description", d);
+    }
+    for (key, words) in [("classes", &classes), ("nets", &nets)] {
+        if !words.is_empty() {
+            set(t, key, string_array(words));
+        }
+    }
+    if existing.is_none() {
+        insert(doc, "domains", fresh);
+    }
+    Ok(Report { log: vec![format!("domain {name}")], facts: vec![json!({ "domain": name })] })
+}
+
+fn undomain(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let gone = o.rest();
+    o.done("undomain", 0)?;
+    if gone.is_empty() {
+        return Err("undomain: name a domain".into());
+    }
+    let mut log = Vec::new();
+    for name in gone {
+        let doc = s.doc(path)?;
+        let have = names(doc, "domains", "name");
+        if !have.contains(&name) {
+            return Err(format!("no domain `{name}`; the board has {}", have.join(", ")));
+        }
+        if let Some(a) = doc.get_mut("domains").and_then(|v| v.as_array_of_tables_mut()) {
+            a.retain(|t| text(t, "name").as_deref() != Some(name.as_str()));
+        }
+        let mut barriers = 0;
+        if let Some(a) = doc.get_mut("barriers").and_then(|v| v.as_array_of_tables_mut()) {
+            let before = a.len();
+            a.retain(|t| !texts(t, "between").contains(&name));
+            barriers = before - a.len();
+        }
+        log.push(match barriers {
+            0 => format!("removed domain {name}"),
+            n => format!("removed domain {name} and its {n} barriers"),
+        });
+    }
+    Ok(Report { log, facts: Vec::new() })
+}
+
+fn pair(o: &mut Opts, doc: &DocumentMut, cmd: &str) -> Result<[String; 2], String> {
+    let a = o.word("two domain names")?;
+    let b = o.word("two domain names")?;
+    if a == b {
+        return Err(format!("{cmd}: a barrier joins two different domains, not `{a}` twice"));
+    }
+    let have = names(doc, "domains", "name");
+    if let Some(n) = [&a, &b].into_iter().find(|n| !have.contains(n)) {
+        return Err(match have.is_empty() {
+            true => format!("no domain `{n}`; add one with `domain {n} --classes ...`"),
+            false => format!("no domain `{n}`; the board has {}", have.join(", ")),
+        });
+    }
+    Ok([a, b])
+}
+
+fn joins(t: &Table, [a, b]: &[String; 2]) -> bool {
+    let between = texts(t, "between");
+    between.len() == 2 && between.contains(a) && between.contains(b)
+}
+
+fn barrier(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let ends = pair(&mut o, s.read(path)?, "barrier")?;
+    let clearance = o.typed("clearance")?;
+    let creepage = o.typed("creepage")?;
+    let degree = o
+        .take("pollution-degree")
+        .map(|v| match v.parse::<i64>() {
+            Ok(n @ 1..=3) => Ok(n),
+            _ => Err(format!("--pollution-degree `{v}` is 1, 2 or 3")),
+        })
+        .transpose()?;
+    let description = o.take("description");
+    o.done("barrier", 0)?;
+    let doc = s.doc(path)?;
+    let existing = doc
+        .get("barriers")
+        .and_then(|v| v.as_array_of_tables())
+        .and_then(|a| a.iter().position(|t| joins(t, &ends)));
+    if existing.is_none() && clearance.is_none() && creepage.is_none() {
+        return Err("barrier: give --clearance, --creepage or both".into());
+    }
+    let mut fresh = Table::new();
+    let t = match existing {
+        Some(i) => doc
+            .get_mut("barriers")
+            .and_then(|v| v.as_array_of_tables_mut())
+            .and_then(|a| a.get_mut(i))
+            .ok_or("no such barrier")?,
+        None => {
+            set(&mut fresh, "between", string_array(&ends));
+            &mut fresh
+        }
+    };
+    if let Some(d) = description {
+        set(t, "description", d);
+    }
+    if let Some(v) = clearance {
+        set(t, "clearance", v);
+    }
+    if let Some(v) = creepage {
+        set(t, "creepage", v);
+    }
+    if let Some(n) = degree {
+        set(t, "pollution_degree", n);
+    }
+    if existing.is_none() {
+        insert(doc, "barriers", fresh);
+    }
+    let [a, b] = &ends;
+    Ok(Report {
+        log: vec![format!("barrier between {a} and {b}")],
+        facts: vec![json!({ "barrier": [a, b] })],
+    })
+}
+
+fn unbarrier(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
+    let ends = pair(&mut o, s.read(path)?, "unbarrier")?;
+    o.done("unbarrier", 0)?;
+    let doc = s.doc(path)?;
+    let a = doc.get_mut("barriers").and_then(|v| v.as_array_of_tables_mut());
+    let before = a.as_ref().map_or(0, |a| a.len());
+    if let Some(a) = a {
+        a.retain(|t| !joins(t, &ends));
+        if a.len() < before {
+            let [x, y] = &ends;
+            return Ok(Report::log(format!("removed the barrier between {x} and {y}")));
+        }
+    }
+    Err(format!("no barrier between `{}` and `{}`", ends[0], ends[1]))
 }
