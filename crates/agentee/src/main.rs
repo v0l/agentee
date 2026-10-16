@@ -693,6 +693,23 @@ enum LibraryCmd {
         #[arg(short, long, default_value = ".")]
         project: PathBuf,
     },
+    /// Fill in what library parts lack: the pinned datasheet and the 3D model, from the symbol's URL, the distributors, KiCad and EasyEDA
+    Fill {
+        name: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Do not ask the distributors or EasyEDA
+        #[arg(long)]
+        no_distributors: bool,
+        /// Pin this datasheet URL or PDF to the named part
+        #[arg(long)]
+        datasheet: Option<String>,
+        /// Store this STEP or VRML file or URL, or vendor ZIP, as the named part's model
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        config: Option<PathBuf>,
+    },
     /// Check stock and price of every library part, or one, at the distributors
     Refresh {
         name: Option<String>,
@@ -1476,6 +1493,22 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
         LibraryCmd::Use { name, project, force } => {
             print_json(&library::use_part(&library::open(Some(&project)), &name, &project, force)?);
             Ok(true)
+        }
+        LibraryCmd::Fill { name, project, no_distributors, datasheet, model, config } => {
+            let lib = library::open(Some(&project));
+            let v = library::fill(
+                &lib,
+                &library::FillArgs {
+                    name: name.as_deref(),
+                    datasheet: datasheet.as_deref(),
+                    model: model.as_deref(),
+                    distributors: !no_distributors,
+                    config: config.as_deref(),
+                },
+            )?;
+            let ok = v["still_missing"].as_array().is_none_or(|a| a.is_empty());
+            print_json(&v);
+            Ok(ok)
         }
         LibraryCmd::Intake { codes, bin, project } => {
             let codes = if codes.is_empty() {

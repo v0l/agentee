@@ -330,6 +330,252 @@ fn pin_datasheet(name: &str, sha: &str) -> Result<(), String> {
     Cache::open(None)?.pin(sha, &format!("library:{name}"), true)
 }
 
+struct Stored {
+    rel: Option<String>,
+    file: Option<Provenance>,
+    lcsc: Option<String>,
+    notes: Vec<String>,
+}
+
+fn store_model(
+    ft: &mut String,
+    dir: &Path,
+    model_spec: Option<&str>,
+    mpn: &str,
+    easyeda: bool,
+    root: &Path,
+) -> Result<Stored, String> {
+    let mut out = Stored { rel: None, file: None, lcsc: None, notes: Vec::new() };
+    let mut tried = Vec::new();
+    let mut got: Option<Model> = None;
+    if let Some(m) = model_spec {
+        match local_model(m, root) {
+            Ok(found) => got = Some(found),
+            Err(e) => tried.push(format!("model {m}: {e}")),
+        }
+    }
+    if got.is_none() && easyeda {
+        match agentee_3d::easyeda::find(mpn) {
+            Ok(f) => {
+                out.lcsc = Some(f.lcsc.clone());
+                got = Some(Model {
+                    path: f.model,
+                    source: format!("EasyEDA {} (easyeda.com)", f.lcsc),
+                    vendor: Some(Vendor::Placed(
+                        Box::new(f.footprint),
+                        format!("the EasyEDA footprint of {}", f.lcsc),
+                    )),
+                    note: None,
+                })
+            }
+            Err(e) => tried.push(format!("EasyEDA: {e}")),
+        }
+    }
+    let fitted = got.as_ref().and_then(|model| match &model.vendor {
+        Some(Vendor::KiCad(path)) => Some(fit_to(ft, path)),
+        Some(Vendor::Placed(fp, what)) => Some(fit_footprint(ft, fp, what)),
+        None => None,
+    });
+    match fitted {
+        Some(Ok((text, note))) => {
+            *ft = text;
+            out.notes.push(note);
+        }
+        Some(Err(e)) => {
+            let source = got.take().map(|m| m.source).unwrap_or_default();
+            tried.push(format!("{source}: {e}"));
+        }
+        None => {}
+    }
+    let Some(model) = got else {
+        if !tried.is_empty() {
+            out.notes.push(format!("no 3D model stored: {}", tried.join("; ")));
+        }
+        return Ok(out);
+    };
+    out.notes.extend(model.note.clone());
+    let path = &model.path;
+    let file = path.file_name().and_then(|f| f.to_str()).unwrap_or("model.step").to_string();
+    let rel = format!("3dmodels/{file}");
+    std::fs::create_dir_all(dir.join("3dmodels")).map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    std::fs::write(dir.join(&rel), &bytes).map_err(|e| e.to_string())?;
+    *ft = set_key(ft, "model", &rel)?;
+    if get_key(ft, "height").is_none()
+        && let Ok(file) = toml::from_str::<agentee_core::footprint::FootprintFile>(ft)
+        && let Ok(mesh) = agentee_3d::load(path)
+    {
+        let f = file.resolve(&mut agentee_core::diag::Diags::new(&file.name));
+        if let Some(h) = agentee_3d::model_height(&f, &mesh) {
+            *ft = set_key(ft, "height", &format!("{h:.2}mm"))?;
+        }
+    }
+    out.file = Some(Provenance {
+        path: rel.clone(),
+        source: model.source.clone(),
+        sha256: datasheet::sha256(&bytes),
+    });
+    out.rel = Some(rel);
+    Ok(out)
+}
+
+fn find_datasheet(
+    mpn: &str,
+    manufacturer: Option<&str>,
+    given: Option<&str>,
+    symbol_url: Option<String>,
+    distributors: bool,
+    config: Option<&Path>,
+    notes: &mut Vec<String>,
+) -> Result<Option<library::Datasheet>, String> {
+    if let Some(f) = given.filter(|f| Path::new(f).is_file()) {
+        let v = datasheets::add(mpn, Path::new(f), manufacturer, None, None)?;
+        return Ok(v["sha256"].as_str().map(|sha| library::Datasheet {
+            url: None,
+            sha256: sha.to_string(),
+            revision: v["revision"].as_str().map(str::to_string),
+        }));
+    }
+    let sym_url = symbol_url.filter(|u| datasheet::is_url(u));
+    let urls: Vec<(String, String)> = given
+        .map(|u| ("given".to_string(), u.to_string()))
+        .or(sym_url.map(|u| ("symbol".to_string(), u)))
+        .into_iter()
+        .collect();
+    let mut want = vec![Want {
+        key: mpn.to_string(),
+        manufacturer: manufacturer.map(str::to_string),
+        mpn: Some(mpn.to_string()),
+        refs: Vec::new(),
+        urls,
+    }];
+    let args = FetchArgs { url: given, refresh: false, config, cache: None, distributors };
+    let (got, _) = datasheets::fetch_wants(&mut want, &args, None)?;
+    Ok(match got.into_iter().next() {
+        Some(g) if g.sha256.is_some() => Some(library::Datasheet {
+            url: g.url,
+            sha256: g.sha256.unwrap_or_default(),
+            revision: g.revision,
+        }),
+        Some(g) => {
+            let mut why = vec![g.status];
+            why.extend(g.tried);
+            notes.push(format!(
+                "no datasheet ({}): ask the user for it, then agentee datasheet add {mpn} FILE.pdf and add the part again",
+                why.join("; ")
+            ));
+            None
+        }
+        None => None,
+    })
+}
+
+pub struct FillArgs<'a> {
+    pub name: Option<&'a str>,
+    pub datasheet: Option<&'a str>,
+    pub model: Option<&'a str>,
+    pub distributors: bool,
+    pub config: Option<&'a Path>,
+}
+
+pub fn fill(lib: &Library, a: &FillArgs) -> Result<Value, String> {
+    let (name, distributors, config) = (a.name, a.distributors, a.config);
+    if name.is_none() && (a.datasheet.is_some() || a.model.is_some()) {
+        return Err("--datasheet and --model fill one part: name it".into());
+    }
+    let targets: Vec<&Entry> = match name {
+        Some(n) => vec![lib.get(n).ok_or_else(|| no_part(lib, n))?],
+        None => lib.entries.iter().collect(),
+    };
+    let mut done = Vec::new();
+    let mut open_items = Vec::new();
+    for e in targets {
+        let mut part = e.part.clone();
+        let mut filled = Vec::new();
+        let mut notes = Vec::new();
+        let mpn = part.mpn.clone().unwrap_or_else(|| e.name.clone());
+        let sym_path = e.file(&part.symbol);
+        if part.datasheet.is_none() || a.datasheet.is_some() {
+            let sym_text = std::fs::read_to_string(&sym_path).unwrap_or_default();
+            let found = find_datasheet(
+                &mpn,
+                part.manufacturer.as_deref(),
+                a.datasheet,
+                get_key(&sym_text, "datasheet"),
+                distributors,
+                config,
+                &mut notes,
+            );
+            match found {
+                Ok(Some(d)) => {
+                    pin_datasheet(&e.name, &d.sha256)?;
+                    if let Some(url) = &d.url
+                        && !sym_text.is_empty()
+                        && get_key(&sym_text, "datasheet").as_deref() != Some(url.as_str())
+                    {
+                        let text = set_key(&sym_text, "datasheet", url)?;
+                        std::fs::write(&sym_path, &text).map_err(|e| e.to_string())?;
+                        let sym = part.symbol.clone();
+                        rehash(&mut part, &sym, text.as_bytes());
+                    }
+                    part.datasheet = Some(d);
+                    filled.push("datasheet");
+                }
+                Ok(None) => {}
+                Err(err) => notes.push(format!("datasheet: {err}")),
+            }
+        }
+        let want_model = part.model.is_none() || a.model.is_some();
+        match (want_model, part.footprint.clone()) {
+            (true, Some(f)) => {
+                let fp_path = e.file(&f);
+                let mut ft = std::fs::read_to_string(&fp_path)
+                    .map_err(|err| format!("{}: {err}", fp_path.display()))?;
+                let spec = a.model.map(str::to_string).or_else(|| get_key(&ft, "model"));
+                let easyeda = distributors && !part.generic;
+                let stored = store_model(&mut ft, &e.dir, spec.as_deref(), &mpn, easyeda, &e.dir)?;
+                notes.extend(stored.notes);
+                if let Some(rel) = stored.rel {
+                    std::fs::write(&fp_path, &ft).map_err(|err| err.to_string())?;
+                    rehash(&mut part, &f, ft.as_bytes());
+                    part.files.retain(|p| p.path != rel);
+                    part.files.extend(stored.file);
+                    part.model = Some(rel);
+                    if part.lcsc.is_none() {
+                        part.lcsc = stored.lcsc;
+                    }
+                    filled.push("model");
+                }
+            }
+            (_, None) => notes.push(
+                "no footprint: add one with agentee library add NAME --force --footprint ..."
+                    .into(),
+            ),
+            _ => {}
+        }
+        if !filled.is_empty() {
+            library::write_entry(&e.dir, &part)?;
+            done.push(json!({ "part": e.name, "filled": filled, "notes": notes }));
+        } else if part.datasheet.is_none() || part.model.is_none() {
+            let mut missing = Vec::new();
+            if part.datasheet.is_none() {
+                missing.push("datasheet");
+            }
+            if part.model.is_none() {
+                missing.push("model");
+            }
+            open_items.push(json!({ "part": e.name, "missing": missing, "notes": notes }));
+        }
+    }
+    Ok(json!({ "filled": done, "still_missing": open_items }))
+}
+
+fn rehash(part: &mut PartFile, path: &str, bytes: &[u8]) {
+    for p in part.files.iter_mut().filter(|p| p.path == path) {
+        p.sha256 = datasheet::sha256(bytes);
+    }
+}
+
 pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     let lib = open(project.map(|p| p.root.as_path()));
     let name = stem(a.name.unwrap_or(a.mpn));
@@ -365,79 +611,12 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
         .map(str::to_string)
         .or_else(|| fp_text.as_deref().and_then(|t| get_key(t, "model")));
     if let Some(ft) = fp_text.as_mut() {
-        let mut tried = Vec::new();
-        let mut got: Option<Model> = None;
-        if let Some(m) = &model_spec {
-            match local_model(m, &root) {
-                Ok(found) => got = Some(found),
-                Err(e) => tried.push(format!("model {m}: {e}")),
-            }
-        }
-        if got.is_none() && a.distributors && !a.generic {
-            match agentee_3d::easyeda::find(a.mpn.trim()) {
-                Ok(f) => {
-                    lcsc = Some(f.lcsc.clone());
-                    got = Some(Model {
-                        path: f.model,
-                        source: format!("EasyEDA {} (easyeda.com)", f.lcsc),
-                        vendor: Some(Vendor::Placed(
-                            Box::new(f.footprint),
-                            format!("the EasyEDA footprint of {}", f.lcsc),
-                        )),
-                        note: None,
-                    })
-                }
-                Err(e) => tried.push(format!("EasyEDA: {e}")),
-            }
-        }
-        let fitted = got.as_ref().and_then(|model| match &model.vendor {
-            Some(Vendor::KiCad(path)) => Some(fit_to(ft, path)),
-            Some(Vendor::Placed(fp, what)) => Some(fit_footprint(ft, fp, what)),
-            None => None,
-        });
-        match fitted {
-            Some(Ok((text, note))) => {
-                *ft = text;
-                notes.push(note);
-            }
-            Some(Err(e)) => {
-                let source = got.take().map(|m| m.source).unwrap_or_default();
-                tried.push(format!("{source}: {e}"));
-            }
-            None => {}
-        }
-        match got {
-            Some(model) => {
-                notes.extend(model.note.clone());
-                let path = &model.path;
-                let file =
-                    path.file_name().and_then(|f| f.to_str()).unwrap_or("model.step").to_string();
-                let rel = format!("3dmodels/{file}");
-                std::fs::create_dir_all(dir.join("3dmodels")).map_err(|e| e.to_string())?;
-                let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-                std::fs::write(dir.join(&rel), &bytes).map_err(|e| e.to_string())?;
-                *ft = set_key(ft, "model", &rel)?;
-                if get_key(ft, "height").is_none()
-                    && let Ok(file) = toml::from_str::<agentee_core::footprint::FootprintFile>(ft)
-                    && let Ok(mesh) = agentee_3d::load(path)
-                {
-                    let f = file.resolve(&mut agentee_core::diag::Diags::new(&file.name));
-                    if let Some(h) = agentee_3d::model_height(&f, &mesh) {
-                        *ft = set_key(ft, "height", &format!("{h:.2}mm"))?;
-                    }
-                }
-                files.push(Provenance {
-                    path: rel.clone(),
-                    source: model.source.clone(),
-                    sha256: datasheet::sha256(&bytes),
-                });
-                model_rel = Some(rel);
-            }
-            None if !tried.is_empty() => {
-                notes.push(format!("no 3D model stored: {}", tried.join("; ")))
-            }
-            None => {}
-        }
+        let easyeda = a.distributors && !a.generic;
+        let stored = store_model(ft, &dir, model_spec.as_deref(), a.mpn.trim(), easyeda, &root)?;
+        notes.extend(stored.notes);
+        files.extend(stored.file);
+        lcsc = stored.lcsc;
+        model_rel = stored.rel;
     }
     if let (Some(f), Some(t)) = (&fp, &fp_text) {
         std::fs::write(dir.join(&f.file), t).map_err(|e| e.to_string())?;
@@ -470,56 +649,15 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
     let manufacturer = a.manufacturer.map(str::to_string).or_else(|| {
         offers.iter().find(|o| same_part(&o.mpn, &mpn)).map(|o| o.manufacturer.clone())
     });
-    let datasheet = match a.datasheet {
-        Some(f) if Path::new(f).is_file() => {
-            let v = datasheets::add(&mpn, Path::new(f), manufacturer.as_deref(), None, None)?;
-            v["sha256"].as_str().map(|sha| library::Datasheet {
-                url: None,
-                sha256: sha.to_string(),
-                revision: v["revision"].as_str().map(str::to_string),
-            })
-        }
-        given => {
-            let sym_url = get_key(&sym_text, "datasheet").filter(|u| datasheet::is_url(u));
-            let urls: Vec<(String, String)> = given
-                .map(|u| ("given".to_string(), u.to_string()))
-                .or(sym_url.map(|u| ("symbol".to_string(), u)))
-                .into_iter()
-                .collect();
-            let mut want = vec![Want {
-                key: mpn.clone(),
-                manufacturer: manufacturer.clone(),
-                mpn: Some(mpn.clone()),
-                refs: Vec::new(),
-                urls,
-            }];
-            let args = FetchArgs {
-                url: given,
-                refresh: false,
-                config: a.config,
-                cache: None,
-                distributors: a.distributors,
-            };
-            let (got, _) = datasheets::fetch_wants(&mut want, &args, None)?;
-            match got.into_iter().next() {
-                Some(g) if g.sha256.is_some() => Some(library::Datasheet {
-                    url: g.url,
-                    sha256: g.sha256.unwrap_or_default(),
-                    revision: g.revision,
-                }),
-                Some(g) => {
-                    let mut why = vec![g.status];
-                    why.extend(g.tried);
-                    notes.push(format!(
-                        "no datasheet ({}): ask the user for it, then agentee datasheet add {mpn} FILE.pdf and add the part again",
-                        why.join("; ")
-                    ));
-                    None
-                }
-                None => None,
-            }
-        }
-    };
+    let datasheet = find_datasheet(
+        &mpn,
+        manufacturer.as_deref(),
+        a.datasheet,
+        get_key(&sym_text, "datasheet"),
+        a.distributors,
+        a.config,
+        &mut notes,
+    )?;
     if let Some(d) = &datasheet {
         pin_datasheet(&name, &d.sha256)?;
     }

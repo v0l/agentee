@@ -59,6 +59,9 @@ fn component(lcsc: &str) -> Result<Value, String> {
         .read_to_string()
         .map_err(|e| format!("{url}: {e}"))?;
     let v: Value = serde_json::from_str(&text).map_err(|e| format!("{url}: {e}"))?;
+    if v["success"].as_bool() == Some(false) {
+        return Err(format!("EasyEDA has no component for {lcsc}"));
+    }
     Ok(v["result"]["packageDetail"]["dataStr"].clone())
 }
 

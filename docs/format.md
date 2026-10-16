@@ -3006,6 +3006,8 @@ agentee library list --role connector 2-pin power
 agentee library show JST-PH-2
 agentee library use JST-PH-2 -p board/         # copy its files in, print the edit that places it
 agentee library refresh                        # stock and price of every part, one lookup each
+agentee library fill                           # fetch missing datasheets and 3D models
+agentee library fill JST-PH-2 --datasheet ph.pdf --model ph.step   # pin these to one part
 agentee library stock JST-PH-2 40 --bin A3     # 40 on the shelf in bin A3, subtracted from what needs ordering
 agentee library intake --bin A3                # scan bag barcodes, one per line, onto the shelf
 agentee library verify
@@ -3046,6 +3048,11 @@ and then nothing is written. A project footprint that differs only in `model` an
 as it is, and the model is not copied.
 It returns the `agentee edit sch` command that adds the part with its `mpn`, `mfr` and `library`
 fields. `datasheet text JST-PH-2` reads the pinned copy without a network call.
+
+`fill` looks for what each part lacks and keeps everything else, its shelf count included: a
+missing datasheet from the symbol's URL then the distributors' listings, a missing 3D model from
+the footprint's KiCad model then EasyEDA by part number. It lists what it could not find; give
+those with `--datasheet` and `--model` on one part.
 
 `refresh` asks every distributor with a key once for all the library's part numbers and replaces
 each part's `[[stock]]`; a distributor that fails keeps its last listing. `list` prints the

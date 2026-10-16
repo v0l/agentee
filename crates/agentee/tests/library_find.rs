@@ -168,3 +168,57 @@ fn a_bag_barcode_adds_to_the_shelf() {
     assert!(text.contains("MC34063ADR (Mouser 3): not in the library"), "{text}");
     let _ = std::fs::remove_dir_all(&lib);
 }
+
+#[test]
+fn fill_pins_a_datasheet_and_stores_a_model_without_touching_the_shelf() {
+    let root = std::env::temp_dir().join(format!("agentee-fill-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (lib, cache) = (root.join("lib"), root.join("cache"));
+    let dir = lib.join("C1");
+    std::fs::create_dir_all(&dir).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    std::fs::copy(lna.join("symbols/C.sym.toml"), dir.join("C.sym.toml")).unwrap();
+    let fp = std::fs::read_to_string(lna.join("footprints/C_0402_1005Metric.fp.toml")).unwrap();
+    let fp: String = fp
+        .lines()
+        .filter(|l| !l.starts_with("model") && !l.starts_with("height"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    std::fs::write(dir.join("C_0402_1005Metric.fp.toml"), fp).unwrap();
+    std::fs::write(
+        dir.join("part.toml"),
+        "role = \"capacitor\"\nmpn = \"C1MPN\"\nsymbol = \"C.sym.toml\"\nfootprint = \"C_0402_1005Metric.fp.toml\"\n\n\
+         [[stock]]\ndistributor = \"home\"\nsku = \"C1MPN\"\nstock = 0\nchecked = \"2026-01-01\"\nown = 12\nbin = \"B4\"\n",
+    )
+    .unwrap();
+    let pdf = root.join("c1.pdf");
+    std::fs::write(&pdf, b"%PDF-1.4\n% C1MPN capacitor\n%%EOF\n").unwrap();
+    let step =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../agentee-3d/tests/data/filleted_box.step");
+    let fill = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+            .args(["library", "fill", "C1", "--no-distributors", "-p"])
+            .arg(&lib)
+            .args(args)
+            .env("AGENTEE_LIBRARY", &lib)
+            .env("AGENTEE_DATASHEETS", &cache)
+            .output()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
+        (v, String::from_utf8_lossy(&out.stderr).into_owned(), out.status.success())
+    };
+    let (v, err, ok) = fill(&[]);
+    assert!(!ok, "nothing to fill from offline: {v}{err}");
+    assert_eq!(v["still_missing"][0]["missing"], serde_json::json!(["datasheet", "model"]), "{v}");
+    let (v, err, ok) =
+        fill(&["--datasheet", pdf.to_str().unwrap(), "--model", step.to_str().unwrap()]);
+    assert!(ok, "{v}{err}");
+    assert_eq!(v["filled"][0]["filled"], serde_json::json!(["datasheet", "model"]), "{v}");
+    let part = std::fs::read_to_string(dir.join("part.toml")).unwrap();
+    assert!(part.contains("[datasheet]") && part.contains("model = \"3dmodels/"), "{part}");
+    assert!(part.contains("own = 12") && part.contains("bin = \"B4\""), "{part}");
+    assert!(dir.join("3dmodels/filleted_box.step").exists());
+    let fp = std::fs::read_to_string(dir.join("C_0402_1005Metric.fp.toml")).unwrap();
+    assert!(fp.contains("model = \"3dmodels/filleted_box.step\""), "{fp}");
+    let _ = std::fs::remove_dir_all(&root);
+}
