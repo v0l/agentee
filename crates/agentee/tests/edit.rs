@@ -400,6 +400,12 @@ fn a_zone_outline_and_a_cutout_take_every_point_after_the_flag() {
     let (_, err, ok) =
         run(&d, &["edit", "pcb", "t", "keepout", "--point", "1,1", "2,1", "2,2", "--nets", "NOPE"]);
     assert!(!ok && err.contains("NOPE"), "{err}");
+    let (_, err, ok) =
+        run(&d, &["edit", "pcb", "t", "keepout", "--point", "1,1", "2,1", "2,2", "--nets", "X*"]);
+    assert!(!ok && err.contains("X*"), "{err}");
+    run(&d, &["edit", "pcb", "t", "keepout", "--point", "1,1", "2,1", "2,2", "--nets", "G?D,A*"]);
+    assert!(sch(&d, "t.pcb.toml").contains("nets = [\"G?D\", \"A*\"]"));
+    run(&d, &["edit", "pcb", "t", "unkeepout", "1.8,1.2"]);
     let (out, _, _) = run(&d, &["edit", "pcb", "t", "unkeepout", "13,11"]);
     assert!(out.contains("removed 1 keepouts"), "{out}");
     assert!(!sch(&d, "t.pcb.toml").contains("[[keepouts]]"));

@@ -282,7 +282,7 @@ impl Keepout {
 fn keepouts_of(
     files: &[KeepoutFile],
     copper: &[String],
-    net_index: impl Fn(&str) -> Option<usize>,
+    net_names: &[&str],
     d: &mut Diags,
 ) -> Vec<Keepout> {
     let mut out = Vec::new();
@@ -301,11 +301,14 @@ fn keepouts_of(
         }
         let mut nets = Vec::new();
         for n in &k.nets {
-            match net_index(n) {
-                Some(x) => nets.push(x),
-                None => d.error(&at, format!("net `{n}` is not in the schematic")),
+            let hit: Vec<usize> = (0..net_names.len()).filter(|&i| glob(n, net_names[i])).collect();
+            if hit.is_empty() {
+                d.error(&at, format!("net `{n}` is not in the schematic"));
             }
+            nets.extend(hit);
         }
+        nets.sort_unstable();
+        nets.dedup();
         let layers = if k.layers.is_empty() { copper.to_vec() } else { k.layers.clone() };
         out.push(Keepout { outline: k.points.iter().map(|p| p.to_mm()).collect(), layers, nets });
     }
@@ -1070,7 +1073,8 @@ impl LayoutFile {
             })
             .collect();
         let net_index = |name: &str| sch.nets.iter().position(|n| n.name == name);
-        let keepouts = keepouts_of(&self.keepouts, &copper, net_index, d);
+        let net_names: Vec<&str> = sch.nets.iter().map(|n| n.name.as_str()).collect();
+        let keepouts = keepouts_of(&self.keepouts, &copper, &net_names, d);
         let mut found = crate::drc::Findings::default();
         let default_clearance = class_of(board, "Default")
             .map(|c| c.clearance.to_mm())
@@ -5010,6 +5014,23 @@ mod pair_tests {
             0.0,
         );
         gap_is_cut(&fill, (1.575 + 1.7) / 2.0);
+    }
+
+    #[test]
+    fn keepout_nets_take_globs() {
+        let file = KeepoutFile {
+            points: vec![Point::mm(0.0, 0.0), Point::mm(1.0, 0.0), Point::mm(1.0, 1.0)],
+            layers: vec![],
+            nets: vec!["P_*".into(), "GND".into()],
+        };
+        let names = ["P_COM", "GND", "SW", "P_5V"];
+        let mut d = Diags::new("t");
+        let k = keepouts_of(&[file.clone()], &["F.Cu".into()], &names, &mut d);
+        assert!(!d.has_errors());
+        assert_eq!(k[0].nets, vec![0, 1, 3]);
+        let none = KeepoutFile { nets: vec!["Q*".into()], ..file };
+        keepouts_of(&[none], &["F.Cu".into()], &names, &mut d);
+        assert!(d.has_errors());
     }
 
     #[test]

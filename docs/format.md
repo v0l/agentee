@@ -1154,7 +1154,8 @@ points = [[0, 9], [5.4, 9], [5.4, 11], [0, 11]]
 [[keepouts]]                   # keep tracks and vias off an area, e.g. under a buck switch node
 points = [[20, 4], [26, 4], [26, 8], [20, 8]]
 # layers = ["F.Cu", "In1.Cu"]  # default every copper layer
-# nets = ["SW"]                # nets that may still run inside; the rest keep out
+# nets = ["SW", "P_*"]         # nets that may still run inside, `*` and `?` match
+                               # several; the rest keep out
                                # `agentee edit pcb keepout --point X,Y X,Y ... --layers ... --nets ...`
                                # adds one, `unkeepout X,Y` removes every keepout around that point;
                                # zone fills are not cut, add a [[cutouts]] for that

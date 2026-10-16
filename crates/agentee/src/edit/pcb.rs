@@ -81,7 +81,7 @@ pub fn usage(name: &str) -> &'static str {
         "unzone" => "unzone NET ...",
         "cutout" => "cutout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu]",
         "uncutout" => "uncutout X,Y ...",
-        "keepout" => "keepout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu] [--nets SW,GND]",
+        "keepout" => "keepout --point X,Y X,Y X,Y ... [--layers F.Cu,In1.Cu] [--nets SW,GND,P_*]",
         "unkeepout" => "unkeepout X,Y ...",
         "pair" => "pair NET+ NET- [--max-skew 1mm]",
         "text" => {
@@ -151,6 +151,19 @@ fn part_index_of(doc: &DocumentMut, reference: &str) -> bool {
 }
 
 fn net_known(s: &Session, path: &Path, net: &str) -> Result<(), String> {
+    net_matches(s, path, net, |n| n == net)
+}
+
+fn net_glob_known(s: &Session, path: &Path, pattern: &str) -> Result<(), String> {
+    net_matches(s, path, pattern, |n| agentee_core::layout::glob(pattern, n))
+}
+
+fn net_matches(
+    s: &Session,
+    path: &Path,
+    net: &str,
+    hit: impl Fn(&str) -> bool,
+) -> Result<(), String> {
     let schematic =
         s.read(path)?.get("schematic").and_then(|v| v.as_str()).unwrap_or_default().to_string();
     if schematic.is_empty() {
@@ -172,7 +185,7 @@ fn net_known(s: &Session, path: &Path, net: &str) -> Result<(), String> {
     }
     nets.sort();
     nets.dedup();
-    if nets.iter().any(|n| n == net) {
+    if nets.iter().any(|n| hit(n)) {
         return Ok(());
     }
     if nets.is_empty() {
@@ -681,7 +694,7 @@ fn keepout(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> 
         s.check_layer(Some(&board), l)?;
     }
     for n in &nets {
-        net_known(s, path, n)?;
+        net_glob_known(s, path, n)?;
     }
     let mut t = Table::new();
     set(&mut t, "points", points(&pts, "--point")?);
