@@ -38,6 +38,7 @@ pub struct Shelf {
     lib: Option<Library>,
     root: PathBuf,
     filter: String,
+    shelf_only: bool,
     selected: Option<String>,
     show: Show,
     detail: Option<Detail>,
@@ -140,10 +141,18 @@ pub fn list(ui: &mut Ui, shelf: &mut Shelf, project: &Project) {
     });
     ui.add_space(6.0);
     let Some(lib) = &shelf.lib else { return };
+    let stocked = lib.entries.iter().filter(|e| e.self_stock().is_some()).count();
+    segments(
+        ui,
+        &mut shelf.shelf_only,
+        &[(false, "all", Some(lib.entries.len())), (true, "on the shelf", Some(stocked))],
+    );
+    ui.add_space(8.0);
     let needle = shelf.filter.to_lowercase();
     let mut rows: Vec<&Entry> = lib
         .entries
         .iter()
+        .filter(|e| !shelf.shelf_only || e.self_stock().is_some())
         .filter(|e| {
             needle.is_empty() || {
                 let p = &e.part;
@@ -155,13 +164,17 @@ pub fn list(ui: &mut Ui, shelf: &mut Shelf, project: &Project) {
         })
         .collect();
     rows.sort_by(|a, b| a.part.role.cmp(&b.part.role).then(a.name.cmp(&b.name)));
+    let shown = shelf.selected.as_ref().is_some_and(|n| rows.iter().any(|e| &e.name == n));
+    let first = (!shown).then(|| rows.first().map(|e| e.name.clone())).flatten();
     if rows.is_empty() {
         let text = if lib.entries.is_empty() {
             "The library is empty. Add parts with agentee library add."
+        } else if shelf.shelf_only && stocked == 0 {
+            "Nothing is on the shelf yet. Set a count in the details column or scan bags with agentee library intake."
         } else {
             "No library part matches the filter."
         };
-        ui.label(legend(text));
+        ui.add(egui::Label::new(legend(text)).wrap());
         return;
     }
     let mut clicked = None;
@@ -230,7 +243,7 @@ pub fn list(ui: &mut Ui, shelf: &mut Shelf, project: &Project) {
             }
         }
     });
-    if let Some(n) = clicked {
+    if let Some(n) = clicked.or(first) {
         shelf.pick(n);
     }
 }
