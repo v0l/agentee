@@ -165,7 +165,7 @@ pub fn layout(l: &Layout, names: &[String], context: Context) -> Result<(Focus, 
     Ok((f, grow(b, 1.0, 4.0)))
 }
 
-fn placed_bounds(p: &agentee_core::layout::Placed) -> Bounds {
+pub(crate) fn placed_bounds(p: &agentee_core::layout::Placed) -> Bounds {
     let mut b = Bounds::EMPTY;
     p.pads.iter().flat_map(|q| q.outlines.iter().flatten()).for_each(|q| b.add(*q));
     let t = p.transform();

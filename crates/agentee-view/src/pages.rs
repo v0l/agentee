@@ -147,6 +147,20 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         _ => None,
     };
     let diags = edited.as_deref().unwrap_or(project.diags_of(item));
+    if let ItemRef::Layout(i) = item
+        && st.panels
+        && st.interactive
+    {
+        if std::mem::take(&mut st.assemble_on_open) {
+            st.assembly = Some(crate::assembly::Guide::new(project, i));
+            st.view_3d = false;
+            st.view.fitted = false;
+        }
+        if st.assembly.is_some() {
+            crate::assembly::page(ui, project, i, st);
+            return;
+        }
+    }
     if !st.panels {
         egui::CentralPanel::no_frame().show(ui, |ui| match item {
             ItemRef::Symbol(i) => symbol_canvas(ui, &project.symbols[i].item, st),
@@ -984,14 +998,9 @@ fn layout_view(
                     st.view.flip = !st.view.flip;
                     st.pcb_layers.mirror();
                 }
-                if st.interactive && toggle(ui, "assemble", st.assembly.is_some()).clicked() {
-                    st.assembly = match st.assembly.take() {
-                        Some(_) => {
-                            st.focus = None;
-                            None
-                        }
-                        None => Some(crate::assembly::Guide::new(project, i)),
-                    };
+                if st.interactive && toggle(ui, "assemble", false).clicked() {
+                    st.assembly = Some(crate::assembly::Guide::new(project, i));
+                    st.view.fitted = false;
                 }
                 if let Some(ed) = ed.as_deref_mut() {
                     crate::tools::toolbar(ui, project, i, ed);
@@ -1024,18 +1033,6 @@ fn layout_view(
             crate::board3d::show(ui, scene, &mut st.board_3d, st.interactive, st.show_parts);
         }
         return;
-    }
-    if std::mem::take(&mut st.assemble_on_open) && !st.view_3d {
-        st.assembly = Some(crate::assembly::Guide::new(project, i));
-    }
-    if let Some(g) = st.assembly.as_mut() {
-        g.refresh(project, i);
-        g.keys(ui);
-        if g.bottom() != st.view.flip {
-            st.view.flip = !st.view.flip;
-            st.pcb_layers.mirror();
-        }
-        st.focus = Some(g.focus(&project.layouts[i].item));
     }
     st.view.max_fit = 2000.0;
     let bounds = st.region.unwrap_or(project.layouts[i].item.bounds());
@@ -1085,10 +1082,6 @@ fn layout_view(
 }
 
 fn layout_props(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
-    if let Some(g) = st.assembly.as_mut() {
-        crate::assembly::panel(ui, g);
-        ui.add_space(8.0);
-    }
     let path = project.layouts[i].path.clone();
     if let Some(ed) = st.editors.get_mut(&path) {
         crate::tools::selection(ui, project, i, ed);

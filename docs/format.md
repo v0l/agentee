@@ -2772,8 +2772,10 @@ agentee assemble preamp --built 3 --json      # take 3 boards' worth off the lib
 ```
 
 `agentee view --select pcb:NAME --assemble` (or the `assemble` toggle over a layout) steps
-through the same groups on the board: the current group is lit, the view turns over for the
-bottom side, space ticks the group and moves to the next open one, and the arrows step.
+through the same groups on a page of its own: what to pick (value, package, count, bin, refs) on
+the left, the board on the right with the current parts ringed and placed ones dotted green, and
+a progress rail along the bottom. The view turns over for the bottom side. Space or Enter marks
+the group placed and moves to the next open one, the arrows step, and the rail jumps to a group.
 
 `--built N` takes `N` boards of each group off the `own` count of its library part, found by the
 part's `library` field, then its `mpn`, then its `lcsc`. Groups with no library part are listed
