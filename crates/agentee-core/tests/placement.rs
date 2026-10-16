@@ -325,6 +325,30 @@ fn placement_keeps_parts_out_of_board_cutouts() {
 }
 
 #[test]
+fn a_part_left_off_the_board_is_reported_failed() {
+    let dir = temp_dir("nofit");
+    copy_dir(&lna(), &dir, false);
+    let board = std::fs::read_to_string(dir.join("lna.board.toml")).unwrap();
+    std::fs::write(
+        dir.join("lna.board.toml"),
+        format!("{board}\n[[outline.cutouts]]\npoints = [[2, 2], [34, 2], [34, 22], [2, 22]]\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("lna.pcb.toml"),
+        "name = \"lna\"\nboard = \"lna\"\nschematic = \"lna\"\n",
+    )
+    .unwrap();
+    let r = run_place(&dir, &PlaceOptions::default());
+    let off: Vec<&str> =
+        r.placements.iter().filter(|p| p.at[0] > 36.0).map(|p| p.reference.as_str()).collect();
+    assert!(!off.is_empty());
+    for o in &off {
+        assert!(r.failed.iter().any(|f| f == o), "{o} is off the board but not in {:?}", r.failed);
+    }
+}
+
+#[test]
 fn fiducials_go_to_corners_clear_of_the_edge_and_parts() {
     let dir = temp_dir("fid");
     copy_dir(&lna(), &dir, false);

@@ -1876,6 +1876,7 @@ struct Solved {
     stale_copper: usize,
     load_ms: u128,
     solve_ms: u128,
+    right: f64,
     r: agentee_core::place::PlaceResult,
 }
 
@@ -1956,13 +1957,14 @@ fn solve_place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Solved, String>
         stale_copper: file.tracks.len() + file.vias.len(),
         load_ms,
         solve_ms,
+        right: outline.iter().map(|q| q[0]).fold(f64::MIN, f64::max),
         r,
     })
 }
 
 pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     let started = std::time::Instant::now();
-    let Solved { path, text, layout: layout_name, stale_copper, load_ms, solve_ms, r } =
+    let Solved { path, text, layout: layout_name, stale_copper, load_ms, solve_ms, right, r } =
         solve_place(root, name, a)?;
     let mut out = json!({
         "layout": layout_name,
@@ -1985,6 +1987,21 @@ pub fn place(root: &Path, name: &str, a: &PlaceArgs) -> Result<Value, String> {
     if stale_copper > 0 {
         out["note"] = json!(format!(
             "{stale_copper} tracks and vias in the file were left alone and may no longer reach their pads"
+        ));
+    }
+    let parked: Vec<&agentee_core::place::Placement> = r
+        .placements
+        .iter()
+        .filter(|p| r.failed.contains(&p.reference) && p.at[0] > right)
+        .collect();
+    if !parked.is_empty() {
+        let refs: Vec<&str> = parked.iter().map(|p| p.reference.as_str()).collect();
+        out["left_off_board"] = json!(
+            parked.iter().map(|p| json!({ "ref": p.reference, "at": p.at })).collect::<Vec<_>>()
+        );
+        out["failed_note"] = json!(format!(
+            "{} found no legal spot and sit right of the board; place them by hand or free room and run again",
+            refs.join(", ")
         ));
     }
     if !a.write {

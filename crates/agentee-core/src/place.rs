@@ -3081,13 +3081,16 @@ fn place_with<'a>(
     let runs = in_parallel(roughs, |(s, r)| (s, finish(s, r)));
     let best =
         runs.into_iter().min_by(|a, b| a.1.0.total_cmp(&b.1.0).then(a.0.cmp(&b.0))).map(|r| r.1);
-    let Some((_, mut pl, failed, edges, moves)) = best else {
+    let Some((_, mut pl, mut failed, edges, moves)) = best else {
         return Err("no placement".into());
     };
 
     let mut x = ob.max[0] + 5.0;
     for i in 0..n_parts {
         if pl.parts[i].active && !pl.parts[i].placed {
+            if !failed.contains(&pl.parts[i].reference) {
+                failed.push(pl.parts[i].reference.clone());
+            }
             let s = pl.parts[i].local.size();
             pl.parts[i].st = St {
                 at: snap_p([x + s[0] / 2.0, ob.min[1] + s[1] / 2.0]),
