@@ -727,6 +727,9 @@ enum LibraryCmd {
         /// Store this STEP or VRML file or URL, or vendor ZIP, as the named part's model
         #[arg(long)]
         model: Option<String>,
+        /// Take the EasyEDA model of this part number instead, one in the same package
+        #[arg(long)]
+        like: Option<String>,
         #[arg(long)]
         config: Option<PathBuf>,
     },
@@ -1514,7 +1517,7 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
             print_json(&library::use_part(&library::open(Some(&project)), &name, &project, force)?);
             Ok(true)
         }
-        LibraryCmd::Fill { name, project, no_distributors, datasheet, model, config } => {
+        LibraryCmd::Fill { name, project, no_distributors, datasheet, model, like, config } => {
             let lib = library::open(Some(&project));
             let v = library::fill(
                 &lib,
@@ -1522,6 +1525,7 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
                     name: name.as_deref(),
                     datasheet: datasheet.as_deref(),
                     model: model.as_deref(),
+                    like: like.as_deref(),
                     distributors: !no_distributors,
                     config: config.as_deref(),
                 },

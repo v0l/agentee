@@ -3053,7 +3053,9 @@ fields. `datasheet text JST-PH-2` reads the pinned copy without a network call.
 `fill` looks for what each part lacks and keeps everything else, its shelf count included: a
 missing datasheet from the symbol's URL then the distributors' listings, a missing 3D model from
 the footprint's KiCad model then EasyEDA by part number. It lists what it could not find; give
-those with `--datasheet` and `--model` on one part.
+those with `--datasheet` and `--model` on one part, or `--like MPN` for the EasyEDA model of
+another part number in the same package. A model is placed on the footprint by matching its pads
+when it comes with the vendor's footprint, as a KiCad `.kicad_mod` in the same folder or ZIP.
 
 `refresh` asks every distributor with a key once for all the library's part numbers and replaces
 each part's `[[stock]]`; a distributor that fails keeps its last listing. `list` prints the

@@ -474,14 +474,15 @@ pub struct FillArgs<'a> {
     pub name: Option<&'a str>,
     pub datasheet: Option<&'a str>,
     pub model: Option<&'a str>,
+    pub like: Option<&'a str>,
     pub distributors: bool,
     pub config: Option<&'a Path>,
 }
 
 pub fn fill(lib: &Library, a: &FillArgs) -> Result<Value, String> {
     let (name, distributors, config) = (a.name, a.distributors, a.config);
-    if name.is_none() && (a.datasheet.is_some() || a.model.is_some()) {
-        return Err("--datasheet and --model fill one part: name it".into());
+    if name.is_none() && (a.datasheet.is_some() || a.model.is_some() || a.like.is_some()) {
+        return Err("--datasheet, --model and --like fill one part: name it".into());
     }
     let targets: Vec<&Entry> = match name {
         Some(n) => vec![lib.get(n).ok_or_else(|| no_part(lib, n))?],
@@ -525,7 +526,7 @@ pub fn fill(lib: &Library, a: &FillArgs) -> Result<Value, String> {
                 Err(err) => notes.push(format!("datasheet: {err}")),
             }
         }
-        let want_model = part.model.is_none() || a.model.is_some();
+        let want_model = part.model.is_none() || a.model.is_some() || a.like.is_some();
         match (want_model, part.footprint.clone()) {
             (true, Some(f)) => {
                 let fp_path = e.file(&f);
@@ -533,7 +534,10 @@ pub fn fill(lib: &Library, a: &FillArgs) -> Result<Value, String> {
                     .map_err(|err| format!("{}: {err}", fp_path.display()))?;
                 let spec = a.model.map(str::to_string).or_else(|| get_key(&ft, "model"));
                 let easyeda = distributors && !part.generic;
-                let stored = store_model(&mut ft, &e.dir, spec.as_deref(), &mpn, easyeda, &e.dir)?;
+                let spec = spec.filter(|_| a.model.is_some() || a.like.is_none());
+                let look_up = a.like.unwrap_or(&mpn);
+                let stored =
+                    store_model(&mut ft, &e.dir, spec.as_deref(), look_up, easyeda, &e.dir)?;
                 notes.extend(stored.notes);
                 if let Some(rel) = stored.rel {
                     std::fs::write(&fp_path, &ft).map_err(|err| err.to_string())?;

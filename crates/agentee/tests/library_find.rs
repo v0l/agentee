@@ -254,3 +254,16 @@ fn set_corrects_a_part_number_and_keeps_the_shelf() {
     assert!(!part.contains("DigiKey") && !part.contains("[datasheet]"), "{part}");
     let _ = std::fs::remove_dir_all(&lib);
 }
+
+#[test]
+fn per_part_fill_options_need_a_part() {
+    for flag in ["--like", "--model", "--datasheet"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+            .args(["library", "fill", flag, "X", "--no-distributors"])
+            .env("AGENTEE_LIBRARY", std::env::temp_dir().join("agentee-none"))
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success() && err.contains("name it"), "{flag}: {err}");
+    }
+}
