@@ -837,6 +837,21 @@ fn removing_the_first_pin_leaves_the_list_tidy() {
 }
 
 #[test]
+fn remove_net_takes_the_word_net() {
+    let d = dir("removenet");
+    std::fs::write(d.join("t.sch.toml"), "name = \"t\"\n").unwrap();
+    edit(&d, &["sch", "t", "add", "R1", "R", "1k"]);
+    edit(&d, &["sch", "t", "net", "P_COM", "R1.1"]);
+    edit(&d, &["sch", "t", "net", "MID", "R1.2"]);
+    edit(&d, &["sch", "t", "remove", "net", "P_COM", "MID"]);
+    let text = sch(&d, "t.sch.toml");
+    assert!(!text.contains("P_COM") && !text.contains("MID"), "{text}");
+    assert!(text.contains("ref = \"R1\""), "{text}");
+    let (_, err, ok) = run(&d, &["edit", "sch", "t", "remove", "net", "R1"]);
+    assert!(!ok && err.contains("no net `R1`"), "{err}");
+}
+
+#[test]
 fn a_file_that_does_not_load_is_not_edited() {
     let d = dir("unloadable");
     std::fs::write(d.join("t.sch.toml"), "name = \"t\"\ntitle = \"x\"\n").unwrap();

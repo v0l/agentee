@@ -288,13 +288,25 @@ fn remove(s: &mut Session, path: &Path, mut o: Opts) -> Result<Report, String> {
     }
     let mut log = Vec::new();
     let mut facts = Vec::new();
+    let mut nets_only = false;
     for w in words {
         let doc = s.doc(path)?;
-        if doc
+        let is_net = doc
             .get("nets")
             .and_then(|v| v.as_array_of_tables())
-            .is_some_and(|a| a.iter().any(|t| text(t, "name").as_deref() == Some(w.as_str())))
-        {
+            .is_some_and(|a| a.iter().any(|t| text(t, "name").as_deref() == Some(w.as_str())));
+        let is_part = doc
+            .get("parts")
+            .and_then(|v| v.as_array_of_tables())
+            .is_some_and(|a| a.iter().any(|t| text(t, "ref").as_deref() == Some(w.as_str())));
+        if w == "net" && !is_net && !is_part {
+            nets_only = true;
+            continue;
+        }
+        if nets_only && !is_net {
+            return Err(format!("remove: no net `{w}` in this schematic"));
+        }
+        if is_net {
             if let Some(a) = doc.get_mut("nets").and_then(|v| v.as_array_of_tables_mut()) {
                 a.retain(|t| text(t, "name").as_deref() != Some(w.as_str()));
             }
