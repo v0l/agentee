@@ -3015,7 +3015,9 @@ in stock as an active part. `--local` adds to the
 project's library instead.
 
 `use` copies the symbol into `symbols/`, the footprint into `footprints/` and the model into
-`3dmodels/` of the project; a file that already exists and differs is refused without `--force`.
+`3dmodels/` of the project. A file that already exists and differs is refused without `--force`,
+and then nothing is written. A project footprint that differs only in `model` and `height` is kept
+as it is, and the model is not copied.
 It returns the `agentee edit sch` command that adds the part with its `mpn`, `mfr` and `library`
 fields. `datasheet text JST-PH-2` reads the pinned copy without a network call.
 

@@ -809,43 +809,78 @@ fn no_part(lib: &Library, name: &str) -> String {
     )
 }
 
-fn copy_into(src: &Path, dst: &Path, force: bool, files: &mut Vec<String>) -> Result<(), String> {
+enum Copy {
+    Write(PathBuf, Vec<u8>),
+    Same(PathBuf),
+    Kept(PathBuf),
+}
+
+fn without_model(bytes: &[u8]) -> Option<toml::Table> {
+    let mut t: toml::Table = std::str::from_utf8(bytes).ok()?.parse().ok()?;
+    t.remove("model");
+    t.remove("height");
+    Some(t)
+}
+
+fn plan_copy(src: &Path, dst: &Path, force: bool) -> Result<Copy, String> {
     let bytes = std::fs::read(src).map_err(|e| format!("{}: {e}", src.display()))?;
-    if let Ok(old) = std::fs::read(dst) {
-        if old == bytes {
-            files.push(format!("{} (unchanged)", dst.display()));
-            return Ok(());
-        }
-        if !force {
-            return Err(format!(
-                "{} exists and differs from the library copy, pass force to replace it",
-                dst.display()
-            ));
+    let Ok(old) = std::fs::read(dst) else {
+        return Ok(Copy::Write(dst.to_path_buf(), bytes));
+    };
+    if old == bytes {
+        return Ok(Copy::Same(dst.to_path_buf()));
+    }
+    if force {
+        return Ok(Copy::Write(dst.to_path_buf(), bytes));
+    }
+    let footprint = dst.to_string_lossy().ends_with(".fp.toml");
+    if footprint && without_model(&old).is_some_and(|o| without_model(&bytes) == Some(o)) {
+        return Ok(Copy::Kept(dst.to_path_buf()));
+    }
+    Err(format!(
+        "{} exists and differs from the library copy, pass force to replace it; nothing was written",
+        dst.display()
+    ))
+}
+
+fn apply(plan: Vec<Copy>) -> Result<Vec<String>, String> {
+    let mut files = Vec::new();
+    for c in plan {
+        match c {
+            Copy::Same(p) => files.push(format!("{} (unchanged)", p.display())),
+            Copy::Kept(p) => files.push(format!(
+                "{} (kept, differs from the library only in model and height)",
+                p.display()
+            )),
+            Copy::Write(p, bytes) => {
+                if let Some(d) = p.parent() {
+                    std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+                }
+                std::fs::write(&p, bytes).map_err(|e| format!("{}: {e}", p.display()))?;
+                files.push(p.display().to_string());
+            }
         }
     }
-    if let Some(d) = dst.parent() {
-        std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
-    }
-    std::fs::write(dst, bytes).map_err(|e| format!("{}: {e}", dst.display()))?;
-    files.push(dst.display().to_string());
-    Ok(())
+    Ok(files)
 }
 
 pub fn use_part(lib: &Library, name: &str, root: &Path, force: bool) -> Result<Value, String> {
     let e = lib.get(name).ok_or_else(|| no_part(lib, name))?;
-    let mut files = Vec::new();
-    copy_into(
+    let mut plan = vec![plan_copy(
         &e.file(&e.part.symbol),
         &root.join("symbols").join(&e.part.symbol),
         force,
-        &mut files,
-    )?;
+    )?];
+    let mut footprint_kept = false;
     if let Some(f) = &e.part.footprint {
-        copy_into(&e.file(f), &root.join("footprints").join(f), force, &mut files)?;
+        let c = plan_copy(&e.file(f), &root.join("footprints").join(f), force)?;
+        footprint_kept = matches!(c, Copy::Kept(_));
+        plan.push(c);
     }
-    if let Some(m) = &e.part.model {
-        copy_into(&e.file(m), &root.join(m), force, &mut files)?;
+    if let Some(m) = e.part.model.as_ref().filter(|_| !footprint_kept) {
+        plan.push(plan_copy(&e.file(m), &root.join(m), force)?);
     }
+    let files = apply(plan)?;
     let mut fields = serde_json::Map::new();
     if let Some(m) = &e.part.mpn {
         fields.insert("mpn".into(), json!(m));
