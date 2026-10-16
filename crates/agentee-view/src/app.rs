@@ -460,12 +460,11 @@ impl App {
                 item(Kind::Layout, "layouts", p.layouts.len()),
                 item(Kind::Board, "boards", p.boards.len()),
                 item(Kind::Sim, "sims", p.sims.len()),
-            ],
-            vec![(Tab::Assembly, "assembly", None), (Tab::Library, "library", None)],
-            vec![
                 item(Kind::Symbol, "symbols", p.symbols.len()),
                 item(Kind::Footprint, "footprints", p.footprints.len()),
             ],
+            vec![(Tab::Assembly, "assembly", None)],
+            vec![(Tab::Library, "library", None)],
         ];
         let mut tab = self.tab;
         let mut panels = [self.show_list, self.st.show_details, self.st.show_checks];
