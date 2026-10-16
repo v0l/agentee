@@ -2771,8 +2771,8 @@ agentee assemble preamp --images build/       # plus build/01-top.png ... with e
 agentee assemble preamp --built 3 --json      # take 3 boards' worth off the library shelf
 ```
 
-`agentee view --select pcb:NAME --assemble` (or the `assemble` toggle over a layout) steps
-through the same groups on a page of its own: what to pick (value, package, count, bin, refs) on
+The viewer's `assembly` tab (`agentee view --select pcb:NAME --assemble` opens on it) steps
+through the same groups, one layout at a time, with each layout's progress kept beside its name: what to pick (value, package, count, bin, refs) on
 the left, the board on the right with the current parts ringed and placed ones dotted green, and
 a progress rail along the bottom. The view turns over for the bottom side. Space or Enter marks
 the group placed and moves to the next open one, the arrows step, and the rail jumps to a group.

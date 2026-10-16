@@ -22,6 +22,12 @@ fn changes_content(kind: &notify::EventKind) -> bool {
 
 type Row = (ItemRef, String, Option<Severity>, Option<f32>, bool);
 
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Item(Kind),
+    Assembly,
+}
+
 enum Leave {
     Quit,
     Open(PathBuf),
@@ -40,8 +46,10 @@ pub struct App {
     path: PathBuf,
     project: Project,
     error: Option<String>,
-    tab: Kind,
+    tab: Tab,
     selected: Option<(Kind, String)>,
+    assembly: Option<String>,
+    guides: std::collections::HashMap<String, crate::assembly::Guide>,
     filter: String,
     st: PageState,
     events: Option<Receiver<()>>,
@@ -76,8 +84,10 @@ impl App {
             path: PathBuf::new(),
             project: Project::default(),
             error: None,
-            tab: Kind::Symbol,
+            tab: Tab::Item(Kind::Symbol),
             selected: None,
+            assembly: None,
+            guides: Default::default(),
             filter: String::new(),
             st: PageState::default(),
             events: None,
@@ -95,7 +105,13 @@ impl App {
         };
         app.st.view_3d = view_3d;
         app.open(path, select);
-        app.st.assemble_on_open = assemble;
+        if assemble {
+            app.tab = Tab::Assembly;
+            app.assembly = match &app.selected {
+                Some((Kind::Layout, name)) => Some(name.clone()),
+                _ => None,
+            };
+        }
         app
     }
 
@@ -108,6 +124,8 @@ impl App {
         self.st = PageState { view_3d: self.st.view_3d, ..PageState::default() };
         self.project = Project::default();
         self.selected = None;
+        self.assembly = None;
+        self.guides.clear();
         self.filter.clear();
         self.progress.clear();
         self.polled = Instant::now() - Duration::from_secs(5);
@@ -223,7 +241,7 @@ impl App {
 
     fn select(&mut self, r: ItemRef) {
         let kind = r.kind();
-        self.tab = kind;
+        self.tab = Tab::Item(kind);
         self.selected = Some((kind, self.project.name_of(r).to_string()));
     }
 
@@ -306,19 +324,74 @@ impl App {
         });
         ui.add_space(4.0);
         let opts = [
-            (Kind::Sim, format!("sims {}", self.project.sims.len())),
-            (Kind::Layout, format!("layouts {}", self.project.layouts.len())),
-            (Kind::Schematic, format!("schematics {}", self.project.schematics.len())),
-            (Kind::Board, format!("boards {}", self.project.boards.len())),
-            (Kind::Symbol, format!("symbols {}", self.project.symbols.len())),
-            (Kind::Footprint, format!("footprints {}", self.project.footprints.len())),
+            (Tab::Item(Kind::Sim), format!("sims {}", self.project.sims.len())),
+            (Tab::Item(Kind::Layout), format!("layouts {}", self.project.layouts.len())),
+            (Tab::Item(Kind::Schematic), format!("schematics {}", self.project.schematics.len())),
+            (Tab::Item(Kind::Board), format!("boards {}", self.project.boards.len())),
+            (Tab::Item(Kind::Symbol), format!("symbols {}", self.project.symbols.len())),
+            (Tab::Item(Kind::Footprint), format!("footprints {}", self.project.footprints.len())),
+            (Tab::Assembly, "assembly".to_string()),
         ];
-        let refs: Vec<(Kind, &str)> = opts.iter().map(|(k, s)| (*k, s.as_str())).collect();
+        let refs: Vec<(Tab, &str)> = opts.iter().map(|(k, s)| (*k, s.as_str())).collect();
         tabs(ui, &mut self.tab, &refs);
     }
 
+    fn assembly_list(&mut self, ui: &mut Ui) {
+        ui.label(legend("boards to build"));
+        ui.add_space(6.0);
+        let current = self.assembly_layout();
+        let mut clicked = None;
+        for (i, e) in self.project.layouts.iter().enumerate() {
+            let (rect, resp) =
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
+            let on = current == Some(i);
+            let p = ui.painter();
+            if on {
+                p.rect_filled(rect, 0.0, PANEL);
+                p.rect_filled(
+                    Rect::from_min_size(rect.min, Vec2::new(3.0, rect.height())),
+                    0.0,
+                    READOUT,
+                );
+            } else if resp.hovered() {
+                p.rect_filled(rect, 0.0, BAND);
+            }
+            p.with_clip_rect(rect).text(
+                Pos2::new(rect.left() + 12.0, rect.center().y),
+                egui::Align2::LEFT_CENTER,
+                &e.name,
+                egui::FontId::proportional(13.0),
+                if on { VALUE } else { VALUE.gamma_multiply(0.85) },
+            );
+            if let Some((done, total)) = self.guides.get(&e.name).map(|g| g.progress()) {
+                p.text(
+                    Pos2::new(rect.right() - 8.0, rect.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    format!("{done}/{total}"),
+                    egui_bench::theme::figure(11.5),
+                    if done == total && total > 0 { OK } else { READOUT },
+                );
+            }
+            if resp.clicked() {
+                clicked = Some(e.name.clone());
+            }
+        }
+        if let Some(n) = clicked {
+            self.assembly = Some(n);
+        }
+    }
+
+    fn assembly_layout(&self) -> Option<usize> {
+        let by_name = |n: &String| self.project.layouts.iter().position(|e| &e.name == n);
+        self.assembly.as_ref().and_then(by_name).or((!self.project.layouts.is_empty()).then_some(0))
+    }
+
     fn list(&mut self, ui: &mut Ui) {
-        if self.tab == Kind::Layout {
+        let Tab::Item(tab) = self.tab else {
+            self.assembly_list(ui);
+            return;
+        };
+        if tab == Kind::Layout {
             let dir = self.path.is_dir();
             if ui
                 .add_enabled(dir, egui::Button::new("new layout"))
@@ -336,7 +409,7 @@ impl App {
             .project
             .all_refs()
             .into_iter()
-            .filter(|r| r.kind() == self.tab)
+            .filter(|r| r.kind() == tab)
             .map(|r| {
                 let worst = self.project.diags_of(r).iter().map(|d| d.severity).max();
                 let name = self.project.name_of(r).to_string();
@@ -360,7 +433,7 @@ impl App {
             .filter(|(_, n, _, _, _)| needle.is_empty() || n.to_lowercase().contains(&needle))
             .collect();
         let mut rows = rows;
-        if self.tab == Kind::Schematic {
+        if tab == Kind::Schematic {
             for row in rows.iter_mut() {
                 if let ItemRef::Schematic(i) = row.0
                     && let Some(parent) = &self.project.schematics[i].item.parent
@@ -483,6 +556,25 @@ impl App {
     }
 }
 
+impl App {
+    fn assembly_page(&mut self, ui: &mut Ui) {
+        let Some(i) = self.assembly_layout() else {
+            ui.add_space(20.0);
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                note(ui, "This project has no layouts to assemble.", Color32::from_gray(160));
+            });
+            return;
+        };
+        let name = self.project.layouts[i].name.clone();
+        let guide = self
+            .guides
+            .entry(name)
+            .or_insert_with(|| crate::assembly::Guide::new(&self.project, i));
+        crate::assembly::page(ui, &self.project, i, guide);
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _f: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -537,6 +629,10 @@ impl eframe::App for App {
             let r = ui.max_rect();
             ui.painter().rect_filled(r, 0.0, CHASSIS);
             ui.painter().line_segment([r.left_top(), r.left_bottom()], Stroke::new(1.0, ETCH));
+            if self.tab == Tab::Assembly {
+                self.assembly_page(ui);
+                return;
+            }
             match current {
                 Some(item) => page(ui, &self.project, item, &mut self.st),
                 None => {

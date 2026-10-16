@@ -27,8 +27,6 @@ pub struct PageState {
     pub ratsnest: bool,
     pub region: Option<agentee_core::graphic::Bounds>,
     pub focus: Option<crate::focus::Focus>,
-    pub assembly: Option<crate::assembly::Guide>,
-    pub assemble_on_open: bool,
     pub content_bottom: Option<f32>,
     pub rulers: bool,
     pub hidden_curves: Vec<(usize, usize)>,
@@ -63,8 +61,6 @@ impl Default for PageState {
             ratsnest: true,
             region: None,
             focus: None,
-            assembly: None,
-            assemble_on_open: false,
             content_bottom: None,
             rulers: false,
             hidden_curves: Vec::new(),
@@ -122,9 +118,6 @@ impl PageState {
 
     pub fn select(&mut self, item: ItemRef) {
         if self.item != Some(item) {
-            if self.assembly.take().is_some() {
-                self.focus = None;
-            }
             self.item = Some(item);
             self.view = View::default();
             self.unit = 1;
@@ -147,20 +140,6 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         _ => None,
     };
     let diags = edited.as_deref().unwrap_or(project.diags_of(item));
-    if let ItemRef::Layout(i) = item
-        && st.panels
-        && st.interactive
-    {
-        if std::mem::take(&mut st.assemble_on_open) {
-            st.assembly = Some(crate::assembly::Guide::new(project, i));
-            st.view_3d = false;
-            st.view.fitted = false;
-        }
-        if st.assembly.is_some() {
-            crate::assembly::page(ui, project, i, st);
-            return;
-        }
-    }
     if !st.panels {
         egui::CentralPanel::no_frame().show(ui, |ui| match item {
             ItemRef::Symbol(i) => symbol_canvas(ui, &project.symbols[i].item, st),
@@ -997,10 +976,6 @@ fn layout_view(
                 if toggle(ui, "back", st.view.flip).clicked() {
                     st.view.flip = !st.view.flip;
                     st.pcb_layers.mirror();
-                }
-                if st.interactive && toggle(ui, "assemble", false).clicked() {
-                    st.assembly = Some(crate::assembly::Guide::new(project, i));
-                    st.view.fitted = false;
                 }
                 if let Some(ed) = ed.as_deref_mut() {
                     crate::tools::toolbar(ui, project, i, ed);

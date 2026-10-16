@@ -514,7 +514,7 @@ agentee parts NAME --refs C11 --json
 agentee parts NAME --boards 2 --spares --order docs/   # order sheets per distributor
 agentee assemble NAME --images build/  # hand build sheet by side, bins, one lit PNG per group
 agentee assemble NAME --built 3        # take 3 boards' worth of parts off the library shelf
-agentee view --select pcb:NAME --assemble   # step through the groups on the board, tick them off
+agentee view --select pcb:NAME --assemble   # assembly tab: step through the groups, tick them off
 agentee library intake --bin A3       # scan DigiKey, Mouser or LCSC bag barcodes onto the shelf
 ```
 

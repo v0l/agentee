@@ -1,6 +1,6 @@
+use crate::canvas::View;
 use crate::focus::{Context, Focus, placed_bounds};
-use crate::pages::PageState;
-use crate::paint::{self, Xf};
+use crate::paint::{self, Layers, Xf};
 use agentee_core::layout::Layout;
 use agentee_core::project::Project;
 use agentee_parts::assembly::{Group, Side};
@@ -16,12 +16,21 @@ pub struct Guide {
     pub groups: Vec<Group>,
     pub step: usize,
     pub done: Vec<bool>,
+    view: View,
+    layers: Layers,
 }
 
 impl Guide {
     pub fn new(project: &Project, i: usize) -> Guide {
         let groups = groups(project, i);
-        Guide { key: (project.generation, i), done: vec![false; groups.len()], groups, step: 0 }
+        Guide {
+            key: (project.generation, i),
+            done: vec![false; groups.len()],
+            groups,
+            step: 0,
+            view: View::default(),
+            layers: crate::pcb::default_layers(),
+        }
     }
 
     pub fn refresh(&mut self, project: &Project, i: usize) {
@@ -51,6 +60,10 @@ impl Guide {
 
     pub fn bottom(&self) -> bool {
         self.current().is_some_and(|g| g.side == Side::Bottom)
+    }
+
+    pub fn progress(&self) -> (usize, usize) {
+        (self.done.iter().filter(|d| **d).count(), self.groups.len())
     }
 
     fn finished(&self) -> bool {
@@ -96,6 +109,9 @@ impl Guide {
         }
         if key(KeyCode::Space) || key(KeyCode::Enter) {
             self.tick();
+        }
+        if key(KeyCode::F) {
+            self.view.fitted = false;
         }
     }
 }
@@ -144,15 +160,13 @@ fn describe(g: &Group) -> String {
     s
 }
 
-pub fn page(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
-    let Some(guide) = st.assembly.as_mut() else { return };
+pub fn page(ui: &mut Ui, project: &Project, i: usize, guide: &mut Guide) {
     guide.refresh(project, i);
     guide.keys(ui);
-    if guide.bottom() != st.view.flip {
-        st.view.flip = !st.view.flip;
-        st.pcb_layers.mirror();
+    if guide.bottom() != guide.view.flip {
+        guide.view.flip = !guide.view.flip;
+        guide.layers.mirror();
     }
-    st.focus = Some(guide.focus(&project.layouts[i].item));
     let frame =
         |x: i8, y: i8| egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(x, y));
     egui::Panel::bottom("assembly-rail")
@@ -165,21 +179,15 @@ pub fn page(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
         .exact_size(STEP_W)
         .frame(frame(22, 18))
         .show(ui, |ui| instruction(ui, guide));
-    let mut leave = false;
     egui::CentralPanel::no_frame().show(ui, |ui| {
+        ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.add_space(8.0);
-            leave = toggle(ui, "assemble", true).clicked();
-            ui.add_space(12.0);
-            ui.label(legend("drag to pan, scroll to zoom, double click to fit the board"));
+            ui.add_space(10.0);
+            ui.label(legend("drag to pan, scroll to zoom, F or double click fits the board"));
         });
-        board(ui, project, i, st);
+        ui.add_space(4.0);
+        board(ui, &project.layouts[i].item, guide);
     });
-    if leave {
-        st.assembly = None;
-        st.focus = None;
-        st.view.fitted = false;
-    }
 }
 
 fn instruction(ui: &mut Ui, guide: &mut Guide) {
@@ -360,16 +368,14 @@ fn rail(ui: &mut Ui, guide: &mut Guide) {
     }
 }
 
-fn board(ui: &mut Ui, project: &Project, i: usize, st: &mut PageState) {
-    let l = &project.layouts[i].item;
-    st.view.max_fit = 2000.0;
-    let (resp, xf) = st.view.show_with(ui, &l.bounds(), 36.0, false);
+fn board(ui: &mut Ui, l: &Layout, guide: &mut Guide) {
+    guide.view.max_fit = 2000.0;
+    let (resp, xf) = guide.view.show_with(ui, &l.bounds(), 36.0, false);
     let p = ui.painter_at(xf.rect);
     paint::grid(&p, &xf, 1.0);
-    crate::pcb::layout(&p, &xf, l, &st.pcb_layers, resp.hover_pos(), false, st.focus.as_ref());
-    if let Some(guide) = &st.assembly {
-        markers(&p, &xf, l, guide);
-    }
+    let focus = guide.focus(l);
+    crate::pcb::layout(&p, &xf, l, &guide.layers, resp.hover_pos(), false, Some(&focus));
+    markers(&p, &xf, l, guide);
 }
 
 fn markers(p: &egui::Painter, xf: &Xf, l: &Layout, guide: &Guide) {
@@ -432,6 +438,8 @@ mod tests {
             ],
             step: 0,
             done,
+            view: View::default(),
+            layers: crate::pcb::default_layers(),
         }
     }
 
