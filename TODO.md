@@ -19,23 +19,23 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   `library find STM32H743BIT6 --search` lists 1014 at Farnell.
 - `library use` stops with "footprint exists and differs" when the project copy differs only in
   `model` path and `height` (R_0603_1608Metric, SOT-23, SOIC-8 in ubench), after it has already
-  written the symbol, so a half-done use is left behind.
+  written the symbol, so a half-done use is left behind. (taken: small-fixes)
 
 ## Hand assembly
 
 - A `[[stock]]` entry has no shelf location: `library stock NAME N` takes a count only
   (`crates/agentee-parts/src/library.rs` `Stock`). Add `--bin A3` so a pick list can say which
-  drawer holds the part.
+  drawer holds the part. (taken: small-fixes)
 - No assembly sheet for hand building. `fab` writes `cpl.csv` by reference only. Want
   `agentee assemble NAME`: one line per part ("100 nF 0402, bin A3, C1 C4 C7 C12, 4 pcs"),
   split by side, smallest and hottest parts first, each group with a render that highlights its
-  refs (as `render --focus` does).
+  refs (as `render --focus` does). (taken: small-fixes)
 - `agentee view` has no guided assembly mode: step through the groups from `assemble`, light up
-  where each one goes on the board, and tick them off.
+  where each one goes on the board, and tick them off. (taken: small-fixes)
 - Building boards does not use up stock. Want `agentee assemble NAME --built 3` to take 3
-  boards' worth of parts off the `own` counts.
+  boards' worth of parts off the `own` counts. (taken: small-fixes)
 - No stock intake from a part bag: scan the 2D barcode on a DigiKey, Mouser or LCSC bag to add
-  its part number and quantity to the library stock instead of typing them in.
+  its part number and quantity to the library stock instead of typing them in. (taken: small-fixes)
 
 ## Spacing
 
@@ -74,7 +74,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `[place] keepouts` stop courtyards only. There is no height limit per area, so parts under a
   heatsink or a fan (ubench `main`: under 2 mm and 5 mm) are kept low by hand.
 - `agentee place --parts` leaves a part it cannot fit off the board at (270, 4) and says
-  nothing: ubench `main` U1004 (SOIC-14) and D1001 (SMC) each had a free spot, found by hand.
+  nothing: ubench `main` U1004 (SOIC-14) and D1001 (SMC) each had a free spot, found by hand. (taken: small-fixes)
 - `agentee layout --from access` on ubench `main` (900 parts, 4 layers) prints nothing for over
   1.5 hours; a progress line per stage or per few hundred nets would help.
 
@@ -97,7 +97,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   rails (`crates/agentee-sim/src/circuit.rs` `Unit::Buffer`).
 - A circuit sim can only reference a net whose name holds GND, 0V or VSS (`is_ground` in
   `crates/agentee-core/src/circuit.rs`); a floating domain's common (ubench `P_COM`) had to be
-  renamed. A `ground = "NET"` key on the sim would cover it.
+  renamed. A `ground = "NET"` key on the sim would cover it. (taken: small-fixes)
 - BJT polarity comes from the symbol or value text, so an `MMBT3906` with no "PNP" in either
   simulates as NPN until a `pnp` block is given (ubench `main-psu-cv`).
 - The operating point does not converge for two op-amp integrators diode-ORed onto one node with
@@ -112,8 +112,8 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Edit
 
-- `edit pcb keepout --nets` takes no globs, so a domain keepout lists 160 nets by name.
-- `[[domains]]` and `[[barriers]]` have no `edit board` command.
+- `edit pcb keepout --nets` takes no globs, so a domain keepout lists 160 nets by name. (taken: small-fixes)
+- `[[domains]]` and `[[barriers]]` have no `edit board` command. (taken: small-fixes)
 
 - `agentee edit sch help` documents `remove net NAME`, but `remove` takes the net name alone:
-  `remove net P_COM` fails with "nothing named `net`".
+  `remove net P_COM` fails with "nothing named `net`". (taken: small-fixes)
