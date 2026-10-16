@@ -18,6 +18,16 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 - `library add STM32H743BIT6` says "not in stock as an active part at any distributor" while
   `library find STM32H743BIT6 --search` lists 1014 at Farnell.
 
+- KiCad 9 footprints name 3D models that kicad-packages3D does not have on any tag
+  (`RF_Module.3dshapes/ESP32-S3-WROOM-1U.step`, `Connector_Audio.3dshapes/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical.step`,
+  `Potentiometer_THT.3dshapes/Potentiometer_Bourns_PTV09A-1_Single_Vertical.step`), so `library fill` finds none.
+  Espressif's kicad-libraries repo has the ESP32 module models; no source is tried for the rest.
+- `library fill --like` refuses an EasyEDA model when the pads sit 1.1-1.3 mm off ours (TL3342F160QG,
+  105017-0001 against USB_Micro-B_Molex-105017-0001, a 3x4 mm tactile), and with no shared pad numbers
+  (PJ-320D against Jack_3.5mm_KoreanHropartsElec_PJ-320D-4A_Horizontal). Unchecked whether ours or theirs is off.
+- A library part's footprint cannot be added or swapped in place: `library add --force` rebuilds the
+  entry and drops the shelf count and bin. 9 module parts in the global library have no footprint.
+
 ## Spacing
 
 - `agentee layout mains` (ubench) never finishes the detail stage: round 0 of the negotiated
