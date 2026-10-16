@@ -1,3 +1,4 @@
+pub mod assembly;
 pub mod config;
 pub mod cost;
 pub mod datasheet;

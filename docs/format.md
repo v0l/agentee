@@ -2757,6 +2757,24 @@ with `assembly = "no"` in their fields, or on MountingHole and Fiducial footprin
 BOM and placement file. The silk font is the one the viewer draws, so text sizes and overlaps
 read the same on screen as on the board.
 
+### Hand assembly
+
+`agentee assemble NAME` prints a build sheet for a layout: one line per part group (same part
+number, or same value and footprint without one), with its package, the library `bin` it sits
+in, its references and the count. The side with more SMD parts comes first. Within a side,
+SMD goes before through-hole, parts with a large thermal pad (hot air) before the rest, then by
+height, lowest first.
+
+```sh
+agentee assemble preamp                       # the sheet
+agentee assemble preamp --images build/       # plus build/01-top.png ... with each group lit
+agentee assemble preamp --built 3 --json      # take 3 boards' worth off the library shelf
+```
+
+`--built N` takes `N` boards of each group off the `own` count of its library part, found by the
+part's `library` field, then its `mpn`, then its `lcsc`. Groups with no library part are listed
+as not counted, and a shelf that runs short is reported and makes the command fail.
+
 ## Distributors
 
 `agentee parts NAME` (MCP `parts`) prices the BOM of a layout or schematic at Mouser, Farnell

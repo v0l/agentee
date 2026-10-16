@@ -222,6 +222,20 @@ enum Cmd {
         #[arg(short, long)]
         out: PathBuf,
     },
+    /// Hand assembly sheet: one line per part group with its library bin, split by side, low and hot-air parts first
+    Assemble {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Take this many boards' worth of parts off the library's own stock
+        #[arg(long)]
+        built: Option<u32>,
+        /// Write one PNG per group, its parts lit, to this directory
+        #[arg(long)]
+        images: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
     /// Stock, price and cheaper equivalents for a layout's or schematic's BOM from Mouser, Farnell and DigiKey, with keys in ~/.config/agentee/distributors.toml
     Parts {
         name: String,
@@ -1080,6 +1094,16 @@ fn run(cli: Cli) -> Result<bool, String> {
             let p = ops::load_footprints(&path)?;
             print_json(&ops::fetch_models(&p)?);
             Ok(true)
+        }
+        Cmd::Assemble { name, project, built, images, json } => {
+            let p = ops::load(&project)?;
+            let v = ops::assemble(&p, &name, &ops::AssembleArgs { built, images })?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{}", ops::assemble_text(&v));
+            }
+            Ok(v["used"].as_array().is_none_or(|u| u.iter().all(|x| x["short"] == 0)))
         }
         Cmd::Parts {
             name,

@@ -320,6 +320,16 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "assemble",
+            "description": "Hand assembly sheet of a layout: one line per part group with its package, library bin, references and count, by side, SMD before through-hole, hot-air parts and low parts first. images writes one PNG per group with its parts lit. built takes that many boards of parts off the library's own stock and reports what ran short.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "layout" },
+                "images": { "type": "string", "description": "directory for the group PNGs" },
+                "built": { "type": "integer", "description": "boards built, taken off the library shelf" },
+                "json": { "type": "boolean", "description": "return the groups as JSON instead of the sheet" },
+            }), &["name"]),
+        },
+        {
             "name": "datasheet_fetch",
             "description": "Fetch and cache a part's datasheet, or every part's of a layout or schematic, into the cache every project shares (~/.cache/agentee/datasheets). Tries the part's `datasheet` field, its symbol's `datasheet` URL, then the datasheet the distributors list for its mpn, with a browser user agent and retries. Lists the parts with no reachable datasheet: ask the user for those, never fill the gap from memory. A design fetch records the URL, hash and revision of each in datasheets.toml at the project root.",
             "inputSchema": s(json!({
@@ -914,6 +924,18 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 ))]));
             }
             Ok(ok(vec![text(agentee_parts::cost::text(&c))]))
+        }
+        "assemble" => {
+            let p = ops::load(root)?;
+            let args = ops::AssembleArgs {
+                built: a.get("built").and_then(Value::as_u64).map(|n| n as u32),
+                images: arg(a, "images").map(|d| root.join(d)),
+            };
+            let v = ops::assemble(&p, arg(a, "name").ok_or("name is required")?, &args)?;
+            if flag(a, "json") {
+                return Ok(ok(vec![text(pretty(&v))]));
+            }
+            Ok(ok(vec![text(ops::assemble_text(&v))]))
         }
         "datasheet_fetch" => {
             let p = crate::datasheets::project_for(root);

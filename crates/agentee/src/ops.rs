@@ -2564,3 +2564,120 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }
+
+pub struct AssembleArgs {
+    pub built: Option<u32>,
+    pub images: Option<PathBuf>,
+}
+
+pub fn assemble(p: &Project, name: &str, a: &AssembleArgs) -> Result<Value, String> {
+    use agentee_parts::assembly;
+    let i = layout_index(p, name)?;
+    let entry = &p.layouts[i];
+    let layout = &entry.item;
+    let sch = &p
+        .schematics
+        .iter()
+        .find(|s| s.name == layout.schematic)
+        .ok_or("the layout's schematic is missing")?
+        .item;
+    let lib = crate::library::open(Some(&p.root));
+    let groups = assembly::groups(layout, sch, &lib);
+    let mut images = Vec::new();
+    if let Some(dir) = &a.images {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let mut b = agentee_core::graphic::Bounds::EMPTY;
+        for q in &layout.outline {
+            b.add(*q);
+        }
+        let m = 2.0;
+        let region = (!b.is_empty()).then(|| [b.min[0] - m, b.min[1] - m, b.max[0] + m, b.max[1] + m]);
+        let r = find(p, &format!("pcb:{}", entry.name))?;
+        for g in &groups {
+            let (show, hide) = match g.side {
+                assembly::Side::Top => (
+                    vec!["F.Fab", "F.SilkS", "Edge.Cuts"],
+                    vec!["In1.Cu", "In2.Cu", "B.Cu", "B.SilkS", "B.Fab"],
+                ),
+                assembly::Side::Bottom => (
+                    vec!["back", "B.Fab", "B.SilkS", "Edge.Cuts"],
+                    vec!["F.Cu", "In1.Cu", "In2.Cu", "F.SilkS", "F.Fab"],
+                ),
+            };
+            let opts = agentee_view::RenderOptions {
+                width: 1400,
+                height: 1000,
+                panels: false,
+                show: show.into_iter().map(String::from).collect(),
+                hide: hide.into_iter().map(String::from).collect(),
+                region,
+                focus: g.refs.clone(),
+                ..Default::default()
+            };
+            let png = agentee_view::render_png(p, r, &opts)?;
+            let path = dir.join(format!("{:02}-{}.png", g.step, g.side.name()));
+            std::fs::write(&path, png).map_err(|e| format!("{}: {e}", path.display()))?;
+            images.push(path.display().to_string());
+        }
+    }
+    let unplaced: Vec<String> = agentee_parts::bom(sch)
+        .into_iter()
+        .flat_map(|l| l.refs)
+        .filter(|r| !layout.parts.iter().any(|q| &q.reference == r))
+        .collect();
+    let mut out = json!({
+        "layout": entry.name,
+        "groups": groups,
+        "parts": groups.iter().map(|g| g.refs.len()).sum::<usize>(),
+        "sheet": assembly::sheet(&groups),
+    });
+    if !images.is_empty() {
+        out["images"] = json!(images);
+    }
+    if !unplaced.is_empty() {
+        out["not_on_the_layout"] = json!(unplaced);
+    }
+    let missing: Vec<&str> = groups
+        .iter()
+        .filter(|g| g.library.is_none())
+        .flat_map(|g| g.refs.iter().map(String::as_str))
+        .collect();
+    if let Some(boards) = a.built {
+        out["built"] = json!(boards);
+        out["used"] = json!(assembly::use_up(&groups, &lib, boards)?);
+        if !missing.is_empty() {
+            out["not_counted"] = json!(missing);
+        }
+    }
+    Ok(out)
+}
+
+pub fn assemble_text(v: &Value) -> String {
+    let mut s = v["sheet"].as_str().unwrap_or_default().to_string();
+    for u in v["used"].as_array().into_iter().flatten() {
+        let short = u["short"].as_u64().unwrap_or(0);
+        s += &format!(
+            "{}: took {}, {} left{}\n",
+            u["library"].as_str().unwrap_or_default(),
+            u["took"],
+            u["left"],
+            if short > 0 { format!(", {short} short") } else { String::new() }
+        );
+    }
+    if let Some(n) = v["not_counted"].as_array().filter(|a| !a.is_empty()) {
+        s += &format!(
+            "not in the library, so not taken off stock: {}\n",
+            n.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(" ")
+        );
+    }
+    if let Some(n) = v["not_on_the_layout"].as_array() {
+        s += &format!(
+            "on the schematic but not the layout: {}\n",
+            n.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(" ")
+        );
+    }
+    for i in v["images"].as_array().into_iter().flatten() {
+        s += &format!("{}\n", i.as_str().unwrap_or_default());
+    }
+    s
+}

@@ -512,6 +512,8 @@ agentee bom NAME --boards 5,50 --json
 agentee parts NAME --boards 5          # stock, price and cheaper drop-ins per BOM line
 agentee parts NAME --refs C11 --json
 agentee parts NAME --boards 2 --spares --order docs/   # order sheets per distributor
+agentee assemble NAME --images build/  # hand build sheet by side, bins, one lit PNG per group
+agentee assemble NAME --built 3        # take 3 boards' worth of parts off the library shelf
 ```
 
 Give every part `mfr` and `mpn` fields first; lines without an `mpn` are not looked up. Keys
