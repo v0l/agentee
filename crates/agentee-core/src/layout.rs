@@ -5025,7 +5025,7 @@ mod pair_tests {
         };
         let names = ["P_COM", "GND", "SW", "P_5V"];
         let mut d = Diags::new("t");
-        let k = keepouts_of(&[file.clone()], &["F.Cu".into()], &names, &mut d);
+        let k = keepouts_of(std::slice::from_ref(&file), &["F.Cu".into()], &names, &mut d);
         assert!(!d.has_errors());
         assert_eq!(k[0].nets, vec![0, 1, 3]);
         let none = KeepoutFile { nets: vec!["Q*".into()], ..file };

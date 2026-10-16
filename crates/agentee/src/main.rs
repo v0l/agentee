@@ -1488,7 +1488,7 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
         }
         LibraryCmd::Stock { name, count, bin, project } => {
             let lib = library::open(Some(&project));
-            print!("{}\n", library::set_stock(&lib, &name, count, bin.as_deref())?);
+            println!("{}", library::set_stock(&lib, &name, count, bin.as_deref())?);
             Ok(true)
         }
         LibraryCmd::Refresh { name, project, config } => {

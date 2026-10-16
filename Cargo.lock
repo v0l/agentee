@@ -150,6 +150,7 @@ dependencies = [
  "agentee-3d",
  "agentee-core",
  "agentee-layout",
+ "agentee-parts",
  "agentee-sim",
  "earcutr",
  "eframe",

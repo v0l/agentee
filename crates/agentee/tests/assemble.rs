@@ -57,7 +57,7 @@ fn a_sheet_groups_parts_by_side_with_their_bin() {
     assert!(text.contains(". 100n 0402, bin A3, C1 C2 C3 C5, 4 pcs\n"), "{text}");
     let first = text.lines().nth(1).unwrap();
     assert!(first.contains("SOT-89-3, U1"), "the hot-air part goes first: {text}");
-    let last = text.lines().filter(|l| l.contains(" pcs")).last().unwrap();
+    let last = text.lines().rfind(|l| l.contains(" pcs")).unwrap();
     assert!(last.contains("PinHeader"), "through-hole goes last: {text}");
     let _ = std::fs::remove_dir_all(lib.parent().unwrap());
 }
