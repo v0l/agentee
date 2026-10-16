@@ -125,3 +125,46 @@ fn stock_keeps_its_bin() {
     assert!(part.contains("bin = \"A3\""), "{part}");
     let _ = std::fs::remove_dir_all(&lib);
 }
+
+#[test]
+fn a_bag_barcode_adds_to_the_shelf() {
+    let lib = std::env::temp_dir().join(format!("agentee-intake-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&lib);
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    for (name, extra) in
+        [("LM358", "mpn = \"LM358BIDDFR\"\n"), ("SW", "mpn = \"ST1102\"\nlcsc = \"C312270\"\n")]
+    {
+        let dir = lib.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(lna.join("symbols/R.sym.toml"), dir.join("R.sym.toml")).unwrap();
+        std::fs::write(
+            dir.join("part.toml"),
+            format!("role = \"x\"\n{extra}symbol = \"R.sym.toml\"\n"),
+        )
+        .unwrap();
+    }
+    let digikey =
+        "[)>\u{1e}06\u{1d}P296-LM358BIDDFRCT-ND\u{1d}1PLM358BIDDFR\u{1d}K\u{1d}Q10\u{1d}11ZPICK";
+    let lcsc =
+        "{pbn:PICK2009291337,on:SO2009291337,pc:C312270,pm:ST-1-102-A01-T000-RS,qty:2,mc:,cc:1}";
+    let mouser =
+        "[)>\u{1e}06\u{1d}KP0-1337\u{1d}14K011\u{1d}1PMC34063ADR\u{1d}Q3\u{1d}1VTI\u{1e}\u{4}";
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agentee"))
+        .args(["library", "intake", "--bin", "B2", "-p"])
+        .arg(&lib)
+        .env("AGENTEE_LIBRARY", &lib)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write as _;
+    let scans = format!("{digikey}\n{digikey}\n{lcsc}\n{mouser}\n");
+    child.stdin.take().unwrap().write_all(scans.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "the unknown Mouser part fails the run: {text}");
+    assert!(text.contains("+10 from DigiKey, LM358: 20 in your own stock in bin B2\n"), "{text}");
+    assert!(text.contains("+2 from LCSC, SW: 2 in your own stock in bin B2\n"), "{text}");
+    assert!(text.contains("MC34063ADR (Mouser 3): not in the library"), "{text}");
+    let _ = std::fs::remove_dir_all(&lib);
+}

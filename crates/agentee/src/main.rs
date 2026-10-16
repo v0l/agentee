@@ -680,6 +680,15 @@ enum LibraryCmd {
         #[arg(short, long, default_value = ".")]
         project: PathBuf,
     },
+    /// Add the parts in a distributor bag to your own stock from its 2D barcode (DigiKey, Mouser, LCSC); with no codes, reads one scan per line from stdin
+    Intake {
+        codes: Vec<String>,
+        /// Shelf, drawer or bin that holds them
+        #[arg(long)]
+        bin: Option<String>,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Check stock and price of every library part, or one, at the distributors
     Refresh {
         name: Option<String>,
@@ -1463,6 +1472,16 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
         LibraryCmd::Use { name, project, force } => {
             print_json(&library::use_part(&library::open(Some(&project)), &name, &project, force)?);
             Ok(true)
+        }
+        LibraryCmd::Intake { codes, bin, project } => {
+            let codes = if codes.is_empty() {
+                std::io::stdin().lines().map_while(Result::ok).collect()
+            } else {
+                codes
+            };
+            let (text, ok) = library::intake(&project, &codes, bin.as_deref());
+            print!("{text}");
+            Ok(ok)
         }
         LibraryCmd::Stock { name, count, bin, project } => {
             let lib = library::open(Some(&project));

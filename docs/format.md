@@ -3001,6 +3001,7 @@ agentee library show JST-PH-2
 agentee library use JST-PH-2 -p board/         # copy its files in, print the edit that places it
 agentee library refresh                        # stock and price of every part, one lookup each
 agentee library stock JST-PH-2 40 --bin A3     # 40 on the shelf in bin A3, subtracted from what needs ordering
+agentee library intake --bin A3                # scan bag barcodes, one per line, onto the shelf
 agentee library verify
 ```
 
@@ -3048,6 +3049,12 @@ API call, as of that date.
 `stock NAME N` records how many of the part you have on hand (`N`, or 0 to remove it). It lives
 in a `[[stock]]` listing with `distributor = "home"` and an `own` count, and survives `refresh`.
 `--bin A3` records the drawer that holds them; a later `stock` without `--bin` keeps it.
+`intake` adds the parts in a distributor bag to that count from the bag's 2D barcode: the
+DigiKey and Mouser DataMatrix (`1P` part number, `P`/`30P` distributor number, `Q` quantity) and
+the LCSC QR code (`pm`, `pc`, `qty`). Pass the scans as arguments or let a USB scanner type them
+into stdin, one per line. A scanner that types the group separator as `<GS>` or `^]` reads too.
+The part is found by part number, then by LCSC or distributor number; a bag for a part not in
+the library is listed and fails the run.
 `parts`, `bom` and `list` print the shelf under each part; when the shelf covers what a design
 needs, the line says it is covered by your own stock instead of looking for a stocked offer, and
 when it only partly covers it, the line names the gap. The order sheets count the shelf first:

@@ -987,6 +987,49 @@ pub fn set_stock(
     Ok(format!("{}: {n} in your own stock{place}", e.name))
 }
 
+fn bag_entry<'a>(lib: &'a Library, bag: &agentee_parts::intake::Bag) -> Option<&'a Entry> {
+    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b.trim());
+    bag.mpn.as_deref().and_then(|m| lib.get(m)).or_else(|| {
+        let sku = bag.sku.as_deref()?;
+        lib.entries.iter().find(|e| {
+            e.part.lcsc.as_deref().is_some_and(|c| same(c, sku))
+                || e.part.stock.iter().any(|s| same(&s.sku, sku))
+        })
+    })
+}
+
+pub fn intake(project: &Path, codes: &[String], bin: Option<&str>) -> (String, bool) {
+    let mut out = String::new();
+    let mut ok = true;
+    for code in codes.iter().map(|c| c.trim()).filter(|c| !c.is_empty()) {
+        let Some(bag) = agentee_parts::intake::parse(code) else {
+            out += &format!("could not read a part number and quantity from `{code}`\n");
+            ok = false;
+            continue;
+        };
+        let lib = open(Some(project));
+        let what = bag.mpn.clone().or(bag.sku.clone()).unwrap_or_default();
+        let Some(e) = bag_entry(&lib, &bag) else {
+            out += &format!(
+                "{what} ({} {}): not in the library; `agentee library add {what}`, then scan it again\n",
+                bag.distributor, bag.qty
+            );
+            ok = false;
+            continue;
+        };
+        let have = e.self_stock().unwrap_or(0);
+        let total = have + bag.qty;
+        match set_stock(&lib, &e.name, total.min(u64::from(u32::MAX)) as u32, bin) {
+            Ok(line) => out += &format!("+{} from {}, {line}\n", bag.qty, bag.distributor),
+            Err(err) => {
+                out += &format!("{}: {err}\n", e.name);
+                ok = false;
+            }
+        }
+    }
+    (out, ok)
+}
+
 #[derive(serde::Serialize)]
 struct Finding {
     ok: bool,
