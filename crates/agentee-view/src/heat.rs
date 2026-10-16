@@ -88,22 +88,23 @@ pub fn canvas(
     let layers = unique(&|m| m.layer.clone());
     let current = maps.get(st.map_index).cloned().unwrap_or_else(|| maps[0].clone());
     ui.horizontal(|ui| {
-        for q in &quantities {
-            if toggle(ui, q, *q == current.quantity).clicked()
-                && let Some(k) =
-                    maps.iter().position(|m| &m.quantity == q && m.layer == current.layer)
-            {
-                st.map_index = k;
-            }
+        let qs: Vec<(&str, &str, Option<usize>)> =
+            quantities.iter().map(|x| (x.as_str(), x.as_str(), None)).collect();
+        let mut q = current.quantity.as_str();
+        if segments(ui, &mut q, &qs)
+            && let Some(k) = maps.iter().position(|m| m.quantity == q && m.layer == current.layer)
+        {
+            st.map_index = k;
         }
-        ui.add_space(12.0);
-        for l in &layers {
-            if toggle(ui, l, *l == current.layer).clicked()
-                && let Some(k) =
-                    maps.iter().position(|m| &m.layer == l && m.quantity == current.quantity)
-            {
-                st.map_index = k;
-            }
+        ui.add_space(14.0);
+        let ls: Vec<(&str, &str, Option<usize>)> =
+            layers.iter().map(|x| (x.as_str(), x.as_str(), None)).collect();
+        let mut lref = current.layer.as_str();
+        if segments(ui, &mut lref, &ls)
+            && let Some(k) =
+                maps.iter().position(|m| m.layer == lref && m.quantity == current.quantity)
+        {
+            st.map_index = k;
         }
     });
     ui.add_space(6.0);

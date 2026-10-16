@@ -9,6 +9,7 @@ use agentee_core::project::Project;
 use agentee_core::units::trim;
 use egui::epaint::PathShape;
 use egui::{Align2, Key, Modifiers, PointerButton, Pos2, Rect, Response, Stroke, Ui, Vec2};
+use egui_bench::key::Key as Btn;
 use egui_bench::prelude::*;
 
 const PICK_PX: f64 = 5.0;
@@ -635,27 +636,43 @@ pub fn hint(ui: &Ui, rect: Rect, ed: &Editor) {
         (Tool::Via, _) => "click copper to place a via of its net",
     };
     let p = ui.painter_at(rect);
+    p.text(
+        rect.left_bottom() + Vec2::new(8.0, -24.0),
+        Align2::LEFT_BOTTOM,
+        text,
+        egui::FontId::proportional(11.5),
+        LEGEND.gamma_multiply(0.8),
+    );
     let mut at = rect.left_top() + Vec2::new(10.0, 8.0);
-    for (line, col) in
-        [(Some(text.to_string()), LEGEND), (ed.note.clone(), WARN), (ed.error.clone(), FAULT)]
-    {
+    for (line, col) in [(ed.note.clone(), WARN), (ed.error.clone(), FAULT)] {
         if let Some(line) = line {
-            p.text(at, Align2::LEFT_TOP, line, egui::FontId::proportional(12.0), col);
-            at.y += 16.0;
+            p.text(at, Align2::LEFT_TOP, line, egui::FontId::proportional(12.5), col);
+            at.y += 17.0;
         }
     }
 }
 
+fn divider(ui: &mut Ui) {
+    let (r, _) = ui.allocate_exact_size(Vec2::new(9.0, 22.0), egui::Sense::hover());
+    ui.painter().line_segment(
+        [egui::pos2(r.center().x, r.top() + 2.0), egui::pos2(r.center().x, r.bottom() - 2.0)],
+        egui::Stroke::new(1.0, ETCH),
+    );
+}
+
 pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     let ctx = ui.ctx().clone();
-    ui.add_space(12.0);
-    for (tool, name) in [(Tool::Select, "select"), (Tool::Route, "route"), (Tool::Via, "via")] {
-        if toggle(ui, name, ed.tool == tool).clicked() {
-            ed.tool = tool;
-            ed.draft = None;
-        }
+    divider(ui);
+    let mut tool = ed.tool;
+    segments(
+        ui,
+        &mut tool,
+        &[(Tool::Select, "select", None), (Tool::Route, "route", None), (Tool::Via, "via", None)],
+    );
+    if tool != ed.tool {
+        ed.tool = tool;
+        ed.draft = None;
     }
-    ui.add_space(8.0);
     let copper = ed.layout(project, i).copper.clone();
     let mut layer = ed.layer.clone();
     egui::ComboBox::from_id_salt("active-layer").width(76.0).selected_text(&layer).show_ui(
@@ -679,36 +696,38 @@ pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
             }
         });
     ed.grid = grid;
-    if toggle(ui, "snap", ed.snap).clicked() {
+    if toggle(ui, "snap", ed.snap).on_hover_text("snap to the grid").clicked() {
         ed.snap = !ed.snap;
     }
-    ui.add_space(8.0);
-    if ui.add_enabled(ed.can_undo(), egui::Button::new("undo")).clicked() {
+    divider(ui);
+    let busy = crate::engine::running(ed);
+    let undo = Btn::new("undo").outline(VALUE).enabled(ed.can_undo());
+    if ui.add(undo).on_hover_text("ctrl+Z").clicked() {
         ed.undo(&ctx);
     }
-    if ui.add_enabled(ed.can_redo(), egui::Button::new("redo")).clicked() {
+    let redo = Btn::new("redo").outline(VALUE).enabled(ed.can_redo());
+    if ui.add(redo).on_hover_text("ctrl+shift+Z").clicked() {
         ed.redo(&ctx);
     }
-    if ui.add_enabled(ed.dirty, egui::Button::new("save")).on_hover_text("ctrl+S").clicked()
+    let save = Btn::new("save").enabled(ed.dirty);
+    let save = if ed.dirty { save.solid(READOUT) } else { save.outline(VALUE) };
+    if ui.add(save).on_hover_text("write the edits to the layout file, ctrl+S").clicked()
         && let Err(e) = ed.save()
     {
         ed.error = Some(e);
     }
-    if ui.add_enabled(ed.dirty, egui::Button::new("revert")).clicked() {
+    if ui.add(Btn::new("revert").outline(VALUE).enabled(ed.dirty)).clicked() {
         ed.revert(&ctx);
     }
-    let busy = crate::engine::running(ed);
+    let reset = Btn::new("reset").outline(FAULT).enabled(!busy);
     if ui
-        .add_enabled(!busy, egui::Button::new("reset"))
+        .add(reset)
         .on_hover_text("clear routing, rules, zones or labels, or place the parts again")
         .clicked()
     {
         ed.engine.reset = Some(Default::default());
     }
     crate::engine::reset_dialog(ui, project, i, ed);
-    if ed.dirty {
-        lamp(ui, "unsaved", false, false);
-    }
     if ed.checking() {
         lamp(ui, "checking", true, false);
     }

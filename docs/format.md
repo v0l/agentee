@@ -3055,6 +3055,9 @@ API call, as of that date.
 `stock NAME N` records how many of the part you have on hand (`N`, or 0 to remove it). It lives
 in a `[[stock]]` listing with `distributor = "home"` and an `own` count, and survives `refresh`.
 `--bin A3` records the drawer that holds them; a later `stock` without `--bin` keeps it.
+The viewer's `library` tab (`agentee view --select library`) lists the library by role with
+each part's shelf count and bin, and shows the footprint, its 3D model on a patch of board and
+the symbol, opens the pinned datasheet, and edits the shelf count and bin in place.
 `intake` adds the parts in a distributor bag to that count from the bag's 2D barcode: the
 DigiKey and Mouser DataMatrix (`1P` part number, `P`/`30P` distributor number, `Q` quantity) and
 the LCSC QR code (`pm`, `pc`, `qty`). Pass the scans as arguments or let a USB scanner type them

@@ -308,6 +308,30 @@ pub fn read_entry(dir: &Path, scope: &str) -> Result<Entry, String> {
     })
 }
 
+pub fn set_own(e: &Entry, count: u64, bin: Option<&str>) -> Result<PartFile, String> {
+    let mut part = e.part.clone();
+    let bin = match bin {
+        Some(b) => Some(b.trim()).filter(|b| !b.is_empty()).map(str::to_string),
+        None => e.bin().map(str::to_string),
+    };
+    part.stock.retain(|s| s.own == 0);
+    if count > 0 {
+        part.stock.push(Stock {
+            distributor: "home".into(),
+            sku: e.part.mpn.clone().unwrap_or_else(|| e.name.clone()),
+            min: 1,
+            mult: 1,
+            checked: crate::datasheet::today(),
+            own: count,
+            bin,
+            ..Default::default()
+        });
+    }
+    part.stock.sort_by(|a, b| a.distributor.cmp(&b.distributor).then(a.sku.cmp(&b.sku)));
+    write_entry(&e.dir, &part)?;
+    Ok(part)
+}
+
 pub fn write_entry(dir: &Path, part: &PartFile) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let path = dir.join(PART_FILE);

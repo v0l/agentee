@@ -652,6 +652,92 @@ pub fn build(l: &Layout, board: &Board, root: &Path, fetch: Fetch) -> Scene {
     Scene { mesh: Arc::new(s), pending, missing }
 }
 
+pub fn part_scene(fp: &agentee_core::footprint::Footprint, root: &Path, fetch: Fetch) -> Scene {
+    let mut s = viewer3d::Scene::<Finish>::default();
+    let (mut pending, mut missing) = (0, Vec::new());
+    let part = Placed {
+        reference: String::new(),
+        value: String::new(),
+        footprint_name: fp.name.clone(),
+        footprint: fp.clone(),
+        at: agentee_core::units::Point::ZERO,
+        rotation: 0.0,
+        bottom: false,
+        pads: Vec::new(),
+        label: None,
+        mlcc: None,
+    };
+    let mut bb = fp.bounds();
+    if bb.is_empty() {
+        bb.add([-1.0, -1.0]);
+        bb.add([1.0, 1.0]);
+    }
+    let m = 1.5;
+    let (lo, hi) = ([bb.min[0] - m, bb.min[1] - m], [bb.max[0] + m, bb.max[1] + m]);
+    let outline = vec![lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]];
+    let size = [hi[0] - lo[0], hi[1] - lo[1]];
+    let bounds = [lo[0], lo[1], size[0], size[1]];
+    let t = 0.8f32;
+    let (top, bot) = (t / 2.0, -t / 2.0);
+    let mask = mask_rgb("green");
+    let gold = finish_rgb("enig");
+    let silk = silk_rgb("white");
+    let mut d = Decal::new();
+    for g in fp.graphics.iter().filter(|g| g.layer == "F.SilkS") {
+        if matches!(g.shape, agentee_core::graphic::Shape::Text { .. }) {
+            continue;
+        }
+        let path = agentee_core::footprint::graphic_path(g);
+        let pen = (g.width.to_mm() / 2.0).max(0.06);
+        for w in path.windows(2) {
+            flat(&[capsule(w[0], w[1], pen)], silk, &mut d);
+        }
+    }
+    for pad in fp.pads.iter().filter(|p| p.is_copper()) {
+        flat(&pad.outlines(), gold, &mut d);
+    }
+    let ppm = (60.0f64).min(4096.0 / size[0].max(size[1]));
+    s.images.push(rasterize(&d, mask, bounds, ppm));
+    s.images.push(rasterize(&Decal::new(), mask, bounds, ppm));
+    s.surfaces.push(faces(&outline, &[], top, true, bounds, 0));
+    s.surfaces.push(faces(&outline, &[], bot, false, bounds, 1));
+    let mut edge = Surface { colour: rgb(Color32::from_rgb(170, 160, 120)), ..Default::default() };
+    walls(&outline, bot, top, true, &mut edge);
+    s.surfaces.push(edge);
+    let mut groups: HashMap<[u16; 3], Surface> = HashMap::new();
+    let mut boxes = Vec::new();
+    let own = fp.model.as_deref().filter(|m| agentee_3d::in_project(m, root).is_some());
+    let generated = own.is_none().then(|| agentee_3d::parametric::generate(fp)).flatten();
+    match generated {
+        Some(mesh) => place_model(&part, &mesh, false, top, bot, &mut groups),
+        None => match fp.model.as_deref().map(|m| agentee_3d::get(m, root, fetch)) {
+            Some(Status::Ready(mesh)) => place_model(&part, &mesh, true, top, bot, &mut groups),
+            Some(Status::Pending) => {
+                pending += 1;
+                place_box(&part, top, bot, &mut boxes);
+            }
+            other => {
+                if let Some(Status::Missing(e)) = other
+                    && !e.is_empty()
+                {
+                    missing.push(e);
+                }
+                place_box(&part, top, bot, &mut boxes);
+            }
+        },
+    }
+    let mut keys: Vec<_> = groups.keys().copied().collect();
+    keys.sort();
+    for k in keys {
+        s.surfaces.push(groups.remove(&k).unwrap());
+    }
+    s.surfaces.extend(boxes);
+    let c = bb.center();
+    s.centre = [c[0] as f32, -c[1] as f32, top];
+    s.radius = (size[0].max(size[1]) as f32).max(1.0) * 0.9;
+    Scene { mesh: Arc::new(s), pending, missing }
+}
+
 pub fn show(ui: &mut Ui, scene: &Arc<Scene>, state: &mut State, interactive: bool, parts: bool) {
     let size = ui.available_size();
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());

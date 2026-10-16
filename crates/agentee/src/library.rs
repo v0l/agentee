@@ -959,30 +959,9 @@ pub fn set_stock(
     bin: Option<&str>,
 ) -> Result<String, String> {
     let e = lib.get(name).ok_or_else(|| no_part(lib, name))?;
-    let today = datasheet::today();
-    let mut part = e.part.clone();
-    let bin = bin.map(str::to_string).or_else(|| e.bin().map(str::to_string));
-    part.stock.retain(|s| s.own == 0);
-    if count > 0 {
-        let sku = e.part.mpn.clone().unwrap_or_else(|| e.name.clone());
-        part.stock.push(Stock {
-            distributor: "home".into(),
-            sku,
-            stock: 0,
-            currency: String::new(),
-            breaks: Vec::new(),
-            min: 1,
-            mult: 1,
-            lifecycle: None,
-            url: None,
-            checked: today,
-            own: u64::from(count),
-            bin: bin.clone(),
-        });
-    }
-    part.stock.sort_by(|a, b| a.distributor.cmp(&b.distributor).then(a.sku.cmp(&b.sku)));
-    library::write_entry(&e.dir, &part)?;
+    let part = library::set_own(e, u64::from(count), bin)?;
     let n: u64 = part.stock.iter().map(|s| s.own).sum();
+    let bin = part.stock.iter().find_map(|s| s.bin.clone());
     let place = bin.filter(|_| n > 0).map(|b| format!(" in bin {b}")).unwrap_or_default();
     Ok(format!("{}: {n} in your own stock{place}", e.name))
 }

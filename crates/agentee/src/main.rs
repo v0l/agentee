@@ -126,6 +126,7 @@ enum Cmd {
     View {
         #[arg(default_value = ".")]
         path: PathBuf,
+        /// Item to open (pcb:NAME, sch:NAME, ...), or the library or assembly tab
         #[arg(long)]
         select: Option<String>,
         /// Open layouts in the 3D view

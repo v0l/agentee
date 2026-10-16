@@ -26,6 +26,107 @@ type Row = (ItemRef, String, Option<Severity>, Option<f32>, bool);
 enum Tab {
     Item(Kind),
     Assembly,
+    Library,
+}
+
+const PANELS: [(&str, &str); 3] = [
+    ("list", "the list of items on the left"),
+    ("details", "the details column on the right"),
+    ("checks", "the check results along the bottom"),
+];
+
+fn tab_strip(
+    ui: &mut Ui,
+    current: &mut Tab,
+    groups: &[Vec<(Tab, &str, Option<usize>)>],
+    panels: &mut [bool; 3],
+) {
+    const TAB_H: f32 = 24.0;
+    const GAP: f32 = 22.0;
+    const SEAM: f32 = 40.0;
+    let width = ui.available_width();
+    let (strip, _) = ui.allocate_exact_size(Vec2::new(width, TAB_H + 2.0), Sense::hover());
+    let p = ui.painter().clone();
+    let mut x = strip.left();
+    let mut mark = None;
+    for (g, group) in groups.iter().enumerate() {
+        if g > 0 {
+            let seam = x + SEAM / 2.0 - GAP;
+            p.line_segment(
+                [Pos2::new(seam, strip.top() + 5.0), Pos2::new(seam, strip.bottom() - 7.0)],
+                Stroke::new(1.0, ETCH),
+            );
+            x += SEAM - GAP;
+        }
+        for (tab, label, count) in group {
+            let on = *current == *tab;
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                label,
+                0.0,
+                egui::TextFormat {
+                    font_id: egui::FontId::proportional(14.0),
+                    color: if on { VALUE } else { LEGEND },
+                    ..Default::default()
+                },
+            );
+            if let Some(n) = count {
+                job.append(
+                    &n.to_string(),
+                    6.0,
+                    egui::TextFormat {
+                        font_id: egui_bench::theme::figure(11.0),
+                        color: if on { READOUT } else { LEGEND.gamma_multiply(0.7) },
+                        ..Default::default()
+                    },
+                );
+            }
+            let galley = ui.fonts_mut(|f| f.layout_job(job));
+            let w = galley.size().x;
+            let hit =
+                Rect::from_min_size(Pos2::new(x - 6.0, strip.top()), Vec2::new(w + 12.0, TAB_H));
+            let r = ui.interact(hit, ui.id().with(("tab", *label)), Sense::click());
+            if r.hovered() && !on {
+                p.rect_filled(hit, 3.0, BAND);
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            if r.clicked() {
+                *current = *tab;
+            }
+            p.galley(Pos2::new(x, strip.top() + (TAB_H - galley.size().y) / 2.0), galley, VALUE);
+            if on {
+                mark = Some((x, w));
+            }
+            x += w + GAP;
+        }
+    }
+    p.rect_filled(
+        Rect::from_min_size(Pos2::new(strip.left(), strip.bottom() - 1.0), Vec2::new(width, 1.0)),
+        0.0,
+        ETCH,
+    );
+    if let Some((x, w)) = mark {
+        p.rect_filled(
+            Rect::from_min_size(Pos2::new(x, strip.bottom() - 2.0), Vec2::new(w, 2.0)),
+            0.0,
+            READOUT,
+        );
+    }
+    let mut right = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(Rect::from_min_max(
+                Pos2::new(x, strip.top()),
+                Pos2::new(strip.right(), strip.bottom() - 2.0),
+            ))
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    for (k, (name, what)) in PANELS.iter().enumerate().rev() {
+        let verb = if panels[k] { "hide" } else { "show" };
+        if toggle(&mut right, name, panels[k]).on_hover_text(format!("{verb} {what}")).clicked() {
+            panels[k] = !panels[k];
+        }
+    }
+    right.label(legend("panels"));
 }
 
 enum Leave {
@@ -49,6 +150,9 @@ pub struct App {
     tab: Tab,
     selected: Option<(Kind, String)>,
     assembly: Option<String>,
+    show_list: bool,
+    library: crate::library::Shelf,
+    last: std::collections::HashMap<Kind, String>,
     guides: std::collections::HashMap<String, crate::assembly::Guide>,
     filter: String,
     st: PageState,
@@ -87,6 +191,9 @@ impl App {
             tab: Tab::Item(Kind::Symbol),
             selected: None,
             assembly: None,
+            show_list: true,
+            library: Default::default(),
+            last: Default::default(),
             guides: Default::default(),
             filter: String::new(),
             st: PageState::default(),
@@ -104,7 +211,15 @@ impl App {
             pending_select: None,
         };
         app.st.view_3d = view_3d;
-        app.open(path, select);
+        let tab = match select.as_deref() {
+            Some("library") => Some(Tab::Library),
+            Some("assembly") => Some(Tab::Assembly),
+            _ => None,
+        };
+        app.open(path, select.filter(|_| tab.is_none()));
+        if let Some(t) = tab {
+            app.tab = t;
+        }
         if assemble {
             app.tab = Tab::Assembly;
             app.assembly = match &app.selected {
@@ -137,9 +252,15 @@ impl App {
         self.pending_select = None;
         self.reload();
         self.watch(self.ctx.clone());
-        if let Some(r) = select.and_then(|n| self.project.find(&n)) {
-            self.select(r);
-        } else if let Some(r) = self.project.all_refs().first().copied() {
+        self.library = Default::default();
+        let refs = self.project.all_refs();
+        let first = |k: Kind| refs.iter().find(|r| r.kind() == k).copied();
+        let pick = select
+            .and_then(|n| self.project.find(&n))
+            .or_else(|| first(Kind::Layout))
+            .or_else(|| first(Kind::Schematic))
+            .or_else(|| refs.first().copied());
+        if let Some(r) = pick {
             self.select(r);
         }
     }
@@ -242,7 +363,9 @@ impl App {
     fn select(&mut self, r: ItemRef) {
         let kind = r.kind();
         self.tab = Tab::Item(kind);
-        self.selected = Some((kind, self.project.name_of(r).to_string()));
+        let name = self.project.name_of(r).to_string();
+        self.last.insert(kind, name.clone());
+        self.selected = Some((kind, name));
     }
 
     fn current(&self) -> Option<ItemRef> {
@@ -318,22 +441,60 @@ impl App {
                     "reloads on save, last {:.0}s ago",
                     self.loaded.elapsed().as_secs_f32()
                 ));
-                lamp(ui, &format!("{w} warn"), w == 0, false);
-                lamp(ui, &format!("{e} err"), e == 0, e > 0);
+                let checks = "show or hide the check results of the selected item";
+                let warn = lamp(ui, &format!("{w} warn"), w == 0, false);
+                let err = lamp(ui, &format!("{e} err"), e == 0, e > 0);
+                if warn.interact(Sense::click()).on_hover_text(checks).clicked()
+                    || err.interact(Sense::click()).on_hover_text(checks).clicked()
+                {
+                    self.st.show_checks = !self.st.show_checks;
+                }
             });
         });
-        ui.add_space(4.0);
-        let opts = [
-            (Tab::Item(Kind::Sim), format!("sims {}", self.project.sims.len())),
-            (Tab::Item(Kind::Layout), format!("layouts {}", self.project.layouts.len())),
-            (Tab::Item(Kind::Schematic), format!("schematics {}", self.project.schematics.len())),
-            (Tab::Item(Kind::Board), format!("boards {}", self.project.boards.len())),
-            (Tab::Item(Kind::Symbol), format!("symbols {}", self.project.symbols.len())),
-            (Tab::Item(Kind::Footprint), format!("footprints {}", self.project.footprints.len())),
-            (Tab::Assembly, "assembly".to_string()),
+        ui.add_space(6.0);
+        let p = &self.project;
+        let item = |k: Kind, label: &'static str, n: usize| (Tab::Item(k), label, Some(n));
+        let groups = [
+            vec![
+                item(Kind::Schematic, "schematics", p.schematics.len()),
+                item(Kind::Layout, "layouts", p.layouts.len()),
+                item(Kind::Board, "boards", p.boards.len()),
+                item(Kind::Sim, "sims", p.sims.len()),
+            ],
+            vec![(Tab::Assembly, "assembly", None), (Tab::Library, "library", None)],
+            vec![
+                item(Kind::Symbol, "symbols", p.symbols.len()),
+                item(Kind::Footprint, "footprints", p.footprints.len()),
+            ],
         ];
-        let refs: Vec<(Tab, &str)> = opts.iter().map(|(k, s)| (*k, s.as_str())).collect();
-        tabs(ui, &mut self.tab, &refs);
+        let mut tab = self.tab;
+        let mut panels = [self.show_list, self.st.show_details, self.st.show_checks];
+        tab_strip(ui, &mut tab, &groups, &mut panels);
+        [self.show_list, self.st.show_details, self.st.show_checks] = panels;
+        if tab != self.tab {
+            self.switch(tab);
+        }
+    }
+
+    fn switch(&mut self, tab: Tab) {
+        self.tab = tab;
+        let Tab::Item(kind) = tab else { return };
+        if self.selected.as_ref().is_some_and(|(k, _)| *k == kind) {
+            return;
+        }
+        let refs = self.project.all_refs();
+        let of_kind = |r: &&ItemRef| r.kind() == kind;
+        let last = self.last.get(&kind).cloned();
+        let pick = refs
+            .iter()
+            .filter(of_kind)
+            .find(|r| last.as_deref() == Some(self.project.name_of(**r)))
+            .or_else(|| refs.iter().find(of_kind))
+            .copied();
+        match pick {
+            Some(r) => self.select(r),
+            None => self.selected = None,
+        }
     }
 
     fn assembly_list(&mut self, ui: &mut Ui) {
@@ -387,9 +548,10 @@ impl App {
     }
 
     fn list(&mut self, ui: &mut Ui) {
-        let Tab::Item(tab) = self.tab else {
-            self.assembly_list(ui);
-            return;
+        let tab = match self.tab {
+            Tab::Item(k) => k,
+            Tab::Assembly => return self.assembly_list(ui),
+            Tab::Library => return crate::library::list(ui, &mut self.library, &self.project),
         };
         if tab == Kind::Layout {
             let dir = self.path.is_dir();
@@ -603,18 +765,20 @@ impl eframe::App for App {
                 left: 12,
                 right: 12,
                 top: 8,
-                bottom: 0,
+                bottom: 2,
             }))
             .show(ui, |ui| self.header(ui));
-        egui::Panel::left("items")
-            .resizable(true)
-            .default_size(260.0)
-            .min_size(200.0)
-            .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
-            .show(ui, |ui| {
-                self.error(ui);
-                self.list(ui);
-            });
+        if self.show_list {
+            egui::Panel::left("items")
+                .resizable(true)
+                .default_size(240.0)
+                .min_size(180.0)
+                .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
+                .show(ui, |ui| {
+                    self.error(ui);
+                    self.list(ui);
+                });
+        }
         let current = self.current();
         self.poll_progress(&ctx);
         self.st.runs.poll();
@@ -629,9 +793,17 @@ impl eframe::App for App {
             let r = ui.max_rect();
             ui.painter().rect_filled(r, 0.0, CHASSIS);
             ui.painter().line_segment([r.left_top(), r.left_bottom()], Stroke::new(1.0, ETCH));
-            if self.tab == Tab::Assembly {
-                self.assembly_page(ui);
-                return;
+            match self.tab {
+                Tab::Assembly => return self.assembly_page(ui),
+                Tab::Library => {
+                    return crate::library::page(
+                        ui,
+                        &mut self.library,
+                        &self.project,
+                        self.st.show_details,
+                    );
+                }
+                Tab::Item(_) => {}
             }
             match current {
                 Some(item) => page(ui, &self.project, item, &mut self.st),

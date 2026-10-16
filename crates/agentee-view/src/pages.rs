@@ -23,6 +23,8 @@ pub struct PageState {
     pub show_hidden: bool,
     pub interactive: bool,
     pub panels: bool,
+    pub show_details: bool,
+    pub show_checks: bool,
     pub pcb_layers: Layers,
     pub ratsnest: bool,
     pub region: Option<agentee_core::graphic::Bounds>,
@@ -57,6 +59,8 @@ impl Default for PageState {
             show_hidden: false,
             interactive: true,
             panels: true,
+            show_details: true,
+            show_checks: true,
             pcb_layers: crate::pcb::default_layers(),
             ratsnest: true,
             region: None,
@@ -155,26 +159,34 @@ pub fn page(ui: &mut Ui, project: &Project, item: ItemRef, st: &mut PageState) {
         });
         return;
     }
-    egui::Panel::bottom("diagnostics")
-        .resizable(st.interactive)
-        .default_size(150.0)
-        .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 6)))
-        .show(ui, |ui| diagnostics(ui, &with_failures(project, diags), st.interactive));
-    egui::Panel::right("properties")
-        .resizable(st.interactive)
-        .default_size(SIDE_W)
-        .min_size(340.0)
-        .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
-        .show(ui, |ui| {
-            scroll(ui, st.interactive, "props", |ui| match item {
-                ItemRef::Symbol(i) => symbol_props(ui, project, &project.symbols[i].item, st),
-                ItemRef::Footprint(i) => footprint_props(ui, &project.footprints[i].item, st),
-                ItemRef::Board(i) => board_props(ui, &project.boards[i].item),
-                ItemRef::Schematic(i) => schematic_props(ui, &project.schematics[i].item),
-                ItemRef::Layout(i) => layout_props(ui, project, i, st),
-                ItemRef::Sim(i) => sim_props(ui, project, &project.sims[i].item, st),
+    if st.show_checks || !st.interactive {
+        let all = with_failures(project, diags);
+        let panel = egui::Panel::bottom("diagnostics")
+            .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 6)));
+        let panel = if all.is_empty() {
+            panel.resizable(false).exact_size(30.0)
+        } else {
+            panel.resizable(st.interactive).default_size(150.0)
+        };
+        panel.show(ui, |ui| diagnostics(ui, &all, st.interactive));
+    }
+    if st.show_details || !st.interactive {
+        egui::Panel::right("properties")
+            .resizable(st.interactive)
+            .default_size(SIDE_W)
+            .min_size(340.0)
+            .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
+            .show(ui, |ui| {
+                scroll(ui, st.interactive, "props", |ui| match item {
+                    ItemRef::Symbol(i) => symbol_props(ui, project, &project.symbols[i].item, st),
+                    ItemRef::Footprint(i) => footprint_props(ui, &project.footprints[i].item, st),
+                    ItemRef::Board(i) => board_props(ui, &project.boards[i].item),
+                    ItemRef::Schematic(i) => schematic_props(ui, &project.schematics[i].item),
+                    ItemRef::Layout(i) => layout_props(ui, project, i, st),
+                    ItemRef::Sim(i) => sim_props(ui, project, &project.sims[i].item, st),
+                });
             });
-        });
+    }
     egui::CentralPanel::no_frame().show(ui, |ui| match item {
         ItemRef::Symbol(i) => symbol_canvas(ui, &project.symbols[i].item, st),
         ItemRef::Footprint(i) => footprint_canvas(ui, &project.footprints[i].item, st),
@@ -225,14 +237,18 @@ pub fn diagnostics(ui: &mut Ui, diags: &[Diagnostic], interactive: bool) {
     let w = diags.iter().filter(|d| d.severity == Severity::Warning).count();
     ui.horizontal(|ui| {
         Line::new().legend("check").show(ui);
+        if diags.is_empty() {
+            status(ui, true, "nothing to report");
+            return;
+        }
         lamp(ui, &format!("{e} errors"), e == 0, e > 0);
         lamp(ui, &format!("{w} warnings"), w == 0, false);
     });
+    if diags.is_empty() {
+        return;
+    }
     ui.add_space(4.0);
     scroll(ui, interactive, "diags", |ui| {
-        if diags.is_empty() {
-            status(ui, true, "nothing to report");
-        }
         let mut sorted: Vec<&Diagnostic> = diags.iter().collect();
         sorted.sort_by(|a, b| b.severity.cmp(&a.severity));
         for d in sorted {
@@ -958,22 +974,25 @@ fn layout_view(
     mut ed: Option<&mut crate::edit::Editor>,
 ) {
     if st.panels {
-        ui.horizontal(|ui| {
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             ui.add_space(8.0);
-            if toggle(ui, "2d", !st.view_3d).clicked() {
-                st.view_3d = false;
-            }
-            if toggle(ui, "3d", st.view_3d).clicked() {
-                st.view_3d = true;
-            }
+            let mut three = st.view_3d;
+            segments(ui, &mut three, &[(false, "2d", None), (true, "3d", None)]);
+            st.view_3d = three;
             if st.view_3d {
-                ui.add_space(12.0);
-                if toggle(ui, "parts", st.show_parts).clicked() {
+                if toggle(ui, "parts", st.show_parts)
+                    .on_hover_text("show the part models")
+                    .clicked()
+                {
                     st.show_parts = !st.show_parts;
                 }
             } else {
-                ui.add_space(12.0);
-                if toggle(ui, "back", st.view.flip).clicked() {
+                if toggle(ui, "back", st.view.flip)
+                    .on_hover_text("look at the board from below")
+                    .clicked()
+                {
                     st.view.flip = !st.view.flip;
                     st.pcb_layers.mirror();
                 }
@@ -982,6 +1001,7 @@ fn layout_view(
                 }
             }
         });
+        ui.add_space(6.0);
         if let Some(ed) = ed.as_deref_mut() {
             crate::tools::conflict(ui, ed);
         }
@@ -1215,18 +1235,13 @@ fn sim_canvas(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState) 
         }
         if let Some(r) = &s.result {
             ui.horizontal(|ui| {
-                if toggle(ui, "s-parameters", !st.show_fields && !st.show_tdr).clicked() {
-                    st.show_fields = false;
-                    st.show_tdr = false;
+                let mut view = (st.show_tdr, st.show_fields);
+                let mut options = vec![((false, false), "s-parameters", None), ((true, false), "tdr", None)];
+                if !r.maps.is_empty() {
+                    options.push(((false, true), "fields", None));
                 }
-                if toggle(ui, "tdr", st.show_tdr).clicked() {
-                    st.show_tdr = true;
-                    st.show_fields = false;
-                }
-                if !r.maps.is_empty() && toggle(ui, "fields", st.show_fields).clicked() {
-                    st.show_fields = true;
-                    st.show_tdr = false;
-                }
+                segments(ui, &mut view, &options);
+                (st.show_tdr, st.show_fields) = view;
             });
             ui.add_space(6.0);
             if st.show_fields && !r.maps.is_empty() {
@@ -1331,7 +1346,7 @@ fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState
     }
     ui.horizontal(|ui| {
         if running {
-            if toggle(ui, "stop", true).clicked() {
+            if ui.add(egui_bench::key::Key::new("stop").outline(FAULT)).clicked() {
                 let pid = st.sim_progress.as_ref().map(|p| p.pid);
                 st.runs.stop(&s.name, pid);
             }
@@ -1342,7 +1357,9 @@ fn sim_controls(ui: &mut Ui, project: &Project, index: usize, st: &mut PageState
             }
         } else {
             let label = if has_result { "re-run" } else { "run" };
-            if st.interactive && toggle(ui, label, false).clicked() {
+            let run = egui_bench::key::Key::new(label);
+            let run = if s.stale || !has_result { run.solid(READOUT) } else { run.outline(VALUE) };
+            if st.interactive && ui.add(run).clicked() {
                 st.runs.start(project, &s.name);
             }
             if s.stale {

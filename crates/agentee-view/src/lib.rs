@@ -9,6 +9,7 @@ pub mod eye;
 pub mod focus;
 pub mod headless;
 pub mod heat;
+pub mod library;
 pub mod newlayout;
 pub mod pages;
 pub mod paint;
