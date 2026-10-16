@@ -856,6 +856,7 @@ fn your_own_stock_covers_the_need_so_nothing_is_ordered() {
             url: None,
             checked: "2026-01-01".into(),
             own: 5,
+            bin: None,
         }],
     };
     let e = Entry {
@@ -936,6 +937,7 @@ fn the_order_sheet_orders_only_what_the_shelf_does_not_cover() {
             url: None,
             checked: "2026-01-01".into(),
             own: 5,
+            bin: None,
         }],
     };
     let e = Entry {

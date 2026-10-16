@@ -96,3 +96,32 @@ fn use_writes_nothing_when_a_file_conflicts() {
     assert!(!project.join("symbols/R.sym.toml").exists());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn stock_keeps_its_bin() {
+    let lib = std::env::temp_dir().join(format!("agentee-bin-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&lib);
+    let dir = lib.join("R1K");
+    std::fs::create_dir_all(&dir).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    std::fs::copy(lna.join("symbols/R.sym.toml"), dir.join("R.sym.toml")).unwrap();
+    std::fs::write(dir.join("part.toml"), "role = \"resistor\"\nsymbol = \"R.sym.toml\"\n")
+        .unwrap();
+    let stock = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+            .args(["library", "stock", "R1K"])
+            .args(args)
+            .args(["-p"])
+            .arg(&lib)
+            .env("AGENTEE_LIBRARY", &lib)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    assert_eq!(stock(&["40", "--bin", "A3"]).trim(), "R1K: 40 in your own stock in bin A3");
+    assert_eq!(stock(&["25"]).trim(), "R1K: 25 in your own stock in bin A3");
+    let part = std::fs::read_to_string(dir.join("part.toml")).unwrap();
+    assert!(part.contains("bin = \"A3\""), "{part}");
+    let _ = std::fs::remove_dir_all(&lib);
+}

@@ -622,6 +622,7 @@ pub fn find(lib: &Library, a: &FindArgs) -> Result<Value, String> {
             "name": e.name,
             "summary": e.summary(),
             "own_stock": e.self_stock(),
+            "bin": e.bin(),
             "stock": e.best_stock().map(Stock::line),
         })).collect::<Vec<_>>(),
         "candidates": by,
@@ -765,7 +766,8 @@ pub fn list_text(entries: &[&Entry]) -> String {
         }
         let _ = writeln!(s, "  {:<24} {}", e.name, e.summary());
         if let Some(n) = e.self_stock() {
-            let _ = writeln!(s, "  {:<24} {n} in your own stock", "");
+            let bin = e.bin().map(|b| format!(" in bin {b}")).unwrap_or_default();
+            let _ = writeln!(s, "  {:<24} {n} in your own stock{bin}", "");
         }
         match e.best_stock() {
             Some(st) => {
@@ -950,10 +952,16 @@ pub fn refresh(lib: &Library, name: Option<&str>, config: Option<&Path>) -> Resu
     Ok(json!({ "refreshed": done, "errors": errors }))
 }
 
-pub fn set_stock(lib: &Library, name: &str, count: u32) -> Result<String, String> {
+pub fn set_stock(
+    lib: &Library,
+    name: &str,
+    count: u32,
+    bin: Option<&str>,
+) -> Result<String, String> {
     let e = lib.get(name).ok_or_else(|| no_part(lib, name))?;
     let today = datasheet::today();
     let mut part = e.part.clone();
+    let bin = bin.map(str::to_string).or_else(|| e.bin().map(str::to_string));
     part.stock.retain(|s| s.own == 0);
     if count > 0 {
         let sku = e.part.mpn.clone().unwrap_or_else(|| e.name.clone());
@@ -969,12 +977,14 @@ pub fn set_stock(lib: &Library, name: &str, count: u32) -> Result<String, String
             url: None,
             checked: today,
             own: u64::from(count),
+            bin: bin.clone(),
         });
     }
     part.stock.sort_by(|a, b| a.distributor.cmp(&b.distributor).then(a.sku.cmp(&b.sku)));
     library::write_entry(&e.dir, &part)?;
     let n: u64 = part.stock.iter().map(|s| s.own).sum();
-    Ok(format!("{}: {n} in your own stock", e.name))
+    let place = bin.filter(|_| n > 0).map(|b| format!(" in bin {b}")).unwrap_or_default();
+    Ok(format!("{}: {n} in your own stock{place}", e.name))
 }
 
 #[derive(serde::Serialize)]

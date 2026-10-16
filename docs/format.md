@@ -2966,6 +2966,7 @@ checked = "2026-10-09"
 distributor = "home"
 sku = "S2B-PH-K-S"
 own = 40
+bin = "A3"                     # where they are kept, from --bin
 checked = "2026-10-12"
 ```
 
@@ -2981,7 +2982,7 @@ agentee library list --role connector 2-pin power
 agentee library show JST-PH-2
 agentee library use JST-PH-2 -p board/         # copy its files in, print the edit that places it
 agentee library refresh                        # stock and price of every part, one lookup each
-agentee library stock JST-PH-2 40              # 40 on the shelf, subtracted from what needs ordering
+agentee library stock JST-PH-2 40 --bin A3     # 40 on the shelf in bin A3, subtracted from what needs ordering
 agentee library verify
 ```
 
@@ -3028,6 +3029,7 @@ API call, as of that date.
 
 `stock NAME N` records how many of the part you have on hand (`N`, or 0 to remove it). It lives
 in a `[[stock]]` listing with `distributor = "home"` and an `own` count, and survives `refresh`.
+`--bin A3` records the drawer that holds them; a later `stock` without `--bin` keeps it.
 `parts`, `bom` and `list` print the shelf under each part; when the shelf covers what a design
 needs, the line says it is covered by your own stock instead of looking for a stocked offer, and
 when it only partly covers it, the line names the gap. The order sheets count the shelf first:

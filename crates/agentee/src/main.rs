@@ -660,6 +660,9 @@ enum LibraryCmd {
         name: String,
         /// Units you have on hand
         count: u32,
+        /// Shelf, drawer or bin that holds them, kept until changed
+        #[arg(long)]
+        bin: Option<String>,
         #[arg(short, long, default_value = ".")]
         project: PathBuf,
     },
@@ -1437,8 +1440,9 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
             print_json(&library::use_part(&library::open(Some(&project)), &name, &project, force)?);
             Ok(true)
         }
-        LibraryCmd::Stock { name, count, project } => {
-            print!("{}\n", library::set_stock(&library::open(Some(&project)), &name, count)?);
+        LibraryCmd::Stock { name, count, bin, project } => {
+            let lib = library::open(Some(&project));
+            print!("{}\n", library::set_stock(&lib, &name, count, bin.as_deref())?);
             Ok(true)
         }
         LibraryCmd::Refresh { name, project, config } => {

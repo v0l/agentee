@@ -45,6 +45,8 @@ pub struct Stock {
     pub checked: String,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub own: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bin: Option<String>,
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -73,6 +75,7 @@ impl Stock {
             url: o.url.clone(),
             checked: checked.to_string(),
             own: 0,
+            bin: None,
         }
     }
 
@@ -98,10 +101,11 @@ impl Stock {
     pub fn line(&self) -> String {
         if self.own > 0 {
             return format!(
-                "{distributor} {sku}: {own} in your own stock, checked {checked}",
+                "{distributor} {sku}: {own} in your own stock{bin}, checked {checked}",
                 distributor = self.distributor,
                 sku = self.sku,
                 own = self.own,
+                bin = self.bin.as_ref().map(|b| format!(" in bin {b}")).unwrap_or_default(),
                 checked = self.checked
             );
         }
@@ -202,6 +206,10 @@ impl Entry {
     pub fn self_stock(&self) -> Option<u64> {
         let n: u64 = self.part.stock.iter().map(|s| s.own).sum();
         (n > 0).then_some(n)
+    }
+
+    pub fn bin(&self) -> Option<&str> {
+        self.part.stock.iter().find_map(|s| s.bin.as_deref())
     }
 
     pub fn best_stock(&self) -> Option<&Stock> {
