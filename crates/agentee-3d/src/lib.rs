@@ -279,6 +279,24 @@ const MIRRORS: [&str; 2] = [
     "https://raw.githubusercontent.com/KiCad/kicad-packages3D/master/",
 ];
 
+const VENDOR_MIRRORS: [&str; 1] = [
+    "https://raw.githubusercontent.com/espressif/kicad-libraries/main/3dmodels/espressif.3dshapes/",
+];
+
+fn mirror_urls(rel: &str) -> Vec<String> {
+    let file = rel.rsplit('/').next().unwrap_or(rel);
+    let mut out = Vec::new();
+    for ext in ["step", "wrl"] {
+        let name = with_ext(rel, ext);
+        out.extend(MIRRORS.iter().map(|base| format!("{base}{name}")));
+    }
+    for ext in ["STEP", "step", "wrl"] {
+        let name = with_ext(file, ext);
+        out.extend(VENDOR_MIRRORS.iter().map(|base| format!("{base}{name}")));
+    }
+    out
+}
+
 pub fn fetch(model: &str) -> Result<PathBuf, String> {
     if is_url(model) {
         return fetch_url(model, &cache_dir());
@@ -287,25 +305,25 @@ pub fn fetch(model: &str) -> Result<PathBuf, String> {
     if rel.starts_with('/') || rel.contains("..") || !rel.contains(".3dshapes/") {
         return Err(format!("{model}: not a KiCad library model"));
     }
-    for name in [with_ext(&rel, "step"), with_ext(&rel, "wrl")] {
-        for base in MIRRORS {
-            let Ok(resp) = ureq::get(&format!("{base}{name}")).call() else { continue };
-            if resp.status() != 200 {
-                continue;
-            }
-            let Ok(bytes) = resp.into_body().with_config().limit(64 << 20).read_to_vec() else {
-                continue;
-            };
-            if !(bytes.starts_with(b"ISO-10303-21") || bytes.starts_with(b"#VRML")) {
-                continue;
-            }
-            let path = cache_dir().join(&name);
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-            }
-            std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-            return Ok(path);
+    let candidates = mirror_urls(&rel);
+    for url in candidates {
+        let Ok(resp) = ureq::get(&url).call() else { continue };
+        if resp.status() != 200 {
+            continue;
         }
+        let Ok(bytes) = resp.into_body().with_config().limit(64 << 20).read_to_vec() else {
+            continue;
+        };
+        if !(bytes.starts_with(b"ISO-10303-21") || bytes.starts_with(b"#VRML")) {
+            continue;
+        }
+        let kind = if bytes.starts_with(b"#VRML") { "wrl" } else { "step" };
+        let path = cache_dir().join(with_ext(&rel, kind));
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+        return Ok(path);
     }
     Err(format!("{rel}: not found in the KiCad 3D library"))
 }
@@ -564,5 +582,23 @@ mod tests {
         let second = triangles();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(second > first, "{first} then {second} triangles");
+    }
+}
+
+#[cfg(test)]
+mod mirror_tests {
+    use super::*;
+
+    #[test]
+    fn a_model_missing_from_kicad_is_tried_at_the_vendor() {
+        let urls = mirror_urls("RF_Module.3dshapes/ESP32-S3-WROOM-1U.step");
+        assert!(
+            urls[0].contains("kicad-packages3D")
+                && urls[0].ends_with("RF_Module.3dshapes/ESP32-S3-WROOM-1U.step")
+        );
+        assert!(
+            urls.iter().any(|u| u.contains("espressif/kicad-libraries")
+                && u.ends_with("/ESP32-S3-WROOM-1U.STEP"))
+        );
     }
 }

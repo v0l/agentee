@@ -1,8 +1,14 @@
+use crate::board3d;
+use crate::canvas::View;
+use crate::paint::{self, Layers, SymbolStyle};
+use agentee_core::diag::Diags;
+use agentee_core::footprint::{Footprint, FootprintFile};
+use agentee_core::symbol::{Symbol, SymbolFile};
 use egui::{RichText, Sense, Ui, Vec2};
 use egui_bench::prelude::*;
 use serde_json::Value;
 use std::path::Path;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
 pub struct Job {
     rx: mpsc::Receiver<Result<Vec<Value>, String>>,
@@ -371,6 +377,8 @@ pub struct AddPart {
     pub model: String,
     pub datasheet: String,
     pub job: Option<Job>,
+    pub assets: [AssetSearch; 4],
+    pub preview: Preview,
     pub said: Option<(String, bool)>,
     pub notes_out: Vec<String>,
     pub added: Option<String>,
@@ -378,9 +386,317 @@ pub struct AddPart {
 
 fn row(ui: &mut Ui, label: &str, text: &mut String, hint: &str) {
     ui.horizontal(|ui| {
-        ui.add_sized(Vec2::new(96.0, 22.0), egui::Label::new(legend(label)));
-        ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY));
+        ui.add_sized(Vec2::new(LABEL_W, 30.0), egui::Label::new(legend(label)));
+        ui.add(
+            egui::TextEdit::singleline(text)
+                .font(egui::FontId::proportional(FIELD_FONT))
+                .margin(egui::Margin::symmetric(8, 6))
+                .hint_text(hint)
+                .desired_width(f32::INFINITY),
+        );
     });
+}
+
+#[derive(Clone, Default)]
+pub struct Pick {
+    pub source: String,
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+}
+
+#[derive(Default)]
+pub struct Found {
+    pub query: String,
+    pub hits: Vec<Pick>,
+    pub errors: Vec<String>,
+    pub done: bool,
+}
+
+#[derive(Default)]
+pub struct AssetSearch {
+    pub found: Found,
+    pub job: Option<Job>,
+    pub hover: Option<String>,
+}
+
+pub struct Loader<T> {
+    spec: String,
+    value: Option<Result<T, String>>,
+    rx: Option<mpsc::Receiver<Result<T, String>>>,
+}
+
+impl<T> Default for Loader<T> {
+    fn default() -> Self {
+        Loader { spec: String::new(), value: None, rx: None }
+    }
+}
+
+impl<T: Send + 'static> Loader<T> {
+    fn want(
+        &mut self,
+        spec: &str,
+        ctx: &egui::Context,
+        load: fn(&str) -> Result<T, String>,
+    ) -> Option<&Result<T, String>> {
+        if let Some(r) = self.rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.value = Some(r);
+            self.rx = None;
+        }
+        if spec != self.spec {
+            self.spec = spec.to_string();
+            self.rx = None;
+            if spec.is_empty() {
+                self.value = None;
+            } else {
+                let (tx, rx) = mpsc::channel();
+                let (spec, ctx) = (spec.to_string(), ctx.clone());
+                std::thread::spawn(move || {
+                    let _ = tx.send(load(&spec));
+                    ctx.request_repaint();
+                });
+                self.rx = Some(rx);
+            }
+        }
+        self.value.as_ref()
+    }
+}
+
+trait ClonedRef<T> {
+    fn cloned_ref(self) -> Option<T>;
+}
+
+impl<T: Clone> ClonedRef<T> for Option<&Result<T, String>> {
+    fn cloned_ref(self) -> Option<T> {
+        self.and_then(|r| r.as_ref().ok()).cloned()
+    }
+}
+
+impl<T> Loader<T> {
+    fn error(&self) -> Option<String> {
+        self.value.as_ref().and_then(|r| r.as_ref().err().cloned())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+enum PreviewTab {
+    #[default]
+    Footprint,
+    Model,
+    Symbol,
+}
+
+#[derive(Default)]
+pub struct Preview {
+    tab: PreviewTab,
+    symbol: Loader<Symbol>,
+    footprint: Loader<Footprint>,
+    sym_view: View,
+    fp_view: View,
+    scene: Option<(u64, String, Arc<board3d::Scene>)>,
+    orbit: board3d::State,
+}
+
+fn load_symbol(spec: &str) -> Result<Symbol, String> {
+    let file: SymbolFile = if spec.ends_with(".sym.toml") {
+        let text = std::fs::read_to_string(spec).map_err(|e| format!("{spec}: {e}"))?;
+        agentee_core::project::parse(&text).map_err(|e| format!("{spec}: {}", e.1))?
+    } else if spec.contains(':') {
+        agentee_kicad::import_symbol(spec)?
+    } else {
+        return Err(format!("{spec}: a project symbol has no preview until it is added"));
+    };
+    let name = file.name.clone();
+    Ok(file.resolve(&mut Diags::new(&name)))
+}
+
+fn load_footprint(spec: &str) -> Result<Footprint, String> {
+    let file: FootprintFile = if spec.ends_with(".fp.toml") {
+        let text = std::fs::read_to_string(spec).map_err(|e| format!("{spec}: {e}"))?;
+        agentee_core::project::parse(&text).map_err(|e| format!("{spec}: {}", e.1))?
+    } else if spec.contains(':') || spec.ends_with(".kicad_mod") {
+        agentee_kicad::import_footprint(spec)?
+    } else {
+        return Err(format!("{spec}: a project footprint has no preview until it is added"));
+    };
+    let name = file.name.clone();
+    let mut fp = file.resolve(&mut Diags::new(&name));
+    fp.graphics.retain(|g| !matches!(g.shape, agentee_core::graphic::Shape::Text { .. }));
+    Ok(fp)
+}
+
+const LABEL_W: f32 = 112.0;
+const FIELD_FONT: f32 = 15.0;
+
+const ASSETS: [&str; 4] = ["symbol", "footprint", "model", "datasheet"];
+
+fn asset_steps(asset: &str, query: &str) -> Vec<Vec<String>> {
+    let mut a = vec!["library".to_string(), "assets".to_string(), asset.to_string()];
+    a.extend(query.split_whitespace().map(String::from));
+    a.extend(["--json", "--limit", "20"].map(String::from));
+    vec![a]
+}
+
+fn take_found(v: &Value, query: &str) -> Found {
+    let text = |h: &Value, k: &str| h[k].as_str().unwrap_or_default().to_string();
+    Found {
+        query: query.to_string(),
+        hits: v["hits"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|h| Pick {
+                source: text(h, "source"),
+                id: text(h, "id"),
+                title: text(h, "title"),
+                detail: text(h, "detail"),
+            })
+            .collect(),
+        errors: v["errors"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.as_str().map(String::from))
+            .collect(),
+        done: true,
+    }
+}
+
+fn drain(job: &mut Option<Job>) -> Option<Result<Vec<Value>, String>> {
+    let r = job.as_ref().and_then(Job::poll)?;
+    job.take();
+    Some(r)
+}
+
+fn asset_row(
+    ui: &mut Ui,
+    label: &str,
+    asset: &'static str,
+    text: &mut String,
+    hint: &str,
+    fallback: &str,
+    search: &mut AssetSearch,
+    root: &Path,
+) {
+    let query =
+        if text.trim().is_empty() { fallback.trim().to_string() } else { text.trim().to_string() };
+    let busy = search.job.is_some();
+    let ready = !query.is_empty() && !busy;
+    let mut go = false;
+    ui.horizontal(|ui| {
+        ui.add_sized(Vec2::new(LABEL_W, 30.0), egui::Label::new(legend(label)));
+        let r = ui.add(
+            egui::TextEdit::singleline(text)
+                .font(egui::FontId::proportional(FIELD_FONT))
+                .margin(egui::Margin::symmetric(8, 6))
+                .hint_text(hint)
+                .desired_width(ui.available_width() - 104.0),
+        );
+        let entered = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let clicked = ui.add(Key::new("search").outline(TRACE).enabled(ready)).clicked();
+        go = (clicked || entered) && ready;
+        if busy {
+            ui.spinner();
+        }
+    });
+    if go {
+        let q = if text.trim().is_empty() {
+            fallback.trim().to_string()
+        } else {
+            text.trim().to_string()
+        };
+        search.found = Found { query: q.clone(), ..Default::default() };
+        search.job = Some(Job::start(root, asset_steps(asset, &q), asset, ui.ctx()));
+    }
+    search.hover = None;
+    if let Some(p) = results(ui, &search.found, text, asset, &mut search.hover) {
+        *text = p.id;
+        search.found.done = false;
+    }
+}
+
+fn results(
+    ui: &mut Ui,
+    found: &Found,
+    current: &str,
+    asset: &str,
+    hover: &mut Option<String>,
+) -> Option<Pick> {
+    if !found.done {
+        return None;
+    }
+    let mut pick = None;
+    egui::Frame::NONE
+        .inner_margin(egui::Margin { left: LABEL_W as i8 + 8, ..Default::default() })
+        .show(ui, |ui| {
+            for e in &found.errors {
+                note(ui, e.clone(), WARN);
+            }
+            if found.hits.is_empty() {
+                note(
+                    ui,
+                    format!(
+                        "No {asset} found for \"{}\". Try fewer or different words.",
+                        found.query
+                    ),
+                    LEGEND,
+                );
+                return;
+            }
+            egui::ScrollArea::vertical()
+                .id_salt(asset)
+                .min_scrolled_height(280.0)
+                .max_height(320.0)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for h in &found.hits {
+                        let on = h.id == current;
+                        let (rect, resp) = ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), 34.0),
+                            Sense::click(),
+                        );
+                        let p = ui.painter().with_clip_rect(rect);
+                        if on {
+                            p.rect_filled(rect, 2.0, READOUT.gamma_multiply(0.14));
+                        } else if resp.hovered() {
+                            p.rect_filled(rect, 2.0, BAND);
+                        }
+                        let font = egui::FontId::proportional(13.0);
+                        p.text(
+                            egui::pos2(rect.left() + 8.0, rect.top() + 4.0),
+                            egui::Align2::LEFT_TOP,
+                            &h.title,
+                            font,
+                            if on { READOUT } else { VALUE },
+                        );
+                        p.text(
+                            egui::pos2(rect.right() - 8.0, rect.top() + 4.0),
+                            egui::Align2::RIGHT_TOP,
+                            &h.source,
+                            egui::FontId::proportional(11.5),
+                            LEGEND,
+                        );
+                        p.text(
+                            egui::pos2(rect.left() + 8.0, rect.bottom() - 4.0),
+                            egui::Align2::LEFT_BOTTOM,
+                            &h.detail,
+                            egui::FontId::proportional(11.5),
+                            LEGEND,
+                        );
+                        if resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                            if asset == ASSETS[2] {
+                                *hover = Some(h.id.clone());
+                            }
+                        }
+                        if resp.clicked() {
+                            pick = Some(h.clone());
+                        }
+                    }
+                });
+        });
+    ui.add_space(4.0);
+    pick
 }
 
 pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddPart) -> Closed {
@@ -403,10 +719,23 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
             _ => {}
         }
     }
+    for search in f.assets.iter_mut() {
+        if let Some(r) = drain(&mut search.job) {
+            match r {
+                Ok(v) => {
+                    let q = search.found.query.clone();
+                    search.found = take_found(v.first().unwrap_or(&Value::Null), &q);
+                }
+                Err(e) => {
+                    search.found = Found { errors: vec![e], done: true, ..Default::default() };
+                }
+            }
+        }
+    }
     let mut out = Closed::Open;
     egui::Modal::new(egui::Id::new("add-part")).show(ctx, |ui| {
-        ui.set_width(760.0);
-        ui.label(RichText::new("Add a part to the library").size(18.0).color(VALUE));
+        ui.set_width((ctx.content_rect().width() - 120.0).clamp(900.0, 1500.0));
+        ui.label(RichText::new("Add a part to the library").size(22.0).color(VALUE));
         ui.add_space(8.0);
         if f.added.is_some() {
             if let Some((t, ok)) = &f.said {
@@ -421,6 +750,16 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
             }
             return;
         }
+        let total = ui.available_width();
+        let height = (ctx.content_rect().height() - 220.0).clamp(520.0, 860.0);
+        let left_w = (total * 0.58).max(520.0);
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                Vec2::new(left_w, height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    egui::ScrollArea::vertical().id_salt("add-part-form").auto_shrink([false, false]).show(ui, |ui| {
+                        ui.set_width(left_w - 16.0);
         ui.label(legend("find it at the distributors to fill the part number, or type it in"));
         ui.add_space(4.0);
         if f.search.show(ui, &mut f.job, root, "part number, distributor number or words")
@@ -441,7 +780,7 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
         row(ui, "role", &mut f.role, "resistor, capacitor, connector, regulator ..., required");
         if !roles.is_empty() {
             ui.horizontal_wrapped(|ui| {
-                ui.add_space(100.0);
+                ui.add_space(LABEL_W + 8.0);
                 for r in roles.iter().take(18) {
                     if chip(ui, r, if *r == f.role { READOUT } else { LEGEND }, *r == f.role)
                         .interact(Sense::click())
@@ -452,29 +791,70 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
                 }
             });
         }
-        row(
+        ui.add_space(6.0);
+        let (role, mpn) = (f.role.clone(), f.mpn.clone());
+        let [sym, fp, model, sheet] = &mut f.assets;
+        asset_row(
             ui,
             "symbol",
+            ASSETS[0],
             &mut f.symbol,
-            "KiCad Library:Name, a project symbol or a .sym.toml file, required",
+            "search symbols, or a .sym.toml file, required",
+            &role,
+            sym,
+            root,
         );
-        row(
+        asset_row(
             ui,
             "footprint",
+            ASSETS[1],
             &mut f.footprint,
-            "KiCad Library:Name or .fp.toml, default the symbol's",
+            "blank: the symbol's. Search footprints",
+            &role,
+            fp,
+            root,
         );
-        row(
+        asset_row(
             ui,
             "3d model",
+            ASSETS[2],
             &mut f.model,
-            "STEP file or URL or vendor ZIP, default the footprint's",
+            "blank: the footprint's. Search models, or a STEP file, URL or ZIP",
+            &mpn,
+            model,
+            root,
         );
-        row(ui, "datasheet", &mut f.datasheet, "URL or PDF, default the distributors'");
-        row(ui, "value", &mut f.value, "100n, 10k, red");
-        row(ui, "rating", &mut f.rating, "2 A, 100 V");
-        row(ui, "notes", &mut f.notes, "what it is for");
-        row(ui, "library name", &mut f.name, "default the part number");
+        asset_row(
+            ui,
+            "datasheet",
+            ASSETS[3],
+            &mut f.datasheet,
+            "blank: the distributors'. Search datasheets, or a URL or PDF",
+            &mpn,
+            sheet,
+            root,
+        );
+        ui.add_space(4.0);
+        egui::CollapsingHeader::new(legend("value, rating, notes and library name"))
+            .id_salt("add-part-details")
+            .default_open(false)
+            .show(ui, |ui| {
+                row(ui, "value", &mut f.value, "100n, 10k, red");
+                row(ui, "rating", &mut f.rating, "2 A, 100 V");
+                row(ui, "notes", &mut f.notes, "what it is for");
+                row(ui, "library name", &mut f.name, "default the part number");
+            });
+
+                    });
+                },
+            );
+            ui.add_space(10.0);
+            ui.allocate_ui_with_layout(
+                Vec2::new(ui.available_width(), height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| preview_pane(ui, f),
+            );
+        });
         if let Some((t, ok)) = &f.said {
             ui.add_space(6.0);
             note(ui, t.clone(), if *ok { OK } else { FAULT });
@@ -507,8 +887,119 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
                 out = Closed::Cancelled;
             }
         });
+
     });
     out
+}
+
+fn previewing(f: &AddPart) -> String {
+    f.symbol.trim().to_string()
+}
+
+fn preview_pane(ui: &mut Ui, f: &mut AddPart) {
+    let symbol_spec = previewing(f);
+    let fp_spec = f.footprint.trim().to_string();
+    let model_hover = f.assets[2].hover.clone();
+    let ctx = ui.ctx().clone();
+    let pv = &mut f.preview;
+    let sym = pv.symbol.want(&symbol_spec, &ctx, load_symbol).cloned_ref();
+    let fp = pv.footprint.want(&fp_spec, &ctx, load_footprint).cloned_ref();
+    let mut options = Vec::new();
+    if fp.is_some() {
+        options.push((PreviewTab::Footprint, "footprint", None));
+        options.push((PreviewTab::Model, "3d", None));
+    }
+    if sym.is_some() {
+        options.push((PreviewTab::Symbol, "symbol", None));
+    }
+    if !options.iter().any(|o| o.0 == pv.tab)
+        && let Some(o) = options.first()
+    {
+        pv.tab = o.0;
+    }
+    if options.is_empty() {
+        let note_text = match (pv.symbol.error(), pv.footprint.error()) {
+            (Some(e), _) | (_, Some(e)) => e,
+            _ => "Search or type a symbol and a footprint to preview the part here.".to_string(),
+        };
+        let size = ui.available_size();
+        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, WELL);
+        ui.painter().rect_stroke(rect, 2.0, egui::Stroke::new(1.0, ETCH), egui::StrokeKind::Inside);
+        let galley = ui.painter().layout(
+            note_text,
+            egui::FontId::proportional(14.0),
+            LEGEND,
+            rect.width() - 40.0,
+        );
+        ui.painter().galley(rect.center() - galley.size() / 2.0, galley, LEGEND);
+        return;
+    }
+    segments(ui, &mut pv.tab, &options);
+    ui.add_space(6.0);
+    let height = ui.available_height() - 4.0;
+    let size = Vec2::new(ui.available_width(), height.max(200.0));
+    ui.allocate_ui(size, |ui| match pv.tab {
+        PreviewTab::Footprint => {
+            let Some(fp) = &fp else { return };
+            pv.fp_view.max_fit = 2000.0;
+            let (resp, xf) = pv.fp_view.show(ui, &fp.bounds(), 50.0);
+            let p = ui.painter_at(xf.rect);
+            paint::grid(&p, &xf, 0.5);
+            paint::footprint(&p, &xf, fp, &Layers::default(), resp.hover_pos());
+            let b = fp.bounds().size();
+            p.text(
+                xf.rect.left_bottom() + Vec2::new(10.0, -10.0),
+                egui::Align2::LEFT_BOTTOM,
+                format!("{}, {:.2} x {:.2} mm, {} pads", fp.name, b[0], b[1], fp.pads.len()),
+                egui::FontId::proportional(13.0),
+                LEGEND,
+            );
+        }
+        PreviewTab::Model => {
+            let Some(fp) = &fp else { return };
+            let generation = agentee_3d::generation();
+            let key = format!("{fp_spec}|{}", model_hover.clone().unwrap_or_default());
+            let stale = pv
+                .scene
+                .as_ref()
+                .is_none_or(|(g, k, s)| *g != generation || *k != key || s.pending > 0);
+            if stale {
+                let mut shown = fp.clone();
+                if let Some(m) =
+                    model_hover.as_deref().or(Some(f.model.trim()).filter(|m| !m.is_empty()))
+                    && !m.starts_with("easyeda:")
+                {
+                    shown.model = Some(m.to_string());
+                }
+                let scene =
+                    board3d::part_scene(&shown, Path::new("."), agentee_3d::Fetch::Background);
+                pv.scene = Some((generation, key, Arc::new(scene)));
+            }
+            if let Some((_, _, scene)) = &pv.scene {
+                board3d::show(ui, scene, &mut pv.orbit, true, true);
+                if scene.pending > 0 {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(400));
+                }
+            }
+        }
+        PreviewTab::Symbol => {
+            let Some(s) = &sym else { return };
+            let padded = crate::pages::symbol_bounds(s, 1);
+            pv.sym_view.max_fit = 45.0;
+            let (resp, xf) = pv.sym_view.show(ui, &padded, 40.0);
+            let p = ui.painter_at(xf.rect);
+            paint::grid(&p, &xf, 1.27);
+            let style = SymbolStyle {
+                show_hidden: false,
+                reference: format!("{}?", s.reference),
+                value: s.value.clone(),
+                dim: false,
+                tips: true,
+            };
+            paint::symbol(&p, &xf, s, 1, &style, resp.hover_pos());
+        }
+    });
 }
 
 fn add_args(f: &AddPart) -> Vec<String> {
@@ -582,5 +1073,19 @@ mod tests {
         assert_eq!(f.search.query, "732-4984-1-ND");
         let f = FixMatch::new("LED-Red", Some("73249841"), None, "");
         assert_eq!(f.search.query, "73249841");
+    }
+
+    #[test]
+    fn an_asset_search_reply_reads_into_picks() {
+        let v = serde_json::json!({
+            "hits": [{ "source": "KiCad", "id": "Device:D_Zener", "title": "D_Zener", "detail": "Device" }],
+            "errors": ["EasyEDA: offline"]
+        });
+        let f = take_found(&v, "zener");
+        assert_eq!((f.hits[0].id.as_str(), f.errors.len(), f.done), ("Device:D_Zener", 1, true));
+        assert_eq!(
+            asset_steps("model", "zener sod-123")[0],
+            ["library", "assets", "model", "zener", "sod-123", "--json", "--limit", "20"]
+        );
     }
 }

@@ -248,3 +248,185 @@ pub fn search_footprints(query: &str, limit: usize) -> Vec<Hit> {
     }
     out
 }
+
+#[derive(Clone, Debug, Default)]
+pub struct SymbolInfo {
+    pub library: String,
+    pub name: String,
+    pub description: String,
+    pub keywords: String,
+}
+
+fn quoted(line: &str, key: &str) -> Option<String> {
+    let rest = line.trim_start().strip_prefix("(property \"")?.strip_prefix(key)?;
+    let rest = rest.strip_prefix("\" \"")?;
+    Some(rest.split('"').next().unwrap_or_default().to_string())
+}
+
+pub fn scan_symbols(mut each: impl FnMut(SymbolInfo) -> bool) {
+    for lib in list_symbol_libraries() {
+        let Ok(path) = symbol_library(&lib) else { continue };
+        let Ok(src) = std::fs::read_to_string(path) else { continue };
+        let mut current: Option<SymbolInfo> = None;
+        for line in src.lines() {
+            if let Some(rest) =
+                line.strip_prefix("\t(symbol \"").or_else(|| line.strip_prefix("  (symbol \""))
+            {
+                if let Some(done) = current.take()
+                    && !each(done)
+                {
+                    return;
+                }
+                let name = rest.split('"').next().unwrap_or_default().to_string();
+                current = Some(SymbolInfo { library: lib.clone(), name, ..Default::default() });
+            } else if let Some(c) = current.as_mut() {
+                if let Some(v) = quoted(line, "Description") {
+                    c.description = v;
+                } else if let Some(v) = quoted(line, "ki_keywords") {
+                    c.keywords = v;
+                }
+            }
+        }
+        if let Some(done) = current.take()
+            && !each(done)
+        {
+            return;
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FootprintInfo {
+    pub library: String,
+    pub name: String,
+    pub description: String,
+    pub tags: String,
+    pub model: Option<String>,
+}
+
+fn first_quoted(src: &str, key: &str) -> Option<String> {
+    let at = src.find(&format!("({key} \""))? + key.len() + 3;
+    Some(src[at..].split('"').next().unwrap_or_default().to_string())
+}
+
+pub fn scan_footprints(mut each: impl FnMut(FootprintInfo) -> bool) {
+    for lib in list_footprint_libraries() {
+        let Ok(dir) = footprint_library(&lib) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let mut files: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "kicad_mod"))
+            .collect();
+        files.sort();
+        for path in files {
+            let Ok(src) = std::fs::read_to_string(&path) else { continue };
+            let name = path.file_stem().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+            let info = FootprintInfo {
+                library: lib.clone(),
+                name,
+                description: first_quoted(&src, "descr").unwrap_or_default(),
+                tags: first_quoted(&src, "tags").unwrap_or_default(),
+                model: first_quoted(&src, "model"),
+            };
+            if !each(info) {
+                return;
+            }
+        }
+    }
+}
+
+pub struct KicadLibraries;
+
+impl agentee_core::source::AssetSource for KicadLibraries {
+    fn name(&self) -> &'static str {
+        "KiCad"
+    }
+
+    fn assets(&self) -> &'static [agentee_core::source::Asset] {
+        use agentee_core::source::Asset::*;
+        &[Symbol, Footprint, Model]
+    }
+
+    fn search(
+        &self,
+        asset: agentee_core::source::Asset,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<agentee_core::source::Hit>, String> {
+        use agentee_core::source::{Asset, Hit, rank, score, terms};
+        let t = terms(query);
+        let mut hits = Vec::new();
+        let hit = |asset, id: String, title: String, detail: String, score| Hit {
+            source: "KiCad".into(),
+            asset,
+            id,
+            title,
+            detail,
+            score,
+        };
+        match asset {
+            Asset::Symbol => {
+                if symbol_dirs().is_empty() {
+                    return Err("no KiCad symbol libraries, set KICAD9_SYMBOL_DIR".into());
+                }
+                scan_symbols(|s| {
+                    let id = format!("{}:{}", s.library, s.name);
+                    let fields = [
+                        (s.name.as_str(), 6),
+                        (s.library.as_str(), 2),
+                        (s.keywords.as_str(), 3),
+                        (s.description.as_str(), 2),
+                    ];
+                    if let Some(sc) = score(&t, &fields) {
+                        hits.push(hit(
+                            Asset::Symbol,
+                            id,
+                            s.name.clone(),
+                            format!("{}  {}", s.library, s.description),
+                            sc,
+                        ));
+                    }
+                    true
+                });
+            }
+            Asset::Footprint | Asset::Model => {
+                if footprint_dirs().is_empty() {
+                    return Err("no KiCad footprint libraries, set KICAD9_FOOTPRINT_DIR".into());
+                }
+                scan_footprints(|f| {
+                    let fields = [
+                        (f.name.as_str(), 6),
+                        (f.library.as_str(), 2),
+                        (f.tags.as_str(), 3),
+                        (f.description.as_str(), 2),
+                    ];
+                    let Some(sc) = score(&t, &fields) else { return true };
+                    if asset == Asset::Footprint {
+                        let id = format!("{}:{}", f.library, f.name);
+                        hits.push(hit(
+                            Asset::Footprint,
+                            id,
+                            f.name.clone(),
+                            format!("{}  {}", f.library, f.description),
+                            sc,
+                        ));
+                    } else if let Some(m) = &f.model {
+                        let file = m.rsplit('/').next().unwrap_or(m).to_string();
+                        hits.push(hit(
+                            Asset::Model,
+                            m.clone(),
+                            file,
+                            format!("used by {}:{}", f.library, f.name),
+                            sc,
+                        ));
+                    }
+                    true
+                });
+            }
+            Asset::Datasheet => return Ok(Vec::new()),
+        }
+        hits.dedup_by(|a, b| a.id == b.id);
+        Ok(rank(hits, limit))
+    }
+}

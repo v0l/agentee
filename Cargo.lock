@@ -149,6 +149,7 @@ version = "0.3.0"
 dependencies = [
  "agentee-3d",
  "agentee-core",
+ "agentee-kicad",
  "agentee-layout",
  "agentee-parts",
  "agentee-sim",

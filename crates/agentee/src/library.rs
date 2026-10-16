@@ -1,10 +1,87 @@
 use crate::datasheets::{self, FetchArgs, Want};
 use crate::ops;
 use agentee_core::project::Project;
+use agentee_core::source::{Asset, AssetSource, Hit};
 use agentee_parts::datasheet::{self, Cache};
 use agentee_parts::library::{self, Entry, Library, PartFile, Provenance, Stock};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
+
+pub fn sources(config: Option<&Path>) -> Vec<Box<dyn AssetSource>> {
+    let mut v: Vec<Box<dyn AssetSource>> =
+        vec![Box::new(agentee_kicad::KicadLibraries), Box::new(agentee_3d::easyeda::EasyEda)];
+    let q = ops::PartsQuery {
+        boards: 1,
+        alternatives: false,
+        distributors: &[],
+        farnell_store: None,
+        refs: &[],
+        config,
+    };
+    if let Ok(d) = ops::Distributors::open(&q) {
+        v.push(Box::new(DistributorSheets(d)));
+    }
+    v
+}
+
+struct DistributorSheets(ops::Distributors);
+
+impl AssetSource for DistributorSheets {
+    fn name(&self) -> &'static str {
+        "distributors"
+    }
+
+    fn assets(&self) -> &'static [Asset] {
+        &[Asset::Datasheet]
+    }
+
+    fn search(&self, asset: Asset, query: &str, limit: usize) -> Result<Vec<Hit>, String> {
+        if asset != Asset::Datasheet {
+            return Ok(Vec::new());
+        }
+        let mut out = Vec::new();
+        let mut errors = Vec::new();
+        for d in self.0.list() {
+            match d.search(query) {
+                Ok(offers) => {
+                    for (k, o) in offers.into_iter().enumerate() {
+                        let Some(url) = o.datasheet.clone().filter(|u| !u.is_empty()) else {
+                            continue;
+                        };
+                        out.push(Hit {
+                            source: d.name().to_string(),
+                            asset,
+                            id: url,
+                            title: o.mpn,
+                            detail: format!("{}  {}", o.manufacturer, o.description),
+                            score: 1000u32.saturating_sub(k as u32),
+                        });
+                    }
+                }
+                Err(e) => errors.push(format!("{}: {e}", d.name())),
+            }
+        }
+        if out.is_empty() && !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
+        out.truncate(limit.max(1) * 2);
+        Ok(out)
+    }
+}
+
+pub fn search_assets(
+    asset: Asset,
+    query: &str,
+    only: &[String],
+    limit: usize,
+    config: Option<&Path>,
+) -> agentee_core::source::Found {
+    let mut all = sources(config);
+    if !only.is_empty() {
+        all.retain(|s| only.iter().any(|o| o.eq_ignore_ascii_case(s.name())));
+    }
+    agentee_core::source::search_all(&all, asset, query, limit)
+}
 
 pub fn open(project: Option<&Path>) -> Library {
     Library::open(project, None)
@@ -348,7 +425,23 @@ fn store_model(
     let mut out = Stored { rel: None, file: None, lcsc: None, notes: Vec::new() };
     let mut tried = Vec::new();
     let mut got: Option<Model> = None;
-    if let Some(m) = model_spec {
+    if let Some(code) = model_spec.and_then(|m| m.strip_prefix("easyeda:")) {
+        match agentee_3d::easyeda::find_code(code) {
+            Ok(f) => {
+                out.lcsc = Some(f.lcsc.clone());
+                got = Some(Model {
+                    path: f.model,
+                    source: format!("EasyEDA {} (easyeda.com)", f.lcsc),
+                    vendor: Some(Vendor::Placed(
+                        Box::new(f.footprint),
+                        format!("the EasyEDA footprint of {}", f.lcsc),
+                    )),
+                    note: None,
+                })
+            }
+            Err(e) => tried.push(format!("EasyEDA {code}: {e}")),
+        }
+    } else if let Some(m) = model_spec {
         match local_model(m, root) {
             Ok(found) => got = Some(found),
             Err(e) => tried.push(format!("model {m}: {e}")),
@@ -393,6 +486,9 @@ fn store_model(
         }
         return Ok(out);
     };
+    if !tried.is_empty() {
+        out.notes.push(format!("{}; used {} instead", tried.join("; "), model.source));
+    }
     out.notes.extend(model.note.clone());
     let path = &model.path;
     let file = path.file_name().and_then(|f| f.to_str()).unwrap_or("model.step").to_string();

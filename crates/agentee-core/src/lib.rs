@@ -26,6 +26,7 @@ pub mod route;
 pub mod rules;
 pub mod schematic;
 pub mod sim;
+pub mod source;
 pub mod stackups;
 pub mod symbol;
 pub mod testpoint;

@@ -657,6 +657,23 @@ enum LibraryCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Search every source (KiCad libraries, EasyEDA, the distributors) for a symbol, footprint, 3D model or datasheet
+    Assets {
+        /// symbol, footprint, model or datasheet
+        asset: String,
+        words: Vec<String>,
+        /// Only these sources, comma separated (kicad, easyeda, distributors)
+        #[arg(long, value_delimiter = ',')]
+        source: Vec<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
     /// One library part: its files, where they came from, datasheet and stock
     Show {
         name: String,
@@ -1461,6 +1478,23 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
                 print!("{}", library::find_text(&v));
             }
             Ok(true)
+        }
+        LibraryCmd::Assets { asset, words, source, limit, project: _, config, json } => {
+            let asset = agentee_core::source::Asset::parse(&asset)
+                .ok_or("asset is symbol, footprint, model or datasheet")?;
+            let found =
+                library::search_assets(asset, &words.join(" "), &source, limit, config.as_deref());
+            if json {
+                print_json(&serde_json::to_value(&found).map_err(|e| e.to_string())?);
+            } else {
+                for h in &found.hits {
+                    println!("{:<12} {}  {}", h.source, h.id, h.detail);
+                }
+                for e in &found.errors {
+                    eprintln!("{e}");
+                }
+            }
+            Ok(!found.hits.is_empty())
         }
         LibraryCmd::Show { name, project } => {
             print_json(&library::show(&library::open(Some(&project)), &name)?);

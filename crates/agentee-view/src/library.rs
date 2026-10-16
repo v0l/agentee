@@ -127,7 +127,7 @@ fn detail(e: &Entry) -> Detail {
     }
 }
 
-fn open_externally(target: &str) -> Result<(), String> {
+pub(crate) fn open_externally(target: &str) -> Result<(), String> {
     let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
     std::process::Command::new(opener)
         .arg(target)

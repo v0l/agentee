@@ -20,7 +20,51 @@ fn normal(s: &str) -> String {
     s.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase()
 }
 
+#[derive(Clone, Debug)]
+pub struct Listing {
+    pub code: String,
+    pub mpn: String,
+    pub maker: String,
+    pub package: String,
+    pub describe: String,
+    pub datasheet: Option<String>,
+    pub stock: u64,
+}
+
+pub fn search(keyword: &str, limit: usize) -> Result<Vec<Listing>, String> {
+    let url =
+        "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList";
+    let body =
+        serde_json::json!({ "keyword": keyword, "currentPage": 1, "pageSize": limit.max(1) })
+            .to_string();
+    let text = ureq::post(url)
+        .header("Content-Type", "application/json")
+        .send(body.as_str())
+        .map_err(|e| format!("JLCPCB parts search: {e}"))?
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("JLCPCB parts search: {e}"))?;
+    let v: Value = serde_json::from_str(&text).map_err(|e| format!("JLCPCB parts search: {e}"))?;
+    let field = |c: &Value, k: &str| c[k].as_str().unwrap_or_default().to_string();
+    Ok(v["data"]["componentPageInfo"]["list"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| Listing {
+            code: field(c, "componentCode"),
+            mpn: field(c, "componentModelEn"),
+            maker: field(c, "componentBrandEn"),
+            package: field(c, "componentSpecificationEn"),
+            describe: field(c, "describe"),
+            datasheet: c["dataManualUrl"].as_str().filter(|u| !u.is_empty()).map(String::from),
+            stock: c["stockCount"].as_u64().unwrap_or(0),
+        })
+        .filter(|l| !l.code.is_empty())
+        .collect())
+}
+
 pub fn lcsc_code(mpn: &str) -> Result<String, String> {
+    let want = normal(mpn);
     let url =
         "https://jlcpcb.com/api/overseas-pcb-order/v1/shoppingCart/smtGood/selectSmtComponentList";
     let body = serde_json::json!({ "keyword": mpn, "currentPage": 1, "pageSize": 25 }).to_string();
@@ -32,7 +76,6 @@ pub fn lcsc_code(mpn: &str) -> Result<String, String> {
         .read_to_string()
         .map_err(|e| format!("JLCPCB parts search: {e}"))?;
     let v: Value = serde_json::from_str(&text).map_err(|e| format!("JLCPCB parts search: {e}"))?;
-    let want = normal(mpn);
     v["data"]["componentPageInfo"]["list"]
         .as_array()
         .into_iter()
@@ -209,7 +252,11 @@ pub fn place(
 }
 
 pub fn find(mpn: &str) -> Result<Found, String> {
-    let lcsc = lcsc_code(mpn)?;
+    find_code(&lcsc_code(mpn)?)
+}
+
+pub fn find_code(lcsc: &str) -> Result<Found, String> {
+    let lcsc = lcsc.to_string();
     let data = component(&lcsc)?;
     let pkg = package(&data)?;
     let model = download(&pkg.uuid)?;
@@ -283,5 +330,53 @@ mod tests {
         let q = [0, 1].map(|i| (0..3).map(|k| r[i][k] * m[k]).sum::<f64>());
         let at = [q[0] + shift[0], -q[1] + shift[1]];
         assert!(outline.iter().any(|o| agentee_core::geom::dist(*o, at) < 1e-6), "{at:?}");
+    }
+}
+
+pub struct EasyEda;
+
+impl agentee_core::source::AssetSource for EasyEda {
+    fn name(&self) -> &'static str {
+        "EasyEDA"
+    }
+
+    fn assets(&self) -> &'static [agentee_core::source::Asset] {
+        use agentee_core::source::Asset::*;
+        &[Model, Datasheet]
+    }
+
+    fn search(
+        &self,
+        asset: agentee_core::source::Asset,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<agentee_core::source::Hit>, String> {
+        use agentee_core::source::{Asset, Hit};
+        let listings = search(query, limit)?;
+        let total = listings.len() as u32;
+        Ok(listings
+            .into_iter()
+            .enumerate()
+            .filter_map(|(k, l)| {
+                let (id, detail) = match asset {
+                    Asset::Model => (
+                        format!("easyeda:{}", l.code),
+                        format!("{} {}  {}  {} in stock", l.maker, l.package, l.code, l.stock),
+                    ),
+                    Asset::Datasheet => {
+                        (l.datasheet.clone()?, format!("{}  {}", l.maker, l.describe))
+                    }
+                    _ => return None,
+                };
+                Some(Hit {
+                    source: "EasyEDA".into(),
+                    asset,
+                    id,
+                    title: l.mpn,
+                    detail,
+                    score: total - k as u32,
+                })
+            })
+            .collect())
     }
 }
