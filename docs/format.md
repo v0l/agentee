@@ -2461,6 +2461,8 @@ kind = "circuit"
 schematic = "lna"              # default: the only top-level schematic
 ignore = ["D3"]                # parts to leave out
 record = ["VCC", "LED_A"]      # nets in the curves, default every net
+# ground = "P_COM"             # a net to reference to as well as any GND, AGND, 0V or VSS,
+                               # for a floating domain's common; a list takes several
 # temperature = 27             # deg C, for the noise and the junctions
 
 [[drives]]                     # only drives drive a net: give every supply one

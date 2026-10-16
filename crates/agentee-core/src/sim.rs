@@ -39,6 +39,19 @@ pub struct ModelFile {
     pub open: bool,
 }
 
+fn one_or_many<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Names {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match Names::deserialize(d)? {
+        Names::One(n) => vec![n],
+        Names::Many(v) => v,
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SimFile {
@@ -141,6 +154,8 @@ pub struct SimFile {
     pub on_violation: Option<crate::logic::OnViolation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "one_or_many")]
+    pub ground: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub drives: Vec<crate::circuit::DriveFile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1114,6 +1129,9 @@ impl SimFile {
         let mut v = Vec::new();
         if self.temperature.is_some() {
             v.push("temperature");
+        }
+        if !self.ground.is_empty() {
+            v.push("ground");
         }
         if !self.drives.is_empty() {
             v.push("drives");

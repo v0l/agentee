@@ -113,6 +113,52 @@ fn a_divider_halves_its_input() {
 }
 
 #[test]
+fn a_named_ground_references_a_floating_domain() {
+    let r = sim(
+        "pcom",
+        &[("R1", "R", "10k"), ("R2", "R", "10k"), ("R3", "R", "1k"), ("R4", "R", "1k")],
+        &[
+            ("VIN", &["R1.1"]),
+            ("OUT", &["R1.2", "R2.1"]),
+            ("P_COM", &["R2.2"]),
+            ("V2", &["R3.1"]),
+            ("MID", &["R3.2", "R4.1"]),
+            ("GND", &["R4.2"]),
+        ],
+        "ground = \"P_COM\"\n[[drives]]\nnet = \"VIN\"\ndc = \"5V\"\n[[drives]]\nnet = \"V2\"\ndc = \"2V\"\n",
+    );
+    assert!(close(r.op["OUT"], 2.5, 1e-6), "{:?}", r.op);
+    assert!(close(r.op["MID"], 1.0, 1e-6), "{:?}", r.op);
+    assert!(!r.op.contains_key("P_COM"), "{:?}", r.op);
+}
+
+#[test]
+fn a_ground_net_must_exist() {
+    let dir = std::env::temp_dir().join(format!("agentee-circuit-{}-noground", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("symbols")).unwrap();
+    for (n, text) in symbols() {
+        std::fs::write(dir.join(format!("symbols/{n}.sym.toml")), text).unwrap();
+    }
+    std::fs::write(
+        dir.join("t.sch.toml"),
+        "name = \"t\"\n[[parts]]\nref = \"R1\"\nsymbol = \"R\"\nvalue = \"1k\"\nat = [25.4, 25.4]\n[[nets]]\nname = \"A\"\npins = [\"R1.1\", \"R1.2\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("t.sim.toml"),
+        "name = \"t\"\nkind = \"circuit\"\nground = [\"P_COM\"]\n",
+    )
+    .unwrap();
+    let p = Project::load(&dir).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let entry = p.sims.iter().find(|s| s.name == "t").unwrap();
+    let said = |m: &str| entry.diags.iter().any(|d| d.message.contains(m));
+    assert!(said("net `P_COM` is not in the schematic"), "{:?}", entry.diags);
+    assert!(said("ground = "), "{:?}", entry.diags);
+}
+
+#[test]
 fn an_rc_low_pass_is_3db_down_at_its_corner() {
     let r = sim(
         "rc-ac",

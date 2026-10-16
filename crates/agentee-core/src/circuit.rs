@@ -530,9 +530,17 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
         }
     }
     let driven: Vec<String> = file.drives.iter().map(|x| x.net.clone()).collect();
+    for g in &file.ground {
+        if !sch.nets.iter().any(|x| &x.name == g) {
+            d.error("ground", format!("net `{g}` is not in the schematic"));
+        } else if driven.contains(g) {
+            d.error("ground", format!("`{g}` is the ground, so a drive cannot set it"));
+        }
+    }
     let mut ground = vec![false; n];
     for (i, net) in sch.nets.iter().enumerate() {
-        if is_ground(&net.name) && !driven.contains(&net.name) {
+        let named = file.ground.contains(&net.name);
+        if (named || is_ground(&net.name)) && !driven.contains(&net.name) {
             ground[uf.find(i)] = true;
         }
     }
@@ -553,7 +561,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
     if !ground.iter().any(|g| *g) {
         d.error(
             "schematic",
-            "no ground net (a net named GND, AGND, 0V or VSS) to reference the circuit to",
+            "no ground net (a net named GND, AGND, 0V or VSS, or `ground = \"NET\"`) to reference the circuit to",
         );
     }
     let net_named = |name: &str| sch.nets.iter().position(|x| x.name == name);

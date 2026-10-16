@@ -101,6 +101,7 @@ description = ""
 # ignore = ["J*", "U5"]         # parts to leave out; connectors and test points are left out anyway
 # record = ["OUT"]              # nets in the curves; default every net
 # temperature = 27              # deg C, for the noise
+# ground = "P_COM"              # another reference net besides GND, AGND, 0V and VSS
 
 # Rename the nets below to nets of your schematic. Only drives drive a net, so give each supply
 # the circuit does not make itself a drive of its own.
