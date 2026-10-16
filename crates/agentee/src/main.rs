@@ -690,6 +690,12 @@ enum LibraryCmd {
         role: Option<String>,
         #[arg(long)]
         notes: Option<String>,
+        /// A new footprint: a .fp.toml file, a project footprint or a KiCad Library:Name; the 3D model goes with the old one
+        #[arg(long)]
+        footprint: Option<String>,
+        /// A new symbol: a .sym.toml file, a project symbol or a KiCad Library:Name; it keeps the part's name, footprint and datasheet
+        #[arg(long)]
+        symbol: Option<String>,
         #[arg(short, long, default_value = ".")]
         project: PathBuf,
     },
@@ -1544,10 +1550,35 @@ fn library_cmd(cmd: LibraryCmd) -> Result<bool, String> {
             print!("{text}");
             Ok(ok)
         }
-        LibraryCmd::Set { name, mpn, manufacturer, lcsc, value, rating, role, notes, project } => {
+        LibraryCmd::Set {
+            name,
+            mpn,
+            manufacturer,
+            lcsc,
+            value,
+            rating,
+            role,
+            notes,
+            footprint,
+            symbol,
+            project,
+        } => {
             let lib = library::open(Some(&project));
-            let fields = library::Fields { mpn, manufacturer, lcsc, value, rating, role, notes };
-            print_json(&library::set_fields(&lib, &name, &fields)?);
+            let p = (footprint.is_some() || symbol.is_some())
+                .then(|| ops::load(&project).ok())
+                .flatten();
+            let fields = library::Fields {
+                mpn,
+                manufacturer,
+                lcsc,
+                value,
+                rating,
+                role,
+                notes,
+                footprint,
+                symbol,
+            };
+            print_json(&library::set_fields(&lib, &name, &fields, p.as_ref())?);
             Ok(true)
         }
         LibraryCmd::Stock { name, count, bin, project } => {

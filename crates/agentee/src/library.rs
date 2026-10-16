@@ -552,8 +552,7 @@ pub fn fill(lib: &Library, a: &FillArgs) -> Result<Value, String> {
                 }
             }
             (_, None) => notes.push(
-                "no footprint: add one with agentee library add NAME --force --footprint ..."
-                    .into(),
+                "no footprint: give one with agentee library set NAME --footprint ...".into(),
             ),
             _ => {}
         }
@@ -1102,11 +1101,83 @@ pub struct Fields {
     pub rating: Option<String>,
     pub role: Option<String>,
     pub notes: Option<String>,
+    pub footprint: Option<String>,
+    pub symbol: Option<String>,
 }
 
-pub fn set_fields(lib: &Library, name: &str, f: &Fields) -> Result<Value, String> {
+fn swap_symbol(
+    e: &Entry,
+    part: &mut PartFile,
+    spec: &str,
+    project: Option<&Project>,
+) -> Result<(), String> {
+    let sym = source_symbol(spec, project)?;
+    let old_path = e.file(&part.symbol);
+    let old = std::fs::read_to_string(&old_path).unwrap_or_default();
+    let mut text = set_key(&sym.text, "name", &get_key(&old, "name").unwrap_or(e.name.clone()))?;
+    for key in ["footprint", "datasheet"] {
+        if let Some(v) = get_key(&old, key) {
+            text = set_key(&text, key, &v)?;
+        }
+    }
+    std::fs::write(&old_path, &text).map_err(|err| err.to_string())?;
+    let file = part.symbol.clone();
+    part.files.retain(|p| p.path != file);
+    part.files.insert(
+        0,
+        Provenance { path: file, source: sym.source, sha256: datasheet::sha256(text.as_bytes()) },
+    );
+    Ok(())
+}
+
+fn swap_footprint(
+    e: &Entry,
+    part: &mut PartFile,
+    spec: &str,
+    project: Option<&Project>,
+) -> Result<String, String> {
+    let fp = source_footprint(spec, project)?;
+    let fname = get_key(&fp.text, "name").unwrap_or_else(|| stem(&fp.file));
+    let mut gone: Vec<String> = part.model.take().into_iter().collect();
+    if let Some(old) = part.footprint.take().filter(|o| *o != fp.file) {
+        gone.push(old);
+    }
+    for g in &gone {
+        let _ = std::fs::remove_file(e.file(g));
+    }
+    part.files.retain(|p| !gone.contains(&p.path) && p.path != fp.file);
+    std::fs::write(e.file(&fp.file), &fp.text).map_err(|err| err.to_string())?;
+    part.files.push(Provenance {
+        path: fp.file.clone(),
+        source: fp.source,
+        sha256: datasheet::sha256(fp.text.as_bytes()),
+    });
+    let sym_path = e.file(&part.symbol);
+    let sym = std::fs::read_to_string(&sym_path)
+        .map_err(|err| format!("{}: {err}", sym_path.display()))?;
+    let sym = set_key(&sym, "footprint", &fname)?;
+    std::fs::write(&sym_path, &sym).map_err(|err| err.to_string())?;
+    let symbol = part.symbol.clone();
+    rehash(part, &symbol, sym.as_bytes());
+    part.footprint = Some(fp.file);
+    Ok(fname)
+}
+
+pub fn set_fields(
+    lib: &Library,
+    name: &str,
+    f: &Fields,
+    project: Option<&Project>,
+) -> Result<Value, String> {
     let e = lib.get(name).ok_or_else(|| no_part(lib, name))?;
     let mut part = e.part.clone();
+    if let Some(spec) = &f.symbol {
+        swap_symbol(e, &mut part, spec, project)?;
+    }
+    let footprint = match &f.footprint {
+        Some(spec) => Some(swap_footprint(e, &mut part, spec, project)?),
+        None => None,
+    };
     let text = |v: &Option<String>| v.as_ref().map(|s| s.trim().to_string());
     let some = |v: Option<String>| v.filter(|s| !s.is_empty());
     if let Some(m) = text(&f.mpn) {
@@ -1144,7 +1215,15 @@ pub fn set_fields(lib: &Library, name: &str, f: &Fields) -> Result<Value, String
         part.notes = n;
     }
     library::write_entry(&e.dir, &part)?;
-    Ok(json!({ "part": e.name, "mpn": part.mpn, "manufacturer": part.manufacturer }))
+    let mut out = json!({ "part": e.name, "mpn": part.mpn, "manufacturer": part.manufacturer });
+    if let Some(fp) = footprint {
+        out["footprint"] = json!(fp);
+        out["next"] = json!(format!(
+            "the model went with the old footprint: agentee library fill {} finds one for the new",
+            e.name
+        ));
+    }
+    Ok(out)
 }
 
 pub fn set_stock(

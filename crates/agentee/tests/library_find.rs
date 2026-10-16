@@ -267,3 +267,60 @@ fn per_part_fill_options_need_a_part() {
         assert!(!out.status.success() && err.contains("name it"), "{flag}: {err}");
     }
 }
+
+#[test]
+fn set_swaps_the_footprint_and_drops_the_old_model() {
+    let lib = std::env::temp_dir().join(format!("agentee-setfp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&lib);
+    let dir = lib.join("C2");
+    std::fs::create_dir_all(dir.join("3dmodels")).unwrap();
+    let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+    std::fs::copy(lna.join("symbols/C.sym.toml"), dir.join("C.sym.toml")).unwrap();
+    std::fs::copy(
+        lna.join("footprints/C_0402_1005Metric.fp.toml"),
+        dir.join("C_0402_1005Metric.fp.toml"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("3dmodels/old.step"), "old").unwrap();
+    std::fs::write(
+        dir.join("part.toml"),
+        "role = \"capacitor\"\nsymbol = \"C.sym.toml\"\nfootprint = \"C_0402_1005Metric.fp.toml\"\nmodel = \"3dmodels/old.step\"\n\n\
+         [[files]]\npath = \"3dmodels/old.step\"\nsource = \"x\"\nsha256 = \"0\"\n\n\
+         [[stock]]\ndistributor = \"home\"\nsku = \"C2\"\nstock = 0\nchecked = \"2026-01-01\"\nown = 7\n",
+    )
+    .unwrap();
+    let new = lna.join("footprints/R_0402_1005Metric.fp.toml");
+    let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+        .args(["library", "set", "C2", "--footprint"])
+        .arg(&new)
+        .args(["-p"])
+        .arg(&lib)
+        .env("AGENTEE_LIBRARY", &lib)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let part = std::fs::read_to_string(dir.join("part.toml")).unwrap();
+    assert!(part.contains("footprint = \"R_0402_1005Metric.fp.toml\""), "{part}");
+    assert!(!part.contains("model =") && !part.contains("old.step"), "{part}");
+    assert!(part.contains("own = 7"), "{part}");
+    assert!(
+        !dir.join("3dmodels/old.step").exists() && !dir.join("C_0402_1005Metric.fp.toml").exists()
+    );
+    let sym = std::fs::read_to_string(dir.join("C.sym.toml")).unwrap();
+    assert!(sym.contains("footprint = \"R_0402_1005Metric\""), "{sym}");
+    let before = sym.lines().find(|l| l.starts_with("name =")).unwrap().to_string();
+    let out = Command::new(env!("CARGO_BIN_EXE_agentee"))
+        .args(["library", "set", "C2", "--symbol"])
+        .arg(lna.join("symbols/R.sym.toml"))
+        .args(["-p"])
+        .arg(&lib)
+        .env("AGENTEE_LIBRARY", &lib)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let sym = std::fs::read_to_string(dir.join("C.sym.toml")).unwrap();
+    assert!(sym.contains(&before), "the part keeps its symbol name: {sym}");
+    assert!(sym.contains("footprint = \"R_0402_1005Metric\""), "{sym}");
+    assert!(sym.contains("reference = \"R\""), "{sym}");
+    let _ = std::fs::remove_dir_all(&lib);
+}

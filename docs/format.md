@@ -3066,7 +3066,9 @@ API call, as of that date.
 in a `[[stock]]` listing with `distributor = "home"` and an `own` count, and survives `refresh`.
 `--bin A3` records the drawer that holds them; a later `stock` without `--bin` keeps it.
 `set NAME` changes a part's `mpn`, maker, LCSC code, value, rating, role or notes and keeps its
-files and shelf count. A new part number drops the distributor listings and the pinned datasheet,
+files and shelf count. `--symbol` and `--footprint` swap those files in place (a `.sym.toml` or
+`.fp.toml`, a project item or a KiCad `Library:Name`); the symbol keeps the part's name, and a new
+footprint drops the old 3D model, which `fill` finds again for the new one. A new part number drops the distributor listings and the pinned datasheet,
 which belonged to the old one; `refresh` and `fill` fetch them again.
 
 The viewer's `library` tab (`agentee view --select library`) lists the library by role with
