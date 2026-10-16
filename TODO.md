@@ -21,6 +21,22 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   `model` path and `height` (R_0603_1608Metric, SOT-23, SOIC-8 in ubench), after it has already
   written the symbol, so a half-done use is left behind.
 
+## Hand assembly
+
+- A `[[stock]]` entry has no shelf location: `library stock NAME N` takes a count only
+  (`crates/agentee-parts/src/library.rs` `Stock`). Add `--bin A3` so a pick list can say which
+  drawer holds the part.
+- No assembly sheet for hand building. `fab` writes `cpl.csv` by reference only. Want
+  `agentee assemble NAME`: one line per part ("100 nF 0402, bin A3, C1 C4 C7 C12, 4 pcs"),
+  split by side, smallest and hottest parts first, each group with a render that highlights its
+  refs (as `render --focus` does).
+- `agentee view` has no guided assembly mode: step through the groups from `assemble`, light up
+  where each one goes on the board, and tick them off.
+- Building boards does not use up stock. Want `agentee assemble NAME --built 3` to take 3
+  boards' worth of parts off the `own` counts.
+- No stock intake from a part bag: scan the 2D barcode on a DigiKey, Mouser or LCSC bag to add
+  its part number and quantity to the library stock instead of typing them in.
+
 ## Spacing
 
 - `agentee layout mains` (ubench) never finishes the detail stage: round 0 of the negotiated
