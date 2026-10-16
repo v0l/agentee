@@ -64,6 +64,7 @@ impl App {
         path: PathBuf,
         select: Option<String>,
         view_3d: bool,
+        assemble: bool,
     ) -> Self {
         egui_bench::install(&cc.egui_ctx);
         if let Some(state) = &cc.wgpu_render_state {
@@ -94,6 +95,7 @@ impl App {
         };
         app.st.view_3d = view_3d;
         app.open(path, select);
+        app.st.assemble_on_open = assemble;
         app
     }
 
@@ -570,7 +572,12 @@ impl eframe::App for App {
     }
 }
 
-pub fn run(path: PathBuf, select: Option<String>, view_3d: bool) -> eframe::Result<()> {
+pub fn run(
+    path: PathBuf,
+    select: Option<String>,
+    view_3d: bool,
+    assemble: bool,
+) -> eframe::Result<()> {
     let title = format!("agentee - {}", path.display());
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -585,6 +592,6 @@ pub fn run(path: PathBuf, select: Option<String>, view_3d: bool) -> eframe::Resu
     eframe::run_native(
         &title,
         opts,
-        Box::new(move |cc| Ok(Box::new(App::new(cc, path, select, view_3d)))),
+        Box::new(move |cc| Ok(Box::new(App::new(cc, path, select, view_3d, assemble)))),
     )
 }

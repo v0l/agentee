@@ -2591,7 +2591,8 @@ pub fn assemble(p: &Project, name: &str, a: &AssembleArgs) -> Result<Value, Stri
             b.add(*q);
         }
         let m = 2.0;
-        let region = (!b.is_empty()).then(|| [b.min[0] - m, b.min[1] - m, b.max[0] + m, b.max[1] + m]);
+        let region =
+            (!b.is_empty()).then(|| [b.min[0] - m, b.min[1] - m, b.max[0] + m, b.max[1] + m]);
         let r = find(p, &format!("pcb:{}", entry.name))?;
         for g in &groups {
             let (show, hide) = match g.side {

@@ -1,4 +1,5 @@
 pub mod app;
+pub mod assembly;
 pub mod board3d;
 pub mod canvas;
 pub mod circuit;

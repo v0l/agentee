@@ -131,6 +131,9 @@ enum Cmd {
         /// Open layouts in the 3D view
         #[arg(long = "3d")]
         view_3d: bool,
+        /// Step through the hand assembly groups of the selected layout
+        #[arg(long)]
+        assemble: bool,
     },
     /// Serve the project over MCP on stdio
     Mcp {
@@ -943,8 +946,8 @@ fn run(cli: Cli) -> Result<bool, String> {
             println!("{}", out.display());
             Ok(true)
         }
-        Cmd::View { path, select, view_3d } => {
-            agentee_view::run(path, select, view_3d).map_err(|e| e.to_string())?;
+        Cmd::View { path, select, view_3d, assemble } => {
+            agentee_view::run(path, select, view_3d, assemble).map_err(|e| e.to_string())?;
             Ok(true)
         }
         Cmd::Mcp { path } => {

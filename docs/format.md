@@ -2771,6 +2771,10 @@ agentee assemble preamp --images build/       # plus build/01-top.png ... with e
 agentee assemble preamp --built 3 --json      # take 3 boards' worth off the library shelf
 ```
 
+`agentee view --select pcb:NAME --assemble` (or the `assemble` toggle over a layout) steps
+through the same groups on the board: the current group is lit, the view turns over for the
+bottom side, space ticks the group and moves to the next open one, and the arrows step.
+
 `--built N` takes `N` boards of each group off the `own` count of its library part, found by the
 part's `library` field, then its `mpn`, then its `lcsc`. Groups with no library part are listed
 as not counted, and a shelf that runs short is reported and makes the command fail.
