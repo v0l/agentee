@@ -1,0 +1,62 @@
+# imported from KiCad Transistor_BJT:MMBT3906
+name = "MMBT3906"
+reference = "Q"
+description = "-0.2A Ic, -40V Vce, Small Signal PNP Transistor, SOT-23"
+datasheet = "https://www.onsemi.com/pdf/datasheet/pzt3906-d.pdf"
+keywords = ["PNP", "Transistor"]
+pin_names = "hidden"
+
+[[graphics]]
+kind = "polyline"
+points = [[-2.54, 0.0], [0.635, 0.0]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.635, -1.905], [0.635, 1.905]]
+width = 0.508
+
+[[graphics]]
+kind = "polyline"
+points = [[0.635, -0.635], [2.54, -2.54]]
+
+[[graphics]]
+kind = "polyline"
+points = [[0.635, 0.635], [2.54, 2.54]]
+
+[[graphics]]
+kind = "circle"
+center = [1.27, 0.0]
+radius = 2.8194
+width = 0.254
+
+[[graphics]]
+kind = "polygon"
+points = [[2.286, 1.778], [1.778, 2.286], [1.27, 1.27]]
+fill = "solid"
+
+[[pins]]
+number = "1"
+name = "B"
+type = "input"
+at = [-5.08, 0.0]
+side = "left"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "3"
+name = "C"
+type = "passive"
+at = [2.54, -5.08]
+side = "top"
+length = 2.54
+unit = 1
+
+[[pins]]
+number = "2"
+name = "E"
+type = "passive"
+at = [2.54, 5.08]
+side = "bottom"
+length = 2.54
+unit = 1

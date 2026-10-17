@@ -339,6 +339,7 @@ struct Ref {
     reference: String,
     value: String,
     symbol: String,
+    about: String,
     prefix: String,
     power: bool,
     pins: Vec<Pin>,
@@ -458,6 +459,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                     reference: part.reference.clone(),
                     value: part.value.clone(),
                     symbol: part.symbol_name.clone(),
+                    about: format!("{} {}", part.symbol.description, part.symbol.keywords.join(" ")),
                     prefix: part.symbol.reference.to_ascii_uppercase(),
                     power: part.symbol.power,
                     pins: Vec::new(),
@@ -751,7 +753,7 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                 ) else {
                     continue;
                 };
-                let sym = format!("{} {}", r.symbol, r.value).to_ascii_uppercase();
+                let sym = format!("{} {} {}", r.symbol, r.value, r.about).to_ascii_uppercase();
                 let pnp = chosen == "pnp" || (chosen == "bjt" && sym.contains("PNP"));
                 let kind = ElemKind::Bjt {
                     pnp,
@@ -775,8 +777,10 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                 ) else {
                     continue;
                 };
-                let sym = format!("{} {}", r.symbol, r.value).to_ascii_uppercase();
-                let pch = chosen == "pmos" || (chosen == "mosfet" && (sym.contains("PMOS") || sym.contains("P-CH")));
+                let sym = format!("{} {} {}", r.symbol, r.value, r.about).to_ascii_uppercase();
+                let pch = chosen == "pmos"
+                    || (chosen == "mosfet"
+                        && (sym.contains("PMOS") || sym.contains("P-CH")));
                 let kind = ElemKind::Mosfet {
                     p: pch,
                     vth: cx.q(&b.and_then(|b| b.vth.clone()), &["v"], &at, "vth", 1.5).abs(),

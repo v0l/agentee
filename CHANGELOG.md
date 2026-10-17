@@ -55,6 +55,8 @@ All notable changes to agentee are listed here. The format follows
 - `layout` places parts that have no footprint entry.
 - A part a distributor lists as `NO_LONGER_MANUFACTURED` or not recommended is no longer treated
   as active, so `library find` and `library add` agree on stock.
+- A BJT or MOSFET block reads its polarity from the symbol's description and keywords too, so an
+  `MMBT3906` with no "PNP" in its value simulates as a PNP.
 - `library use` writes all of a part's files or none.
 - `library add` points the symbol's datasheet at the pinned one.
 - A footprint's 3D model that KiCad lacks is also looked for in Espressif's kicad-libraries, and
