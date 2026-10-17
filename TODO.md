@@ -77,5 +77,8 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Performance
 
-- `agentee check . --item main-psu-cc` in ubench/hardware (333 MB) takes 177 s before any solver
-  runs, and `agentee sim` the same plus the solve (its own `seconds` reads 10 s). Not profiled.
+- Loading ubench `hardware` takes 10 s in a release build, 3 min in debug (`agentee list .`
+  from any item). Resolving the two layouts is 5.6 s of it (`Layout::resolve`,
+  `crates/agentee-core/src/layout.rs`), and the schematic wire router the rest: `main`
+  (937 parts, grid 353x3745 cells) runs 742 searches. Run `agentee` from `target/release` for
+  anything on ubench.
