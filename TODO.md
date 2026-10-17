@@ -77,8 +77,10 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Performance
 
-- Loading ubench `hardware` takes 10 s in a release build, 3 min in debug (`agentee list .`
-  from any item). Resolving the two layouts is 5.6 s of it (`Layout::resolve`,
-  `crates/agentee-core/src/layout.rs`), and the schematic wire router the rest: `main`
-  (937 parts, grid 353x3745 cells) runs 742 searches. Run `agentee` from `target/release` for
-  anything on ubench.
+- Loading ubench `hardware` takes 8 s in a release build, 3 min in debug (`agentee list .`
+  from any item). The schematic wire router is most of it: `main` (937 parts, grid 353x3745
+  cells) runs 742 searches. `Layout::resolve` is 1.6 s for the two layouts, mostly zone fills.
+  Run `agentee` from `target/release` for anything on ubench.
+- `free_spot` (`crates/agentee-core/src/layout.rs`) tries 636 spots for each of 258 labels on
+  ubench `main`, and 247 find none: the part is boxed in by `crowds` and `sits on pads`. A
+  label with no clear spot near the part could stop early.
