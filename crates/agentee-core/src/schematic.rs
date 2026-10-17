@@ -791,6 +791,7 @@ impl Scratch {
 
 #[derive(PartialEq, Eq)]
 struct Node {
+    rank: u32,
     cost: u32,
     cell: Cell,
     dir: u8,
@@ -798,8 +799,24 @@ struct Node {
 
 impl Ord for Node {
     fn cmp(&self, o: &Self) -> std::cmp::Ordering {
-        o.cost.cmp(&self.cost).then_with(|| (self.cell, self.dir).cmp(&(o.cell, o.dir)))
+        o.rank.cmp(&self.rank).then_with(|| (self.cell, self.dir).cmp(&(o.cell, o.dir)))
     }
+}
+
+fn reach(targets: &HashSet<Cell>) -> (Cell, Cell) {
+    let mut lo = (i32::MAX, i32::MAX);
+    let mut hi = (i32::MIN, i32::MIN);
+    for t in targets {
+        lo = (lo.0.min(t.0), lo.1.min(t.1));
+        hi = (hi.0.max(t.0), hi.1.max(t.1));
+    }
+    (lo, hi)
+}
+
+fn toward(c: Cell, (lo, hi): (Cell, Cell)) -> u32 {
+    let dx = (lo.0 - c.0).max(c.0 - hi.0).max(0);
+    let dy = (lo.1 - c.1).max(c.1 - hi.1).max(0);
+    (dx + dy) as u32 * 10
 }
 
 impl PartialOrd for Node {
@@ -820,6 +837,7 @@ fn search(
     s.stamp += 1;
     let key = |c: Cell, dir: u8| g.index(c).map(|i| i * 4 + dir as usize);
     let mut heap = BinaryHeap::new();
+    let box_of = reach(targets);
     for (nd, d) in DIRS.iter().enumerate() {
         let nd = nd as u8;
         let first = (start.0 + d.0, start.1 + d.1);
@@ -834,9 +852,9 @@ fn search(
         }
         let cost = if nd == start_dir { 10 } else { 50 };
         s.set(key(first, nd), cost, (start, nd));
-        heap.push(Node { cost, cell: first, dir: nd });
+        heap.push(Node { rank: cost + toward(first, box_of), cost, cell: first, dir: nd });
     }
-    while let Some(Node { cost, cell: c, dir }) = heap.pop() {
+    while let Some(Node { cost, cell: c, dir, .. }) = heap.pop() {
         if s.best(key(c, dir)).is_some_and(|b| b < cost) {
             continue;
         }
@@ -884,7 +902,7 @@ fn search(
             let nc = cost + step;
             if s.best(key(n, nd)).is_none_or(|b| nc < b) {
                 s.set(key(n, nd), nc, (c, dir));
-                heap.push(Node { cost: nc, cell: n, dir: nd });
+                heap.push(Node { rank: nc + toward(n, box_of), cost: nc, cell: n, dir: nd });
             }
         }
     }
