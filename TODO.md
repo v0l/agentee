@@ -73,12 +73,9 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Circuit sim
 
-- The operating point does not converge for two op-amp integrators diode-ORed onto one node with
-  the CC loop idle (ubench `main-psu-cc` with ISET 0.46 V); starting from a gate-off state with
-  steps works.
-- No varistor block, so a MOV clamp cannot be modelled for a mains surge sim, and no IEC
-  61000-4-5 combination wave (1.2/50 us, 8/20 us) or 61000-4-4 burst drive.
-- No LISN or conducted-emission readout (dBuV at 150 kHz to 30 MHz against CISPR 11 limits), so
-  an input filter cannot be checked against the limit lines.
-- No harmonic readout against EN 61000-3-2 class A limits for a mains input current, nor a Pst
-  readout for flicker (EN 61000-3-3) from a switched load.
+- No Pst readout for flicker (EN 61000-3-3) from a switched load.
+
+## Performance
+
+- `agentee check . --item main-psu-cc` in ubench/hardware (333 MB) takes 177 s before any solver
+  runs, and `agentee sim` the same plus the solve (its own `seconds` reads 10 s). Not profiled.
