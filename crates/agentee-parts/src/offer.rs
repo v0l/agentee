@@ -71,8 +71,11 @@ impl Offer {
     pub fn active(&self) -> bool {
         !self.lifecycle.as_deref().is_some_and(|l| {
             let l = l.to_lowercase();
+            let l = l.replace('_', " ");
             l.contains("obsolete")
                 || l.contains("end of life")
+                || l.contains("no longer manufactured")
+                || l.contains("not recommended")
                 || l.contains("discontinued")
                 || l == "eol"
         })
@@ -101,4 +104,41 @@ pub fn parse_count(s: &str) -> u64 {
     let digits: String =
         s.split_whitespace().next().unwrap_or("").chars().filter(|c| c.is_ascii_digit()).collect();
     digits.parse().unwrap_or(0)
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    fn offer(lifecycle: Option<&str>) -> Offer {
+        Offer {
+            distributor: "Farnell".into(),
+            sku: "1".into(),
+            manufacturer: String::new(),
+            mpn: "X".into(),
+            description: String::new(),
+            stock: 10,
+            lifecycle: lifecycle.map(String::from),
+            currency: "EUR".into(),
+            breaks: Vec::new(),
+            min: 1,
+            mult: 1,
+            url: None,
+            datasheet: None,
+            attributes: BTreeMap::new(),
+            replacement: None,
+        }
+    }
+
+    #[test]
+    fn a_part_no_longer_manufactured_is_not_active() {
+        for l in
+            ["NO_LONGER_MANUFACTURED", "End of Life", "Obsolete", "Not Recommended for New Designs"]
+        {
+            assert!(!offer(Some(l)).active(), "{l}");
+        }
+        for l in [None, Some("Active"), Some("New Product")] {
+            assert!(offer(l).active(), "{l:?}");
+        }
+    }
 }

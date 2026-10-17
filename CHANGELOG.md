@@ -53,6 +53,8 @@ All notable changes to agentee are listed here. The format follows
 - Refilling zones keeps the plan's end marker, and a plan section with no end marker is refused.
 - `edit sch` refuses a file that does not load, and tidies pin lists.
 - `layout` places parts that have no footprint entry.
+- A part a distributor lists as `NO_LONGER_MANUFACTURED` or not recommended is no longer treated
+  as active, so `library find` and `library add` agree on stock.
 - `library use` writes all of a part's files or none.
 - `library add` points the symbol's datasheet at the pinned one.
 - A footprint's 3D model that KiCad lacks is also looked for in Espressif's kicad-libraries, and

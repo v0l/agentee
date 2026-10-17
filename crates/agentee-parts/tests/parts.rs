@@ -905,8 +905,8 @@ fn your_own_stock_covers_the_need_so_nothing_is_ordered() {
 
 #[test]
 fn the_order_sheet_orders_only_what_the_shelf_does_not_cover() {
-    use std::path::PathBuf;
     use agentee_parts::library::{Entry, Library, PartFile, Stock};
+    use std::path::PathBuf;
     let part = PartFile {
         role: "regulator".into(),
         mpn: Some("LM5164DDAR".into()),
@@ -949,10 +949,21 @@ fn the_order_sheet_orders_only_what_the_shelf_does_not_cover() {
         footprint_name: None,
         pin_count: None,
     };
-    let lib = Library { dirs: vec![], entries: vec![e], config: Default::default(), errors: vec![] };
+    let lib =
+        Library { dirs: vec![], entries: vec![e], config: Default::default(), errors: vec![] };
     let lines = vec![
-        BomLine { refs: (1..=4).map(|n| format!("U{n}")).collect(), value: "LM5164".into(), mpn: Some("LM5164DDAR".into()), ..Default::default() },
-        BomLine { refs: (1..=10).map(|n| format!("V{n}")).collect(), value: "LM5164".into(), mpn: Some("LM5164DDAR".into()), ..Default::default() },
+        BomLine {
+            refs: (1..=4).map(|n| format!("U{n}")).collect(),
+            value: "LM5164".into(),
+            mpn: Some("LM5164DDAR".into()),
+            ..Default::default()
+        },
+        BomLine {
+            refs: (1..=10).map(|n| format!("V{n}")).collect(),
+            value: "LM5164".into(),
+            mpn: Some("LM5164DDAR".into()),
+            ..Default::default()
+        },
     ];
     let mouser = Fake {
         name: "Mouser",

@@ -166,7 +166,9 @@ pub fn plan(items: Vec<Item>, sources: &[&dyn Distributor]) -> (Vec<Ordered>, Ve
 
 impl Ordered {
     pub fn buy_qty(&self) -> u32 {
-        self.item.qty.saturating_sub(u32::try_from(self.item.shelf.unwrap_or(0)).unwrap_or(u32::MAX))
+        self.item
+            .qty
+            .saturating_sub(u32::try_from(self.item.shelf.unwrap_or(0)).unwrap_or(u32::MAX))
     }
 
     pub fn elsewhere(&self) -> String {
@@ -192,10 +194,7 @@ impl Ordered {
         }
         match self.stock.get(site).copied().flatten() {
             Some(n) if self.item.shelf.is_some_and(|s| s > 0 && s < u64::from(self.item.qty)) => {
-                format!(
-                    "short, {n} in stock, {} on the shelf",
-                    self.item.shelf.unwrap_or(0)
-                )
+                format!("short, {n} in stock, {} on the shelf", self.item.shelf.unwrap_or(0))
             }
             Some(n) => format!("short, {n} in stock"),
             None if self.item.shelf.is_some_and(|s| s < u64::from(self.item.qty)) => {
