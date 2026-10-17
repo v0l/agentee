@@ -12,9 +12,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   VQFN-24-1EP_4x4mm_P0.5mm_EP2.5x2.5mm_ThermalVias and VQFN-28-1EP_5x5mm_P0.5mm_EP3.7x3.7mm_ThermalVias
   (0.15 mm thermal vias). Seen from `examples/preamp`.
 
-- `library add STM32H743BIT6` (taken: master) says "not in stock as an active part at any distributor" while
-  `library find STM32H743BIT6 --search` lists 1014 at Farnell.
-
 - KiCad 9 footprints name 3D models that kicad-packages3D does not have on any tag
   (`Connector_Audio.3dshapes/Jack_3.5mm_QingPu_WQP-PJ398SM_Vertical.step`,
   `Potentiometer_THT.3dshapes/Potentiometer_Bourns_PTV09A-1_Single_Vertical.step`), so `library fill` finds none.
