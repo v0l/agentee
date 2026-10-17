@@ -19,6 +19,23 @@ All notable changes to agentee are listed here. The format follows
 - An optional topology stage in `layout`.
 - `layout` reports progress on stderr, and sims show their solver stages.
 - The icon is embedded in the Windows binary.
+- `library fill` pins a missing datasheet and 3D model from the symbol's URL, the distributors,
+  KiCad and EasyEDA. `--like` takes the EasyEDA model of a part in the same package.
+- `library set --symbol` and `--footprint` swap a part's symbol or footprint.
+- `library intake` adds the parts in a distributor bag to your own stock from its 2D barcode
+  (DigiKey, Mouser, LCSC). Own stock and a shelf bin are recorded per part and subtracted from
+  what needs ordering.
+- `library assets` searches every source for a symbol, footprint, 3D model or datasheet:
+  the KiCad libraries, EasyEDA, and the distributors. A source is one `AssetSource` impl.
+- `library add --model easyeda:CODE` takes a model found by that search.
+- A library tab in the viewer, with an on-shelf filter, footprint, 3D and symbol previews,
+  and fix match and add part dialogs. Add part searches each of the four assets and previews
+  the part beside the form.
+- `assemble` and an assembly tab in the viewer step through the hand assembly groups of a
+  layout.
+- `edit board domain` and `barrier`, `edit sch remove net`, and globs in keepout nets.
+- A `ground` key on circuit sims.
+- `place` reports the parts it leaves off the board.
 
 ### Changed
 - Tracks route to pads by the footprint's clearance, which holds inside the courtyard, and
@@ -36,6 +53,10 @@ All notable changes to agentee are listed here. The format follows
 - Refilling zones keeps the plan's end marker, and a plan section with no end marker is refused.
 - `edit sch` refuses a file that does not load, and tidies pin lists.
 - `layout` places parts that have no footprint entry.
+- `library use` writes all of a part's files or none.
+- `library add` points the symbol's datasheet at the pinned one.
+- A footprint's 3D model that KiCad lacks is also looked for in Espressif's kicad-libraries, and
+  a `--model` that cannot be found says which model replaced it.
 
 ## [0.3.0] - 2026-10-12
 

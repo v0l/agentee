@@ -1,5 +1,14 @@
 # Agents
 
+## CHANGELOG.md tracks what ships
+
+Every change a user can see goes under `## [Unreleased]` in `CHANGELOG.md` in the same commit
+as the code: a new command, flag, dialog or source under `### Added`, altered behaviour under
+`### Changed`, and a bug fix under `### Fixed`. One line or two, in plain words, naming the
+command or file (`library fill`, `edit board domain`). Refactors, tests, TODO edits and
+dependency bumps need no entry. Release notes are built from this file, so a feature with no
+entry is not announced.
+
 ## TODO.md is the shared issue list
 
 Several agents work on this repo at once, often from separate worktrees. `TODO.md` at the
