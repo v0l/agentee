@@ -73,9 +73,6 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Circuit sim
 
-- The op-amp output stage is a tanh soft clip about mid-rail, so its slope is under 1 well
-  inside the rails: a 1 V/us slew limited follower ramps at 0.97 V/us between 3 and 6 V on 10 V
-  rails (`crates/agentee-sim/src/circuit.rs` `Unit::Buffer`).
 - The operating point does not converge for two op-amp integrators diode-ORed onto one node with
   the CC loop idle (ubench `main-psu-cc` with ISET 0.46 V); starting from a gate-off state with
   steps works.
