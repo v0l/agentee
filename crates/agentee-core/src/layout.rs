@@ -2620,6 +2620,57 @@ fn check_silk(
             d.add("silk-artwork", &at, format!("`{}` runs off the board", a.name));
         }
     }
+    let issues: Vec<Vec<(bool, String)>> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            if !texts_on {
+                return Vec::new();
+            }
+            let _ = t;
+            silk_issues(
+                t, &boxes[i], i, &texts, &boxes, parts, &spans, vias, board_edge, &idx, false,
+            )
+        })
+        .collect();
+    let wants: Vec<Option<&Placed>> = texts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let p = (t.part != usize::MAX).then(|| parts.get(t.part)).flatten()?;
+            (!issues[i].is_empty() && t.text == p.reference && !stuck(&p.reference)).then_some(p)
+        })
+        .collect();
+    let scene = (parts, spans.as_slice(), vias, tracks);
+    let spots: std::collections::HashMap<usize, Option<(P, f64)>> = {
+        let todo: Vec<usize> = (0..texts.len()).filter(|i| wants[*i].is_some()).collect();
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(todo.len().max(1));
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let mut found: Vec<(usize, Option<(P, f64)>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..workers)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let mut mine = Vec::new();
+                        loop {
+                            let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(&i) = todo.get(k) else { break };
+                            let Some(p) = wants[i] else { continue };
+                            let spot =
+                                free_spot(&texts[i], p, &texts, &boxes, i, scene, board_edge, &idx);
+                            mine.push((i, spot));
+                        }
+                        mine
+                    })
+                })
+                .collect();
+            handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        });
+        found.sort_by_key(|(i, _)| *i);
+        found.into_iter().collect()
+    };
     for (i, t) in texts.iter().enumerate() {
         let who = &t.owner;
         let at = format!("silk {who}");
@@ -2638,20 +2689,13 @@ fn check_silk(
         if !texts_on {
             continue;
         }
-        let found = silk_issues(
-            t, &boxes[i], i, &texts, &boxes, parts, &spans, vias, board_edge, &idx, false,
-        );
+        let found = &issues[i];
         if found.is_empty() {
             continue;
         }
         let hint = match (t.part != usize::MAX).then(|| parts.get(t.part)).flatten() {
             Some(p) if t.text == p.reference => {
-                let spot = if stuck(&p.reference) {
-                    None
-                } else {
-                    let scene = (parts, spans.as_slice(), vias, tracks);
-                    free_spot(t, p, &texts, &boxes, i, scene, board_edge, &idx)
-                };
+                let spot = spots.get(&i).copied().flatten();
                 fixes.push(LabelFix {
                     reference: p.reference.clone(),
                     at: spot.map(|s| s.0),

@@ -57,8 +57,9 @@ All notable changes to agentee are listed here. The format follows
   as active, so `library find` and `library add` agree on stock.
 - A BJT or MOSFET block reads its polarity from the symbol's description and keywords too, so an
   `MMBT3906` with no "PNP" in its value simulates as a PNP.
-- Loading a project routes schematic wires 2.4 times faster (ubench `hardware` from 25 s to 10 s)
-  by steering the wire search toward its targets, with the same wires.
+- Loading a project is three times faster (ubench `hardware` from 25 s to 8 s): the schematic
+  wire search steers toward its targets and silk label spots are searched on every core, with
+  the same wires and the same findings.
 - `library use` writes all of a part's files or none.
 - `library add` points the symbol's datasheet at the pinned one.
 - A footprint's 3D model that KiCad lacks is also looked for in Espressif's kicad-libraries, and
