@@ -1786,8 +1786,8 @@ load the file. Closing the window with unsaved edits asks first.
 
 | key | does |
 |---|---|
-| click | select a part, track, via or ratsnest line; clicking the selection again picks the next item under the pointer |
-| drag | move it: a part with its label, a via, a track corner, or a whole track segment; the selected item wins over what lies under it |
+| S | select tool, off by default so a drag pans: click selects a part, track, via or ratsnest line; clicking the selection again picks the next item under the pointer |
+| drag (select tool) | move it: a part with its label, a via, a track corner, or a whole track segment; the selected item wins over what lies under it |
 | right or middle drag, wheel | pan, zoom |
 | R, shift+R | rotate the selected part by 90 degrees |
 | Del | delete the selected track or via |
@@ -1795,7 +1795,7 @@ load the file. Closing the window with unsaved edits asks first.
 | V | via tool: click copper with a net to place a class via of that net |
 | PgUp, PgDn | active layer |
 | ctrl+Z, ctrl+shift+Z | undo, redo |
-| Esc | cancel the track, back to select, clear the selection |
+| Esc | cancel the track, switch the tool off, clear the selection |
 
 Moves snap to the grid picked in the toolbar. New tracks take the class width (no `width` key);
 the properties panel sets the net, layer and an own width of a track, the position, net and type

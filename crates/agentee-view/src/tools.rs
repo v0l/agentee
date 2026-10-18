@@ -300,6 +300,7 @@ impl Canvas<'_> {
             && let Some(m) = hover
         {
             match ed.tool {
+                Tool::View => {}
                 Tool::Select => {
                     let l = ed.layout(project, i);
                     ed.sel = pick(l, self.layers, m, tol, self.ratsnest, ed.sel.as_ref(), true)
@@ -471,11 +472,14 @@ impl Canvas<'_> {
         if key(Modifiers::NONE, Key::Escape) {
             if ed.draft.is_some() {
                 ed.draft = None;
-            } else if ed.tool != Tool::Select {
-                ed.tool = Tool::Select;
+            } else if ed.tool != Tool::View {
+                ed.tool = Tool::View;
             } else {
                 ed.sel = None;
             }
+        }
+        if key(Modifiers::NONE, Key::S) {
+            ed.tool = Tool::Select;
         }
         if key(Modifiers::NONE, Key::X) {
             ed.tool = Tool::Route;
@@ -626,6 +630,7 @@ fn delete(ctx: &egui::Context, project: &Project, i: usize, ed: &mut Editor) {
 
 pub fn hint(ui: &Ui, rect: Rect, ed: &Editor) {
     let text = match (ed.tool, &ed.draft) {
+        (Tool::View, _) => "drag pans, wheel zooms, S selects and moves, X routes, V places vias",
         (Tool::Select, _) => {
             "click to select, drag to move, right or middle drag pans, R rotates, Del deletes, X routes, V places vias"
         }
@@ -663,15 +668,15 @@ fn divider(ui: &mut Ui) {
 pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     let ctx = ui.ctx().clone();
     divider(ui);
-    let mut tool = ed.tool;
-    segments(
-        ui,
-        &mut tool,
-        &[(Tool::Select, "select", None), (Tool::Route, "route", None), (Tool::Via, "via", None)],
-    );
-    if tool != ed.tool {
-        ed.tool = tool;
-        ed.draft = None;
+    for (tool, name, what) in [
+        (Tool::Select, "select", "click to select, drag to move"),
+        (Tool::Route, "route", "draw tracks"),
+        (Tool::Via, "via", "place vias"),
+    ] {
+        if toggle(ui, name, ed.tool == tool).on_hover_text(what).clicked() {
+            ed.tool = if ed.tool == tool { Tool::View } else { tool };
+            ed.draft = None;
+        }
     }
     let copper = ed.layout(project, i).copper.clone();
     let mut layer = ed.layer.clone();

@@ -991,11 +991,12 @@ fn layout_view(
                     st.show_parts = !st.show_parts;
                 }
             } else {
-                if toggle(ui, "back", st.view.flip)
-                    .on_hover_text("look at the board from below")
-                    .clicked()
-                {
-                    st.view.flip = !st.view.flip;
+                let mut back = st.view.flip;
+                ui.push_id("view-side", |ui| {
+                    segments(ui, &mut back, &[(false, "front", None), (true, "back", None)]);
+                });
+                if back != st.view.flip {
+                    st.view.flip = back;
                     st.pcb_layers.mirror();
                 }
                 if let Some(ed) = ed.as_deref_mut() {

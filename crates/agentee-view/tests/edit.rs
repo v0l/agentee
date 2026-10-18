@@ -125,6 +125,10 @@ impl Harness {
         self.st.editors.get(&self.path).expect("an editor for the layout")
     }
 
+    fn select(&mut self) {
+        self.ed_mut().tool = Tool::Select;
+    }
+
     fn ed_mut(&mut self) -> &mut agentee_view::edit::Editor {
         self.st.editors.get_mut(&self.path).unwrap()
     }
@@ -142,6 +146,7 @@ fn part_at(p: &Project, r: &str) -> [f64; 2] {
 fn dragging_a_part_moves_it_and_saves_on_ctrl_s() {
     let dir = lna();
     let mut h = Harness::new(&dir);
+    h.select();
     let before = h.file();
     let pad = {
         let l = &h.project.layouts[0].item;
@@ -226,6 +231,7 @@ fn route_tool_draws_a_track_between_pads() {
 fn deleting_a_track_and_undoing_restores_the_file_text() {
     let dir = lna();
     let mut h = Harness::new(&dir);
+    h.select();
     let n = h.project.layouts[0].item.tracks.len();
     let t = h.project.layouts[0].item.tracks[0].clone();
     let mid = [(t.points[0][0] + t.points[1][0]) / 2.0, (t.points[0][1] + t.points[1][1]) / 2.0];
@@ -264,6 +270,7 @@ fn dragging_a_fanout_via_takes_it_out_of_the_rule() {
     use agentee_core::layout::ViaSource;
     let dir = example("hdi");
     let mut h = Harness::new(&dir);
+    h.select();
     for l in ["In1.Cu", "In2.Cu", "B.Cu"] {
         h.st.pcb_layers.hidden.retain(|x| x != l);
     }
@@ -308,6 +315,7 @@ fn routing_one_connection_closes_it() {
 fn a_selected_track_over_a_pad_drags_before_the_pad() {
     let dir = lna();
     let mut h = Harness::new(&dir);
+    h.select();
     let l = &h.project.layouts[0].item;
     let (t, part) = l
         .tracks

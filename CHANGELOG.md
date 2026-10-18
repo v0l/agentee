@@ -38,6 +38,8 @@ All notable changes to agentee are listed here. The format follows
 - `place` reports the parts it leaves off the board.
 
 ### Changed
+- The viewer's layout editor starts with no tool, so a drag pans; `select` is a toggle (key S)
+  like `route` and `via`, and front/back are tabs.
 - Tracks route to pads by the footprint's clearance, which holds inside the courtyard, and
   waivers cover pairs.
 - The placer pulls bridging passives from both pins, keeps isolation domains on their side, and

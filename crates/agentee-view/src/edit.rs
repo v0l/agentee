@@ -21,6 +21,7 @@ pub enum Sel {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tool {
     #[default]
+    View,
     Select,
     Route,
     Via,
@@ -93,7 +94,7 @@ impl Editor {
             error: None,
             conflict: None,
             sel: None,
-            tool: Tool::Select,
+            tool: Tool::View,
             drag: None,
             draft: None,
             layer: project.layouts[i].item.copper.first().cloned().unwrap_or_default(),
