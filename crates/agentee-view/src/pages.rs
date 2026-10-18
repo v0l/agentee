@@ -979,7 +979,9 @@ fn layout_view(
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
             ui.add_space(8.0);
             let mut three = st.view_3d;
-            segments(ui, &mut three, &[(false, "2d", None), (true, "3d", None)]);
+            ui.push_id("view-mode", |ui| {
+                segments(ui, &mut three, &[(false, "2d", None), (true, "3d", None)]);
+            });
             st.view_3d = three;
             if st.view_3d {
                 if toggle(ui, "parts", st.show_parts)

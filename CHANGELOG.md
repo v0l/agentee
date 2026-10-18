@@ -48,6 +48,7 @@ All notable changes to agentee are listed here. The format follows
   `library find` keeps makers apart.
 
 ### Fixed
+- The 3d button in the viewer works again; it shared a widget id with the route tool button.
 - Commas in `edit board` descriptions are kept.
 - Holes and fiducials no longer warn about a missing pin, and KiCad MP pads need no symbol pin.
 - Refilling zones keeps the plan's end marker, and a plan section with no end marker is refused.
