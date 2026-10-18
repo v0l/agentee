@@ -657,6 +657,33 @@ pub fn hint(ui: &Ui, rect: Rect, ed: &Editor) {
     }
 }
 
+pub fn combo<R>(
+    ui: &mut Ui,
+    salt: &str,
+    width: f32,
+    text: String,
+    body: impl FnOnce(&mut Ui) -> R,
+) {
+    ui.scope_builder(egui::UiBuilder::new().id_salt(("combo", salt)), |ui| {
+        let v = ui.visuals_mut();
+        for (w, fill, line) in [
+            (&mut v.widgets.inactive, WELL, ETCH),
+            (&mut v.widgets.hovered, BAND, VALUE),
+            (&mut v.widgets.active, BAND, VALUE),
+            (&mut v.widgets.open, BAND, VALUE),
+        ] {
+            w.weak_bg_fill = fill;
+            w.bg_fill = fill;
+            w.bg_stroke = Stroke::new(1.0, line);
+            w.corner_radius = egui::CornerRadius::same(egui_bench::theme::RADIUS);
+            w.expansion = 0.0;
+        }
+        ui.spacing_mut().interact_size.y = egui_bench::key::KEY_H;
+        ui.spacing_mut().button_padding = Vec2::new(10.0, 0.0);
+        egui::ComboBox::from_id_salt(salt).width(width).selected_text(text).show_ui(ui, body);
+    });
+}
+
 fn divider(ui: &mut Ui) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(9.0, 22.0), egui::Sense::hover());
     ui.painter().line_segment(
@@ -668,42 +695,44 @@ fn divider(ui: &mut Ui) {
 pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     let ctx = ui.ctx().clone();
     divider(ui);
-    for (tool, name, what) in [
-        (Tool::Select, "select", "click to select, drag to move"),
-        (Tool::Route, "route", "draw tracks"),
-        (Tool::Via, "via", "place vias"),
-    ] {
-        if toggle(ui, name, ed.tool == tool).on_hover_text(what).clicked() {
-            ed.tool = if ed.tool == tool { Tool::View } else { tool };
-            ed.draft = None;
-        }
+    let mut tool = ed.tool;
+    ui.push_id("tool", |ui| {
+        segments(
+            ui,
+            &mut tool,
+            &[
+                (Tool::View, "pan", None),
+                (Tool::Select, "select", None),
+                (Tool::Route, "route", None),
+                (Tool::Via, "via", None),
+            ],
+        );
+    });
+    if tool != ed.tool {
+        ed.tool = tool;
+        ed.draft = None;
     }
+    ui.spacing_mut().interact_size.y = egui_bench::key::KEY_H;
     let copper = ed.layout(project, i).copper.clone();
     let mut layer = ed.layer.clone();
-    egui::ComboBox::from_id_salt("active-layer").width(76.0).selected_text(&layer).show_ui(
-        ui,
-        |ui| {
-            for c in &copper {
-                ui.selectable_value(&mut layer, c.clone(), c);
-            }
-        },
-    );
+    combo(ui, "active-layer", 76.0, layer.clone(), |ui| {
+        for c in &copper {
+            ui.selectable_value(&mut layer, c.clone(), c);
+        }
+    });
     if layer != ed.layer && ed.draft.is_none() {
         ed.layer = layer;
     }
     let mut grid = ed.grid;
-    egui::ComboBox::from_id_salt("grid")
-        .width(70.0)
-        .selected_text(format!("{} mm", trim(grid, 3)))
-        .show_ui(ui, |ui| {
-            for g in GRIDS {
-                ui.selectable_value(&mut grid, g, format!("{} mm", trim(g, 3)));
-            }
-        });
+    combo(ui, "grid", 70.0, format!("{} mm", trim(grid, 3)), |ui| {
+        for g in GRIDS {
+            ui.selectable_value(&mut grid, g, format!("{} mm", trim(g, 3)));
+        }
+    });
     ed.grid = grid;
-    if toggle(ui, "snap", ed.snap).on_hover_text("snap to the grid").clicked() {
-        ed.snap = !ed.snap;
-    }
+    ui.push_id("snap", |ui| {
+        segments(ui, &mut ed.snap, &[(false, "free", None), (true, "snap", None)]);
+    });
     divider(ui);
     let busy = crate::engine::running(ed);
     let undo = Btn::new("undo").outline(VALUE).enabled(ed.can_undo());

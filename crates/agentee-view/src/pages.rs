@@ -984,12 +984,13 @@ fn layout_view(
             });
             st.view_3d = three;
             if st.view_3d {
-                if toggle(ui, "parts", st.show_parts)
-                    .on_hover_text("show the part models")
-                    .clicked()
-                {
-                    st.show_parts = !st.show_parts;
-                }
+                ui.push_id("parts", |ui| {
+                    segments(
+                        ui,
+                        &mut st.show_parts,
+                        &[(false, "board", None), (true, "parts", None)],
+                    );
+                });
             } else {
                 let mut back = st.view.flip;
                 ui.push_id("view-side", |ui| {
