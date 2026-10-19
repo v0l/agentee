@@ -31,6 +31,43 @@ const HIST_STEP: f32 = 0.4;
 const SETTLED: usize = 2;
 const VIA_PASSES: usize = 2;
 const VIA_DEARER: f64 = 4.0;
+static PROGRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LAST_LINE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static NETS_DONE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static NETS_TOTAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const LINE_EVERY_MS: u64 = 10_000;
+
+pub fn show_progress(on: bool) {
+    PROGRESS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn progress_on() -> bool {
+    PROGRESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn begin_nets(total: usize) {
+    NETS_DONE.store(0, std::sync::atomic::Ordering::Relaxed);
+    NETS_TOTAL.store(total, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn net_finished() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let done = NETS_DONE.fetch_add(1, Relaxed) + 1;
+    if !progress_on() {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let last = LAST_LINE_MS.load(Relaxed);
+    if now >= last + LINE_EVERY_MS
+        && LAST_LINE_MS.compare_exchange(last, now, Relaxed, Relaxed).is_ok()
+    {
+        let total = NETS_TOTAL.load(Relaxed);
+        eprintln!("          {} of {total} nets searched", done.min(total));
+    }
+}
+
 const DEAD: &str = "no path within the rules in an earlier round";
 const SEALED: &str = "pad has no legal exit";
 use soft::{Copper, Footprint, Piece, Soft};
@@ -340,7 +377,7 @@ pub fn route(layout: &Layout, board: &Board, opts: &Options) -> Result<RouteResu
 pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> Outcome {
     let t0 = Instant::now();
     let log = |m: String| {
-        if opts.verbose || std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
+        if opts.verbose || progress_on() || std::env::var("AGENTEE_ROUTE_DEBUG").is_ok() {
             eprintln!("[{:>6.1}s] {m}", t0.elapsed().as_secs_f64());
         }
     };
@@ -1153,6 +1190,7 @@ fn route_one(
     }
     r.ms = ms(t);
     r.pops = search::pops() - pops;
+    net_finished();
     (r, fp)
 }
 
@@ -1196,6 +1234,7 @@ fn route_many(
     threads: usize,
 ) -> Many {
     let n = todo.len();
+    begin_nets(n);
     let mates = mates_in(states, todo);
     let halo = (env.rules.reach / env.tiles.size).ceil() as i64;
     let mut bits: Vec<Vec<u64>> = Vec::with_capacity(n);

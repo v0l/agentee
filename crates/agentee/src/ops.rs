@@ -2087,6 +2087,7 @@ pub fn layout_engine(root: &Path, name: &str, a: &LayoutArgs) -> Result<Value, S
     let inputs = p.layout_inputs(i)?;
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let (text, seeded) = seed_unplaced(root, name, &p, i, a, text)?;
+    agentee_layout::negotiate::show_progress(a.progress);
     let started = std::time::Instant::now();
     let progress = |e: agentee_layout::Event| {
         let at = started.elapsed().as_secs_f64();
