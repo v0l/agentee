@@ -50,7 +50,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   per sheet would do it.
 - `[place] keepouts` stop courtyards only. There is no height limit per area, so parts under a
   heatsink or a fan (ubench `main`: under 2 mm and 5 mm) are kept low by hand.
-- `agentee layout --from access` on ubench `main` (900 parts, 4 layers) prints nothing for over
+- (taken: access-progress) `agentee layout --from access` on ubench `main` (900 parts, 4 layers) prints nothing for over
   1.5 hours; a progress line per stage or per few hundred nets would help.
 
 ## Topological router
