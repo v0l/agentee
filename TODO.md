@@ -22,7 +22,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
 
 ## Spacing
 
-- `agentee layout mains` (ubench) never finishes the detail stage: round 0 of the negotiated
+- (taken: detail-no-exit) `agentee layout mains` (ubench) never finishes the detail stage: round 0 of the negotiated
   router runs past 10 min on a 2725x2805x4 grid with 237 connections. Access reports 190 of 351
   pads with no legal exit and global an overflow of 7518 mm, so most searches can only fail, and
   each exhausts its window first. Detail should fail connections to pads with no exit up front
