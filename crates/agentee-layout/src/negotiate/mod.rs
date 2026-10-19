@@ -629,7 +629,7 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
                     if sj == si {
                         continue;
                     }
-                    if o.fp.as_ref().is_some_and(|fp| fp.0[b].binary_search(&(c as u32)).is_ok()) {
+                    if o.fp.as_ref().is_some_and(|fp| fp.0[b].contains(c as u32)) {
                         *with.entry(layout.nets[o.net].name.as_str()).or_default() += 1;
                     }
                 }
@@ -1920,7 +1920,7 @@ fn rip_and_retry(
                 states[sj]
                     .fp
                     .as_ref()
-                    .is_some_and(|fp| path.iter().any(|&(b, c)| fp.0[b].binary_search(&c).is_ok()))
+                    .is_some_and(|fp| path.iter().any(|&(b, c)| fp.0[b].contains(c)))
             })
             .collect();
         let key = (si, blockers.clone());
@@ -1949,7 +1949,7 @@ fn rip_and_retry(
                         env.rules,
                         &Copper::of(std::slice::from_ref(p), rule, &st.pads),
                     );
-                    path.iter().any(|&(b, c)| fp.0[b].binary_search(&c).is_ok())
+                    path.iter().any(|&(b, c)| fp.0[b].contains(c))
                 })
                 .collect();
             st.bad = Some(bad);
@@ -2365,6 +2365,16 @@ fn search_piece(
     let mut tries = 0;
     loop {
         let win = Window::around(grid, lo, hi, margin);
+        let holds = |q: P| {
+            let (x, y) = grid.cell(q);
+            !grid.inside(x, y) || win.contains(x as usize, y as usize)
+        };
+        if !holds(a) || !holds(b) {
+            return Err(format!(
+                "{:.0} mm apart, over what one search window can hold",
+                geom::dist(a, b)
+            ));
+        }
         if !win.fits() {
             if win.is_whole(grid) {
                 return Err("the window is too large for the grid".into());

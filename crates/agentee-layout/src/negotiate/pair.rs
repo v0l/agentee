@@ -129,11 +129,11 @@ impl Partner {
     }
 
     pub fn has(&self, bucket: usize, c: usize) -> bool {
-        self.fp.as_ref().is_some_and(|fp| fp.0[bucket].binary_search(&(c as u32)).is_ok())
+        self.fp.as_ref().is_some_and(|fp| fp.0[bucket].contains(c as u32))
     }
 
     pub fn has_via(&self, bucket: usize, c: usize) -> bool {
-        self.fp.as_ref().is_some_and(|fp| fp.1[bucket].binary_search(&(c as u32)).is_ok())
+        self.fp.as_ref().is_some_and(|fp| fp.1[bucket].contains(c as u32))
     }
 
     pub fn near_track(&self, l: usize, at: P, h: f64, margin: f64) -> bool {

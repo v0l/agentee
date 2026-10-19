@@ -306,12 +306,12 @@ impl Query<'_> {
             };
             for l in 0..nl {
                 let Some(b) = self.rule.bucket[l] else { continue };
-                for k2 in fp.0[b].iter().filter_map(|&c| at(c)) {
+                for k2 in fp.0[b].iter().filter_map(at) {
                     set_flag(flags, epoch, l * area + k2, OLD);
                 }
             }
             for (vi, &vb) in self.rule.via_bucket.iter().enumerate().take(4) {
-                for k2 in fp.1[vb].iter().filter_map(|&c| at(c)) {
+                for k2 in fp.1[vb].iter().filter_map(at) {
                     set_flag(flags, epoch, k2, OLD_VIA << vi);
                 }
             }
@@ -323,7 +323,7 @@ impl Query<'_> {
             };
             for l in 0..nl {
                 let Some(b) = self.rule.bucket[l] else { continue };
-                for k2 in fp.0[b].iter().filter_map(|&c| at(c)) {
+                for k2 in fp.0[b].iter().filter_map(at) {
                     set_flag(flags, epoch, l * area + k2, PARTNER);
                 }
             }

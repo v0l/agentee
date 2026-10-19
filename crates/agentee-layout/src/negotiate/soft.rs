@@ -21,7 +21,33 @@ pub struct Run {
     pub neck: bool,
 }
 
-pub type Footprint = (Vec<Vec<u32>>, Vec<Vec<u32>>);
+#[derive(Clone, Debug, Default)]
+pub struct Runs(Vec<(u32, u32)>);
+
+impl Runs {
+    fn of(sorted: Vec<u32>) -> Runs {
+        let mut out: Vec<(u32, u32)> = Vec::new();
+        for c in sorted {
+            match out.last_mut() {
+                Some(r) if r.0 + r.1 == c => r.1 += 1,
+                _ => out.push((c, 1)),
+            }
+        }
+        out.shrink_to_fit();
+        Runs(out)
+    }
+
+    pub fn contains(&self, c: u32) -> bool {
+        let k = self.0.partition_point(|r| r.0 <= c);
+        k > 0 && c < self.0[k - 1].0 + self.0[k - 1].1
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        self.0.iter().flat_map(|&(s, n)| s..s + n)
+    }
+}
+
+pub type Footprint = (Vec<Runs>, Vec<Runs>);
 
 pub struct Soft {
     tracks: Vec<Vec<AtomicU8>>,
@@ -141,7 +167,7 @@ impl Soft {
     pub fn track_less(&self, bucket: usize, c: usize, old: Option<&Footprint>) -> u8 {
         let n = self.track(bucket, c);
         match old {
-            Some(fp) if n > 0 && fp.0[bucket].binary_search(&(c as u32)).is_ok() => n - 1,
+            Some(fp) if n > 0 && fp.0[bucket].contains(c as u32) => n - 1,
             _ => n,
         }
     }
@@ -149,12 +175,12 @@ impl Soft {
     pub fn via_less(&self, bucket: usize, c: usize, old: Option<&Footprint>) -> u8 {
         let n = self.via(bucket, c);
         match old {
-            Some(fp) if n > 0 && fp.1[bucket].binary_search(&(c as u32)).is_ok() => n - 1,
+            Some(fp) if n > 0 && fp.1[bucket].contains(c as u32) => n - 1,
             _ => n,
         }
     }
 
-    pub fn footprint(grid: &Grid, rules: &Rules, c: &Copper) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    pub fn footprint(grid: &Grid, rules: &Rules, c: &Copper) -> Footprint {
         let slack = rules.slack + grid.g * std::f64::consts::FRAC_1_SQRT_2;
         let mut tracks: Vec<Vec<u32>> = vec![Vec::new(); rules.buckets.len()];
         let mut vias: Vec<Vec<u32>> = vec![Vec::new(); rules.via_buckets.len()];
@@ -246,12 +272,12 @@ impl Soft {
             v.sort_unstable();
             v.dedup();
         }
-        (tracks, vias)
+        (tracks.into_iter().map(Runs::of).collect(), vias.into_iter().map(Runs::of).collect())
     }
 
-    pub fn apply(&self, fp: &(Vec<Vec<u32>>, Vec<Vec<u32>>), add: bool) {
+    pub fn apply(&self, fp: &Footprint, add: bool) {
         for (map, cells) in self.tracks.iter().chain(&self.vias).zip(fp.0.iter().chain(&fp.1)) {
-            for &c in cells {
+            for c in cells.iter() {
                 if add {
                     map[c as usize].fetch_add(1, Relaxed);
                 } else {
