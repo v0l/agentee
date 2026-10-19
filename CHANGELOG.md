@@ -38,6 +38,7 @@ All notable changes to agentee are listed here. The format follows
 - `place` reports the parts it leaves off the board.
 
 ### Changed
+- `layout` prints the detail router's grid size and a count of nets searched every 10 s, so a long detail stage shows it is working.
 - The viewer's layout editor starts with no tool, so a drag pans; `select` is a toggle (key S)
   a tab beside `pan`, `route` and `via`, and front/back, free/snap and board/parts are tabs too.
 - Tracks route to pads by the footprint's clearance, which holds inside the courtyard, and
@@ -50,7 +51,6 @@ All notable changes to agentee are listed here. The format follows
   `library find` keeps makers apart.
 
 ### Fixed
-- `layout` prints the detail router's grid size and a count of nets searched every 10 s, so a long detail stage shows it is working.
 - `layout` detail no longer searches for a pad with no legal exit, which on a crowded board ran each search to the end of its window. It fails the connection at once.
 - The 3d button in the viewer works again; it shared a widget id with the route tool button.
 - Commas in `edit board` descriptions are kept.
