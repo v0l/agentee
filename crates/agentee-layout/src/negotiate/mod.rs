@@ -32,6 +32,7 @@ const SETTLED: usize = 2;
 const VIA_PASSES: usize = 2;
 const VIA_DEARER: f64 = 4.0;
 const DEAD: &str = "no path within the rules in an earlier round";
+const SEALED: &str = "pad has no legal exit";
 use soft::{Copper, Footprint, Piece, Soft};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Instant;
@@ -123,6 +124,7 @@ struct NetState {
     net: usize,
     fence: Option<Vec<bool>>,
     dead: HashSet<usize>,
+    sealed: HashSet<usize>,
     bad: Option<Vec<bool>>,
     clash: Vec<u64>,
     wide: bool,
@@ -224,26 +226,41 @@ pub struct Base {
     pub nets: Vec<usize>,
 }
 
-fn pads_of(copper: &NetCopper) -> Vec<PadRef> {
-    copper
-        .items
-        .iter()
-        .filter_map(|it| match it {
-            Item::Pad { shapes, layers, centre, pitch } => {
-                Some(shapes.iter().filter_map(move |s| match s {
-                    Shape::Poly(v) => Some(PadRef {
-                        layers: layers.clone(),
-                        outline: v.clone(),
-                        centre: *centre,
-                        pitch: *pitch,
-                    }),
-                    _ => None,
-                }))
+fn own_cells(grid: &Grid, rules: &Rules, n: usize, pads: &[PadRef]) -> HashSet<u32> {
+    let mut own = HashSet::new();
+    let h = rules.rule(n).width.iter().map(|w| w / 2.0).fold(0.0, f64::max) + rules.slack;
+    for p in pads {
+        grid.near(&Shape::Poly(p.outline.clone()), 0.0, |x, y, d| {
+            if d < h {
+                for &l in &p.layers {
+                    own.insert(grid.idx(l, x, y) as u32);
+                }
             }
-            _ => None,
-        })
-        .flatten()
-        .collect()
+        });
+    }
+    own
+}
+
+fn pad_refs(item: &Item) -> Vec<PadRef> {
+    match item {
+        Item::Pad { shapes, layers, centre, pitch } => shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::Poly(v) => Some(PadRef {
+                    layers: layers.clone(),
+                    outline: v.clone(),
+                    centre: *centre,
+                    pitch: *pitch,
+                }),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn pads_of(copper: &NetCopper) -> Vec<PadRef> {
+    copper.items.iter().flat_map(pad_refs).collect()
 }
 
 impl Base {
@@ -342,21 +359,12 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
             lo = [lo[0].min(p.centre[0]), lo[1].min(p.centre[1])];
             hi = [hi[0].max(p.centre[0]), hi[1].max(p.centre[1])];
         }
-        let mut own = HashSet::new();
-        let h = rules.rule(n).width.iter().map(|w| w / 2.0).fold(0.0, f64::max) + rules.slack;
-        for p in &pads {
-            grid.near(&Shape::Poly(p.outline.clone()), 0.0, |x, y, d| {
-                if d < h {
-                    for &l in &p.layers {
-                        own.insert(grid.idx(l, x, y) as u32);
-                    }
-                }
-            });
-        }
+        let own = own_cells(grid, rules, n, &pads);
         states.push(NetState {
             net: n,
             fence: None,
             dead: HashSet::new(),
+            sealed: HashSet::new(),
             bad: None,
             clash: Vec::new(),
             wide: false,
@@ -376,6 +384,14 @@ pub fn route_on(layout: &Layout, base: &Base, opts: &Options, guide: &Guide) -> 
         });
     }
     let mut soft = Soft::new(grid, rules);
+    let bare = Soft::new(grid, rules);
+    for st in states.iter_mut() {
+        st.sealed = sealed_groups(grid, rules, &bare, st.net, &st.copper, opts);
+    }
+    let sealed: usize = states.iter().map(|s| s.sealed.len()).sum();
+    if sealed > 0 {
+        log(format!("{sealed} pads with no legal exit are not searched"));
+    }
     for shadow in [true, false] {
         let segs: Vec<(usize, P, P, f64)> = layout
             .tracks
@@ -791,47 +807,96 @@ pub struct PadAccess {
 
 pub fn access_report(layout: &Layout, base: &Base, opts: &Options) -> Vec<PadAccess> {
     let soft = Soft::new(&base.grid, &base.rules);
-    let own = HashSet::new();
     let mut out = Vec::new();
     for &n in &base.nets {
-        let rule = base.rules.rule(n);
-        let pads = base.pads(layout, n);
-        let entry: Vec<P> = pads
-            .iter()
-            .filter(|p| p.layers.iter().any(|&l| !rule.track[l]))
-            .map(|p| p.centre)
-            .collect();
-        let ctx = Ctx {
-            grid: &base.grid,
-            soft: &soft,
-            rules: &base.rules,
-            rule,
-            net: n as u16,
-            entry: &entry,
-            entry_r: opts.entry,
-            own: &own,
-            holes: &[],
-            old: None,
-            partner: None,
-            pads: &pads,
-        };
-        for p in &pads {
+        let copper = conn::net_copper(layout, &base.islands, n);
+        for (_, pad, exits, vias) in pad_access(&base.grid, &base.rules, &soft, n, &copper, opts) {
+            out.push(PadAccess { net: layout.nets[n].name.clone(), at: pad.centre, exits, vias });
+        }
+    }
+    out
+}
+
+fn pad_access(
+    grid: &Grid,
+    rules: &Rules,
+    soft: &Soft,
+    n: usize,
+    copper: &NetCopper,
+    opts: &Options,
+) -> Vec<(usize, PadRef, usize, usize)> {
+    let rule = rules.rule(n);
+    let pads = pads_of(copper);
+    let own = own_cells(grid, rules, n, &pads);
+    let entry: Vec<P> = pads
+        .iter()
+        .filter(|p| p.layers.iter().any(|&l| !rule.track[l]))
+        .map(|p| p.centre)
+        .collect();
+    let ctx = Ctx {
+        grid,
+        soft,
+        rules,
+        rule,
+        net: n as u16,
+        entry: &entry,
+        entry_r: opts.entry,
+        own: &own,
+        holes: &[],
+        old: None,
+        partner: None,
+        pads: &pads,
+    };
+    let mut out = Vec::new();
+    for (i, item) in copper.items.iter().enumerate() {
+        for p in pad_refs(item) {
             let mut exits = 0;
             let mut vias = 0;
             for &l in &p.layers {
                 if rule.track[l] || !entry.is_empty() {
-                    exits += ctx.necks(p, l).len();
+                    exits += ctx.necks(&p, l).len();
                 }
                 vias += ctx
-                    .stubs(p, l, false, opts.via_cost, 0.0)
+                    .stubs(&p, l, false, opts.via_cost, 0.0)
                     .iter()
                     .filter(|a| a.via.is_some())
                     .count();
             }
-            out.push(PadAccess { net: layout.nets[n].name.clone(), at: p.centre, exits, vias });
+            out.push((i, p, exits, vias));
         }
     }
     out
+}
+
+fn sits_on_free_copper(grid: &Grid, rules: &Rules, n: usize, pad: &PadRef) -> bool {
+    let rule = rules.rule(n);
+    let mut free = false;
+    grid.near(&Shape::Poly(pad.outline.clone()), 0.0, |x, y, _| {
+        for &l in &pad.layers {
+            free |= rule.track[l] && grid.track_ok(grid.idx(l, x, y), n as u16, rule.need[l]);
+        }
+    });
+    free
+}
+
+fn sealed_groups(
+    grid: &Grid,
+    rules: &Rules,
+    soft: &Soft,
+    n: usize,
+    copper: &NetCopper,
+    opts: &Options,
+) -> HashSet<usize> {
+    let mut open = vec![false; copper.groups];
+    for (i, pad, exits, vias) in pad_access(grid, rules, soft, n, copper, opts) {
+        if exits > 0 || vias > 0 || sits_on_free_copper(grid, rules, n, &pad) {
+            open[copper.group[i]] = true;
+        }
+    }
+    (0..copper.groups)
+        .filter(|&g| copper.has_pad(g) && !open[g])
+        .filter_map(|g| copper.group.iter().position(|&k| k == g))
+        .collect()
 }
 
 #[derive(Default)]
@@ -1768,7 +1833,7 @@ fn rip_and_retry(
         .copied()
         .filter(|&si| {
             let st = &states[si];
-            st.joined < st.needed && st.failed.iter().any(|f| f.reason != DEAD)
+            st.joined < st.needed && st.failed.iter().any(|f| f.reason != DEAD && f.reason != SEALED)
         })
         .collect();
     let probe_env = Env { jacobi: true, ..*env };
@@ -2124,8 +2189,13 @@ fn route_net(
     let pad_groups: Vec<usize> =
         (0..nc.groups).filter(|&g| nc.has_pad(g) || nc.holds(g, runs.clone())).collect();
     let size = |g: usize| nc.group.iter().filter(|&&k| k == g).count();
-    let Some(&start) =
-        pad_groups.iter().max_by_key(|&&g| (!nc.islands(g).is_empty(), size(g), usize::MAX - g))
+    let sealed = |g: usize| {
+        let key = nc.group.iter().position(|&k| k == g).unwrap_or(usize::MAX);
+        st.sealed.contains(&key)
+    };
+    let Some(&start) = pad_groups
+        .iter()
+        .max_by_key(|&&g| (!sealed(g), !nc.islands(g).is_empty(), size(g), usize::MAX - g))
     else {
         return Routed::default();
     };
@@ -2155,6 +2225,10 @@ fn route_net(
         let g = rest.remove(k);
         let (_, a, b) = best.remove(k);
         let key = nc.group.iter().position(|&k| k == g).unwrap_or(usize::MAX);
+        if st.sealed.contains(&key) {
+            failed.push(Unrouted { net: name.clone(), from: a, to: b, reason: SEALED.into() });
+            continue;
+        }
         if st.dead.contains(&key) {
             failed.push(Unrouted { net: name.clone(), from: a, to: b, reason: DEAD.into() });
             continue;
