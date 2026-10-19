@@ -50,9 +50,12 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   per sheet would do it.
 - `[place] keepouts` stop courtyards only. There is no height limit per area, so parts under a
   heatsink or a fan (ubench `main`: under 2 mm and 5 mm) are kept low by hand.
-- (taken: detail-stall) `agentee layout main --from access` (ubench, 900 parts, 560 nets, 2191 connections, grid 5245x2805x4)
-  was still in detail round 0 after 7 min: 512 of 560 nets searched at 10 s, then no further net
-  finished. 166 pads have no legal exit.
+- `agentee layout main --from access` (ubench, 560 nets, 2191 connections, grid 5245x2805x4) now
+  finishes detail but takes 43 min for 1566 of 2191 connections, 338 nets still overlapping before
+  the hard pass (1187 s of the time), and memory peaks near 19 GB. Detail needs windows sized to the
+  connection and a footprint that is not 168 buckets wide (`Soft::footprint` in
+  `crates/agentee-layout/src/negotiate/soft.rs`). Second pass of the engine re-ran global and detail
+  with a 135 s setup.
 
 ## Topological router
 
