@@ -51,6 +51,7 @@ All notable changes to agentee are listed here. The format follows
   `library find` keeps makers apart.
 
 ### Fixed
+- `layout` detail is twice as fast on a large board (ubench `main`, 41 min to 19 min): a net's remaining pads are no longer searched again once one is known unreachable, and the soft-overlap map is built in runs.
 - `layout` detail no longer stalls on a connection longer than one search window (ubench `main`), and holds its soft-overlap map in runs: 18 GB instead of over 50 GB on that board.
 - `layout` detail no longer searches for a pad with no legal exit, which on a crowded board ran each search to the end of its window. It fails the connection at once.
 - The 3d button in the viewer works again; it shared a widget id with the route tool button.

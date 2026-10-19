@@ -2254,6 +2254,7 @@ fn route_net(
             )
         })
         .collect();
+    let isl_of = |g: usize| nc.islands(g);
     let mut pieces: Vec<Piece> = Vec::new();
     let mut failed = Vec::new();
     let mut dead = Vec::new();
@@ -2270,6 +2271,7 @@ fn route_net(
         }
         if st.dead.contains(&key) {
             failed.push(Unrouted { net: name.clone(), from: a, to: b, reason: DEAD.into() });
+            apart(&mut tree, &mut rest, &mut best, &points, g, &isl_of(g), env, nc);
             continue;
         }
         let t = Instant::now();
@@ -2304,12 +2306,33 @@ fn route_net(
                 if reason != DEFERRED {
                     dead.push(key);
                     failed_ms += ms(t);
+                    apart(&mut tree, &mut rest, &mut best, &points, g, &isl_of(g), env, nc);
                 }
                 failed.push(Unrouted { net: name.clone(), from: a, to: b, reason })
             }
         }
     }
     Routed { pieces, failed, joined, dead, failed_ms, ..Default::default() }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apart(
+    tree: &mut Vec<usize>,
+    rest: &mut [usize],
+    best: &mut [(f64, P, P)],
+    points: &[Vec<P>],
+    g: usize,
+    isl: &[(usize, u32)],
+    env: &Env,
+    nc: &NetCopper,
+) {
+    tree.push(g);
+    for (i, &r) in rest.iter().enumerate() {
+        let d = conn::group_distance(env.layout, env.islands, nc, &points[r], &points[g], isl);
+        if d.0 < best[i].0 {
+            best[i] = d;
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

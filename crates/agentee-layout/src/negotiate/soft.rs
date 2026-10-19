@@ -25,16 +25,25 @@ pub struct Run {
 pub struct Runs(Vec<(u32, u32)>);
 
 impl Runs {
-    fn of(sorted: Vec<u32>) -> Runs {
-        let mut out: Vec<(u32, u32)> = Vec::new();
-        for c in sorted {
+    fn push(&mut self, c: u32) {
+        match self.0.last_mut() {
+            Some(r) if r.0 + r.1 == c => r.1 += 1,
+            Some(r) if c >= r.0 && c < r.0 + r.1 => {}
+            _ => self.0.push((c, 1)),
+        }
+    }
+
+    fn settle(&mut self) {
+        self.0.sort_unstable();
+        let mut out: Vec<(u32, u32)> = Vec::with_capacity(self.0.len());
+        for &(s, n) in &self.0 {
             match out.last_mut() {
-                Some(r) if r.0 + r.1 == c => r.1 += 1,
-                _ => out.push((c, 1)),
+                Some(r) if s <= r.0 + r.1 => r.1 = r.1.max(s + n - r.0),
+                _ => out.push((s, n)),
             }
         }
         out.shrink_to_fit();
-        Runs(out)
+        self.0 = out;
     }
 
     pub fn contains(&self, c: u32) -> bool {
@@ -182,18 +191,21 @@ impl Soft {
 
     pub fn footprint(grid: &Grid, rules: &Rules, c: &Copper) -> Footprint {
         let slack = rules.slack + grid.g * std::f64::consts::FRAC_1_SQRT_2;
-        let mut tracks: Vec<Vec<u32>> = vec![Vec::new(); rules.buckets.len()];
-        let mut vias: Vec<Vec<u32>> = vec![Vec::new(); rules.via_buckets.len()];
+        let mut tracks: Vec<Runs> = vec![Runs::default(); rules.buckets.len()];
+        let mut vias: Vec<Runs> = vec![Runs::default(); rules.via_buckets.len()];
         type Reach = (bool, usize, f64, Option<(usize, f64)>);
         let mut reach: Vec<Reach> = Vec::new();
         let stamp = |shape: &Shape,
                      reach: &[Reach],
-                     tracks: &mut Vec<Vec<u32>>,
-                     vias: &mut Vec<Vec<u32>>| {
-            let far = reach.iter().map(|r| r.2).fold(0.0, f64::max);
+                     tracks: &mut Vec<Runs>,
+                     vias: &mut Vec<Runs>| {
+            let far = reach.first().map_or(0.0, |r| r.2);
             grid.near(shape, far, |x, y, d| {
                 let cell = (y * grid.w + x) as u32;
                 for &(via, k, r, local) in reach {
+                    if d > r {
+                        break;
+                    }
                     let r = match local {
                         Some((z, near)) if d > near && rules.zones[z].holds(grid.center(x, y)) => {
                             near
@@ -238,6 +250,7 @@ impl Soft {
                     reach.push((false, bi, h + bk.h + super::rules::SHADOW_GAP + slack, None));
                 }
             }
+            reach.sort_by(|x, y| y.2.total_cmp(&x.2));
             stamp(&Shape::Seg(a, b, 0.0), &reach, &mut tracks, &mut vias);
         }
         for &(at, k) in &c.vias {
@@ -266,13 +279,13 @@ impl Soft {
                 };
                 reach.push((true, vi, copper.max(o.dr + vb.dr + rules.hole_gap) + slack, None));
             }
+            reach.sort_by(|x, y| y.2.total_cmp(&x.2));
             stamp(&Shape::Circle(at, 0.0), &reach, &mut tracks, &mut vias);
         }
         for v in tracks.iter_mut().chain(vias.iter_mut()) {
-            v.sort_unstable();
-            v.dedup();
+            v.settle();
         }
-        (tracks.into_iter().map(Runs::of).collect(), vias.into_iter().map(Runs::of).collect())
+        (tracks, vias)
     }
 
     pub fn apply(&self, fp: &Footprint, add: bool) {
