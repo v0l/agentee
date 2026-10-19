@@ -50,7 +50,7 @@ Shared list of open work. See `AGENTS.md` for how to log, take and finish an ite
   per sheet would do it.
 - `[place] keepouts` stop courtyards only. There is no height limit per area, so parts under a
   heatsink or a fan (ubench `main`: under 2 mm and 5 mm) are kept low by hand.
-- `agentee layout main --from access` (ubench, 900 parts, 560 nets, 2191 connections, grid 5245x2805x4)
+- (taken: detail-stall) `agentee layout main --from access` (ubench, 900 parts, 560 nets, 2191 connections, grid 5245x2805x4)
   was still in detail round 0 after 7 min: 512 of 560 nets searched at 10 s, then no further net
   finished. 166 pads have no legal exit.
 
