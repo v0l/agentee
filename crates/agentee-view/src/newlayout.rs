@@ -92,69 +92,79 @@ pub fn show(ctx: &egui::Context, project: &Project, root: &Path, f: &mut Form) -
         }
     }
     let mut out = Outcome::Open;
-    egui::Modal::new(egui::Id::new("new-layout")).show(ctx, |ui: &mut Ui| {
-        ui.set_width(380.0);
-        modal_title(ui, "new layout");
-        let busy = f.job.is_some();
-        ui.add_enabled_ui(!busy, |ui| {
-            row(ui, "name", |ui| {
-                field(ui, &mut f.name, "name");
-            });
-            row(ui, "board", |ui| {
-                choice(
-                    ui,
-                    "new-board",
-                    &mut f.board,
-                    project.boards.iter().map(|b| (b.name.clone(), b.name.clone())),
-                );
-            });
-            row(ui, "schematic", |ui| {
-                choice(
-                    ui,
-                    "new-sch",
-                    &mut f.schematic,
-                    tops(project).into_iter().map(|s| (s.clone(), s)),
-                );
-            });
-            ui.checkbox(&mut f.place, "place every part with the placer");
-            if f.place {
-                row(ui, "seed", |ui| {
-                    ui.add(egui::DragValue::new(&mut f.seed).range(1..=1_000_000));
+    egui::Modal::new(egui::Id::new("new-layout"))
+        .backdrop_color(egui::Color32::from_black_alpha(150))
+        .show(ctx, |ui: &mut Ui| {
+            ui.set_width(380.0);
+            modal_title(ui, "new layout");
+            let busy = f.job.is_some();
+            ui.add_enabled_ui(!busy, |ui| {
+                row(ui, "name", |ui| {
+                    field(ui, &mut f.name, "name");
                 });
-            }
-        });
-        if let Some((t, _)) = &f.job {
-            readouts(ui, &[("placing", format!("{:.0} s", t.elapsed().as_secs_f32()), READOUT)]);
-            ctx.request_repaint_after(std::time::Duration::from_millis(250));
-        }
-        if let Some(e) = &f.error {
-            status(ui, false, e);
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.add_enabled(!busy, egui::Button::new("create")).clicked() {
-                match create(project, root, f) {
-                    Ok((path, text, inputs)) => {
-                        f.error = None;
-                        let (tx, rx) = mpsc::channel();
-                        let wake = ctx.clone();
-                        let name = f.name.trim().to_string();
-                        let seed = f.seed;
-                        std::thread::spawn(move || {
-                            let r = write(&path, &text, inputs.as_ref(), seed).map(|_| name);
-                            let _ = tx.send(r);
-                            wake.request_repaint();
-                        });
-                        f.job = Some((Instant::now(), rx));
-                    }
-                    Err(e) => f.error = Some(e),
+                row(ui, "board", |ui| {
+                    choice(
+                        ui,
+                        "new-board",
+                        &mut f.board,
+                        project.boards.iter().map(|b| (b.name.clone(), b.name.clone())),
+                    );
+                });
+                row(ui, "schematic", |ui| {
+                    choice(
+                        ui,
+                        "new-sch",
+                        &mut f.schematic,
+                        tops(project).into_iter().map(|s| (s.clone(), s)),
+                    );
+                });
+                ui.checkbox(&mut f.place, "place every part with the placer");
+                if f.place {
+                    row(ui, "seed", |ui| {
+                        ui.add(egui::DragValue::new(&mut f.seed).range(1..=1_000_000));
+                    });
                 }
+            });
+            if let Some((t, _)) = &f.job {
+                readouts(
+                    ui,
+                    &[("placing", format!("{:.0} s", t.elapsed().as_secs_f32()), READOUT)],
+                );
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
             }
-            if ui.add_enabled(!busy, egui::Button::new("cancel")).clicked() {
-                out = Outcome::Cancelled;
+            if let Some(e) = &f.error {
+                status(ui, false, e);
             }
+            footer(ui, |ui| {
+                if ui
+                    .add(Key::new("create").solid(READOUT).min_width(100.0).enabled(!busy))
+                    .clicked()
+                {
+                    match create(project, root, f) {
+                        Ok((path, text, inputs)) => {
+                            f.error = None;
+                            let (tx, rx) = mpsc::channel();
+                            let wake = ctx.clone();
+                            let name = f.name.trim().to_string();
+                            let seed = f.seed;
+                            std::thread::spawn(move || {
+                                let r = write(&path, &text, inputs.as_ref(), seed).map(|_| name);
+                                let _ = tx.send(r);
+                                wake.request_repaint();
+                            });
+                            f.job = Some((Instant::now(), rx));
+                        }
+                        Err(e) => f.error = Some(e),
+                    }
+                }
+                if ui
+                    .add(Key::new("cancel").outline(VALUE).min_width(100.0).enabled(!busy))
+                    .clicked()
+                {
+                    out = Outcome::Cancelled;
+                }
+            });
         });
-    });
     out
 }
 

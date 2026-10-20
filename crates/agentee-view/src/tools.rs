@@ -657,33 +657,6 @@ pub fn hint(ui: &Ui, rect: Rect, ed: &Editor) {
     }
 }
 
-pub fn combo<R>(
-    ui: &mut Ui,
-    salt: &str,
-    width: f32,
-    text: String,
-    body: impl FnOnce(&mut Ui) -> R,
-) {
-    ui.scope_builder(egui::UiBuilder::new().id_salt(("combo", salt)), |ui| {
-        let v = ui.visuals_mut();
-        for (w, fill, line) in [
-            (&mut v.widgets.inactive, WELL, ETCH),
-            (&mut v.widgets.hovered, BAND, VALUE),
-            (&mut v.widgets.active, BAND, VALUE),
-            (&mut v.widgets.open, BAND, VALUE),
-        ] {
-            w.weak_bg_fill = fill;
-            w.bg_fill = fill;
-            w.bg_stroke = Stroke::new(1.0, line);
-            w.corner_radius = egui::CornerRadius::same(egui_bench::theme::RADIUS);
-            w.expansion = 0.0;
-        }
-        ui.spacing_mut().interact_size.y = egui_bench::key::KEY_H;
-        ui.spacing_mut().button_padding = Vec2::new(10.0, 0.0);
-        egui::ComboBox::from_id_salt(salt).width(width).selected_text(text).show_ui(ui, body);
-    });
-}
-
 fn divider(ui: &mut Ui) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(9.0, 22.0), egui::Sense::hover());
     ui.painter().line_segment(
@@ -715,19 +688,15 @@ pub fn toolbar(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     ui.spacing_mut().interact_size.y = egui_bench::key::KEY_H;
     let copper = ed.layout(project, i).copper.clone();
     let mut layer = ed.layer.clone();
-    combo(ui, "active-layer", 76.0, layer.clone(), |ui| {
-        for c in &copper {
-            ui.selectable_value(&mut layer, c.clone(), c);
-        }
+    ui.allocate_ui(Vec2::new(76.0, egui_bench::key::KEY_H), |ui| {
+        choice(ui, "active-layer", &mut layer, copper.iter().map(|c| (c.clone(), c.clone())));
     });
     if layer != ed.layer && ed.draft.is_none() {
         ed.layer = layer;
     }
     let mut grid = ed.grid;
-    combo(ui, "grid", 70.0, format!("{} mm", trim(grid, 3)), |ui| {
-        for g in GRIDS {
-            ui.selectable_value(&mut grid, g, format!("{} mm", trim(g, 3)));
-        }
+    ui.allocate_ui(Vec2::new(80.0, egui_bench::key::KEY_H), |ui| {
+        choice(ui, "grid", &mut grid, GRIDS.into_iter().map(|g| (g, format!("{} mm", trim(g, 3)))));
     });
     ed.grid = grid;
     ui.push_id("snap", |ui| {
@@ -781,10 +750,10 @@ pub fn conflict(ui: &mut Ui, ed: &mut Editor) {
     ui.horizontal(|ui| {
         ui.add_space(8.0);
         status(ui, false, "the layout changed on disk while you have unsaved edits");
-        if ui.button("keep mine").clicked() {
+        if ui.add(Btn::new("keep mine").outline(VALUE)).clicked() {
             ed.keep_mine();
         }
-        if ui.button("load the file").clicked() {
+        if ui.add(Btn::new("load the file").outline(FAULT)).clicked() {
             ed.take_theirs(&ctx);
         }
     });
@@ -838,21 +807,24 @@ pub fn selection(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
                     let idle = !ed.routing();
                     if plane {
                         if ui
-                            .button("tie pads to the plane")
+                            .add(Btn::new("tie pads to the plane").outline(VALUE))
                             .on_hover_text("a stub and a via beside each pad of this net")
                             .clicked()
                         {
                             ed.tie_planes(&ctx, project, i, std::slice::from_ref(&names.nets[n]));
                         }
-                        if ui.add_enabled(idle, egui::Button::new("route with tracks")).clicked() {
+                        if ui
+                            .add(Btn::new("route with tracks").outline(VALUE).enabled(idle))
+                            .clicked()
+                        {
                             ed.route_connection(&ctx, project, i, n, Some((a, b)));
                         }
                         return;
                     }
-                    if ui.add_enabled(idle, egui::Button::new("route connection")).clicked() {
+                    if ui.add(Btn::new("route connection").outline(VALUE).enabled(idle)).clicked() {
                         ed.route_connection(&ctx, project, i, n, Some((a, b)));
                     }
-                    if ui.add_enabled(idle, egui::Button::new("route net")).clicked() {
+                    if ui.add(Btn::new("route net").outline(VALUE).enabled(idle)).clicked() {
                         ed.route_connection(&ctx, project, i, n, None);
                     }
                 });
@@ -895,10 +867,10 @@ fn part_props(
                 .suffix("°")
                 .update_while_editing(false),
         );
-        if ui.button("-90").clicked() {
+        if ui.add(Btn::new("-90").outline(VALUE)).clicked() {
             rot -= 90.0;
         }
-        if ui.button("+90").clicked() {
+        if ui.add(Btn::new("+90").outline(VALUE)).clicked() {
             rot += 90.0;
         }
     });
@@ -960,7 +932,7 @@ fn track_props(
     if net != tr.net || layer != tr.layer || custom != own || (custom && width != tr.width) {
         ed.set_track(ctx, project, i, t, net, &layer, custom.then_some(width));
     }
-    if ui.button("delete track").clicked() {
+    if ui.add(Btn::new("delete track").outline(FAULT)).clicked() {
         ed.delete_track(ctx, project, i, t);
     }
 }
@@ -1026,7 +998,7 @@ fn via_props(
     if net != v.net || kind != named {
         ed.set_via(ctx, project, i, s, v.at, net, kind);
     }
-    if ui.button("delete via").clicked() {
+    if ui.add(Btn::new("delete via").outline(FAULT)).clicked() {
         ed.delete_via(ctx, project, i, s, v.at);
     }
 }

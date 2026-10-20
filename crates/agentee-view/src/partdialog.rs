@@ -4,7 +4,7 @@ use crate::paint::{self, Layers, SymbolStyle};
 use agentee_core::diag::Diags;
 use agentee_core::footprint::{Footprint, FootprintFile};
 use agentee_core::symbol::{Symbol, SymbolFile};
-use egui::{RichText, Sense, Ui, Vec2};
+use egui::{Sense, Ui, Vec2};
 use egui_bench::prelude::*;
 use serde_json::Value;
 use std::path::Path;
@@ -280,59 +280,68 @@ pub fn fix_match(ctx: &egui::Context, root: &Path, f: &mut FixMatch) -> Closed {
         f.job = Some(Job::start(root, search_steps(&f.search.query), "search", ctx));
     }
     let mut out = Closed::Open;
-    egui::Modal::new(egui::Id::new("fix-match")).show(ctx, |ui| {
-        ui.set_width(720.0);
-        ui.label(RichText::new(format!("Fix the part behind {}", f.name)).size(18.0).color(VALUE));
-        ui.label(legend(format!("now {}", f.current)));
-        ui.add_space(10.0);
-        if !f.done {
-            f.search.show(ui, &mut f.job, root, "part number, distributor number or words");
-        }
-        if let Some((t, ok)) = &f.said {
-            ui.add_space(6.0);
-            note(ui, t.clone(), if *ok { OK } else { FAULT });
-        }
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            if f.done {
-                if ui.add(Key::new("done").solid(READOUT)).clicked() {
-                    out = Closed::Changed(None);
-                }
-                return;
+    egui::Modal::new(egui::Id::new("fix-match"))
+        .backdrop_color(egui::Color32::from_black_alpha(150))
+        .show(ctx, |ui| {
+            ui.set_width(720.0);
+            modal_title(ui, &format!("Fix the part behind {}", f.name));
+            Line::new().legend("now").value(&f.current).show(ui);
+            ui.add_space(10.0);
+            if !f.done {
+                f.search.show(ui, &mut f.job, root, "part number, distributor number or words");
             }
-            let busy = f.job.is_some();
-            let label = match f.search.picked() {
-                Some(c) => format!("use {} {}", c.manufacturer, c.mpn),
-                None => "pick a part above".to_string(),
-            };
-            let apply =
-                Key::new(label).solid(READOUT).enabled(f.search.picked().is_some() && !busy);
-            if ui.add(apply).clicked()
-                && let Some(c) = f.search.picked().cloned()
-            {
-                let mut set = vec!["library", "set", &f.name, "--mpn", &c.mpn]
-                    .into_iter()
-                    .map(String::from)
-                    .collect::<Vec<_>>();
-                if !c.manufacturer.is_empty() {
-                    set.extend(["--manufacturer".to_string(), c.manufacturer.clone()]);
-                }
-                let refresh = vec!["library".into(), "refresh".into(), f.name.clone()];
-                let fill = vec!["library".into(), "fill".into(), f.name.clone()];
-                f.said = None;
-                f.job = Some(Job::start(root, vec![set, refresh, fill], "apply", ui.ctx()));
+            if let Some((t, ok)) = &f.said {
+                ui.add_space(6.0);
+                note(ui, t.clone(), if *ok { OK } else { FAULT });
             }
             if f.job.as_ref().is_some_and(|j| j.what == "apply") {
-                ui.spinner();
-                ui.label(legend(
-                    "writing the part, checking stock, fetching its datasheet and model",
-                ));
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    Line::new()
+                        .note("writing the part, checking stock, fetching its datasheet and model")
+                        .show(ui);
+                });
             }
-            if ui.add(Key::new("cancel").outline(VALUE).enabled(!busy)).clicked() {
-                out = Closed::Cancelled;
-            }
+            footer(ui, |ui| {
+                if f.done {
+                    if ui.add(Key::new("done").solid(READOUT).min_width(100.0)).clicked() {
+                        out = Closed::Changed(None);
+                    }
+                    return;
+                }
+                let busy = f.job.is_some();
+                let label = match f.search.picked() {
+                    Some(c) => format!("use {} {}", c.manufacturer, c.mpn),
+                    None => "pick a part above".to_string(),
+                };
+                let apply = Key::new(label)
+                    .solid(READOUT)
+                    .min_width(100.0)
+                    .enabled(f.search.picked().is_some() && !busy);
+                if ui.add(apply).clicked()
+                    && let Some(c) = f.search.picked().cloned()
+                {
+                    let mut set = vec!["library", "set", &f.name, "--mpn", &c.mpn]
+                        .into_iter()
+                        .map(String::from)
+                        .collect::<Vec<_>>();
+                    if !c.manufacturer.is_empty() {
+                        set.extend(["--manufacturer".to_string(), c.manufacturer.clone()]);
+                    }
+                    let refresh = vec!["library".into(), "refresh".into(), f.name.clone()];
+                    let fill = vec!["library".into(), "fill".into(), f.name.clone()];
+                    f.said = None;
+                    f.job = Some(Job::start(root, vec![set, refresh, fill], "apply", ui.ctx()));
+                }
+                if ui
+                    .add(Key::new("cancel").outline(VALUE).min_width(100.0).enabled(!busy))
+                    .clicked()
+                {
+                    out = Closed::Cancelled;
+                }
+            });
         });
-    });
     out
 }
 
@@ -385,15 +394,8 @@ pub struct AddPart {
 }
 
 fn row(ui: &mut Ui, label: &str, text: &mut String, hint: &str) {
-    ui.horizontal(|ui| {
-        ui.add_sized(Vec2::new(LABEL_W, 30.0), egui::Label::new(legend(label)));
-        ui.add(
-            egui::TextEdit::singleline(text)
-                .font(egui::FontId::proportional(FIELD_FONT))
-                .margin(egui::Margin::symmetric(8, 6))
-                .hint_text(hint)
-                .desired_width(f32::INFINITY),
-        );
+    egui_bench::form::row(ui, label, |ui| {
+        field(ui, text, hint);
     });
 }
 
@@ -526,7 +528,6 @@ fn load_footprint(spec: &str) -> Result<Footprint, String> {
 }
 
 const LABEL_W: f32 = 112.0;
-const FIELD_FONT: f32 = 15.0;
 
 const ASSETS: [&str; 4] = ["symbol", "footprint", "model", "datasheet"];
 
@@ -585,19 +586,15 @@ fn asset_row(
     let mut go = false;
     ui.horizontal(|ui| {
         ui.add_sized(Vec2::new(LABEL_W, 30.0), egui::Label::new(legend(label)));
-        let r = ui.add(
-            egui::TextEdit::singleline(text)
-                .font(egui::FontId::proportional(FIELD_FONT))
-                .margin(egui::Margin::symmetric(8, 6))
-                .hint_text(hint)
-                .desired_width(ui.available_width() - 104.0),
-        );
+        let mut clicked = false;
+        let r = field_then(ui, text, hint, 110.0, |ui| {
+            clicked = ui.add(Key::new("search").outline(TRACE).enabled(ready)).clicked();
+            if busy {
+                ui.spinner();
+            }
+        });
         let entered = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let clicked = ui.add(Key::new("search").outline(TRACE).enabled(ready)).clicked();
         go = (clicked || entered) && ready;
-        if busy {
-            ui.spinner();
-        }
     });
     if go {
         let q = if text.trim().is_empty() {
@@ -733,10 +730,11 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
         }
     }
     let mut out = Closed::Open;
-    egui::Modal::new(egui::Id::new("add-part")).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::new("add-part"))
+        .backdrop_color(egui::Color32::from_black_alpha(150))
+        .show(ctx, |ui| {
         ui.set_width((ctx.content_rect().width() - 120.0).clamp(900.0, 1500.0));
-        ui.label(RichText::new("Add a part to the library").size(22.0).color(VALUE));
-        ui.add_space(8.0);
+        modal_title(ui, "Add a part to the library");
         if f.added.is_some() {
             if let Some((t, ok)) = &f.said {
                 note(ui, t.clone(), if *ok { OK } else { FAULT });
@@ -744,10 +742,11 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
             for n in &f.notes_out {
                 note(ui, n.clone(), LEGEND);
             }
-            ui.add_space(10.0);
-            if ui.add(Key::new("done").solid(READOUT)).clicked() {
-                out = Closed::Changed(f.added.clone());
-            }
+            footer(ui, |ui| {
+                if ui.add(Key::new("done").solid(READOUT).min_width(100.0)).clicked() {
+                    out = Closed::Changed(f.added.clone());
+                }
+            });
             return;
         }
         let total = ui.available_width();
@@ -866,9 +865,20 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
                 .filter(|(_, v)| v.trim().is_empty())
                 .map(|(k, _)| k)
                 .collect();
-        ui.horizontal(|ui| {
+        if f.job.as_ref().is_some_and(|j| j.what == "add") {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                Line::new()
+                    .note("copying the files, fetching the datasheet, checking stock")
+                    .show(ui);
+            });
+        }
+        footer(ui, |ui| {
             let busy = f.job.is_some();
-            let add = Key::new("add part").solid(READOUT).enabled(missing.is_empty() && !busy);
+            let add = Key::new("add part")
+                .solid(READOUT)
+                .min_width(100.0)
+                .enabled(missing.is_empty() && !busy);
             let add = ui.add(add);
             let add = if missing.is_empty() {
                 add
@@ -879,15 +889,10 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
                 f.said = None;
                 f.job = Some(Job::start(root, vec![add_args(f)], "add", ui.ctx()));
             }
-            if f.job.as_ref().is_some_and(|j| j.what == "add") {
-                ui.spinner();
-                ui.label(legend("copying the files, fetching the datasheet, checking stock"));
-            }
-            if ui.add(Key::new("cancel").outline(VALUE).enabled(!busy)).clicked() {
+            if ui.add(Key::new("cancel").outline(VALUE).min_width(100.0).enabled(!busy)).clicked() {
                 out = Closed::Cancelled;
             }
         });
-
     });
     out
 }

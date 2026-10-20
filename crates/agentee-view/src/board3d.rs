@@ -51,7 +51,7 @@ pub const STYLE: Style = Style {
         ..viewer3d::Lighting::STUDIO
     },
     cap: Color32::from_rgb(237, 140, 46),
-    selected: Color32::from_rgb(245, 166, 59),
+    selected: egui_bench::theme::READOUT,
     selected_tint: 0.35,
 };
 
@@ -794,7 +794,7 @@ pub fn show(ui: &mut Ui, scene: &Arc<Scene>, state: &mut State, interactive: boo
             egui::Align2::LEFT_BOTTOM,
             notes.join("   "),
             egui::FontId::proportional(11.0),
-            Color32::from_gray(140),
+            egui_bench::theme::LEGEND,
         );
     }
 }

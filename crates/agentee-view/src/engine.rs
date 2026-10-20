@@ -131,33 +131,34 @@ pub fn reset_dialog(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     let ctx = ui.ctx().clone();
     let mut apply = false;
     let mut close = false;
-    egui::Modal::new(egui::Id::new(("reset-layout", i))).show(&ctx, |ui| {
-        ui.set_width(380.0);
-        modal_title(ui, "reset layout");
-        let w = &mut form.what;
-        ui.checkbox(&mut w.routing, "routing: tracks, vias and the engine's plans");
-        ui.checkbox(&mut w.via_rules, "via rules: [[fanouts]] and [[stitching]]");
-        ui.checkbox(&mut w.zones, "zones and their stored fills");
-        ui.checkbox(&mut w.labels, "silk label positions");
-        ui.checkbox(&mut form.place, "placement: place every unlocked part again");
-        if form.place {
-            row(ui, "seed", |ui| {
-                ui.add(egui::DragValue::new(&mut form.seed).range(1..=1_000_000));
+    egui::Modal::new(egui::Id::new(("reset-layout", i)))
+        .backdrop_color(egui::Color32::from_black_alpha(150))
+        .show(&ctx, |ui| {
+            ui.set_width(380.0);
+            modal_title(ui, "reset layout");
+            let w = &mut form.what;
+            ui.checkbox(&mut w.routing, "routing: tracks, vias and the engine's plans");
+            ui.checkbox(&mut w.via_rules, "via rules: [[fanouts]] and [[stitching]]");
+            ui.checkbox(&mut w.zones, "zones and their stored fills");
+            ui.checkbox(&mut w.labels, "silk label positions");
+            ui.checkbox(&mut form.place, "placement: place every unlocked part again");
+            if form.place {
+                row(ui, "seed", |ui| {
+                    ui.add(egui::DragValue::new(&mut form.seed).range(1..=1_000_000));
+                });
+            }
+            ui.add_space(6.0);
+            note(ui, "the result is unsaved in the window, ctrl+Z takes it back", LEGEND);
+            footer(ui, |ui| {
+                let any = form.place || form.what != Reset::default();
+                if ui.add(Key::new("reset").solid(FAULT).min_width(100.0).enabled(any)).clicked() {
+                    apply = true;
+                }
+                if ui.add(Key::new("cancel").outline(VALUE).min_width(100.0)).clicked() {
+                    close = true;
+                }
             });
-        }
-        ui.add_space(6.0);
-        note(ui, "the result is unsaved in the window, ctrl+Z takes it back", LEGEND);
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            let any = form.place || form.what != Reset::default();
-            if ui.add_enabled(any, egui::Button::new("reset")).clicked() {
-                apply = true;
-            }
-            if ui.button("cancel").clicked() {
-                close = true;
-            }
         });
-    });
     ed.engine.reset = if apply || close { None } else { Some(form) };
     if apply {
         reset(ed, &ctx, project, i, form);
@@ -283,18 +284,19 @@ pub fn panel(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
         ed.engine.to = Some(to.clone());
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!busy, egui::Button::new("run"))
+                .add(Key::new("run").solid(READOUT).enabled(!busy))
                 .on_hover_text("the phases from..to, the result lands in the editor unsaved")
                 .clicked()
             {
                 start(ed, &ctx, project, i, Some(from.clone()), Some(to.clone()), None);
             }
-            if ui.add_enabled(!busy, egui::Button::new(format!("run {from} only"))).clicked() {
+            if ui.add(Key::new(format!("run {from} only")).outline(VALUE).enabled(!busy)).clicked()
+            {
                 start(ed, &ctx, project, i, None, None, Some(from.clone()));
             }
             if let Some(job) = &ed.engine.job
                 && ui
-                    .button("stop")
+                    .add(Key::new("stop").outline(FAULT))
                     .on_hover_text("stops after the phase that is running")
                     .clicked()
             {
@@ -304,7 +306,7 @@ pub fn panel(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
         ui.horizontal(|ui| {
             let planes = !agentee_core::tie::plane_nets(ed.layout(project, i)).is_empty();
             if ui
-                .add_enabled(!busy && planes, egui::Button::new("tie plane pads"))
+                .add(Key::new("tie plane pads").outline(VALUE).enabled(!busy && planes))
                 .on_hover_text("a stub and a via beside every SMD pad of a net with a zone")
                 .on_disabled_hover_text("no net has a zone yet")
                 .clicked()
@@ -518,7 +520,7 @@ fn knobs(ui: &mut Ui, ctx: &egui::Context, project: &Project, i: usize, ed: &mut
             if let Some(v) = picked {
                 change = Some((sec, key, Some(v)));
             }
-            if set && ui.small_button("default").clicked() {
+            if set && ui.add(Key::new("default").outline(VALUE)).clicked() {
                 change = Some((sec, key, None));
             }
         });
@@ -534,7 +536,7 @@ pub fn pinswap(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor, part: 
     ui.horizontal(|ui| {
         let busy = ed.engine.swap_job.is_some() || running(ed);
         if ui
-            .add_enabled(!busy, egui::Button::new("pinswap"))
+            .add(Key::new("pinswap").outline(VALUE).enabled(!busy))
             .on_hover_text("reassign swappable I/O of this chip to untangle the ratsnest")
             .clicked()
         {
@@ -559,7 +561,9 @@ pub fn pinswap(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor, part: 
                     ("swaps", s.swaps.len().to_string(), READOUT),
                 ],
             );
-            if !s.swaps.is_empty() && ui.button("write to the schematic").clicked() {
+            if !s.swaps.is_empty()
+                && ui.add(Key::new("write to the schematic").solid(READOUT)).clicked()
+            {
                 let swaps = s.swaps.clone();
                 ed.engine.swap_note = Some(write_swaps(project, part, &swaps));
                 ed.engine.swap = None;

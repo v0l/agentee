@@ -1,7 +1,7 @@
 use crate::pages::{PageState, page};
 use agentee_core::Severity;
 use agentee_core::project::{ItemRef, Kind, Project};
-use egui::{Color32, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use egui::{Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use egui_bench::prelude::*;
 use notify::{RecursiveMode, Watcher};
 use std::path::PathBuf;
@@ -555,7 +555,7 @@ impl App {
         if tab == Kind::Layout {
             let dir = self.path.is_dir();
             if ui
-                .add_enabled(dir, egui::Button::new("new layout"))
+                .add(Key::new("new layout").outline(VALUE).enabled(dir))
                 .on_disabled_hover_text("open a project directory to add files to it")
                 .clicked()
             {
@@ -684,30 +684,36 @@ impl App {
             return;
         }
         let mut close = false;
-        egui::Modal::new(egui::Id::new("unsaved-edits")).show(ctx, |ui| {
-            modal_title(ui, "unsaved layout edits");
-            note(ui, format!("{} layouts have edits that are not saved.", self.st.dirty()), VALUE);
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                let verb = match self.leaving {
-                    Some(Leave::Open(_)) => "open",
-                    _ => "quit",
-                };
-                if ui.button(format!("save and {verb}")).clicked() {
-                    match self.st.save_all() {
-                        Ok(()) => close = true,
-                        Err(e) => self.error = Some(e),
+        egui::Modal::new(egui::Id::new("unsaved-edits"))
+            .backdrop_color(egui::Color32::from_black_alpha(150))
+            .show(ctx, |ui| {
+                ui.set_width(440.0);
+                modal_title(ui, "unsaved layout edits");
+                note(
+                    ui,
+                    format!("{} layouts have edits that are not saved.", self.st.dirty()),
+                    VALUE,
+                );
+                footer(ui, |ui| {
+                    let verb = match self.leaving {
+                        Some(Leave::Open(_)) => "open",
+                        _ => "quit",
+                    };
+                    if ui.add(Key::new(format!("save and {verb}")).solid(READOUT)).clicked() {
+                        match self.st.save_all() {
+                            Ok(()) => close = true,
+                            Err(e) => self.error = Some(e),
+                        }
                     }
-                }
-                if ui.button(format!("{verb} without saving")).clicked() {
-                    self.st.editors.clear();
-                    close = true;
-                }
-                if ui.button("cancel").clicked() {
-                    self.leaving = None;
-                }
+                    if ui.add(Key::new(format!("{verb} without saving")).solid(FAULT)).clicked() {
+                        self.st.editors.clear();
+                        close = true;
+                    }
+                    if ui.add(Key::new("cancel").outline(VALUE)).clicked() {
+                        self.leaving = None;
+                    }
+                });
             });
-        });
         if close {
             match self.leaving.take() {
                 Some(Leave::Open(p)) => self.open(p, None),
@@ -723,7 +729,7 @@ impl App {
             ui.add_space(20.0);
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
-                note(ui, "This project has no layouts to assemble.", Color32::from_gray(160));
+                note(ui, "This project has no layouts to assemble.", LEGEND);
             });
             return;
         };
@@ -827,11 +833,7 @@ impl eframe::App for App {
                     ui.add_space(20.0);
                     ui.horizontal(|ui| {
                         ui.add_space(20.0);
-                        note(
-                            ui,
-                            "Nothing selected. Pick an item on the left.",
-                            Color32::from_gray(160),
-                        );
+                        note(ui, "Nothing selected. Pick an item on the left.", LEGEND);
                     });
                 }
             }

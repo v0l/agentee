@@ -6,9 +6,9 @@ use egui::epaint::PathShape;
 use egui::{Align2, Color32, FontFamily, Painter, Pos2, Stroke, Vec2};
 use egui_bench::theme::{LEGEND, TRACE};
 
-pub const WIRE: Color32 = Color32::from_rgb(0x5C, 0xB0, 0x7A);
-pub const LABEL: Color32 = Color32::from_rgb(0xE8, 0xB0, 0x3E);
-pub const POWER: Color32 = Color32::from_rgb(0xE2, 0x6D, 0x5A);
+pub const WIRE: Color32 = egui_bench::theme::OK;
+pub const LABEL: Color32 = egui_bench::theme::WARN;
+pub const POWER: Color32 = egui_bench::theme::FAULT;
 
 pub fn is_ground(name: &str) -> bool {
     let n = name.to_ascii_uppercase();

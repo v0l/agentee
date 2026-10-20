@@ -489,20 +489,11 @@ fn side(ui: &mut Ui, shelf: &mut Shelf, e: &Entry) {
             Line::new().legend("on the shelf").show(ui);
         },
         |ui| {
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(legend("count"));
-                    ui.add(egui::TextEdit::singleline(&mut shelf.count).desired_width(90.0));
-                });
-                ui.add_space(10.0);
-                ui.vertical(|ui| {
-                    ui.label(legend("bin"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut shelf.bin)
-                            .hint_text("A3")
-                            .desired_width(120.0),
-                    );
-                });
+            row(ui, "count", |ui| {
+                field(ui, &mut shelf.count, "");
+            });
+            row(ui, "bin", |ui| {
+                field(ui, &mut shelf.bin, "A3");
             });
             ui.add_space(8.0);
             let count = shelf.count.trim().parse::<u64>();

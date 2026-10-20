@@ -32,5 +32,5 @@ thiserror = "2"
 anyhow = "1"
 egui = "0.35"
 eframe = { version = "0.35", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }
-egui_bench = "0.4.1"
+egui_bench = "0.5.4"
 criterion = { version = "0.7", default-features = false, features = ["cargo_bench_support"] }

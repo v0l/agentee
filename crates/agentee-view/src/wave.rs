@@ -402,7 +402,7 @@ pub fn canvas(ui: &mut Ui, r: &LogicResult, view: &mut WaveView, interactive: bo
         );
         let line = Stroke::new(1.4, TRACE);
         let float = Stroke::new(1.0, LEGEND);
-        let unknown = Color32::from_rgba_unmultiplied(0xE2, 0x6D, 0x5A, 70);
+        let unknown = egui_bench::theme::FAULT.gamma_multiply(0.27);
         for (i, row) in rows.iter().enumerate() {
             let Some(slot) = shown(i) else { continue };
             let top = area.top() + slot * ROW + 4.0;

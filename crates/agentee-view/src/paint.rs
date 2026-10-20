@@ -24,7 +24,7 @@ pub fn via_color(kind: agentee_core::board::ViaKind) -> Color32 {
 }
 pub const SILK: Color32 = Color32::from_rgb(0xE6, 0xE9, 0xEE);
 pub const B_SILK: Color32 = Color32::from_rgb(0x9A, 0x8F, 0xC8);
-pub const FAB: Color32 = Color32::from_rgb(0x8B, 0x92, 0x9C);
+pub const FAB: Color32 = egui_bench::theme::LEGEND;
 pub const CRTYD: Color32 = Color32::from_rgb(0xC0, 0x6C, 0xD0);
 pub const PASTE: Color32 = Color32::from_rgb(0x7A, 0x9C, 0xA8);
 pub const MASK: Color32 = Color32::from_rgb(0x6A, 0x5A, 0x9A);
