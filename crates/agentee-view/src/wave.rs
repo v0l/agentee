@@ -789,6 +789,7 @@ mod tests {
         frame(vec![Event::PointerMoved(at)], &mut view);
         let wheel = Event::MouseWheel {
             unit: MouseWheelUnit::Point,
+            source: egui::MouseWheelSource::Unknown,
             delta: Vec2::new(0.0, 120.0),
             phase: TouchPhase::Move,
             modifiers: Modifiers::NONE,
@@ -870,6 +871,7 @@ mod tests {
         };
         let wheel = |dy: f32| Event::MouseWheel {
             unit: MouseWheelUnit::Point,
+            source: egui::MouseWheelSource::Unknown,
             delta: Vec2::new(0.0, dy),
             phase: TouchPhase::Move,
             modifiers: Modifiers::NONE,

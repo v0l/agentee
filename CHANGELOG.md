@@ -6,6 +6,8 @@ All notable changes to agentee are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-31
+
 ### Added
 - Circuit sims check transient peak, RMS, frequency and THD, plot a spectrum, and check harmonic
   and conducted emissions. Varistor and potentiometer blocks, surge and burst drives, and a logic
@@ -71,6 +73,9 @@ All notable changes to agentee are listed here. The format follows
 - `library add` points the symbol's datasheet at the pinned one.
 - A footprint's 3D model that KiCad lacks is also looked for in Espressif's kicad-libraries, and
   a `--model` that cannot be found says which model replaced it.
+
+### Changed
+- egui and eframe 0.37, which keeps the window running on Wayland when its workspace is hidden.
 
 ## [0.3.0] - 2026-10-12
 

@@ -280,7 +280,7 @@ pub fn fix_match(ctx: &egui::Context, root: &Path, f: &mut FixMatch) -> Closed {
         f.job = Some(Job::start(root, search_steps(&f.search.query), "search", ctx));
     }
     let mut out = Closed::Open;
-    egui::Modal::new(egui::Id::new("fix-match"))
+    egui::Modal::new(egui::Id::unique("fix-match"))
         .backdrop_color(egui::Color32::from_black_alpha(150))
         .show(ctx, |ui| {
             ui.set_width(720.0);
@@ -730,7 +730,7 @@ pub fn add_part(ctx: &egui::Context, root: &Path, roles: &[String], f: &mut AddP
         }
     }
     let mut out = Closed::Open;
-    egui::Modal::new(egui::Id::new("add-part"))
+    egui::Modal::new(egui::Id::unique("add-part"))
         .backdrop_color(egui::Color32::from_black_alpha(150))
         .show(ctx, |ui| {
         ui.set_width((ctx.content_rect().width() - 120.0).clamp(900.0, 1500.0));

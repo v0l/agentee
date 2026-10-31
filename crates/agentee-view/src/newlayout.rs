@@ -92,7 +92,7 @@ pub fn show(ctx: &egui::Context, project: &Project, root: &Path, f: &mut Form) -
         }
     }
     let mut out = Outcome::Open;
-    egui::Modal::new(egui::Id::new("new-layout"))
+    egui::Modal::new(egui::Id::unique("new-layout"))
         .backdrop_color(egui::Color32::from_black_alpha(150))
         .show(ctx, |ui: &mut Ui| {
             ui.set_width(380.0);

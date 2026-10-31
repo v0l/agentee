@@ -684,7 +684,7 @@ impl App {
             return;
         }
         let mut close = false;
-        egui::Modal::new(egui::Id::new("unsaved-edits"))
+        egui::Modal::new(egui::Id::unique("unsaved-edits"))
             .backdrop_color(egui::Color32::from_black_alpha(150))
             .show(ctx, |ui| {
                 ui.set_width(440.0);

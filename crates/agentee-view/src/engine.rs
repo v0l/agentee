@@ -131,7 +131,7 @@ pub fn reset_dialog(ui: &mut Ui, project: &Project, i: usize, ed: &mut Editor) {
     let ctx = ui.ctx().clone();
     let mut apply = false;
     let mut close = false;
-    egui::Modal::new(egui::Id::new(("reset-layout", i)))
+    egui::Modal::new(egui::Id::unique(("reset-layout", i)))
         .backdrop_color(egui::Color32::from_black_alpha(150))
         .show(&ctx, |ui| {
             ui.set_width(380.0);

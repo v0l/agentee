@@ -128,6 +128,7 @@ mod tests {
                     1 => vec![Event::PointerMoved(pointer)],
                     2 => vec![Event::MouseWheel {
                         unit: MouseWheelUnit::Point,
+                        source: egui::MouseWheelSource::Unknown,
                         delta: Vec2::new(0.0, 240.0),
                         phase: TouchPhase::Move,
                         modifiers: Modifiers::NONE,

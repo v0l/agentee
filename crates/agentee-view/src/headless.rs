@@ -186,13 +186,13 @@ pub fn render_rgba(
             ..Default::default()
         };
         raw.viewports.entry(ViewportId::ROOT).or_default().native_pixels_per_point = Some(ppp);
-        let out = ctx.run_ui(raw, |ui| {
+        let mut out = ctx.run_ui(raw, |ui| {
             egui::Frame::NONE.fill(CHASSIS).show(ui, |ui| {
                 ui.set_min_size(ui.available_size());
                 page(ui, project, item, &mut st);
             });
         });
-        textures.apply(&out.textures_delta);
+        textures.apply(&mut out.textures_delta);
         last = Some(out);
     }
     let out = last.unwrap();
