@@ -53,7 +53,7 @@ impl Tracker {
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
                 s.updated = agentee_core::sim::now();
                 if let Ok(text) = serde_json::to_string(&*s) {
-                    let _ = std::fs::write(&path, text);
+                    let _ = agentee_core::vfs::write(&path, text);
                 }
             }
         };
@@ -157,8 +157,11 @@ pub fn run(
         };
         result.layout_hash = Some(agentee_core::sim::copper_hash(&layout.item, &board.item, None));
         let json_path = agentee_core::sim::result_path(&entry.path);
-        std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        agentee_core::vfs::write(
+            &json_path,
+            serde_json::to_string(&result).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
         return Ok(json!({
             "sim": spec.name,
             "kind": spec.kind,
@@ -219,10 +222,14 @@ pub fn run(
     result.layout_hash =
         Some(agentee_core::sim::copper_hash(&layout.item, &board.item, spec.region));
     let json_path = agentee_core::sim::result_path(&entry.path);
-    std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    agentee_core::vfs::write(
+        &json_path,
+        serde_json::to_string(&result).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let touch = json_path.with_extension("").with_extension(format!("s{}p", result.ports.len()));
-    std::fs::write(&touch, crate::fdtd::touchstone(&result)).map_err(|e| e.to_string())?;
+    agentee_core::vfs::write(&touch, crate::fdtd::touchstone(&result))
+        .map_err(|e| e.to_string())?;
     let marks: Vec<f64> = [0.1, 0.25, 0.5, 0.75, 1.0]
         .iter()
         .map(|k| spec.start + k * (spec.stop - spec.start))
@@ -263,8 +270,11 @@ fn run_circuit(
     let hash = agentee_core::circuit::circuit_hash(agentee_core::sim::hash(&src), c.netlist_hash);
     let result = crate::circuit::run(c, &spec.name, hash);
     let json_path = agentee_core::sim::result_path(&entry.path);
-    std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    agentee_core::vfs::write(
+        &json_path,
+        serde_json::to_string(&result).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let analyses: Vec<&str> =
         [Some("op"), c.ac.map(|_| "ac"), c.tran.map(|_| "tran"), c.noise.as_ref().map(|_| "noise")]
             .into_iter()
@@ -299,9 +309,12 @@ fn run_logic(
     let vcd_name =
         vcd_path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let (result, vcd) = crate::logic::run(logic, &spec.name, hash, &vcd_name);
-    std::fs::write(&json_path, serde_json::to_string(&result).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&vcd_path, vcd).map_err(|e| e.to_string())?;
+    agentee_core::vfs::write(
+        &json_path,
+        serde_json::to_string(&result).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    agentee_core::vfs::write(&vcd_path, vcd).map_err(|e| e.to_string())?;
     Ok(json!({
         "sim": spec.name,
         "kind": spec.kind,
@@ -374,7 +387,7 @@ fn run_pdn(
     let mut out = crate::pdn::run(&spec.name, r, z0, &sinks, &parts, &freqs, ps.target, hash)?;
     out.layout_hash = r.layout_hash;
     let json_path = agentee_core::sim::result_path(&entry.path);
-    std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
+    agentee_core::vfs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     Ok(json!({
         "sim": spec.name,
@@ -533,7 +546,7 @@ fn run_channel(
     let mut out = crate::channel::run(&spec.name, &r.freqs, &h, &params, hash);
     out.layout_hash = r.layout_hash;
     let json_path = agentee_core::sim::result_path(&entry.path);
-    std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
+    agentee_core::vfs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     Ok(json!({
         "sim": spec.name,
@@ -617,10 +630,10 @@ fn run_cascade(
     let mut out = crate::cascade::run(&spec.name, result, &z0, &placed, &budget, hash)?;
     out.layout_hash = result.layout_hash;
     let json_path = agentee_core::sim::result_path(&entry.path);
-    std::fs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
+    agentee_core::vfs::write(&json_path, serde_json::to_string(&out).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
     let touch = json_path.with_extension("").with_extension(format!("s{}p", out.ports.len()));
-    std::fs::write(&touch, crate::fdtd::touchstone(&out)).map_err(|e| e.to_string())?;
+    agentee_core::vfs::write(&touch, crate::fdtd::touchstone(&out)).map_err(|e| e.to_string())?;
     Ok(json!({
         "sim": spec.name,
         "kind": spec.kind,

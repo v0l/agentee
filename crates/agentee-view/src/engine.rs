@@ -612,10 +612,10 @@ fn start_swap(ed: &mut Editor, project: &Project, i: usize, part: &str, ctx: &eg
 fn write_swaps(project: &Project, part: &str, swaps: &[agentee_layout::pinswap::Swap]) -> String {
     let mut written = 0;
     for s in &project.schematics {
-        let Ok(src) = std::fs::read_to_string(&s.path) else { continue };
+        let Ok(src) = agentee_core::vfs::read_to_string(&s.path) else { continue };
         let out = agentee_layout::pinswap::rewrite(&src, part, swaps);
         if out != src {
-            if let Err(e) = std::fs::write(&s.path, &out) {
+            if let Err(e) = agentee_core::vfs::write(&s.path, &out) {
                 return format!("{}: {e}", s.path.display());
             }
             written += 1;

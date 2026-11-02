@@ -132,6 +132,13 @@ fn tab_strip(
 enum Leave {
     Quit,
     Open(PathBuf),
+    Revision(egui_bench::revision::Revision),
+    WorkingCopy,
+}
+
+struct Viewing {
+    label: String,
+    working: PathBuf,
 }
 
 const SUFFIXES: [&str; 6] = [
@@ -166,6 +173,8 @@ pub struct App {
     ctx: egui::Context,
     leaving: Option<Leave>,
     browser: Option<Browser>,
+    history: Option<egui_bench::revision::Picker>,
+    revision: Option<Viewing>,
     new_layout: Option<crate::newlayout::Form>,
     pending_select: Option<String>,
 }
@@ -207,6 +216,8 @@ impl App {
             ctx: cc.egui_ctx.clone(),
             leaving: None,
             browser: None,
+            history: None,
+            revision: None,
             new_layout: None,
             pending_select: None,
         };
@@ -231,7 +242,7 @@ impl App {
     }
 
     fn open(&mut self, path: PathBuf, select: Option<String>) {
-        self.path = std::fs::canonicalize(&path).unwrap_or(path);
+        self.path = agentee_core::vfs::canonicalize(&path).unwrap_or(path);
         self.ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
             "agentee - {}",
             self.path.display()
@@ -265,6 +276,59 @@ impl App {
         }
     }
 
+    fn show_history(&mut self, ctx: &egui::Context) {
+        let Some(h) = &mut self.history else { return };
+        let revision = match h.show(ctx) {
+            egui_bench::revision::Picked::Browsing => return,
+            egui_bench::revision::Picked::Cancelled => None,
+            egui_bench::revision::Picked::Revision(r) => Some(r),
+        };
+        self.history = None;
+        if let Some(r) = revision {
+            if self.st.dirty() > 0 {
+                self.leaving = Some(Leave::Revision(r));
+            } else {
+                self.view_revision(r);
+            }
+        }
+    }
+
+    fn history_path(&self) -> PathBuf {
+        match &self.revision {
+            Some(v) => v.working.clone(),
+            None => self.path.clone(),
+        }
+    }
+
+    fn view_revision(&mut self, r: egui_bench::revision::Revision) {
+        let working = self.history_path();
+        match egui_bench::revision::Snapshot::open(&working, &r.sha) {
+            Ok(snapshot) => {
+                let select = self.selected.as_ref().map(|(_, n)| n.clone());
+                agentee_core::vfs::set(Some(std::sync::Arc::new(crate::revision::Frozen(
+                    snapshot,
+                ))));
+                self.open(working.clone(), select);
+                self.revision = Some(Viewing { label: r.label(), working });
+            }
+            Err(e) => eprintln!("agentee: revision {}: {e}", r.short),
+        }
+    }
+
+    fn back_to_working_copy(&mut self) {
+        if let Some(v) = self.revision.take() {
+            agentee_core::vfs::set(None);
+            let select = self.selected.as_ref().map(|(_, n)| n.clone());
+            self.open(v.working, select);
+        }
+    }
+
+    fn leave_revision(&mut self) {
+        if self.revision.take().is_some() {
+            agentee_core::vfs::set(None);
+        }
+    }
+
     fn browse(&mut self) {
         let dir = if self.path.is_dir() {
             self.path.clone()
@@ -286,7 +350,10 @@ impl App {
         self.browser = None;
         match target {
             Some(p) if self.st.dirty() > 0 => self.leaving = Some(Leave::Open(p)),
-            Some(p) => self.open(p, None),
+            Some(p) => {
+                self.leave_revision();
+                self.open(p, None)
+            }
             None => {}
         }
     }
@@ -429,7 +496,32 @@ impl App {
             {
                 self.browse();
             }
+            if toggle(ui, "history", self.history.is_some())
+                .on_hover_text("open the design as it was at an earlier commit, read only")
+                .clicked()
+            {
+                self.history = Some(egui_bench::revision::Picker::new(
+                    "open a past revision",
+                    &self.history_path(),
+                ));
+            }
+            if self.revision.is_some()
+                && toggle(ui, "working copy", false)
+                    .on_hover_text("go back to the files on disk")
+                    .clicked()
+            {
+                if self.st.dirty() > 0 {
+                    self.leaving = Some(Leave::WorkingCopy);
+                } else {
+                    self.back_to_working_copy();
+                }
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(v) = &self.revision {
+                    lamp(ui, &format!("rev {}", v.label), false, true).on_hover_text(
+                        "a checkout of an earlier commit read from git into memory. Nothing is written to disk",
+                    );
+                }
                 let e = self.project.count(Severity::Error);
                 let w = self.project.count(Severity::Warning);
                 let unsaved = self.st.dirty();
@@ -696,7 +788,7 @@ impl App {
                 );
                 footer(ui, |ui| {
                     let verb = match self.leaving {
-                        Some(Leave::Open(_)) => "open",
+                        Some(Leave::Open(_) | Leave::Revision(_) | Leave::WorkingCopy) => "open",
                         _ => "quit",
                     };
                     if ui.add(Key::new(format!("save and {verb}")).solid(READOUT)).clicked() {
@@ -716,7 +808,12 @@ impl App {
             });
         if close {
             match self.leaving.take() {
-                Some(Leave::Open(p)) => self.open(p, None),
+                Some(Leave::Open(p)) => {
+                    self.leave_revision();
+                    self.open(p, None)
+                }
+                Some(Leave::Revision(r)) => self.view_revision(r),
+                Some(Leave::WorkingCopy) => self.back_to_working_copy(),
                 _ => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             }
         }
@@ -748,6 +845,7 @@ impl eframe::App for App {
         self.guard_close(&ctx);
         self.poll(&ctx);
         self.show_browser(&ctx);
+        self.show_history(&ctx);
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
             self.browse();
         }

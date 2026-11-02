@@ -88,11 +88,11 @@ impl Shelf {
 }
 
 fn read_footprint(path: &Path) -> Option<FootprintFile> {
-    agentee_core::project::parse(&std::fs::read_to_string(path).ok()?).ok()
+    agentee_core::project::parse(&agentee_core::vfs::read_to_string(path).ok()?).ok()
 }
 
 fn read_symbol(path: &Path) -> Option<SymbolFile> {
-    agentee_core::project::parse(&std::fs::read_to_string(path).ok()?).ok()
+    agentee_core::project::parse(&agentee_core::vfs::read_to_string(path).ok()?).ok()
 }
 
 fn detail(e: &Entry) -> Detail {

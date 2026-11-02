@@ -181,5 +181,5 @@ pub fn write(
         }
         None => text.to_string(),
     };
-    std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
+    agentee_core::vfs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
 }

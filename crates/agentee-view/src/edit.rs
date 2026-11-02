@@ -75,8 +75,8 @@ pub struct Editor {
 impl Editor {
     pub fn open(project: &Project, i: usize) -> Result<Editor, String> {
         let path = project.layouts[i].path.clone();
-        let disk =
-            std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let disk = agentee_core::vfs::read_to_string(&path)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
         let doc = disk.parse().map_err(|e| format!("{e}"))?;
         Ok(Editor {
             path,
@@ -298,7 +298,8 @@ impl Editor {
 
     pub fn save(&mut self) -> Result<(), String> {
         let text = self.doc.to_string();
-        std::fs::write(&self.path, &text).map_err(|e| format!("{}: {e}", self.path.display()))?;
+        agentee_core::vfs::write(&self.path, &text)
+            .map_err(|e| format!("{}: {e}", self.path.display()))?;
         self.disk = text;
         self.dirty = false;
         self.conflict = None;
@@ -320,7 +321,7 @@ impl Editor {
     }
 
     pub fn sync(&mut self, ctx: &egui::Context, project: &Project, i: usize) {
-        let Ok(now) = std::fs::read_to_string(&self.path) else { return };
+        let Ok(now) = agentee_core::vfs::read_to_string(&self.path) else { return };
         if self.inputs.is_some() {
             self.inputs = project.layout_inputs(i).ok().map(Arc::new);
         }

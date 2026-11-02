@@ -2499,7 +2499,7 @@ impl LayoutFile {
                         continue;
                     }
                 },
-                (None, Some(f)) => match std::fs::read_to_string(dir.join(f)) {
+                (None, Some(f)) => match crate::vfs::read_to_string(&dir.join(f)) {
                     Ok(s) => (f.clone(), s),
                     Err(e) => {
                         d.error(&at, format!("cannot read {f}: {e}"));

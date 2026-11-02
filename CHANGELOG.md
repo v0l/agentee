@@ -6,6 +6,9 @@ All notable changes to agentee are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `history` in the viewer opens the project as it was at any earlier commit, read from git into memory, so a board ordered at a commit can be reopened for assembly without a checkout. Saving is blocked while viewing a revision. `working copy` goes back.
+
 ## [0.4.1] - 2026-11-01
 
 ### Fixed

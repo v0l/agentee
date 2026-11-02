@@ -17,6 +17,7 @@ pub mod partdialog;
 pub mod pcb;
 pub mod plot;
 pub mod raster;
+pub mod revision;
 pub mod sheet;
 pub mod simrun;
 pub mod tools;

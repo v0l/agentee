@@ -115,7 +115,7 @@ pub fn model_height(fp: &agentee_core::footprint::Footprint, mesh: &Mesh) -> Opt
 }
 
 pub fn load(path: &Path) -> Result<Mesh, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let bytes = agentee_core::vfs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let bytes = gunzip(bytes).map_err(|e| format!("{}: {e}", path.display()))?;
     let text = String::from_utf8_lossy(&bytes);
     let mesh = if text.starts_with("ISO-10303-21") {
@@ -243,14 +243,14 @@ pub fn in_project(model: &str, project: &Path) -> Option<PathBuf> {
         );
     }
     let direct = project.join(model);
-    if !model.starts_with("${") && direct.is_file() {
+    if !model.starts_with("${") && agentee_core::vfs::is_file(&direct) {
         return Some(direct);
     }
     let rel = relative(model);
     [rel.clone(), with_ext(&rel, "step"), with_ext(&rel, "stp"), with_ext(&rel, "wrl")]
         .into_iter()
         .map(|n| project.join("3dmodels").join(n))
-        .find(|p| p.is_file())
+        .find(|p| agentee_core::vfs::is_file(p))
 }
 
 pub fn locate(model: &str, project: &Path) -> Option<PathBuf> {
@@ -258,7 +258,7 @@ pub fn locate(model: &str, project: &Path) -> Option<PathBuf> {
         return url_cached(model, &cache_dir());
     }
     let direct = project.join(model);
-    if !model.starts_with("${") && direct.is_file() {
+    if !model.starts_with("${") && agentee_core::vfs::is_file(&direct) {
         return Some(direct);
     }
     let rel = relative(model);
@@ -266,7 +266,7 @@ pub fn locate(model: &str, project: &Path) -> Option<PathBuf> {
     for root in roots(project) {
         for n in &names {
             let p = root.join(n);
-            if p.is_file() {
+            if agentee_core::vfs::is_file(&p) {
                 return Some(p);
             }
         }
@@ -399,8 +399,7 @@ pub fn set_waker(f: impl Fn() + Send + Sync + 'static) {
 type Stamp = Option<(std::time::SystemTime, u64)>;
 
 fn stamp(path: &Path) -> Stamp {
-    let meta = std::fs::metadata(path).ok()?;
-    Some((meta.modified().ok()?, meta.len()))
+    agentee_core::vfs::stamp(path)
 }
 
 fn load_cached(path: PathBuf) -> Status {

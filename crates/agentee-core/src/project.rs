@@ -116,13 +116,11 @@ pub struct Project {
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(Result::ok).collect();
-    entries.sort_by_key(|e| e.file_name());
-    for e in entries {
-        let p = e.path();
-        let name = e.file_name();
-        let name = name.to_string_lossy();
-        if p.is_dir() {
+    let mut entries = crate::vfs::read_dir(dir)?;
+    entries.sort();
+    for (p, is_dir) in entries {
+        let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        if is_dir {
             if !name.starts_with('.') && name != "target" && name != "node_modules" {
                 walk(&p, out)?;
             }
@@ -232,7 +230,7 @@ impl Project {
     }
 
     fn read(path: &Path, keep: fn(Kind) -> bool) -> std::io::Result<(Project, Files)> {
-        let (root, files) = if path.is_dir() {
+        let (root, files) = if crate::vfs::is_dir(path) {
             let mut v = Vec::new();
             walk(path, &mut v)?;
             (path.to_path_buf(), v)
@@ -252,7 +250,7 @@ impl Project {
         let mut p = Project { root, generation, ..Default::default() };
         let mut out = Files::default();
         for f in files.into_iter().filter(|f| Kind::of(f).is_some_and(keep)) {
-            let src = match std::fs::read_to_string(&f) {
+            let src = match crate::vfs::read_to_string(&f) {
                 Ok(s) => s,
                 Err(e) => {
                     p.fail(&f, "", e.to_string());
@@ -412,7 +410,7 @@ impl Project {
                 hash = p.check_pdn(&f, &item, hash, &mut d);
             }
             let path = crate::sim::result_path(&f);
-            let text = std::fs::read_to_string(&path).ok();
+            let text = crate::vfs::read_to_string(&path).ok();
             let fdtd = text.as_deref().and_then(|t| serde_json::from_str::<SimResult>(t).ok());
             let maps =
                 text.as_deref().and_then(|t| serde_json::from_str::<crate::sim::MapResult>(t).ok());
@@ -634,7 +632,7 @@ impl Project {
             src,
             item.circuit.as_ref().map(|c| c.netlist_hash).unwrap_or_default(),
         );
-        let text = std::fs::read_to_string(crate::sim::result_path(path)).ok();
+        let text = crate::vfs::read_to_string(&crate::sim::result_path(path)).ok();
         let result = text
             .as_deref()
             .and_then(|t| serde_json::from_str::<crate::circuit::CircuitResult>(t).ok());
@@ -664,7 +662,7 @@ impl Project {
             src,
             item.logic.as_ref().map(|l| l.netlist_hash).unwrap_or_default(),
         );
-        let text = std::fs::read_to_string(crate::sim::result_path(path)).ok();
+        let text = crate::vfs::read_to_string(&crate::sim::result_path(path)).ok();
         let result =
             text.as_deref().and_then(|t| serde_json::from_str::<crate::logic::LogicResult>(t).ok());
         match &result {
@@ -721,7 +719,7 @@ impl Project {
         }
         for c in &spec.decaps {
             if let crate::sim::DecapModel::File { path: f, .. } = &c.model {
-                match std::fs::read_to_string(path.parent().unwrap_or(Path::new(".")).join(f)) {
+                match crate::vfs::read_to_string(&path.parent().unwrap_or(Path::new(".")).join(f)) {
                     Ok(t) => texts.push(t),
                     Err(e) => d.error("decaps", format!("cannot read {f}: {e}")),
                 }
@@ -738,7 +736,7 @@ impl Project {
         if let Some(spec) = &sim.channel_spec {
             for r in [&spec.tx, &spec.rx].into_iter().flatten() {
                 let f = path.parent().unwrap_or(Path::new(".")).join(&r.file);
-                match std::fs::read_to_string(&f) {
+                match crate::vfs::read_to_string(&f) {
                     Ok(t) => match crate::ibis::parse(&t) {
                         Ok(ib) if ib.models.iter().any(|m| m.name == r.model) => texts.push(t),
                         Ok(_) => d.error("ibis", format!("{} has no model {}", r.file, r.model)),
@@ -812,7 +810,7 @@ impl Project {
             let at = format!("devices[{i}] {}", dev.file);
             let file = path.parent().unwrap_or(Path::new(".")).join(&dev.file);
             let n = crate::rf::ports_from_path(&file);
-            match std::fs::read_to_string(&file) {
+            match crate::vfs::read_to_string(&file) {
                 Err(e) => d.error(&at, format!("cannot read {}: {e}", file.display())),
                 Ok(text) => {
                     match n {
@@ -1094,7 +1092,7 @@ impl Project {
             sims: self
                 .sims
                 .iter()
-                .filter_map(|e| std::fs::read_to_string(&e.path).ok())
+                .filter_map(|e| crate::vfs::read_to_string(&e.path).ok())
                 .filter_map(|src| parse(&src).ok())
                 .collect(),
         })

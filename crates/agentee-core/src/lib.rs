@@ -34,6 +34,7 @@ pub mod tie;
 pub mod tune;
 pub mod units;
 pub mod version;
+pub mod vfs;
 
 pub use diag::{Diagnostic, Severity};
 pub use project::{ItemRef, Kind, Project};

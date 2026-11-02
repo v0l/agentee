@@ -762,7 +762,7 @@ impl SimResult {
     }
 
     pub fn load(path: &Path) -> Option<SimResult> {
-        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+        serde_json::from_str(&crate::vfs::read_to_string(path).ok()?).ok()
     }
 }
 
@@ -789,7 +789,7 @@ impl SimProgress {
 
     pub fn load(spec: &Path) -> Option<SimProgress> {
         let p: SimProgress =
-            serde_json::from_str(&std::fs::read_to_string(progress_path(spec)).ok()?).ok()?;
+            serde_json::from_str(&crate::vfs::read_to_string(&progress_path(spec)).ok()?).ok()?;
         (now() <= p.updated + 20).then_some(p)
     }
 }
