@@ -753,16 +753,11 @@ impl App {
         }
     }
 
-    fn error(&self, ui: &mut Ui) {
-        let Some(e) = &self.error else { return };
-        card(
-            ui,
-            Some(FAULT),
-            |ui| {
-                Line::new().legend("error").show(ui);
-            },
-            |ui| status(ui, false, e),
-        );
+    fn error_toast(&mut self, ctx: &egui::Context) {
+        let Some(e) = self.error.clone() else { return };
+        if egui_bench::toast::toast(ctx, "error", &e, egui_bench::toast::Tone::Fault) {
+            self.error = None;
+        }
     }
 }
 
@@ -846,6 +841,7 @@ impl eframe::App for App {
         self.poll(&ctx);
         self.show_browser(&ctx);
         self.show_history(&ctx);
+        self.error_toast(&ctx);
         if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
             self.browse();
         }
@@ -878,7 +874,6 @@ impl eframe::App for App {
                 .min_size(180.0)
                 .frame(egui::Frame::NONE.fill(CHASSIS).inner_margin(egui::Margin::symmetric(10, 8)))
                 .show(ui, |ui| {
-                    self.error(ui);
                     self.list(ui);
                 });
         }
