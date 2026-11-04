@@ -19,16 +19,41 @@ kind = "convection"
 max_temp = 300
 
 [[parts]]
-refs = ["C1", "C2", "C3", "C4", "C5", "C6", "R1"]
+refs = ["C1", "C2", "C3", "C5"]
+mpn = "GRM155R71C104KA88D"
 max_peak = 260
 max_time_at_peak = 30
 max_passes = 3
 msl = 1
 capable = "reflow"
-source = "https://pim.murata.com/asset/pim4/ceramicCapacitorSMD/GRM1555C1H222GA01-01A-EN_PDF_CERAMICCAPACITORSMD"
+source = "https://pim.murata.com/asset/pim4/ceramicCapacitorSMD/GRM155R71C104KA88-01A-EN_PDF_CERAMICCAPACITORSMD"
+page = "16"
+confidence = "datasheet"
+note = "Murata GRM155R71C104KA88 page 16: recommended reflow peak 240 to 260 C with Sn-3.0Ag-0.5Cu, temperature differential 190 C max. Time at peak and pass count are J-STD-020 values, the datasheet limits cumulative soldering time instead."
+
+[[parts]]
+refs = ["C4"]
+max_peak = 260
+max_time_at_peak = 30
+max_passes = 3
+msl = 1
+capable = "reflow"
+source = "https://pim.murata.com/asset/pim4/ceramicCapacitorSMD/GRM155R61A105KE15-01A-EN_PDF_CERAMICCAPACITORSMD"
+page = "16"
+confidence = "datasheet"
+note = "Murata GRM155R61A105KE15 page 16: recommended reflow peak 240 to 260 C, same footing as the 0.1 uF parts."
+
+[[parts]]
+refs = ["C6", "R1"]
+max_peak = 260
+max_time_at_peak = 30
+max_passes = 3
+msl = 1
+capable = "reflow"
+source = "https://pim.murata.com/asset/pim4/ceramicCapacitorSMD/GRM155R71C104KA88-01A-EN_PDF_CERAMICCAPACITORSMD"
 page = "16"
 confidence = "inferred"
-note = "Murata GRM 0402 family: recommended peak 240 to 260 C, Sn-3.0Ag-0.5Cu, dT 190 C max. The GRM155 parts here are not that exact datasheet, and R1 (a generic 0402 resistor) is covered by the same chip default, so it is inferred."
+note = "C6 has no part number and R1 is a generic 0402 resistor: the Murata 0402 ceramic limit is used as the chip default."
 
 [[parts]]
 refs = ["D1", "D2"]
@@ -38,8 +63,9 @@ max_passes = 3
 msl = 1
 capable = "reflow"
 source = "https://www.infineon.com/dgdl/Infineon-General_Recommendations_for_Assembly_of_Infineon_Packages-AN-v04_00-EN.pdf?fileId=5546d46268554f4a016893f69ddf5e63"
+page = "6"
 confidence = "inferred"
-note = "BAT60A is Pb-free (BAT60A datasheet page 1). Infineon states its packages are qualified to J-STD-020 and the standards give 260 C max; the BAT60A datasheet itself lists no MSL."
+note = "BAT60A (SOD323, Pb-free per its datasheet page 1) lists no MSL or peak. Infineon's assembly note page 6 says MSL-classified parts were tested with three J-STD-020 reflow runs at the label temperature; 260 C is the J-STD-020 class for a package this small."
 
 [[parts]]
 refs = ["D3"]
@@ -48,9 +74,10 @@ max_time_at_peak = 30
 max_passes = 3
 msl = 1
 capable = "reflow"
-source = "J-STD-020E Table 4-2, package under 1.6 mm thick and under 350 mm3"
+source = "https://www.infineon.com/dgdl/Infineon-General_Recommendations_for_Assembly_of_Infineon_Packages-AN-v04_00-EN.pdf?fileId=5546d46268554f4a016893f69ddf5e63"
+page = "6"
 confidence = "inferred"
-note = "WLL-2-3 0.58 x 0.28 x 0.15 mm. The ESD131 datasheet gives no reflow data, so this is the J-STD-020 classification for its size."
+note = "ESD131-B1-W0201 datasheet (WLL-2-3, 0.58 x 0.28 x 0.15 mm, page 12) gives no reflow data. Same Infineon note as D1; 260 C is the J-STD-020 Table 4-2 class for its size."
 
 [[parts]]
 refs = ["U1"]
@@ -61,4 +88,4 @@ msl = 3
 capable = "reflow"
 source = "J-STD-020E Table 4-2, SOT-89 under 1.6 mm thick and under 350 mm3"
 confidence = "assumed"
-note = "The Qorvo SPF5189Z datasheet could not be fetched (HTTP 429 from qorvo.com, access denied at mouser.com). MSL 3 is a safe default for a plastic IC. Replace from the datasheet."
+note = "The Qorvo SPF5189Z datasheet could not be fetched: qorvo.com 429, mouser.com and digikey.com access denied, archive.org copy is a discontinued-product page, datasheet.lcsc.com returned HTML. MSL 3 is a safe default for a plastic IC. Replace from the datasheet."

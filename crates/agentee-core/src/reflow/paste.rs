@@ -196,6 +196,22 @@ pub fn resolve(f: &PasteFile) -> Result<Paste, String> {
     })
 }
 
+pub const SNBIAG_SOURCE: &str = "Chip Quik TS391LT50 Sn42/Bi57.6/Ag0.4 recommended profile, https://web.archive.org/web/2024/https://www.chipquik.com/datasheets/TS391LT50.pdf page 2";
+
 pub fn low_temperature() -> Paste {
-    resolve(&PasteFile { alloy: "Sn42Bi58".into(), ..Default::default() }).expect("builtin alloy")
+    resolve(&PasteFile {
+        alloy: "Sn42Bi58".into(),
+        name: Some("Chip Quik TS391LT50 Sn42/Bi57.6/Ag0.4".into()),
+        peak: Some([155.0, 165.0]),
+        preheat: Some([90.0, 130.0]),
+        soak_time: Some([60.0, 90.0]),
+        max_ramp_up: Some(2.0),
+        time_above_liquidus: Some([45.0, 75.0]),
+        cooling: Some([2.0, 4.0]),
+        flux_activation: Some([90.0, 130.0]),
+        source: Some(SNBIAG_SOURCE.into()),
+        page: Some("2".into()),
+        ..Default::default()
+    })
+    .expect("builtin alloy")
 }
