@@ -65,7 +65,7 @@ impl Harness {
             ..Default::default()
         };
         let (project, item, st) = (&self.project, self.item, &mut self.st);
-        let _ = self.ctx.run_ui(raw, |ui| page(ui, project, item, st));
+        self.ctx.run_ui(raw, |ui| page(ui, project, item, st)).textures_delta.clear();
     }
 
     fn screen(&self, mm: [f64; 2]) -> Pos2 {

@@ -582,7 +582,7 @@ mod tests {
     fn legend_columns_stay_inside_their_share_and_count_the_rest() {
         let ctx = egui::Context::default();
         egui_bench::install(&ctx);
-        let _ = ctx.run_ui(Default::default(), |ui| {
+        ctx.run_ui(Default::default(), |ui| {
             let p = ui.painter();
             let entries: Vec<(String, Color32)> =
                 (0..36).map(|k| (format!("S{k} AMP_OUT>AMP_IN"), color(k))).collect();
@@ -592,7 +592,9 @@ mod tests {
             let few = &entries[..4];
             let l = Legend::new(p, few, 200.0, 300.0);
             assert_eq!((l.cols, l.rows >= 4), (1, true));
-        });
+        })
+        .textures_delta
+        .clear();
     }
 
     #[test]

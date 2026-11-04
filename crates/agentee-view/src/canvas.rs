@@ -141,13 +141,15 @@ mod tests {
                     events,
                     ..Default::default()
                 };
-                let _ = ctx.run_ui(input, |ui| {
+                ctx.run_ui(input, |ui| {
                     let (_, xf) = view.show(ui, &b, 30.0);
                     if k == 1 {
                         under = Some(xf.mm(pointer));
                     }
                     xf_last = Some(xf);
-                });
+                })
+                .textures_delta
+                .clear();
             }
             let (under, xf) = (under.unwrap(), xf_last.unwrap());
             assert!(view.scale > 25.0, "flip {flip}: did not zoom, scale {}", view.scale);

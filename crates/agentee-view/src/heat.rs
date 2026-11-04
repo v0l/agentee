@@ -134,7 +134,7 @@ pub fn canvas(
         .horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             let view = ui
-                .allocate_ui(Vec2::new(avail.x - BAR_W - gap, avail.y), |ui| {
+                .allocate_ui(Vec2::new((avail.x - BAR_W - gap).max(0.0), avail.y), |ui| {
                     st.view.show(ui, &bounds, 30.0)
                 })
                 .inner;
@@ -308,7 +308,9 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            let _ = ctx.run_ui(input, |ui| canvas(ui, &project, sim, index, maps, st));
+            ctx.run_ui(input, |ui| canvas(ui, &project, sim, index, maps, st))
+                .textures_delta
+                .clear();
         };
         let button = |pos: Pos2, pressed: bool| Event::PointerButton {
             pos,

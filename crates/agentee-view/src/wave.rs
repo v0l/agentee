@@ -775,7 +775,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            let _ = ctx.run_ui(input, |ui| canvas(ui, &r, view, true));
+            ctx.run_ui(input, |ui| canvas(ui, &r, view, true)).textures_delta.clear();
         };
         let at = Pos2::new(600.0, 100.0);
         let button = |pos: Pos2, pressed: bool| Event::PointerButton {
@@ -867,7 +867,7 @@ mod tests {
                 events,
                 ..Default::default()
             };
-            let _ = ctx.run_ui(input, |ui| canvas(ui, &r, view, true));
+            ctx.run_ui(input, |ui| canvas(ui, &r, view, true)).textures_delta.clear();
         };
         let wheel = |dy: f32| Event::MouseWheel {
             unit: MouseWheelUnit::Point,
