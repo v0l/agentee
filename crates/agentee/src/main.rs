@@ -5,6 +5,7 @@ mod edit;
 mod library;
 mod mcp;
 mod ops;
+mod reflow;
 mod templates;
 
 use agentee_core::Severity;
@@ -438,6 +439,20 @@ enum Cmd {
         /// List the spots without writing any file
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Work out the reflow profile of a board from every part's soldering limits, in NAME.reflow.toml
+    Reflow {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Write the time against temperature curve as CSV
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        /// Write the curve with the limit bands as an SVG plot
+        #[arg(long)]
+        plot: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
     },
     /// Trace calculators
     Calc {
@@ -1319,6 +1334,16 @@ fn run(cli: Cli) -> Result<bool, String> {
             let ok = r["still_failing"].as_array().is_none_or(|f| f.is_empty());
             print_json(&r);
             Ok(ok)
+        }
+        Cmd::Reflow { name, project, csv, plot, json } => {
+            let o = reflow::Options { csv, plot };
+            let (report, v) = reflow::run(&project, &name, &o)?;
+            if json {
+                print_json(&v);
+            } else {
+                print!("{}", reflow::render(&report));
+            }
+            Ok(report.ok)
         }
         Cmd::Testpoints { name, project, nets, side, pitch, dry_run } => {
             let opts = ops::TestpointOptions { nets, side, pitch, write: !dry_run };

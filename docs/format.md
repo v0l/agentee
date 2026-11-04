@@ -10,6 +10,7 @@ A project is a directory. Every file below it is loaded by its suffix:
 | `*.sch.toml` | a schematic: placed parts, nets, wires |
 | `*.pcb.toml` | a layout: footprint placement, tracks, vias, zones |
 | `*.sim.toml` | a simulation of a layout: FDTD S-parameters, cascade, channel, PDN, DC drop or thermal (`kind`) |
+| `*.reflow.toml` | the reflow profile of a layout: paste, oven, pass order and each part's soldering limits |
 
 Names are unique per kind. A symbol links a footprint by its `name`, and a `Library:Name` reference
 matches on the part after the colon.
@@ -2928,6 +2929,83 @@ missing = "https://www.qorvo.com/products/d/da001910: HTTP 429"
 `check` warns (rule `datasheet`) for a part with an `mpn` that has no datasheet URL on its symbol
 or part and no record here, and for a part whose last fetch found no datasheet. The fix is the
 user's PDF through `datasheet add`, or a URL that works.
+
+## Reflow profile (`*.reflow.toml`)
+
+`agentee reflow NAME` (MCP `reflow`) combines the soldering limits of every part on a layout with
+the paste's window into one oven profile, and reports the limiting part, the margins, the pass
+order of a double sided board, oven setpoints and thermocouple advice. `--csv FILE` writes time
+against temperature and `--plot FILE` an SVG of the curve with the liquidus, the limit bands and
+the limiter named. Exit status is 1 when a finding is an error.
+
+```toml
+name = "lna"
+layout = "lna"                  # the *.pcb.toml it profiles
+
+[paste]
+alloy = "SAC305"                # SAC305, SAC405, Sn63Pb37, Sn62Pb36Ag2, Sn42Bi58, Sn99.3Cu0.7, or give
+name = "Chip Quik SMD291SNL"    # lead_free, solidus and liquidus yourself
+peak = [230, 249]               # joint peak window from the paste datasheet, C
+preheat = [140, 200]            # soak band, C
+soak_time = [60, 90]            # s
+max_ramp_up = 2.0               # C/s
+time_above_liquidus = [30, 60]  # s
+cooling = [2, 4]                # C/s
+flux_activation = [140, 200]
+source = "https://..."          # the paste datasheet; page = "2"
+page = "2"
+
+[oven]
+kind = "convection"             # toaster | hotplate | convection | zones
+max_temp = 300                  # oven air limit, C
+max_ramp_up = 2.0               # what the oven can do, C/s
+max_ramp_down = 4.0
+h_eff = 60                      # convective W/m2K, default by kind
+# zones = [{ name = "z1", length = 300 }]   # mm, with conveyor_speed in mm/min
+
+[assembly]
+first_side = "top"              # default: the checker picks the side that gives no errors
+hours_before_first_pass = 4     # time out of the dry bag, for floor life
+hours_between_passes = 2
+copper_fill = 0.5               # board copper fraction, thermal mass
+
+[[parts]]
+refs = ["D1", "D2"]             # or mpn = "BAT60A" to cover every part with that number
+max_peak = 260                  # C, body peak
+max_time_at_peak = 30           # s within 5 C of peak
+max_time_above_liquidus = 150   # s
+max_ramp_up = 3.0               # C/s
+max_ramp_down = 6.0
+msl = 3                         # 1, 2, 2a, 3, 4, 5, 5a, 6; floor_life_hours overrides the table
+max_passes = 3
+capable = "reflow"              # reflow | selective | hand
+termination = "lead_free"       # lead_free | tin_lead, or ball_alloy = "SAC305"
+last_pass = false               # must only see the last pass
+mass_g = 0.2                    # overrides the volume estimate
+local_copper_fill = 0.9         # a thermal pad or plane under the part
+source = "https://..."          # URL or file; page = "4"
+page = "4"
+confidence = "datasheet"        # datasheet | inferred | assumed
+note = ""
+```
+
+A part with no entry takes the library part's `[reflow]` table (the same keys, in `part.toml`, so
+a part is researched once), then a package default from J-STD-020 by body thickness and volume.
+A default, a missing source or a field left out is flagged `assumed` with a warning. Through-hole
+parts, connectors and other parts marked `selective` or `hand` are left out of the oven and listed
+for soldering after the last pass.
+
+Checks, by rule id: `reflow-conflict` (no profile fits: names the parts and lists options, each
+marked verified when the solver confirmed it), `reflow-default`, `reflow-unsourced`,
+`reflow-assumed-field`, `reflow-paste-assumed`, `reflow-unknown-ref`, `reflow-passes`,
+`reflow-hangs` (a heavy part on the first side of a double sided board, from the 30 g per square
+inch of pad rule), `reflow-last-pass`, `reflow-floor-life`, `reflow-alloy-mix`,
+`reflow-ball-melt`, `reflow-oven-max`.
+
+The thermal model is two first-order lags (board behind the oven air, each part behind the board)
+with time constants from package volume, pad area, board copper and an effective heat transfer
+coefficient per oven kind. It ranks the hottest and coldest joints and sets tolerances; confirm it
+with a thermocouple run. Constants carry their sources in `crates/agentee-core/src/reflow/`.
 
 ## Parts library
 

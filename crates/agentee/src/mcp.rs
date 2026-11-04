@@ -268,6 +268,15 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "reflow",
+            "description": "Work out the reflow soldering profile of a board from NAME.reflow.toml: every part's sourced limits (peak, time at peak, ramps, MSL, passes, reflow capable) combined with the paste's window, a two-node thermal model for the hottest and coldest joints, the limiting part and margins, double sided pass order and floor life, oven setpoints and thermocouple advice. Reports the conflicting parts and options when no profile fits. csv and plot write the time against temperature curve and an SVG plot with the limit bands. Limits with no source are flagged assumed: fetch the datasheet, never guess.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "the reflow file, without .reflow.toml" },
+                "csv": { "type": "string", "description": "write the curve here as CSV" },
+                "plot": { "type": "string", "description": "write the SVG plot here" },
+            }), &["name"]),
+        },
+        {
             "name": "sparam",
             "description": "Analyse a finished sim or cascade: passivity and reciprocity, a TDR of one port (impedance against time with a Gaussian edge), mixed-mode Sdd/Scc/Scd for a pair given as IN+,IN-,OUT+,OUT-, and crosstalk FROM,TO in frequency and as a step.",
             "inputSchema": s(json!({
@@ -775,6 +784,14 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 arg(a, "name").ok_or("name is required")?,
                 &opts,
             )?))]))
+        }
+        "reflow" => {
+            let o = crate::reflow::Options {
+                csv: arg(a, "csv").map(std::path::PathBuf::from),
+                plot: arg(a, "plot").map(std::path::PathBuf::from),
+            };
+            let (_, v) = crate::reflow::run(root, arg(a, "name").ok_or("name is required")?, &o)?;
+            Ok(ok(vec![text(pretty(&v))]))
         }
         "neck" => {
             let nets: Vec<String> = arg(a, "nets")
@@ -1299,6 +1316,21 @@ mod tests {
         assert!(tps.clone().count() == 2 && tps.clone().all(|q| q.bottom));
         let sch = std::fs::read_to_string(dir.join("lna.sch.toml")).unwrap();
         assert!(sch.contains("\"TP1.1\"") && sch.contains("\"TP2.1\""));
+    }
+
+    #[test]
+    fn reflow_tool_returns_the_profile_of_the_lna() {
+        let lna = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/lna");
+        let call = json!({ "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": { "name": "reflow", "arguments": { "name": "lna" } } });
+        let r = handle(&lna, &call).unwrap();
+        assert_ne!(r["result"]["isError"], true, "{r}");
+        let v: Value =
+            serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(v["profile"]["limiter"], "D4");
+        assert_eq!(v["ok"], true);
+        let list =
+            handle(&lna, &json!({ "jsonrpc": "2.0", "id": 6, "method": "tools/list" })).unwrap();
+        assert!(list["result"]["tools"].as_array().unwrap().iter().any(|t| t["name"] == "reflow"));
     }
 
     #[test]

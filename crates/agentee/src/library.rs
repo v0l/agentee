@@ -798,6 +798,7 @@ pub fn add(project: Option<&Project>, a: &AddArgs) -> Result<Value, String> {
         datasheet,
         files,
         stock,
+        reflow: None,
     };
     library::write_entry(&dir, &part)?;
     let entry = library::read_entry(&dir, if a.local { "project" } else { "global" })?;

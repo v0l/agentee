@@ -538,12 +538,46 @@ and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas
 (`sch`, `pcb` or `board`), `item`, and `commands`: the same batch as `agentee edit`, one command
 per line. Send `commands = "help"` for the list.
 
+## Reflow profile
+
+Ask for a reflow profile when the board is going to an oven (`agentee reflow NAME`, MCP `reflow`).
+The file is `NAME.reflow.toml`, see `docs/format.md`. The checker does the arithmetic; your job is
+the research, and a limit you did not read is never a number you make up.
+
+1. Run `agentee reflow NAME` once with a bare `[paste]` and no `[[parts]]`. It lists every part
+   with the package default it fell back to, marked assumed.
+2. Pick the paste first: the alloy and the datasheet of the paste the user will buy. Copy its
+   peak window, soak, ramp, time above liquidus and cooling into `[paste]` with `source` and
+   `page`. Lead free and leaded must match the parts, and a BGA's ball alloy decides it.
+3. For each part, `agentee datasheet fetch REF` then `agentee datasheet text REF --find reflow`
+   (also try `solder`, `MSL`, `260`, `peak`). Many component datasheets say nothing: look for the
+   maker's soldering note or assembly application note (Murata, Infineon and others publish one
+   for every package), and render the page to PNG with `pdftoppm` when the value is in a graph.
+4. Write `max_peak`, `max_time_at_peak`, `msl`, `max_passes`, `capable` and any ramp limits in a
+   `[[parts]]` entry with the URL or file as `source`, the page, and `confidence`: `datasheet`
+   when the document gives that number for that part, `inferred` when it covers the family or
+   package, `assumed` when nothing was found. Say what you inferred in `note`. Never write
+   `datasheet` for a value from J-STD-020 tables or memory. If a datasheet cannot be fetched, keep
+   the safe default as `assumed` and tell the user which part needs a datasheet.
+5. Mark connectors, crystals, batteries, electrolytics, MEMS, optics and anything through-hole
+   `selective` or `hand` unless its datasheet allows reflow. Check `termination` on BGAs.
+6. Put a part's limits in the library (`[reflow]` table in its `part.toml`, same keys) so the next
+   board reuses them, and let the design file hold only overrides.
+7. Run `agentee reflow NAME --csv NAME.reflow.csv --plot NAME.reflow.svg`. Read the limiter, its
+   margin and the coldest joint's margin. If it reports a conflict, name the conflicting parts to
+   the user and offer its options (low temperature paste, swap, hand or selective solder, second
+   pass, side order); do not relax a limit to make it pass.
+8. For a double sided board set `[assembly]` hours so floor life is checked, and fix any
+   `reflow-hangs`, `reflow-passes` and `reflow-last-pass` errors by moving parts to the other side.
+9. Tell the user the oven setpoints, the tolerance and where to put the thermocouples.
+
 ## Worked examples
 
 - `examples/demo`: a small board and part library that passes check.
 - `examples/lna`: a full design. Board spec with a field-solved coplanar RF class, schematic,
   routed four layer layout, FDTD, cascade with vendor data, DC drop, thermal and circuit sims,
   and `DESIGN.md`. Copy its patterns before inventing new ones.
+- `examples/lna/lna.reflow.toml`: a worked reflow profile with sourced limits, its CSV and plot.
 - `examples/sdr`: a large design. Hierarchical schematic (power, clock, FPGA, RF, USB sheets),
   BGAs, USB 3 pairs with an FDTD and eye, DC drop on the core rail, thermal, and `DESIGN.md`.
 - `examples/hdi`: a 1+4+1 HDI coupon with microvias in the pads of a 0.5 mm BGA.

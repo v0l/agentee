@@ -161,6 +161,8 @@ pub struct PartFile {
     pub files: Vec<Provenance>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stock: Vec<Stock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflow: Option<agentee_core::reflow::LimitsFile>,
 }
 
 #[derive(Clone, Debug, Serialize)]
