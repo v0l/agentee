@@ -82,5 +82,6 @@ fn a_connection_longer_than_the_search_window_fails_at_once() {
     let r = agentee_layout::autoroute::route(&layout, &inputs.board, &opts).unwrap();
     let wide: Vec<_> = r.failed.iter().filter(|f| f.reason.contains("one search window")).collect();
     assert!(!wide.is_empty(), "{:?}", r.failed);
-    assert!(t.elapsed().as_secs() < 60);
+    let limit = if cfg!(debug_assertions) { 300 } else { 30 };
+    assert!(t.elapsed().as_secs() < limit, "{:?}", t.elapsed());
 }
