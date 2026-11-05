@@ -2569,6 +2569,8 @@ mod tests {
 pub struct AssembleArgs {
     pub built: Option<u32>,
     pub images: Option<PathBuf>,
+    pub consume: bool,
+    pub steps: Vec<usize>,
 }
 
 pub fn assemble(p: &Project, name: &str, a: &AssembleArgs) -> Result<Value, String> {
@@ -2651,6 +2653,16 @@ pub fn assemble(p: &Project, name: &str, a: &AssembleArgs) -> Result<Value, Stri
             out["not_counted"] = json!(missing);
         }
     }
+    if a.consume {
+        let picked: Vec<usize> = (0..groups.len())
+            .filter(|&k| a.steps.is_empty() || a.steps.contains(&groups[k].step))
+            .collect();
+        let shelf = assembly::shelf_save(&groups, &picked, &lib)?;
+        out["consumed"] = json!(shelf.takes);
+        if !shelf.skipped.is_empty() {
+            out["skipped"] = json!(shelf.skipped);
+        }
+    }
     Ok(out)
 }
 
@@ -2665,6 +2677,19 @@ pub fn assemble_text(v: &Value) -> String {
             u["left"],
             if short > 0 { format!(", {short} short") } else { String::new() }
         );
+    }
+    for t in v["consumed"].as_array().into_iter().flatten() {
+        let short = t["short"].as_u64().unwrap_or(0);
+        s += &format!(
+            "{}: {} -> {}{}\n",
+            t["label"].as_str().unwrap_or_default(),
+            t["before"],
+            t["after"],
+            if short > 0 { format!(", {short} short") } else { String::new() }
+        );
+    }
+    for t in v["skipped"].as_array().into_iter().flatten() {
+        s += &format!("{}: no own stock, skipped\n", t["label"].as_str().unwrap_or_default());
     }
     if let Some(n) = v["not_counted"].as_array().filter(|a| !a.is_empty()) {
         s += &format!(

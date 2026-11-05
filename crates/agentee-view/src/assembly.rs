@@ -3,7 +3,9 @@ use crate::focus::{Context, Focus, placed_bounds};
 use crate::paint::{self, Layers, Xf};
 use agentee_core::layout::Layout;
 use agentee_core::project::Project;
-use agentee_parts::assembly::{Group, Side};
+use agentee_parts::assembly::{Group, Shelf, Side, shelf_plan, shelf_restore, shelf_save};
+use agentee_parts::library::{Entry, Library};
+use std::path::PathBuf;
 use egui::{Key as KeyCode, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2};
 use egui_bench::prelude::*;
 use egui_bench::theme::{figure, legend_font};
@@ -11,11 +13,20 @@ use egui_bench::theme::{figure, legend_font};
 const STEP_W: f32 = 360.0;
 const RAIL_H: f32 = 54.0;
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct Saved {
+    pub library: String,
+    pub taken: u64,
+}
+
 pub struct Guide {
     key: (u64, usize),
     pub groups: Vec<Group>,
     pub step: usize,
     pub done: Vec<bool>,
+    pub saved: Vec<Option<Saved>>,
+    pub note: Option<(String, bool)>,
+    root: PathBuf,
     view: View,
     layers: Layers,
 }
@@ -26,6 +37,9 @@ impl Guide {
         Guide {
             key: (project.generation, i),
             done: vec![false; groups.len()],
+            saved: vec![None; groups.len()],
+            note: None,
+            root: project.root.clone(),
             groups,
             step: 0,
             view: View::default(),
@@ -40,6 +54,7 @@ impl Guide {
         let fresh = groups(project, i);
         let was = |g: &Group| self.groups.iter().position(|o| o.refs == g.refs && o.side == g.side);
         self.done = fresh.iter().map(|g| was(g).is_some_and(|k| self.done[k])).collect();
+        self.saved = fresh.iter().map(|g| was(g).and_then(|k| self.saved[k].clone())).collect();
         self.step = self.step.min(fresh.len().saturating_sub(1));
         self.groups = fresh;
         self.key = (project.generation, i);
@@ -71,6 +86,9 @@ impl Guide {
     }
 
     fn tick(&mut self) {
+        if self.saved.get(self.step).is_some_and(Option::is_some) {
+            return;
+        }
         if let Some(d) = self.done.get_mut(self.step) {
             *d = !*d;
         }
@@ -96,6 +114,69 @@ impl Guide {
         (placed.map(|(g, _)| g.refs.len()).sum(), total)
     }
 
+    fn library(&self) -> Library {
+        Library::open(Some(&self.root), None)
+    }
+
+    pub fn pending(&self) -> Vec<usize> {
+        (0..self.groups.len()).filter(|&k| self.done[k] && self.saved[k].is_none()).collect()
+    }
+
+    pub fn plan(&self) -> Shelf {
+        shelf_plan(&self.groups, &self.pending(), &self.library())
+    }
+
+    pub fn save(&mut self) {
+        let picked = self.pending();
+        if picked.is_empty() {
+            return;
+        }
+        let lib = self.library();
+        match shelf_save(&self.groups, &picked, &lib) {
+            Ok(plan) => {
+                for t in &plan.takes {
+                    self.saved[t.group] =
+                        Some(Saved { library: t.library.clone(), taken: t.taken() });
+                }
+                for s in &plan.skipped {
+                    self.saved[s.group] = Some(Saved { library: String::new(), taken: 0 });
+                }
+                let fresh = self.library();
+                for g in &mut self.groups {
+                    g.own = g.library.as_deref().and_then(|n| fresh.get(n)).and_then(Entry::self_stock);
+                }
+                let short = plan.takes.iter().filter(|t| t.short > 0).count();
+                let mut msg = format!("Saved stock for {} groups.", plan.takes.len());
+                if short > 0 {
+                    msg += &format!(" {short} short, saved as none left.");
+                }
+                if !plan.skipped.is_empty() {
+                    msg += &format!(" {} without own stock skipped.", plan.skipped.len());
+                }
+                self.note = Some((msg, short > 0));
+            }
+            Err(e) => self.note = Some((e, true)),
+        }
+    }
+
+    pub fn put_back(&mut self, k: usize) {
+        let Some(saved) = self.saved.get(k).cloned().flatten() else { return };
+        if !saved.library.is_empty() && saved.taken > 0 {
+            let lib = self.library();
+            if let Err(e) = shelf_restore(&saved.library, saved.taken, &lib) {
+                self.note = Some((e, true));
+                return;
+            }
+            let fresh = self.library();
+            for g in &mut self.groups {
+                g.own = g.library.as_deref().and_then(|n| fresh.get(n)).and_then(Entry::self_stock);
+            }
+        }
+        self.saved[k] = None;
+        self.done[k] = false;
+        self.note = Some((format!("Put {} back on the shelf.", saved.taken), false));
+    }
+
     pub fn keys(&mut self, ui: &Ui) {
         if ui.ctx().egui_wants_keyboard_input() {
             return;
@@ -109,6 +190,9 @@ impl Guide {
         }
         if key(KeyCode::Space) || key(KeyCode::Enter) {
             self.tick();
+        }
+        if key(KeyCode::S) {
+            self.save();
         }
         if key(KeyCode::F) {
             self.view.fitted = false;
@@ -201,10 +285,15 @@ fn instruction(ui: &mut Ui, guide: &mut Guide) {
         ui.add_space(6.0);
         ui.label(value(format!("All {total} groups are placed.")));
         ui.add_space(18.0);
-        if ui.add(Key::new("start again").outline(VALUE)).clicked() {
+        let kept = guide.saved.iter().any(Option::is_some);
+        if ui.add(Key::new("start again").outline(VALUE).enabled(!kept)).clicked() {
             guide.done.iter_mut().for_each(|d| *d = false);
             guide.step = 0;
         }
+        if kept {
+            note(ui, "Stock is saved. Put it back to start again.", LEGEND);
+        }
+        stock(ui, guide);
         return;
     }
     let step = guide.step;
@@ -260,11 +349,25 @@ fn instruction(ui: &mut Ui, guide: &mut Guide) {
     }
 
     ui.add_space(18.0);
-    let label = if done { "placed, undo" } else { "placed" };
-    let k = Key::new(label).min_width(STEP_W - 44.0);
+    let kept = guide.saved[step].clone();
+    let label = if kept.is_some() {
+        "placed, stock saved"
+    } else if done {
+        "placed, undo"
+    } else {
+        "placed"
+    };
+    let k = Key::new(label).min_width(STEP_W - 44.0).enabled(kept.is_none());
     let k = if done { k.outline(OK) } else { k.solid(READOUT) };
     if ui.add(k).clicked() {
         guide.tick();
+    }
+    if let Some(s) = kept {
+        ui.add_space(4.0);
+        let text = if s.taken > 0 { format!("put {} back and undo", s.taken) } else { "undo".into() };
+        if ui.add(Key::new(text).outline(WARN).min_width(STEP_W - 44.0)).clicked() {
+            guide.put_back(step);
+        }
     }
     ui.add_space(6.0);
     ui.horizontal(|ui| {
@@ -279,7 +382,8 @@ fn instruction(ui: &mut Ui, guide: &mut Guide) {
         }
     });
     ui.add_space(6.0);
-    ui.label(legend("space marks placed, arrows step"));
+    ui.label(legend("space marks placed, arrows step, S saves stock"));
+    stock(ui, guide);
 
     let next = guide.upcoming(5);
     if next.is_empty() {
@@ -304,6 +408,26 @@ fn instruction(ui: &mut Ui, guide: &mut Guide) {
         if r.clicked() {
             guide.step = k;
         }
+    }
+}
+
+fn stock(ui: &mut Ui, guide: &mut Guide) {
+    ui.add_space(14.0);
+    let plan = guide.plan();
+    let ready = !plan.takes.is_empty() || !plan.skipped.is_empty();
+    for t in &plan.takes {
+        let c = if t.short > 0 { FAULT } else if t.stale { WARN } else { LEGEND };
+        note(ui, t.line(), c);
+    }
+    for s in &plan.skipped {
+        note(ui, format!("{}: no own stock, skipped", s.label), LEGEND);
+    }
+    let save = Key::new("save stock").outline(READOUT).min_width(STEP_W - 44.0).enabled(ready);
+    if ui.add(save).clicked() {
+        guide.save();
+    }
+    if let Some((msg, bad)) = guide.note.clone() {
+        note(ui, msg, if bad { FAULT } else { OK });
     }
 }
 
@@ -438,6 +562,9 @@ mod tests {
             ],
             step: 0,
             done,
+            saved: vec![None; 3],
+            note: None,
+            root: PathBuf::new(),
             view: View::default(),
             layers: crate::pcb::default_layers(),
         }
@@ -455,6 +582,74 @@ mod tests {
         assert!(g.finished());
         g.tick();
         assert_eq!((g.step, g.done.clone()), (2, vec![true, true, false]));
+    }
+
+    fn shelf_guide(tag: &str, own: Option<u64>) -> (Guide, PathBuf) {
+        let root = std::env::temp_dir().join(format!("agentee-guide-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join(".agentee/library/RA");
+        std::fs::create_dir_all(&dir).unwrap();
+        let stock = own.map_or(String::new(), |n| {
+            format!("\n[[stock]]\ndistributor = \"home\"\nsku = \"RA\"\nstock = 0\nchecked = \"2026-01-01\"\nown = {n}\n")
+        });
+        std::fs::write(
+            dir.join("part.toml"),
+            format!("role = \"resistor\"\nmpn = \"RA\"\nsymbol = \"R.sym.toml\"\n{stock}"),
+        )
+        .unwrap();
+        let mut g = guide(vec![false; 3]);
+        g.root = root.clone();
+        for x in &mut g.groups {
+            x.library = Some("RA".into());
+            x.own = own;
+        }
+        (g, root)
+    }
+
+    fn shelf(root: &std::path::Path) -> Option<u64> {
+        Library::open(Some(root), Some(&root.join("none"))).get("RA").and_then(Entry::self_stock)
+    }
+
+    #[test]
+    fn the_save_key_needs_a_placed_group_and_saves_once() {
+        let (mut g, root) = shelf_guide("once", Some(40));
+        assert!(g.pending().is_empty());
+        g.tick();
+        assert_eq!(g.pending(), vec![0]);
+        assert_eq!(g.plan().takes[0].line(), "R1 1k 0402: 40 -> 39");
+        g.save();
+        assert_eq!(shelf(&root), Some(39));
+        assert!(g.pending().is_empty());
+        g.save();
+        assert_eq!(shelf(&root), Some(39));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_saved_group_cannot_be_unplaced_without_putting_the_stock_back() {
+        let (mut g, root) = shelf_guide("undo", Some(40));
+        g.step = 1;
+        g.tick();
+        g.save();
+        assert_eq!(shelf(&root), Some(38));
+        g.step = 1;
+        g.tick();
+        assert!(g.done[1]);
+        assert_eq!(shelf(&root), Some(38));
+        g.put_back(1);
+        assert!(!g.done[1]);
+        assert_eq!(shelf(&root), Some(40));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_group_without_own_stock_is_skipped_not_created() {
+        let (mut g, root) = shelf_guide("skip", None);
+        g.tick();
+        assert_eq!(g.plan().skipped.len(), 1);
+        g.save();
+        assert_eq!(shelf(&root), None);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

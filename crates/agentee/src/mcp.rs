@@ -335,6 +335,8 @@ fn tools() -> Value {
                 "name": { "type": "string", "description": "layout" },
                 "images": { "type": "string", "description": "directory for the group PNGs" },
                 "built": { "type": "integer", "description": "boards built, taken off the library shelf" },
+                "consume": { "type": "boolean", "description": "subtract the placed groups from each part's own stock, never below zero" },
+                "steps": { "type": "array", "items": { "type": "integer" }, "description": "with consume, only these sheet steps" },
                 "json": { "type": "boolean", "description": "return the groups as JSON instead of the sheet" },
             }), &["name"]),
         },
@@ -947,6 +949,12 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
             let args = ops::AssembleArgs {
                 built: a.get("built").and_then(Value::as_u64).map(|n| n as u32),
                 images: arg(a, "images").map(|d| root.join(d)),
+                consume: flag(a, "consume"),
+                steps: a
+                    .get("steps")
+                    .and_then(Value::as_array)
+                    .map(|v| v.iter().filter_map(Value::as_u64).map(|n| n as usize).collect())
+                    .unwrap_or_default(),
             };
             let v = ops::assemble(&p, arg(a, "name").ok_or("name is required")?, &args)?;
             if flag(a, "json") {

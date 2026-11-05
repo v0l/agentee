@@ -235,6 +235,12 @@ enum Cmd {
         /// Take this many boards' worth of parts off the library's own stock
         #[arg(long)]
         built: Option<u32>,
+        /// Subtract the placed groups from each part's own stock, never below zero, once per part
+        #[arg(long)]
+        consume: bool,
+        /// With --consume, only these step numbers from the sheet (default all)
+        #[arg(long, value_delimiter = ',')]
+        steps: Vec<usize>,
         /// Write one PNG per group, its parts lit, to this directory
         #[arg(long)]
         images: Option<PathBuf>,
@@ -1186,9 +1192,9 @@ fn run(cli: Cli) -> Result<bool, String> {
             print_json(&ops::fetch_models(&p)?);
             Ok(true)
         }
-        Cmd::Assemble { name, project, built, images, json } => {
+        Cmd::Assemble { name, project, built, consume, steps, images, json } => {
             let p = ops::load(&project)?;
-            let v = ops::assemble(&p, &name, &ops::AssembleArgs { built, images })?;
+            let v = ops::assemble(&p, &name, &ops::AssembleArgs { built, images, consume, steps })?;
             if json {
                 print_json(&v);
             } else {

@@ -78,3 +78,19 @@ fn built_boards_come_off_the_shelf() {
     assert!(!part.contains("own ="), "{part}");
     let _ = std::fs::remove_dir_all(lib.parent().unwrap());
 }
+
+#[test]
+fn consume_takes_the_placed_groups_off_the_shelf_once_per_part() {
+    let (lib, project) = setup("consume");
+    let (text, ok) = assemble(&lib, &project, &["--consume"]);
+    assert!(ok, "{text}");
+    assert!(text.contains("100n 0402: 10 -> 6\n"), "{text}");
+    let part = std::fs::read_to_string(lib.join("GRM155/part.toml")).unwrap();
+    assert!(part.contains("own = 6") && part.contains("bin = \"A3\""), "{part}");
+    let (text, ok) = assemble(&lib, &project, &["--consume", "--json"]);
+    assert!(ok, "{text}");
+    assert!(text.contains("\"after\": 2"), "{text}");
+    let (text, _) = assemble(&lib, &project, &["--consume", "--steps", "999"]);
+    assert!(!text.contains("->"), "{text}");
+    let _ = std::fs::remove_dir_all(lib.parent().unwrap());
+}

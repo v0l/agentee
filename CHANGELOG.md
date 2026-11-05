@@ -7,6 +7,7 @@ All notable changes to agentee are listed here. The format follows
 ## [Unreleased]
 
 ### Added
+- Hand assembly saves the new on-shelf stock: a `save stock` key (or `S`) previews and subtracts each placed group from the part's own stock, never below zero, once per group, with a put back on undo. `assemble NAME --consume [--steps 1,2]` does the same from the CLI and MCP.
 - `reflow` (CLI and MCP) works out a board's reflow profile from `NAME.reflow.toml`: every part's sourced limits (library `[reflow]` table, package defaults marked assumed) and the paste window give the stages, the limiting part and margins, hot and cold joints from a thermal model, double sided pass order and MSL floor life, oven setpoints, thermocouple advice, a CSV and an SVG plot. A conflict names the parts and offers options. `examples/lna` has a worked profile.
 - `history` in the viewer opens the project as it was at any earlier commit, read from git into memory, so a board ordered at a commit can be reopened for assembly without a checkout. Saving is blocked while viewing a revision. `working copy` goes back.
 

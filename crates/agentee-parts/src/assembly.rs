@@ -240,6 +240,115 @@ pub fn use_up(groups: &[Group], lib: &Library, boards: u32) -> Result<Vec<Used>,
     Ok(out)
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct Take {
+    pub group: usize,
+    pub library: String,
+    pub label: String,
+    pub pieces: u64,
+    pub before: u64,
+    pub after: u64,
+    pub short: u64,
+    pub stale: bool,
+}
+
+impl Take {
+    pub fn line(&self) -> String {
+        let mut s = format!("{}: {} -> {}", self.label, self.before, self.after);
+        if self.short > 0 {
+            s += &format!(", {} short", self.short);
+        }
+        if self.stale {
+            s += ", count changed since the sheet loaded";
+        }
+        s
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Shelf {
+    pub takes: Vec<Take>,
+    pub skipped: Vec<Skipped>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Skipped {
+    pub group: usize,
+    pub label: String,
+}
+
+impl Take {
+    pub fn taken(&self) -> u64 {
+        self.pieces - self.short
+    }
+}
+
+pub fn shelf_restore(library: &str, count: u64, lib: &Library) -> Result<u64, String> {
+    let e = lib.get(library).ok_or_else(|| format!("{library} left the library"))?;
+    let now = e.self_stock().unwrap_or(0) + count;
+    crate::library::set_own(e, now, None)?;
+    Ok(now)
+}
+
+fn label(g: &Group) -> String {
+    let first = &g.refs[0];
+    let refs = match g.refs.len() {
+        1 => first.clone(),
+        n => format!("{first} +{}", n - 1),
+    };
+    format!("{refs} {} {}", g.value, g.package).trim().to_string()
+}
+
+pub fn shelf_plan(groups: &[Group], picked: &[usize], lib: &Library) -> Shelf {
+    let mut out = Shelf::default();
+    let mut now: Vec<(String, u64)> = Vec::new();
+    for &i in picked {
+        let Some(g) = groups.get(i) else { continue };
+        let own = g.library.as_deref().and_then(|n| lib.get(n)).and_then(Entry::self_stock);
+        let (Some(name), Some(current)) = (g.library.clone(), own) else {
+            out.skipped.push(Skipped { group: i, label: label(g) });
+            continue;
+        };
+        let at = match now.iter().position(|(k, _)| *k == name) {
+            Some(k) => k,
+            None => {
+                now.push((name.clone(), current));
+                now.len() - 1
+            }
+        };
+        let before = now[at].1;
+        let pieces = g.refs.len() as u64;
+        let after = before.saturating_sub(pieces);
+        now[at].1 = after;
+        out.takes.push(Take {
+            group: i,
+            library: name,
+            label: label(g),
+            pieces,
+            before,
+            after,
+            short: pieces - (before - after),
+            stale: g.own != Some(current),
+        });
+    }
+    out
+}
+
+pub fn shelf_save(groups: &[Group], picked: &[usize], lib: &Library) -> Result<Shelf, String> {
+    let plan = shelf_plan(groups, picked, lib);
+    let mut done: Vec<&str> = Vec::new();
+    for t in &plan.takes {
+        if done.contains(&t.library.as_str()) {
+            continue;
+        }
+        done.push(&t.library);
+        let last = plan.takes.iter().rfind(|o| o.library == t.library).unwrap();
+        let e = lib.get(&t.library).ok_or_else(|| format!("{} left the library", t.library))?;
+        crate::library::set_own(e, last.after, None)?;
+    }
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +369,121 @@ mod tests {
         ] {
             assert_eq!(package(fp), want, "{fp}");
         }
+    }
+}
+
+#[cfg(test)]
+mod shelf_tests {
+    use super::*;
+
+    fn lib(tag: &str, own: &[(&str, Option<u64>)]) -> (std::path::PathBuf, Library) {
+        let root = std::env::temp_dir().join(format!("agentee-shelf-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (name, own) in own {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            let stock = own.map_or(String::new(), |n| {
+                format!("\n[[stock]]\ndistributor = \"home\"\nsku = \"{name}\"\nstock = 0\nchecked = \"2026-01-01\"\nown = {n}\nbin = \"A1\"\n")
+            });
+            std::fs::write(
+                dir.join("part.toml"),
+                format!("role = \"resistor\"\nmpn = \"{name}\"\nsymbol = \"R.sym.toml\"\n{stock}"),
+            )
+            .unwrap();
+        }
+        let l = Library::open(None, Some(&root));
+        (root, l)
+    }
+
+    fn group(step: usize, side: Side, library: &str, refs: &[&str], own: Option<u64>) -> Group {
+        Group {
+            step,
+            side,
+            value: "100k".into(),
+            package: "0603".into(),
+            footprint: "R_0603_1608Metric".into(),
+            mpn: None,
+            refs: refs.iter().map(|r| r.to_string()).collect(),
+            tht: false,
+            hot: false,
+            height: None,
+            library: Some(library.into()),
+            bin: None,
+            own,
+        }
+    }
+
+    fn own(root: &std::path::Path, name: &str) -> Option<u64> {
+        Library::open(None, Some(root)).get(name).and_then(Entry::self_stock)
+    }
+
+    #[test]
+    fn placed_groups_lower_the_stock_by_their_size() {
+        let (root, lib) = lib("two", &[("RA", Some(40)), ("RB", Some(10))]);
+        let groups = vec![
+            group(1, Side::Top, "RA", &["R1", "R2", "R3"], Some(40)),
+            group(2, Side::Top, "RB", &["R4"], Some(10)),
+        ];
+        let plan = shelf_save(&groups, &[0, 1], &lib).unwrap();
+        assert_eq!(plan.takes[0].line(), "R1 +2 100k 0603: 40 -> 37");
+        assert_eq!((own(&root, "RA"), own(&root, "RB")), (Some(37), Some(9)));
+        let text = std::fs::read_to_string(root.join("RA/part.toml")).unwrap();
+        assert!(text.contains("bin = \"A1\""), "{text}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_short_shelf_saves_zero_and_flags_it_without_stopping_the_rest() {
+        let (root, lib) = lib("short", &[("RA", Some(2)), ("RB", Some(10))]);
+        let groups = vec![
+            group(1, Side::Top, "RA", &["R1", "R2", "R3"], Some(2)),
+            group(2, Side::Top, "RB", &["R4"], Some(10)),
+        ];
+        let plan = shelf_save(&groups, &[0, 1], &lib).unwrap();
+        assert_eq!((plan.takes[0].after, plan.takes[0].short), (0, 1));
+        assert_eq!((own(&root, "RA"), own(&root, "RB")), (None, Some(9)));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_part_without_own_stock_is_skipped_and_listed() {
+        let (root, lib) = lib("none", &[("RA", None)]);
+        let groups = vec![group(1, Side::Top, "RA", &["R1"], None)];
+        let plan = shelf_save(&groups, &[0], &lib).unwrap();
+        assert!(plan.takes.is_empty());
+        assert_eq!(plan.skipped.len(), 1);
+        assert_eq!(own(&root, "RA"), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn one_part_split_by_side_subtracts_the_total_once() {
+        let (root, lib) = lib("sides", &[("RA", Some(10))]);
+        let groups = vec![
+            group(1, Side::Top, "RA", &["R1", "R2"], Some(10)),
+            group(2, Side::Bottom, "RA", &["R3"], Some(10)),
+        ];
+        let plan = shelf_save(&groups, &[0, 1], &lib).unwrap();
+        assert_eq!((plan.takes[1].before, plan.takes[1].after), (8, 7));
+        assert_eq!(own(&root, "RA"), Some(7));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_current_count_wins_over_the_one_the_sheet_loaded_with() {
+        let (root, lib) = lib("stale", &[("RA", Some(30))]);
+        let groups = vec![group(1, Side::Top, "RA", &["R1"], Some(40))];
+        let plan = shelf_save(&groups, &[0], &lib).unwrap();
+        assert!(plan.takes[0].stale);
+        assert_eq!(own(&root, "RA"), Some(29));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn putting_back_restores_what_was_taken() {
+        let (root, lib) = lib("back", &[("RA", Some(5))]);
+        assert_eq!(shelf_restore("RA", 3, &lib).unwrap(), 8);
+        assert_eq!(own(&root, "RA"), Some(8));
+        let _ = std::fs::remove_dir_all(root);
     }
 }
