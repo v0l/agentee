@@ -888,6 +888,32 @@ levels = { vih = "70%", pull_up = "45k" }
 
 Only pins with levels are checked; nothing is assumed for a symbol without them.
 
+### Regulator table
+
+A regulator or reference symbol states its output so the test plan can work out what a test pad
+on the rail should read. Fixed output uses `vout`; adjustable uses `feedback` and `vref`, and the
+output is `vref * (1 + Rtop / Rbottom)` from the divider on the feedback net. `accuracy` is the
+datasheet output accuracy over the stated conditions.
+
+```toml
+[regulator]
+output = "VOUT"                # pin name
+input = "VIN"                  # pin name, the rail it needs first
+enable = "EN"                  # optional pin name, listed as a condition
+feedback = "FB"                # adjustable parts: pin name of the divider tap
+vref = "0.8V"                  # adjustable parts: reference at the feedback pin
+# vout = "3.3V"                # fixed parts instead of feedback and vref
+accuracy = "1%"
+# datasheet = "datasheets.toml key or URL"
+```
+
+The test plan (`agentee-core` `testplan::build`) gives each `TP` pad one row: ground reads 0 V,
+a regulator rail reads its nominal with the worst corners of the accuracy and the divider
+resistors (`tolerance` field, 1% when missing and flagged `assumed`), a divider tap is solved from
+the rails it ties to, a net with a low value shunt and a netclass `current` gets a current range,
+and a net with no model gets `expect = "unknown"` with a reason, never a guess. The plan stores a
+hash of the netlist so a changed value makes it stale.
+
 ## Footprint (`*.fp.toml`)
 
 ```toml

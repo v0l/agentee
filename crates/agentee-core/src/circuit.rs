@@ -459,7 +459,11 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                     reference: part.reference.clone(),
                     value: part.value.clone(),
                     symbol: part.symbol_name.clone(),
-                    about: format!("{} {}", part.symbol.description, part.symbol.keywords.join(" ")),
+                    about: format!(
+                        "{} {}",
+                        part.symbol.description,
+                        part.symbol.keywords.join(" ")
+                    ),
                     prefix: part.symbol.reference.to_ascii_uppercase(),
                     power: part.symbol.power,
                     pins: Vec::new(),
@@ -966,7 +970,12 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                 None | Some("open") => Surge::Open,
                 Some("short") => Surge::Short,
                 Some(other) => {
-                    cx.d.error(&at, format!("surge.shape is `open` (1.2/50 us) or `short` (8/20 us), not `{other}`"));
+                    cx.d.error(
+                        &at,
+                        format!(
+                            "surge.shape is `open` (1.2/50 us) or `short` (8/20 us), not `{other}`"
+                        ),
+                    );
                     Surge::Open
                 }
             };
@@ -1153,7 +1162,10 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
         } else if let Some(name) = &c.harmonics {
             let Some(element) = elements.iter().position(|e| &e.name == name && e.nodes.len() == 2)
             else {
-                cx.d.error(&at, format!("`harmonics` needs a two-pin part in the circuit, `{name}` is not one"));
+                cx.d.error(
+                    &at,
+                    format!("`harmonics` needs a two-pin part in the circuit, `{name}` is not one"),
+                );
                 continue;
             };
             let class_b = match c.class.as_deref().map(str::to_ascii_lowercase).as_deref() {
@@ -1180,7 +1192,10 @@ pub fn resolve(file: &SimFile, sch: &Schematic, d: &mut Diags) -> CircuitSpec {
                 None | Some("quasi-peak") | Some("qp") => false,
                 Some("average") | Some("av") => true,
                 Some(other) => {
-                    cx.d.error(&at, format!("`detector` is \"quasi-peak\" or \"average\", not `{other}`"));
+                    cx.d.error(
+                        &at,
+                        format!("`detector` is \"quasi-peak\" or \"average\", not `{other}`"),
+                    );
                     continue;
                 }
             };

@@ -165,6 +165,84 @@ pub struct SymbolFile {
     pub pins: Vec<PinFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub levels: Option<LevelsFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regulator: Option<RegulatorFile>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegulatorFile {
+    pub output: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vout: Option<String>,
+    pub accuracy: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub datasheet: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct Regulator {
+    pub output: String,
+    pub input: Option<String>,
+    pub enable: Option<String>,
+    pub feedback: Option<String>,
+    pub vref: Option<f64>,
+    pub vout: Option<f64>,
+    pub accuracy: f64,
+    pub datasheet: String,
+}
+
+impl RegulatorFile {
+    pub fn resolve(&self, d: &mut Diags) -> Regulator {
+        let volts = |name: &str, v: &Option<String>, d: &mut Diags| -> Option<f64> {
+            let s = v.as_ref()?;
+            let t = s.trim().to_ascii_lowercase();
+            let (body, k) = match t.strip_suffix("mv") {
+                Some(b) => (b.to_string(), 1e-3),
+                None => (t.strip_suffix('v').unwrap_or(&t).to_string(), 1.0),
+            };
+            let r = body.trim().parse::<f64>().ok().map(|x| x * k).filter(|x| *x > 0.0);
+            if r.is_none() {
+                d.error(format!("regulator.{name}"), format!("`{s}` is not a voltage like `0.8V`"));
+            }
+            r
+        };
+        let vref = volts("vref", &self.vref, d);
+        let vout = volts("vout", &self.vout, d);
+        let accuracy = crate::units::Percent::parse(&self.accuracy)
+            .map(|p| p.0 / 100.0)
+            .map_err(|_| {
+                d.error(
+                    "regulator.accuracy",
+                    format!("`{}` is not a percentage like `1%`", self.accuracy),
+                )
+            })
+            .unwrap_or(0.0);
+        if vout.is_none() && (vref.is_none() || self.feedback.is_none()) {
+            d.error(
+                "regulator",
+                "needs `vout` for a fixed output, or `feedback` and `vref` for an adjustable one",
+            );
+        }
+        Regulator {
+            output: self.output.clone(),
+            input: self.input.clone(),
+            enable: self.enable.clone(),
+            feedback: self.feedback.clone(),
+            vref,
+            vout,
+            accuracy,
+            datasheet: self.datasheet.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -359,6 +437,8 @@ pub struct Symbol {
     pub pins: Vec<Pin>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub levels: Option<Levels>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub regulator: Option<Regulator>,
 }
 
 impl Symbol {
@@ -556,6 +636,7 @@ impl SymbolFile {
             graphics,
             pins,
             levels: self.levels.as_ref().map(|l| l.resolve(d, "levels")),
+            regulator: self.regulator.as_ref().map(|r| r.resolve(d)),
         }
     }
 }

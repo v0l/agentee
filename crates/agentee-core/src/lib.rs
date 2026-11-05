@@ -30,6 +30,7 @@ pub mod sim;
 pub mod source;
 pub mod stackups;
 pub mod symbol;
+pub mod testplan;
 pub mod testpoint;
 pub mod tie;
 pub mod tune;

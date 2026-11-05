@@ -219,6 +219,7 @@ pub fn convert(lib: &Node, name: &str) -> Result<SymbolFile, String> {
         graphics,
         pins,
         levels: None,
+        regulator: None,
     })
 }
 
