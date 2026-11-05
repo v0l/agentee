@@ -1,0 +1,86 @@
+name = "bench"
+description = "Synthetic bench design for the test plan: a fixed 3V3 regulator, a divider set 1V8 buck, a shunt and an unmodelled net"
+board = "bench"
+no_connect = ["U1.2"]
+[[parts]]
+ref = "U1"
+symbol = "LDO33"
+value = "LDO33"
+at = [25.4, 25.4]
+fields = { mpn = "X LDO33" }
+[[parts]]
+ref = "U2"
+symbol = "BUCK"
+value = "BUCK"
+at = [50.8, 25.4]
+fields = { mpn = "X BUCK" }
+[[parts]]
+ref = "R1"
+symbol = "R"
+value = "10k"
+at = [76.2, 25.4]
+fields = { tolerance = "1%" }
+[[parts]]
+ref = "R2"
+symbol = "R"
+value = "8k"
+at = [101.6, 25.4]
+fields = { tolerance = "1%" }
+[[parts]]
+ref = "TP1"
+symbol = "TestPoint"
+value = "TP"
+at = [127, 25.4]
+[[parts]]
+ref = "TP2"
+symbol = "TestPoint"
+value = "TP"
+at = [139.7, 25.4]
+[[parts]]
+ref = "TP3"
+symbol = "TestPoint"
+value = "TP"
+at = [152.4, 25.4]
+[[parts]]
+ref = "TP4"
+symbol = "TestPoint"
+value = "TP"
+at = [165.1, 25.4]
+[[parts]]
+ref = "R3"
+symbol = "R"
+value = "0.1"
+at = [177.8, 25.4]
+[[parts]]
+ref = "TP5"
+symbol = "TestPoint"
+value = "TP"
+at = [190.5, 25.4]
+[[nets]]
+name = "VIN"
+class = "Default"
+pins = ["U1.1"]
+[[nets]]
+name = "3V3"
+class = "Default"
+pins = ["U1.3", "U2.1", "TP1.1", "R3.1"]
+[[nets]]
+name = "1V8"
+class = "Default"
+pins = ["U2.3", "R1.1", "TP2.1"]
+[[nets]]
+name = "FB"
+class = "Default"
+pins = ["U2.2", "R1.2", "R2.1"]
+[[nets]]
+name = "GND"
+class = "Default"
+pins = ["R2.2", "TP3.1"]
+[[nets]]
+name = "MYSTERY"
+class = "Default"
+pins = ["TP4.1"]
+[[nets]]
+name = "LOAD"
+class = "Power"
+pins = ["R3.2", "TP5.1"]

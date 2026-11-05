@@ -207,10 +207,70 @@ fn the_hackrf_pro_example_lists_every_test_point_once() {
     assert_eq!(refs.len(), total);
     assert_eq!(total, 66);
     assert!(plan.summary.contains("66 test points"), "{}", plan.summary);
+    assert!(plan.assumed() >= 10, "{}", plan.summary);
+    for r in plan.rows.iter().filter(|r| r.role == "power rail") {
+        if let Expect::Reading(x) = &r.expect {
+            assert!(x.max > x.min, "{} {x:?}", r.reference);
+        }
+    }
 }
 
 #[test]
-fn the_sdr_example_has_a_plan_with_a_summary() {
+fn the_sdr_example_has_no_test_points_and_an_empty_plan() {
     let plan = example("sdr", "sdr");
-    assert!(plan.summary.contains("test points"));
+    assert_eq!(plan.summary, "0 test points, 0 unknown, 0 assumed");
+}
+
+fn with_rail(tag: &str, rails: &str) -> Plan {
+    let c = design(
+        tag,
+        "10k",
+        &(part("R3", "R", "1k", "", 177.8) + &part("TP5", "TestPoint", "TP", "", 190.5)),
+        &net("5V0", "Default", &["R3.1", "TP5.1"]),
+    );
+    let s = std::fs::read_to_string(c.dir.join("t.sch.toml")).unwrap();
+    let s = s.replacen("\n", &format!("\n{rails}\n"), 1);
+    std::fs::write(c.dir.join("t.sch.toml"), s).unwrap();
+    plan(&c)
+}
+
+#[test]
+fn a_zero_width_rail_gets_the_assumed_band() {
+    let p = with_rail("zero", "rails = { \"5V0\" = 5.0 }");
+    let r = reading(&p, "TP5");
+    assert_eq!(r.nominal, Some(5.0));
+    assert!((r.min - 4.75).abs() < 1e-9 && (r.max - 5.25).abs() < 1e-9, "{r:?}");
+    assert!(r.basis.contains("assumed 5%"), "{}", r.basis);
+    let s = &row(&p, "TP5").source;
+    assert!(s.iter().all(|x| x.confidence == "assumed"), "{s:?}");
+}
+
+#[test]
+fn a_declared_rail_range_keeps_its_band() {
+    let p = with_rail("declared", "rails = { \"5V0\" = [4.75, 5.25] }");
+    let r = reading(&p, "TP5");
+    assert!((r.min - 4.75).abs() < 1e-9 && (r.max - 5.25).abs() < 1e-9, "{r:?}");
+    let s = &row(&p, "TP5").source;
+    assert!(s.iter().all(|x| x.confidence == "declared"), "{s:?}");
+}
+
+#[test]
+fn a_regulator_rail_keeps_its_accuracy_over_the_rails_table() {
+    let c = design("regkeep", "10k", "", "");
+    let s = std::fs::read_to_string(c.dir.join("t.sch.toml")).unwrap();
+    let s = s.replacen("\n", "\nrails = { \"3V3\" = 3.3 }\n", 1);
+    std::fs::write(c.dir.join("t.sch.toml"), s).unwrap();
+    let r = reading(&plan(&c), "TP1");
+    assert!((r.min - 3.234).abs() < 1e-9 && (r.max - 3.366).abs() < 1e-9, "{r:?}");
+}
+
+#[test]
+fn the_bench_example_covers_regulator_divider_shunt_and_unknown() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/testplan");
+    let p = Project::load(&dir).unwrap();
+    let plan = testplan::build(&p.schematics[0].item, None, p.boards.first().map(|b| &b.item));
+    assert_eq!(plan.rows.len(), 5, "{}", plan.summary);
+    assert_eq!(plan.unknown(), 1);
+    assert_eq!(row(&plan, "TP5").role, "current sense");
+    assert_eq!(reading(&plan, "TP1").nominal, Some(3.3));
 }

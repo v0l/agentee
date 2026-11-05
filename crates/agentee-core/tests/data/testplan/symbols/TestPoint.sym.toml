@@ -1,0 +1,7 @@
+name = "TestPoint"
+reference = "TP"
+[[pins]]
+number = "1"
+at = [0.0, 0.0]
+side = "bottom"
+type = "passive"

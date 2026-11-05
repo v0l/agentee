@@ -1,0 +1,20 @@
+name = "bench"
+[outline]
+size = [40, 30]
+[stackup]
+preset = "jlcpcb-2l-1.6mm"
+[[vias]]
+name = "std"
+drill = "0.3mm"
+diameter = "0.6mm"
+[[netclasses]]
+name = "Default"
+track_width = "0.2mm"
+clearance = "0.15mm"
+via = "std"
+[[netclasses]]
+name = "Power"
+track_width = "0.5mm"
+clearance = "0.2mm"
+via = "std"
+current = "2A"

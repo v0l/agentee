@@ -1,0 +1,26 @@
+name = "BUCK"
+reference = "U"
+[regulator]
+output = "OUT"
+input = "IN"
+feedback = "FB"
+vref = "0.8V"
+accuracy = "1%"
+[[pins]]
+number = "1"
+name = "IN"
+type = "power_in"
+at = [-7.62, 0.0]
+side = "left"
+[[pins]]
+number = "2"
+name = "FB"
+type = "input"
+at = [-7.62, 2.54]
+side = "left"
+[[pins]]
+number = "3"
+name = "OUT"
+type = "power_out"
+at = [7.62, 0.0]
+side = "right"

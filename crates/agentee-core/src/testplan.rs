@@ -344,20 +344,41 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let order = 1 + self.input_order(net, 0);
-            self.known.insert(
-                net,
-                Known {
-                    volts: Volts {
-                        nominal: (range[0] + range[1]) / 2.0,
-                        min: range[0],
-                        max: range[1],
-                    },
-                    basis: format!("rail range declared in the schematic `rails` table for {name}"),
-                    sources: vec![Source {
+            let nominal = (range[0] + range[1]) / 2.0;
+            let (volts, basis, source) = if range[1] > range[0] {
+                (
+                    Volts { nominal, min: range[0], max: range[1] },
+                    format!("rail range declared in the schematic `rails` table for {name}"),
+                    Source {
                         kind: "schematic".into(),
                         confidence: "declared".into(),
                         detail: format!("rails.{name} = [{}, {}]", range[0], range[1]),
-                    }],
+                    },
+                )
+            } else {
+                let band = nominal.abs() * ASSUMED_RAIL_TOLERANCE;
+                (
+                    Volts { nominal, min: nominal - band, max: nominal + band },
+                    format!(
+                        "assumed {}%: no regulator tolerance known, measure a known good board",
+                        ASSUMED_RAIL_TOLERANCE * 100.0
+                    ),
+                    Source {
+                        kind: "assumed".into(),
+                        confidence: "assumed".into(),
+                        detail: format!(
+                            "{name} nominal {nominal} V from the net name and netclass, +-{}% default; measure a known good board",
+                            ASSUMED_RAIL_TOLERANCE * 100.0
+                        ),
+                    },
+                )
+            };
+            self.known.insert(
+                net,
+                Known {
+                    volts,
+                    basis,
+                    sources: vec![source],
                     conditions: vec!["power applied".into()],
                     order,
                 },
