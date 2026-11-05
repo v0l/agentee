@@ -36,7 +36,12 @@ pub fn bring_up_order(plan: &Plan) -> Vec<&Row> {
 
 pub fn expected(row: &Row) -> String {
     match &row.expect {
+        Expect::Unknown(u) if u == agentee_core::testplan::FIRMWARE => u.clone(),
         Expect::Unknown(_) => "unknown".to_string(),
+        Expect::Logic(l) => {
+            let t = l.text();
+            if t.is_empty() { "logic level".to_string() } else { t }
+        }
         Expect::Reading(r) => format!("{} to {} {}", trim(r.min, 3), trim(r.max, 3), r.unit),
     }
 }
@@ -221,6 +226,14 @@ fn side(ui: &mut Ui, row: &Row) {
                     );
                     reading(ui, "unit", r.unit.clone());
                     reading(ui, "basis", r.basis.clone());
+                }
+                Expect::Logic(l) => {
+                    chip(ui, "logic level", OK, true);
+                    ui.add(egui::Label::new(legend(&l.text())).wrap());
+                    reading(ui, "basis", l.basis.clone());
+                }
+                Expect::Unknown(why) if why == agentee_core::testplan::FIRMWARE => {
+                    chip(ui, why, READOUT, true);
                 }
                 Expect::Unknown(why) => {
                     chip(ui, "unknown", WARN, true);

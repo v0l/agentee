@@ -215,6 +215,57 @@ pub struct Logic {
     pub basis: String,
 }
 
+impl Logic {
+    pub fn thresholds(&self) -> Option<(f64, f64)> {
+        Some((self.vil?, self.vih?))
+    }
+
+    pub fn text(&self) -> String {
+        let mut parts = Vec::new();
+        if self.idle.is_none() && self.states.is_empty() {
+            parts.push(FIRMWARE.to_string());
+        }
+        if let Some(i) = &self.idle {
+            let level = if i == "1" { "high" } else { "low" };
+            let volts = self
+                .idle_volts
+                .map(|[a, b]| format!(" ({a} to {b} V)"))
+                .unwrap_or_default();
+            let from = self
+                .basis
+                .split(';')
+                .next()
+                .and_then(|b| b.split(" from the ").nth(1))
+                .map(|b| b.trim_end_matches(", nothing driving"))
+                .map(|b| format!(", {b}"))
+                .unwrap_or_default();
+            parts.push(format!("idle {level}{volts}{from}"));
+        }
+        if !self.states.is_empty() {
+            let shown: Vec<String> = self
+                .states
+                .iter()
+                .take(3)
+                .map(|s| format!("{} ({})", s.level, s.when))
+                .collect();
+            let more = self.states.len().saturating_sub(3);
+            parts.push(format!(
+                "simulated {}{}",
+                shown.join(", "),
+                if more > 0 { format!(" and {more} more") } else { String::new() }
+            ));
+        }
+        if let Some((vil, vih)) = self.thresholds() {
+            parts.push(format!("high >= {vih} V, low <= {vil} V"));
+        } else if let Some(v) = self.vih {
+            parts.push(format!("high >= {v} V"));
+        } else if let Some(v) = self.vil {
+            parts.push(format!("low <= {v} V"));
+        }
+        parts.join("; ")
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LogicState {
     pub when: String,
@@ -1215,9 +1266,31 @@ impl<'a> Builder<'a> {
         let (states, mut sources) = self.sim_states(net);
         let pull = self.pull(net);
         let pins = self.firmware_pins(net);
+        let (vih, vil) = self.thresholds(net);
         if states.is_empty() && pull.is_none() {
             if pins.is_empty() {
                 return false;
+            }
+            if vih.is_some() && vil.is_some() {
+                row.order = 90;
+                row.measure = "logic level".into();
+                row.expect = Expect::Logic(Logic {
+                    states,
+                    idle: None,
+                    idle_volts: None,
+                    vih,
+                    vil,
+                    basis: "level is set by firmware; thresholds from the receiving pins' levels"
+                        .into(),
+                });
+                row.reason = Some(format!("pins: {}", pins.join(", ")));
+                row.conditions.push("firmware state decides the level".into());
+                row.source.push(Source {
+                    kind: "datasheet".into(),
+                    confidence: "high".into(),
+                    detail: "receiver V_IH and V_IL from the pin levels in the symbol".into(),
+                });
+                return true;
             }
             let shown: Vec<&str> = pins.iter().take(6).map(String::as_str).collect();
             let more = pins.len().saturating_sub(shown.len());
@@ -1232,7 +1305,6 @@ impl<'a> Builder<'a> {
             row.conditions.push("firmware state decides the level".into());
             return true;
         }
-        let (vih, vil) = self.thresholds(net);
         let mut basis = Vec::new();
         let mut idle = None;
         let mut idle_volts = None;
@@ -1560,7 +1632,11 @@ fn cell(v: &str) -> String {
 
 fn expectation(r: &Row) -> String {
     match &r.expect {
+        Expect::Unknown(u) if u == FIRMWARE => {
+            format!("{FIRMWARE}: {}", r.reason.as_deref().unwrap_or("no pins listed"))
+        }
         Expect::Unknown(_) => "unknown".into(),
+        Expect::Logic(l) => l.text(),
         Expect::Reading(x) => match x.nominal {
             Some(n) => format!("{} {} ({} to {})", n, x.unit, x.min, x.max),
             None => format!("{} to {} {}", x.min, x.max, x.unit),
@@ -1588,6 +1664,10 @@ impl Plan {
                     x.min.to_string(),
                     x.max.to_string(),
                 ),
+                Expect::Logic(l) => match l.thresholds() {
+                    Some((vil, vih)) => ("V".into(), String::new(), vil.to_string(), vih.to_string()),
+                    None => Default::default(),
+                },
                 Expect::Unknown(_) => Default::default(),
             };
             let (x, y, side) = match &r.location {
@@ -1597,8 +1677,10 @@ impl Plan {
             let source =
                 r.source.iter().map(|s| format!("{} ({})", s.kind, s.confidence)).collect::<Vec<_>>();
             let expect = match &r.expect {
-                Expect::Unknown(_) => format!("unknown: {}", r.reason.clone().unwrap_or_default()),
-                Expect::Reading(_) => expectation(r),
+                Expect::Unknown(u) if u != FIRMWARE => {
+                    format!("unknown: {}", r.reason.clone().unwrap_or_default())
+                }
+                _ => expectation(r),
             };
             let cols = [
                 r.order.to_string(),
@@ -1628,11 +1710,23 @@ impl Plan {
     pub fn to_markdown(&self) -> String {
         let mut out = format!("# Test plan: {}\n\n{}\n\n", self.design, self.summary);
         let off: Vec<&Row> = self.rows.iter().filter(|r| !r.unpowered.is_empty()).collect();
-        if !off.is_empty() {
-            out += "## Power off\n\n| Done | Pad | Net | Check | Measured |\n|---|---|---|---|---|\n";
+        if !off.is_empty() || !self.checks.is_empty() {
+            out += "## Power off\n\nWith the board unpowered and the supply disconnected.\n\n";
+            out += "| Done | Check | From | To | Nets | Expect | Basis | Measured |\n|---|---|---|---|---|---|---|---|\n";
+            for c in &self.checks {
+                let range = match c.max {
+                    Some(m) => format!("{} to {} {}", c.min, m, c.unit),
+                    None => format!("{} {} or more", c.min, c.unit),
+                };
+                let flag = if c.is_assumed() { " (assumed, check a known good board)" } else { "" };
+                out += &format!(
+                    "| [ ] | {} | {} | {} | {} to {} | {}{} | {} | |\n",
+                    c.kind, c.a, c.b, c.a_net, c.b_net, range, flag, c.measure
+                );
+            }
             for r in off {
                 for u in &r.unpowered {
-                    out += &format!("| [ ] | {} | {} | {} | |\n", r.reference, r.net, u);
+                    out += &format!("| [ ] | {} | {} | | {} | | | |\n", u, r.reference, r.net);
                 }
             }
             out.push('\n');
@@ -1642,10 +1736,10 @@ impl Plan {
         for r in &self.rows {
             let near = r.nearest.as_deref().map(|n| format!(", near {n}")).unwrap_or_default();
             let expect = match &r.expect {
-                Expect::Unknown(_) => {
+                Expect::Unknown(u) if u != FIRMWARE => {
                     format!("unknown: {}", r.reason.as_deref().unwrap_or("no model"))
                 }
-                Expect::Reading(_) => expectation(r),
+                _ => expectation(r),
             };
             let flag = if r.is_assumed() { " (assumed, check a known good board)" } else { "" };
             out += &format!(
@@ -1683,6 +1777,7 @@ pub struct Compared {
     pub max: f64,
     pub off_by: f64,
     pub from_nominal: Option<f64>,
+    pub level: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -1719,6 +1814,24 @@ impl Comparison {
         let mut out = String::new();
         for r in &self.rows {
             let line = match (&r.verdict, r.measured) {
+                (Verdict::Pass, Some(m)) if r.level.is_some() => format!(
+                    "pass {} {}: {} V reads {} (low <= {} V, high >= {} V)",
+                    r.reference,
+                    r.net,
+                    m,
+                    r.level.as_deref().unwrap_or_default(),
+                    r.min,
+                    r.max
+                ),
+                (Verdict::Fail, Some(m)) if r.level.is_some() => format!(
+                    "FAIL {} {}: {} V is in the forbidden band between {} V and {} V, {} V from the nearest threshold",
+                    r.reference,
+                    r.net,
+                    m,
+                    r.min,
+                    r.max,
+                    round(r.off_by.abs())
+                ),
                 (Verdict::Pass, Some(m)) => {
                     format!("pass {} {}: {} {} within {} to {}", r.reference, r.net, m, r.unit, r.min, r.max)
                 }
@@ -1819,9 +1932,34 @@ impl Plan {
                     max: 0.0,
                     off_by: 0.0,
                     from_nominal: None,
+                    level: None,
                 };
                 match (&row.expect, value) {
                     (Expect::Unknown(_), Some(_)) => c.verdict = Verdict::NoExpectation,
+                    (Expect::Logic(l), Some(m)) => match l.thresholds() {
+                        None => c.verdict = Verdict::NoExpectation,
+                        Some((vil, vih)) => {
+                            c.unit = "V".into();
+                            c.min = vil;
+                            c.max = vih;
+                            let (level, verdict) = if m >= vih {
+                                ("high", Verdict::Pass)
+                            } else if m <= vil {
+                                ("low", Verdict::Pass)
+                            } else {
+                                ("forbidden", Verdict::Fail)
+                            };
+                            c.level = Some(level.into());
+                            c.verdict = verdict;
+                            if c.verdict == Verdict::Fail {
+                                c.off_by = if vih - m <= m - vil {
+                                    round(m - vih)
+                                } else {
+                                    round(m - vil)
+                                };
+                            }
+                        }
+                    },
                     (Expect::Unknown(_), None) | (_, None) => {
                         if let Expect::Reading(x) = &row.expect {
                             c.unit = x.unit.clone();

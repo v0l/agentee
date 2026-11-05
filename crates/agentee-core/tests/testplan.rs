@@ -1,5 +1,5 @@
 use agentee_core::Project;
-use agentee_core::testplan::{self, Expect, FIRMWARE, Models, Plan};
+use agentee_core::testplan::{self, Expect, FIRMWARE, Models, Plan, Verdict};
 use std::path::Path;
 
 const FIXED: &str = "name = \"LDO33\"\nreference = \"U\"\ndatasheet = \"ldo33.pdf\"\n\
@@ -382,6 +382,80 @@ fn a_declared_forward_voltage_sets_the_diode_range() {
     assert!((d.min - 0.4).abs() < 1e-9 && (d.max.unwrap() - 0.6).abs() < 1e-9, "{d:?}");
 }
 
+fn thresholds_case(tag: &str) -> Plan {
+    let c = rich(tag, "");
+    let mcu = MCU.replace(
+        "name = \"PA1\"\ntype = \"input\"",
+        "name = \"PA1\"\ntype = \"input\"\nlevels = { vih = \"2.0V\", vil = \"0.8V\" }",
+    );
+    std::fs::write(c.dir.join("symbols/MCU.sym.toml"), mcu).unwrap();
+    plan(&c)
+}
+
+fn verdict(p: &Plan, r: &str, v: Option<f64>) -> (Verdict, Option<String>, f64) {
+    let c = p.compare(&[(r.to_string(), v)]);
+    let row = c.rows.into_iter().find(|x| x.reference == r).unwrap();
+    (row.verdict, row.level, row.off_by)
+}
+
+#[test]
+fn measure_compare_accepts_a_valid_high_and_low_logic_level() {
+    let p = thresholds_case("cmp-valid");
+    assert_eq!(verdict(&p, "TP12", Some(3.3)).0, Verdict::Pass);
+    assert_eq!(verdict(&p, "TP12", Some(3.3)).1.as_deref(), Some("high"));
+    assert_eq!(verdict(&p, "TP12", Some(0.2)).0, Verdict::Pass);
+    assert_eq!(verdict(&p, "TP12", Some(0.2)).1.as_deref(), Some("low"));
+}
+
+#[test]
+fn measure_compare_fails_a_logic_level_in_the_forbidden_band() {
+    let p = thresholds_case("cmp-band");
+    let (v, level, off) = verdict(&p, "TP12", Some(1.5));
+    assert_eq!(v, Verdict::Fail);
+    assert_eq!(level.as_deref(), Some("forbidden"));
+    assert!((off - (-0.5)).abs() < 1e-9, "{off}");
+    let text = p.compare(&[("TP12".into(), Some(1.5))]).to_text();
+    assert!(text.contains("FAIL TP12") && text.contains("forbidden band"), "{text}");
+}
+
+#[test]
+fn measure_compare_skips_a_firmware_row() {
+    let p = plan(&rich("cmp-fw", ""));
+    assert_eq!(row(&p, "TP7").expect, Expect::Unknown(FIRMWARE.into()));
+    let c = p.compare(&[("TP7".into(), Some(3.3))]);
+    assert_eq!(c.rows.iter().find(|r| r.reference == "TP7").unwrap().verdict, Verdict::NoExpectation);
+    assert!(c.ok());
+}
+
+#[test]
+fn a_logic_row_without_thresholds_is_not_compared() {
+    let p = plan(&rich("cmp-pull", ""));
+    assert_eq!(verdict(&p, "TP6", Some(1.0)).0, Verdict::NoExpectation);
+}
+
+#[test]
+fn markdown_lists_power_off_checks_before_power_up_and_renders_logic_rows() {
+    let p = plan(&rich("md", ""));
+    let md = p.to_markdown();
+    let off = md.find("## Power off").unwrap();
+    let up = md.find("## Power up").unwrap();
+    assert!(off < up);
+    assert!(md[off..up].contains("resistance to ground") && md[off..up].contains("continuity"));
+    assert!(md.contains("idle high"), "{md}");
+    assert!(md.contains("depends on firmware: level is set by firmware"), "{md}");
+    let csv = p.to_csv();
+    assert!(csv.contains("idle high"), "{csv}");
+}
+
+#[test]
+fn csv_gives_thresholds_only_when_the_logic_row_has_them() {
+    let p = thresholds_case("csv-th");
+    let csv = p.to_csv();
+    let line = |r: &str| csv.lines().find(|l| l.split(',').nth(1) == Some(r)).unwrap().to_string();
+    assert!(line("TP12").contains(",V,,0.8,2,"), "{}", line("TP12"));
+    assert!(line("TP7").contains(",,,,,depends on firmware"), "{}", line("TP7"));
+}
+
 fn example(name: &str, file: &str) -> Plan {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples").join(name);
     let p = Project::load(&dir).unwrap();
@@ -412,7 +486,7 @@ fn the_hackrf_pro_example_lists_every_test_point_once() {
 #[test]
 fn the_sdr_example_has_no_test_points_and_an_empty_plan() {
     let plan = example("sdr", "sdr");
-    assert_eq!(plan.summary, "0 test points, 0 unknown, 0 assumed");
+    assert_eq!(plan.summary, "0 test points, 0 unknown, 0 assumed, 0 firmware, 0 unpowered checks");
 }
 
 fn with_rail(tag: &str, rails: &str) -> Plan {
