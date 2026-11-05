@@ -924,6 +924,17 @@ value changed since the plan was written; both can be listed in the board's `[dr
 Never edit an `expect` by hand to make a pad pass: fix the part table or datasheet, or measure a
 known good board, then regenerate.
 
+Further derivations: a crystal or oscillator part (reference `X` or `Y`, or a `frequency` field) gives
+its frequency with `ppm` (or `stability`) from the part fields, 50 ppm flagged `assumed` when absent,
+with a probe loading caveat for crystals. An RF net takes its dB range from the FDTD result of a
+sim whose port is on that net (stale result flagged), with a note not to use a high impedance probe;
+with no result it is `unknown`. A digital net gets `[[expect]]` levels from a logic sim, the idle level from a
+single pull up or pull down, and V_IH/V_IL from the receiving pins' `levels`; with none of those it
+reads `depends on firmware` and lists the pin names. The `[[unpowered]]` list holds resistance to
+ground for every rail with a pad (10 ohm short limit, assumed), continuity between pads on the
+same net, and the diode drop across a protection diode to ground (`vf` part field, else an assumed
+0.1 to 0.8 V). `testplan::Models::from_project` collects the sim results for `build_with`.
+
 ## Footprint (`*.fp.toml`)
 
 ```toml

@@ -1,5 +1,5 @@
 use agentee_core::Project;
-use agentee_core::testplan::{self, Expect, Plan};
+use agentee_core::testplan::{self, Expect, FIRMWARE, Models, Plan};
 use std::path::Path;
 
 const FIXED: &str = "name = \"LDO33\"\nreference = \"U\"\ndatasheet = \"ldo33.pdf\"\n\
@@ -186,6 +186,200 @@ fn a_sense_resistor_gives_a_current_range() {
     assert_eq!((r.unit.as_str(), r.min, r.max), ("A", 0.0, 2.0), "{r:?}");
     assert!(r.basis.contains("0.1"), "{}", r.basis);
     assert!(row(&plan, "TP5").measure.contains("shunt"));
+}
+
+const XTAL: &str = "name = \"XTAL\"\nreference = \"X\"\ndescription = \"Crystal\"\n\
+[[pins]]\nnumber = \"1\"\nname = \"XIN\"\ntype = \"passive\"\nat = [-5.08, 0.0]\nside = \"left\"\n\
+[[pins]]\nnumber = \"2\"\nname = \"XOUT\"\ntype = \"passive\"\nat = [5.08, 0.0]\nside = \"right\"\n";
+
+const MCU: &str = "name = \"MCU\"\nreference = \"U\"\n\
+[[pins]]\nnumber = \"1\"\nname = \"PA0\"\ntype = \"bidirectional\"\nat = [-7.62, 0.0]\nside = \"left\"\n\
+[[pins]]\nnumber = \"2\"\nname = \"PA1\"\ntype = \"input\"\nat = [-7.62, 2.54]\nside = \"left\"\n\
+[[pins]]\nnumber = \"3\"\nname = \"SDA\"\ntype = \"bidirectional\"\nat = [7.62, 0.0]\nside = \"right\"\n";
+
+const DIODE: &str = "name = \"ESD\"\nreference = \"D\"\n\
+[[pins]]\nnumber = \"1\"\nname = \"K\"\ntype = \"passive\"\nat = [-5.08, 0.0]\nside = \"left\"\n\
+[[pins]]\nnumber = \"2\"\nname = \"A\"\ntype = \"passive\"\nat = [5.08, 0.0]\nside = \"right\"\n";
+
+fn rich(tag: &str, xfields: &str) -> Case {
+    let parts = part("X1", "XTAL", "40MHz", xfields, 190.5)
+        + &part("U3", "MCU", "MCU", "", 203.2)
+        + &part("R4", "R", "4.7k", "tolerance = \"1%\"", 215.9)
+        + &part("D1", "ESD", "ESD", "", 228.6)
+        + &part("TP5", "TestPoint", "TP", "", 241.3)
+        + &part("TP6", "TestPoint", "TP", "", 254.0)
+        + &part("TP7", "TestPoint", "TP", "", 266.7)
+        + &part("TP8", "TestPoint", "TP", "", 279.4)
+        + &part("TP9", "TestPoint", "TP", "", 292.1)
+        + &part("TP10", "TestPoint", "TP", "", 304.8)
+        + &part("TP11", "TestPoint", "TP", "", 317.5)
+        + &part("TP12", "TestPoint", "TP", "", 330.2);
+    let nets = net("XTAL_OUT", "Default", &["X1.1", "TP5.1"])
+        + &net("I2C_SDA", "Default", &["U3.3", "R4.2", "TP6.1"])
+        + &net("GPIO1", "Default", &["U3.1", "TP7.1"])
+        + &net("ESDLINE", "Default", &["D1.2", "TP8.1"])
+        + &net("RF_IN", "Default", &["TP9.1"])
+        + &net("SPARE", "Default", &["TP10.1", "TP11.1"])
+        + &net("PA1_IN", "Default", &["U3.2", "TP12.1"]);
+    let c = design(tag, "10k", &parts, &nets);
+    std::fs::write(c.dir.join("symbols/XTAL.sym.toml"), XTAL).unwrap();
+    std::fs::write(c.dir.join("symbols/MCU.sym.toml"), MCU).unwrap();
+    std::fs::write(c.dir.join("symbols/ESD.sym.toml"), DIODE).unwrap();
+    let mut s = std::fs::read_to_string(c.dir.join("t.sch.toml")).unwrap();
+    s = s.replace("pins = [\"R2.2\", \"TP3.1\"]", "pins = [\"R2.2\", \"TP3.1\", \"X1.2\", \"D1.1\"]");
+    s = s.replace("\"U1.3\", \"U2.1\", \"TP1.1\"", "\"U1.3\", \"U2.1\", \"TP1.1\", \"R4.1\"");
+    s = s.replace("no_connect = [\"U1.2\"]", "no_connect = [\"U1.2\"]");
+    std::fs::write(c.dir.join("t.sch.toml"), s).unwrap();
+    c
+}
+
+#[test]
+fn a_crystal_gives_frequency_and_ppm_range() {
+    let p = plan(&rich("xtal", "ppm = \"20ppm\""));
+    let r = reading(&p, "TP5");
+    assert_eq!(row(&p, "TP5").role, "clock");
+    assert_eq!((r.unit.as_str(), r.nominal), ("Hz", Some(40e6)), "{r:?}");
+    assert!((r.min - 39_999_200.0).abs() < 1e-3 && (r.max - 40_000_800.0).abs() < 1e-3, "{r:?}");
+    assert!(!row(&p, "TP5").source.iter().any(|s| s.kind == "assumed"));
+    assert!(row(&p, "TP5").conditions.iter().any(|c| c.contains("probe")));
+}
+
+#[test]
+fn a_crystal_without_ppm_is_flagged_assumed() {
+    let p = plan(&rich("xtal-assumed", ""));
+    assert!(row(&p, "TP5").source.iter().any(|s| s.kind == "assumed" && s.detail.contains("ppm")));
+    assert!(row(&p, "TP5").is_assumed());
+}
+
+#[test]
+fn an_idle_bus_reads_its_pull_up_level() {
+    let p = plan(&rich("pullup", ""));
+    let Expect::Logic(l) = &row(&p, "TP6").expect else { panic!("{:?}", row(&p, "TP6")) };
+    assert_eq!(l.idle.as_deref(), Some("1"));
+    let [lo, hi] = l.idle_volts.unwrap();
+    assert!((lo - 3.234).abs() < 1e-9 && (hi - 3.366).abs() < 1e-9, "{l:?}");
+    assert!(row(&p, "TP6").source.iter().any(|s| s.detail.contains("R4")));
+}
+
+#[test]
+fn a_firmware_net_names_its_pins() {
+    let p = plan(&rich("firmware", ""));
+    let r = row(&p, "TP7");
+    assert_eq!(r.expect, Expect::Unknown(FIRMWARE.into()));
+    assert!(r.reason.as_deref().unwrap().contains("U3.1 PA0"), "{r:?}");
+    assert!(p.summary.contains("firmware"), "{}", p.summary);
+    assert_eq!(p.firmware(), 2, "{}", p.summary);
+}
+
+#[test]
+fn a_logic_sim_expect_gives_the_simulated_level() {
+    let c = rich("logicsim", "");
+    std::fs::write(
+        c.dir.join("t.sim.toml"),
+        "name = \"tl\"\nkind = \"logic\"\nschematic = \"t\"\nduration = \"1us\"\n\
+         [[stimulus]]\nnet = \"GPIO1\"\nconstant = 1\n\
+         [[expect]]\nnet = \"GPIO1\"\nat = \"500ns\"\nvalue = 1\n",
+    )
+    .unwrap();
+    let project = Project::load(&c.dir).unwrap();
+    let sch = &project.schematics[0].item;
+    let models = Models::from_project(&project, sch);
+    assert_eq!(models.logic.len(), 1);
+    let p = testplan::build_with(sch, None, None, &models);
+    let Expect::Logic(l) = &row(&p, "TP7").expect else { panic!("{:?}", row(&p, "TP7")) };
+    assert_eq!(l.states.len(), 1);
+    assert_eq!(l.states[0].level, "1");
+    assert!(l.states[0].when.contains("tl"), "{l:?}");
+    assert!(row(&p, "TP7").source.iter().any(|s| s.kind == "simulation"));
+}
+
+#[test]
+fn receiver_thresholds_come_from_the_pin_levels() {
+    let c = rich("thresholds", "");
+    let mcu = MCU.replace(
+        "name = \"PA1\"\ntype = \"input\"",
+        "name = \"PA1\"\ntype = \"input\"\nlevels = { vih = \"2.0V\", vil = \"0.8V\" }",
+    );
+    std::fs::write(c.dir.join("symbols/MCU.sym.toml"), mcu).unwrap();
+    let s = std::fs::read_to_string(c.dir.join("t.sch.toml")).unwrap().replace(
+        "pins = [\"U3.2\", \"TP12.1\"]",
+        "pins = [\"U3.2\", \"TP12.1\", \"R4.2\"]",
+    );
+    std::fs::write(c.dir.join("t.sch.toml"), s).unwrap();
+    let p = plan(&c);
+    let Expect::Logic(l) = &row(&p, "TP12").expect else { panic!("{:?}", row(&p, "TP12")) };
+    assert_eq!((l.vih, l.vil), (Some(2.0), Some(0.8)), "{l:?}");
+}
+
+#[test]
+fn an_rf_net_takes_its_level_from_the_rf_result_with_a_probe_caveat() {
+    let c = rich("rf", "");
+    let project = Project::load(&c.dir).unwrap();
+    let models = Models {
+        logic: Vec::new(),
+        rf: vec![testplan::RfModel {
+            sim: "rf".into(),
+            verified: true,
+            links: vec![testplan::RfLink {
+                from_port: "IN".into(),
+                to_port: "OUT".into(),
+                from_net: "VIN".into(),
+                to_net: "RF_IN".into(),
+                db_min: -3.5,
+                db_max: -0.5,
+                f_min: 70e6,
+                f_max: 6e9,
+            }],
+        }],
+    };
+    let p = testplan::build_with(&project.schematics[0].item, None, None, &models);
+    let r = reading(&p, "TP9");
+    assert_eq!((r.unit.as_str(), r.min, r.max), ("dB", -3.5, -0.5), "{r:?}");
+    assert_eq!(row(&p, "TP9").role, "RF");
+    assert!(row(&p, "TP9").conditions.iter().any(|c| c.contains("probe")));
+    assert!(row(&p, "TP9").source.iter().any(|s| s.kind == "simulation"));
+}
+
+#[test]
+fn an_rf_net_without_a_result_is_unknown_and_says_not_to_probe() {
+    let p = plan(&rich("rf-none", ""));
+    let r = row(&p, "TP9");
+    assert_eq!(r.expect, Expect::Unknown("unknown".into()));
+    assert!(r.reason.as_deref().unwrap().contains("probe"), "{r:?}");
+}
+
+#[test]
+fn the_unpowered_list_has_rail_resistance_continuity_and_diode_drop() {
+    let p = plan(&rich("unpowered", ""));
+    let kinds = |k: &str| p.checks.iter().filter(|c| c.kind == k).collect::<Vec<_>>();
+    let rail = kinds("resistance to ground");
+    assert!(rail.iter().any(|c| c.a == "TP1" && c.b == "TP3" && c.min > 0.0 && c.max.is_none()));
+    assert!(rail.iter().any(|c| c.a == "TP2"), "{rail:?}");
+    let tie = kinds("continuity");
+    assert_eq!(tie.len(), 1, "{tie:?}");
+    assert_eq!((tie[0].a.as_str(), tie[0].b.as_str()), ("TP10", "TP11"));
+    assert_eq!(tie[0].max, Some(testplan::ASSUMED_CONTINUITY_OHMS));
+    let diode = kinds("diode drop");
+    assert_eq!(diode.len(), 1, "{diode:?}");
+    assert_eq!((diode[0].a.as_str(), diode[0].b.as_str()), ("TP8", "TP3"));
+    assert!(diode[0].is_assumed());
+    assert!(p.summary.contains("unpowered checks"), "{}", p.summary);
+    let back = Plan::parse(&p.to_toml().unwrap()).unwrap();
+    assert_eq!(back.checks, p.checks);
+}
+
+#[test]
+fn a_declared_forward_voltage_sets_the_diode_range() {
+    let c = rich("vf", "");
+    let s = std::fs::read_to_string(c.dir.join("t.sch.toml"))
+        .unwrap()
+        .replace("symbol = \"ESD\"\nvalue = \"ESD\"", "symbol = \"ESD\"\nvalue = \"ESD\"\nfields = { vf = \"0.5V\" }")
+        .replace("at = [228.6, 25.4]\nfields = { vf = \"0.5V\" }\n", "at = [228.6, 25.4]\n");
+    std::fs::write(c.dir.join("t.sch.toml"), s).unwrap();
+    let p = plan(&c);
+    let d = p.checks.iter().find(|c| c.kind == "diode drop").unwrap();
+    assert!(!d.is_assumed(), "{d:?}");
+    assert!((d.min - 0.4).abs() < 1e-9 && (d.max.unwrap() - 0.6).abs() < 1e-9, "{d:?}");
 }
 
 fn example(name: &str, file: &str) -> Plan {

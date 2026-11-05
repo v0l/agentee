@@ -1,8 +1,12 @@
 use crate::board::Board;
 use crate::circuit::is_ground;
 use crate::layout::Layout;
+use crate::logic::{Check, Level};
+use crate::project::Project;
 use crate::logic::netlist_hash;
 use crate::schematic::{PinRef, Schematic};
+use crate::sim::SimKind;
+use crate::symbol::PinType;
 use crate::testpoint::{is_rail, rail_volts};
 use crate::units::Percent;
 use serde::{Deserialize, Serialize};
@@ -12,6 +16,11 @@ pub const EXT: &str = ".testplan.toml";
 pub const DEFAULT_RESISTOR_TOLERANCE: f64 = 0.01;
 pub const ASSUMED_RAIL_TOLERANCE: f64 = 0.05;
 pub const ASSUMED_GROUND_BAND: f64 = 0.01;
+pub const ASSUMED_CLOCK_PPM: f64 = 50.0;
+pub const ASSUMED_SHORT_OHMS: f64 = 10.0;
+pub const ASSUMED_CONTINUITY_OHMS: f64 = 1.0;
+pub const ASSUMED_DIODE_DROP: [f64; 2] = [0.1, 0.8];
+pub const FIRMWARE: &str = "depends on firmware";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
@@ -20,6 +29,144 @@ pub struct Plan {
     pub summary: String,
     #[serde(default, rename = "point")]
     pub rows: Vec<Row>,
+    #[serde(default, rename = "unpowered", skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<Unpowered>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Unpowered {
+    pub kind: String,
+    pub a: String,
+    pub b: String,
+    pub a_net: String,
+    pub b_net: String,
+    pub measure: String,
+    pub unit: String,
+    pub min: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
+    pub basis: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source: Vec<Source>,
+}
+
+impl Unpowered {
+    pub fn is_assumed(&self) -> bool {
+        self.source.iter().any(|s| s.kind == "assumed" || s.confidence == "assumed")
+    }
+
+    pub fn line(&self) -> String {
+        let range = match self.max {
+            Some(m) => format!("{} to {} {}", self.min, m, self.unit),
+            None => format!("{} {} or more", self.min, self.unit),
+        };
+        format!("{} {} to {}: {}", self.kind, self.a, self.b, range)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Models {
+    pub logic: Vec<LogicModel>,
+    pub rf: Vec<RfModel>,
+}
+
+#[derive(Clone, Debug)]
+pub struct LogicModel {
+    pub sim: String,
+    pub schematic: String,
+    pub verified: bool,
+    pub expects: Vec<crate::logic::Expect>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RfModel {
+    pub sim: String,
+    pub verified: bool,
+    pub links: Vec<RfLink>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RfLink {
+    pub from_port: String,
+    pub to_port: String,
+    pub from_net: String,
+    pub to_net: String,
+    pub db_min: f64,
+    pub db_max: f64,
+    pub f_min: f64,
+    pub f_max: f64,
+}
+
+impl Models {
+    pub fn from_project(p: &Project, sch: &Schematic) -> Models {
+        let mut m = Models::default();
+        for e in &p.sims {
+            let sim = &e.item;
+            match sim.kind {
+                SimKind::Logic => {
+                    let Some(spec) = sim.logic.as_ref().filter(|l| l.schematic == sch.name) else {
+                        continue;
+                    };
+                    let verified = !sim.stale
+                        && sim.logic_result.as_ref().is_some_and(|r| r.failures.is_empty());
+                    m.logic.push(LogicModel {
+                        sim: e.name.clone(),
+                        schematic: spec.schematic.clone(),
+                        verified,
+                        expects: spec.expects.clone(),
+                    });
+                }
+                SimKind::Fdtd => {
+                    let (Some(res), Some(layout)) = (
+                        sim.result.as_ref(),
+                        p.layouts.iter().find(|l| l.name == sim.layout),
+                    ) else {
+                        continue;
+                    };
+                    if layout.item.schematic != sch.name && !layout.item.schematic.is_empty() {
+                        continue;
+                    }
+                    let net_of_port = |i: usize| -> Option<String> {
+                        let port = sim.ports.get(i)?;
+                        let pad = layout.item.parts.get(port.part)?.pads.get(port.pad)?;
+                        Some(layout.item.nets.get(pad.net?)?.name.clone())
+                    };
+                    let mut links = Vec::new();
+                    for from in 0..sim.ports.len() {
+                        if !res.excited.get(from).copied().unwrap_or(false) {
+                            continue;
+                        }
+                        for to in 0..sim.ports.len() {
+                            let (Some(fnet), Some(tnet)) = (net_of_port(from), net_of_port(to))
+                            else {
+                                continue;
+                            };
+                            if from == to || fnet == tnet {
+                                continue;
+                            }
+                            let db = res.db(to, from);
+                            if db.is_empty() {
+                                continue;
+                            }
+                            links.push(RfLink {
+                                from_port: sim.ports[from].name.clone(),
+                                to_port: sim.ports[to].name.clone(),
+                                from_net: fnet,
+                                to_net: tnet,
+                                db_min: db.iter().copied().fold(f64::INFINITY, f64::min),
+                                db_max: db.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                                f_min: res.freqs.first().copied().unwrap_or(0.0),
+                                f_max: res.freqs.last().copied().unwrap_or(0.0),
+                            });
+                        }
+                    }
+                    m.rf.push(RfModel { sim: e.name.clone(), verified: !sim.stale, links });
+                }
+                _ => {}
+            }
+        }
+        m
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,6 +197,28 @@ pub struct Row {
 pub enum Expect {
     Unknown(String),
     Reading(Reading),
+    Logic(Logic),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Logic {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<LogicState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_volts: Option<[f64; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vih: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vil: Option<f64>,
+    pub basis: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LogicState {
+    pub when: String,
+    pub level: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -78,7 +247,11 @@ pub struct Source {
 
 impl Row {
     pub fn is_unknown(&self) -> bool {
-        matches!(self.expect, Expect::Unknown(_))
+        matches!(&self.expect, Expect::Unknown(s) if s != FIRMWARE)
+    }
+
+    pub fn is_firmware(&self) -> bool {
+        matches!(&self.expect, Expect::Unknown(s) if s == FIRMWARE)
     }
 
     pub fn is_assumed(&self) -> bool {
@@ -93,6 +266,14 @@ impl Plan {
 
     pub fn assumed(&self) -> usize {
         self.rows.iter().filter(|r| r.is_assumed()).count()
+    }
+
+    pub fn firmware(&self) -> usize {
+        self.rows.iter().filter(|r| r.is_firmware()).count()
+    }
+
+    pub fn unpowered_assumed(&self) -> usize {
+        self.checks.iter().filter(|c| c.is_assumed()).count()
     }
 
     pub fn is_stale(&self, sch: &Schematic) -> bool {
@@ -133,6 +314,46 @@ struct Known {
     sources: Vec<Source>,
     conditions: Vec<String>,
     order: u32,
+}
+
+const MAX_STATES: usize = 16;
+
+fn level_text(l: Level) -> String {
+    l.char().to_string()
+}
+
+pub fn parse_hz(s: &str) -> Option<f64> {
+    let t = s.trim().to_ascii_lowercase().replace(' ', "");
+    let t = t.strip_suffix("hz").unwrap_or(&t);
+    let end = t.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(t.len());
+    let n: f64 = t[..end].parse().ok()?;
+    let k = match &t[end..] {
+        "" => 1.0,
+        "k" => 1e3,
+        "m" => 1e6,
+        "g" => 1e9,
+        _ => return None,
+    };
+    (n > 0.0).then(|| round(n * k))
+}
+
+fn parse_ppm(s: &str) -> Option<f64> {
+    let t = s.trim().trim_start_matches(['+', '-', '±']).trim_start_matches('/').trim();
+    let t = t.strip_suffix("ppm").unwrap_or(t).trim();
+    t.parse::<f64>().ok().filter(|v| *v >= 0.0)
+}
+
+pub fn fmt_hz(hz: f64) -> String {
+    let (div, unit) = if hz >= 1e9 {
+        (1e9, "GHz")
+    } else if hz >= 1e6 {
+        (1e6, "MHz")
+    } else if hz >= 1e3 {
+        (1e3, "kHz")
+    } else {
+        (1.0, "Hz")
+    };
+    format!("{} {unit}", round(hz / div))
 }
 
 fn round(v: f64) -> f64 {
@@ -211,6 +432,7 @@ fn mpn(sch: &Schematic, part: usize) -> String {
 struct Builder<'a> {
     sch: &'a Schematic,
     board: Option<&'a Board>,
+    models: &'a Models,
     known: HashMap<usize, Known>,
     reasons: HashMap<usize, String>,
 }
@@ -643,17 +865,416 @@ impl<'a> Builder<'a> {
             self.fill_volts(&mut row, &k);
             return row;
         }
+        if self.clock(net, &mut row) {
+            return row;
+        }
+        if self.rf(net, &mut row) {
+            return row;
+        }
+        if matches!(row.role.as_str(), "reset" | "digital bus" | "signal" | "clock")
+            && self.digital(net, &mut row)
+        {
+            return row;
+        }
         row.order = 100;
         row.measure = measure_for(&row.role);
         row.reason = Some(match row.role.as_str() {
             "power rail" => {
                 format!("no regulator model drives {name} and its name carries no voltage")
             }
-            "RF" => "RF net: a probe loads it, no level is modelled".into(),
+            "RF" => "RF net: no RF simulation result reaches it, and a high impedance probe would load it; use a directional pad or skip".into(),
             _ => "no model for this net: no regulator, divider, shunt or logic expectation".into(),
         });
         row.expect = Expect::Unknown("unknown".into());
         row
+    }
+
+    fn net_matches(&self, net: usize, name: &str) -> bool {
+        let mine = &self.sch.nets[net].name;
+        mine == name || mine.rsplit('/').next() == Some(name.rsplit('/').next().unwrap_or(name))
+    }
+
+    fn net_volts(&self, net: usize) -> Option<Volts> {
+        if self.ground(net) {
+            return Some(Volts { nominal: 0.0, min: 0.0, max: 0.0 });
+        }
+        if let Some(k) = self.known.get(&net) {
+            return Some(k.volts);
+        }
+        let name = &self.sch.nets[net].name;
+        let v = self.sch.rails.get(name).map(|r| Volts {
+            nominal: (r[0] + r[1]) / 2.0,
+            min: r[0],
+            max: r[1],
+        });
+        v.or_else(|| {
+            rail_volts(name).filter(|_| is_rail(name)).map(|v| Volts {
+                nominal: v,
+                min: v * (1.0 - ASSUMED_RAIL_TOLERANCE),
+                max: v * (1.0 + ASSUMED_RAIL_TOLERANCE),
+            })
+        })
+    }
+
+    fn timing_part(&self, part: usize) -> Option<(bool, Option<f64>)> {
+        let p = &self.sch.parts[part];
+        if p.dnp {
+            return None;
+        }
+        let text = format!("{} {} {}", p.symbol_name, p.value, p.symbol.description).to_lowercase();
+        let osc = ["oscillator", "tcxo", "vcxo", "ocxo", "xo "].iter().any(|k| text.contains(k));
+        let xtal = ["crystal", "xtal", "resonator"].iter().any(|k| text.contains(k));
+        let declared = p.fields.get("frequency").or_else(|| p.fields.get("freq"));
+        let lead = p.reference.starts_with(['X', 'Y']);
+        if declared.is_none() && !((osc || xtal) && lead) {
+            return None;
+        }
+        let hz = declared.and_then(|f| parse_hz(f)).or_else(|| parse_hz(&p.value));
+        Some((osc && !xtal, hz))
+    }
+
+    fn clock(&self, net: usize, row: &mut Row) -> bool {
+        for r in &self.sch.nets[net].pins {
+            let pin = &self.sch.parts[r.part].symbol.pins[r.pin];
+            let upper = pin.name.to_ascii_uppercase();
+            let power_pin = matches!(pin.kind, PinType::PowerIn | PinType::PowerOut)
+                || ["GND", "VCC", "VDD", "VSS", "VEE", "EN", "OE", "NC", "VC", "STBY"]
+                    .iter()
+                    .any(|k| upper == *k || upper.starts_with(&format!("{k}_")));
+            if power_pin {
+                continue;
+            }
+            let Some((oscillator, hz)) = self.timing_part(r.part) else { continue };
+            let p = &self.sch.parts[r.part];
+            let what = if oscillator { "oscillator" } else { "crystal" };
+            row.role = "clock".into();
+            row.order = 80;
+            row.measure = "frequency".into();
+            let Some(hz) = hz else {
+                row.expect = Expect::Unknown("unknown".into());
+                row.reason = Some(format!(
+                    "{} ({what}) has no frequency: set the `frequency` field on the part, or give a frequency as its value",
+                    p.reference
+                ));
+                return true;
+            };
+            let declared = p
+                .fields
+                .get("ppm")
+                .or_else(|| p.fields.get("stability"))
+                .or_else(|| p.fields.get("frequency_tolerance"))
+                .and_then(|t| parse_ppm(t));
+            let ppm = declared.unwrap_or(ASSUMED_CLOCK_PPM);
+            let label = format!("{} ({})", p.reference, mpn(self.sch, r.part));
+            row.expect = Expect::Reading(Reading {
+                unit: "Hz".into(),
+                nominal: Some(hz),
+                min: round(hz * (1.0 - ppm / 1e6)),
+                max: round(hz * (1.0 + ppm / 1e6)),
+                basis: format!(
+                    "{label} {what} {} +-{ppm} ppm; excludes the counter timebase error",
+                    fmt_hz(hz)
+                ),
+            });
+            row.source.push(Source {
+                kind: "part field".into(),
+                confidence: "declared".into(),
+                detail: format!("{label} frequency {}", fmt_hz(hz)),
+            });
+            if declared.is_none() {
+                row.source.push(Source {
+                    kind: "assumed".into(),
+                    confidence: "assumed".into(),
+                    detail: format!(
+                        "+-{ASSUMED_CLOCK_PPM} ppm: no `ppm` field on {}; take the datasheet figure and set it",
+                        p.reference
+                    ),
+                });
+            }
+            if oscillator {
+                row.conditions.push("oscillator supplied and enabled".into());
+            } else {
+                row.conditions.push("oscillator circuit running".into());
+                row.conditions.push(
+                    "a probe adds capacitance and pulls a crystal off frequency: use a FET probe under 1 pF, or read the buffered clock output instead"
+                        .into(),
+                );
+            }
+            return true;
+        }
+        false
+    }
+
+    fn rf(&self, net: usize, row: &mut Row) -> bool {
+        let mut found = false;
+        for m in &self.models.rf {
+            for l in m.links.iter().filter(|l| self.net_matches(net, &l.to_net)) {
+                row.role = "RF".into();
+                row.order = 70;
+                row.measure = format!(
+                    "RF level through a 50 ohm directional pad or analyser port, as the transfer from {} in dB",
+                    l.from_port
+                );
+                if !found {
+                    row.expect = Expect::Reading(Reading {
+                        unit: "dB".into(),
+                        nominal: None,
+                        min: round(l.db_min),
+                        max: round(l.db_max),
+                        basis: format!(
+                            "|S| from {} to {} over {} to {} in {}",
+                            l.from_port,
+                            l.to_port,
+                            fmt_hz(l.f_min),
+                            fmt_hz(l.f_max),
+                            m.sim
+                        ),
+                    });
+                    row.conditions.push(format!(
+                        "RF source applied at {} on {}",
+                        l.from_port, l.from_net
+                    ));
+                    row.conditions.push(
+                        "a high impedance probe loads this net and corrupts the level: use a directional pad or skip"
+                            .into(),
+                    );
+                    row.reason = Some(
+                        "relative level from the simulation, not an absolute power".into(),
+                    );
+                }
+                row.source.push(Source {
+                    kind: "simulation".into(),
+                    confidence: if m.verified { "high" } else { "stale" }.into(),
+                    detail: format!(
+                        "{} port {} to {}: {} to {} dB{}",
+                        m.sim,
+                        l.from_port,
+                        l.to_port,
+                        round(l.db_min),
+                        round(l.db_max),
+                        if m.verified { "" } else { "; layout changed since the run, re-run it" }
+                    ),
+                });
+                found = true;
+            }
+        }
+        found
+    }
+
+    fn pull(&self, net: usize) -> Option<(bool, Volts, String)> {
+        let mut up: Vec<(Resistor, Volts)> = Vec::new();
+        let mut down: Vec<Resistor> = Vec::new();
+        for r in resistors_on(self.sch, net) {
+            if r.other == net {
+                continue;
+            }
+            if self.ground(r.other) {
+                down.push(r);
+            } else if let Some(v) = self.net_volts(r.other).filter(|v| v.nominal > 0.0) {
+                up.push((r, v));
+            }
+        }
+        match (up.first(), down.first(), up.len() + down.len()) {
+            (Some((r, v)), None, 1) => Some((
+                true,
+                *v,
+                format!(
+                    "{} {} pull up to {}",
+                    self.sch.parts[r.part].reference,
+                    self.sch.parts[r.part].value,
+                    self.sch.nets[r.other].name
+                ),
+            )),
+            (None, Some(r), 1) => Some((
+                false,
+                Volts { nominal: 0.0, min: 0.0, max: 0.0 },
+                format!(
+                    "{} {} pull down",
+                    self.sch.parts[r.part].reference, self.sch.parts[r.part].value
+                ),
+            )),
+            _ => None,
+        }
+    }
+
+    fn supply_volts(&self, part: usize, supply: &Option<String>) -> Option<f64> {
+        let Some(name) = supply else { return Some(0.0) };
+        let p = &self.sch.parts[part];
+        let pin = p.symbol.pins.iter().position(|q| &q.number == name || &q.name == name)?;
+        let net = self.sch.net_of(PinRef { part, pin })?;
+        self.net_volts(net).map(|v| v.nominal)
+    }
+
+    fn thresholds(&self, net: usize) -> (Option<f64>, Option<f64>) {
+        let mut vih: Option<f64> = None;
+        let mut vil: Option<f64> = None;
+        for r in &self.sch.nets[net].pins {
+            let pin = &self.sch.parts[r.part].symbol.pins[r.pin];
+            let Some(levels) = &pin.levels else { continue };
+            let Some(supply) = self.supply_volts(r.part, &levels.supply) else { continue };
+            if let Some(t) = levels.vih {
+                vih = Some(vih.map_or(t.at(supply), |v| v.max(t.at(supply))));
+            }
+            if let Some(t) = levels.vil {
+                vil = Some(vil.map_or(t.at(supply), |v| v.min(t.at(supply))));
+            }
+        }
+        (vih.map(round), vil.map(round))
+    }
+
+    fn firmware_pins(&self, net: usize) -> Vec<String> {
+        self.sch.nets[net]
+            .pins
+            .iter()
+            .filter(|r| {
+                let p = &self.sch.parts[r.part];
+                let pin = &p.symbol.pins[r.pin];
+                !p.dnp
+                    && !is_test_point(self.sch, r.part)
+                    && !p.reference.starts_with(['R', 'C', 'L', 'D', 'F', 'Q', 'T'])
+                    && (matches!(
+                        pin.kind,
+                        PinType::Input
+                            | PinType::Output
+                            | PinType::Bidirectional
+                            | PinType::TriState
+                            | PinType::OpenCollector
+                            | PinType::OpenEmitter
+                    ) || (matches!(pin.kind, PinType::Unspecified | PinType::Passive)
+                        && p.reference.starts_with(['U', 'J', 'P'])))
+            })
+            .map(|r| {
+                let p = &self.sch.parts[r.part];
+                let pin = &p.symbol.pins[r.pin];
+                if pin.name.is_empty() {
+                    format!("{}.{}", p.reference, pin.number)
+                } else {
+                    format!("{}.{} {}", p.reference, pin.number, pin.name)
+                }
+            })
+            .collect()
+    }
+
+    fn sim_states(&self, net: usize) -> (Vec<LogicState>, Vec<Source>) {
+        let mut states = Vec::new();
+        let mut sources = Vec::new();
+        for m in &self.models.logic {
+            let before = states.len();
+            for e in &m.expects {
+                let Some(bit) = e.names.iter().position(|n| self.net_matches(net, n)) else {
+                    continue;
+                };
+                match &e.check {
+                    Check::At { time, value } => {
+                        if let Some(Some(l)) = value.get(bit) {
+                            states.push(LogicState {
+                                when: format!("{} at {}", m.sim, crate::logic::fmt_time(*time)),
+                                level: level_text(*l),
+                            });
+                        }
+                    }
+                    Check::Sequence { clock_name, edge, values, .. } => {
+                        for (i, v) in values.iter().enumerate() {
+                            if let Some(Some(l)) = v.get(bit) {
+                                states.push(LogicState {
+                                    when: format!(
+                                        "{} before {} edge {} of {}",
+                                        m.sim,
+                                        format!("{edge:?}").to_lowercase(),
+                                        i + 1,
+                                        clock_name
+                                    ),
+                                    level: level_text(*l),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            if states.len() > before {
+                sources.push(Source {
+                    kind: "simulation".into(),
+                    confidence: if m.verified { "high" } else { "stale" }.into(),
+                    detail: format!(
+                        "{} [[expect]] levels{}",
+                        m.sim,
+                        if m.verified {
+                            ""
+                        } else {
+                            "; the run is stale, failing or missing, run `agentee sim`"
+                        }
+                    ),
+                });
+            }
+        }
+        states.truncate(MAX_STATES);
+        (states, sources)
+    }
+
+    fn digital(&self, net: usize, row: &mut Row) -> bool {
+        let (states, mut sources) = self.sim_states(net);
+        let pull = self.pull(net);
+        let pins = self.firmware_pins(net);
+        if states.is_empty() && pull.is_none() {
+            if pins.is_empty() {
+                return false;
+            }
+            let shown: Vec<&str> = pins.iter().take(6).map(String::as_str).collect();
+            let more = pins.len().saturating_sub(shown.len());
+            row.order = 90;
+            row.measure = "logic level".into();
+            row.expect = Expect::Unknown(FIRMWARE.into());
+            row.reason = Some(format!(
+                "level is set by firmware or the connected device; pins: {}{}",
+                shown.join(", "),
+                if more > 0 { format!(" and {more} more") } else { String::new() }
+            ));
+            row.conditions.push("firmware state decides the level".into());
+            return true;
+        }
+        let (vih, vil) = self.thresholds(net);
+        let mut basis = Vec::new();
+        let mut idle = None;
+        let mut idle_volts = None;
+        if let Some((high, v, text)) = &pull {
+            idle = Some(if *high { "1" } else { "0" }.to_string());
+            idle_volts = Some([round(v.min), round(v.max)]);
+            basis.push(format!("idle {} from the {text}, nothing driving", if *high { "high" } else { "low" }));
+            sources.push(Source {
+                kind: "arithmetic".into(),
+                confidence: "medium".into(),
+                detail: format!("{text}; input leakage ignored"),
+            });
+            row.conditions.push("bus idle, no device driving the net".into());
+        }
+        if !states.is_empty() {
+            basis.push(format!("{} simulated level(s)", states.len()));
+            row.conditions.push("stimulus as in the logic simulation".into());
+        }
+        if vih.is_some() || vil.is_some() {
+            basis.push("thresholds from the receiving pins' levels".into());
+            sources.push(Source {
+                kind: "datasheet".into(),
+                confidence: "high".into(),
+                detail: format!(
+                    "receiver V_IH {} V, V_IL {} V from the pin levels in the symbol",
+                    vih.map_or("-".into(), |v| v.to_string()),
+                    vil.map_or("-".into(), |v| v.to_string())
+                ),
+            });
+        }
+        row.order = 90;
+        row.measure = "logic level".into();
+        row.expect = Expect::Logic(Logic {
+            states,
+            idle,
+            idle_volts,
+            vih,
+            vil,
+            basis: basis.join("; "),
+        });
+        row.source = sources;
+        true
     }
 
     fn fill_volts(&self, row: &mut Row, k: &Known) {
@@ -689,7 +1310,9 @@ fn role_of(name: &str, modelled_rail: bool, rf: bool) -> String {
         "clock".into()
     } else if has(&["RF", "LNA", "ANT"]) {
         "RF".into()
-    } else if has(&["ADC", "SENSE", "SNS", "VREF", "BIAS"]) {
+    } else if has(&["ADC", "DAC", "SENSE", "SNS", "VREF", "BIAS"])
+        || leaf.contains("BB.")
+        || leaf.contains("BB_") {
         "analog".into()
     } else if has(&[
         "SCL", "SDA", "SDI", "SDO", "SCK", "MOSI", "MISO", "CS", "TX", "RX", "SWD", "TCK", "TMS",
@@ -730,7 +1353,179 @@ fn nearest_reference(l: &Layout, reference: &str) -> Option<String> {
 }
 
 pub fn build(sch: &Schematic, layout: Option<&Layout>, board: Option<&Board>) -> Plan {
-    let mut b = Builder { sch, board, known: HashMap::new(), reasons: HashMap::new() };
+    build_with(sch, layout, board, &Models::default())
+}
+
+fn tp_of_net(sch: &Schematic, net: usize) -> Vec<String> {
+    let mut out: Vec<String> = sch.nets[net]
+        .pins
+        .iter()
+        .filter(|r| is_test_point(sch, r.part) && !sch.parts[r.part].dnp)
+        .map(|r| sch.parts[r.part].reference.clone())
+        .collect();
+    out.sort_by(|a, b| crate::footprint::natural_cmp(a, b));
+    out.dedup();
+    out
+}
+
+fn assumed(detail: String) -> Source {
+    Source { kind: "assumed".into(), confidence: "assumed".into(), detail }
+}
+
+fn unpowered(b: &Builder) -> Vec<Unpowered> {
+    let sch = b.sch;
+    let mut out = Vec::new();
+    let ground: Option<(usize, String)> = (0..sch.nets.len())
+        .filter(|n| b.ground(*n))
+        .find_map(|n| tp_of_net(sch, n).into_iter().next().map(|t| (n, t)));
+    let Some((gnet, gtp)) = ground else {
+        return out;
+    };
+    for net in 0..sch.nets.len() {
+        if b.ground(net) {
+            continue;
+        }
+        let tps = tp_of_net(sch, net);
+        let Some(first) = tps.first() else { continue };
+        let name = &sch.nets[net].name;
+        let rail = b.known.contains_key(&net) || is_rail(name);
+        if rail {
+            out.push(Unpowered {
+                kind: "resistance to ground".into(),
+                a: first.clone(),
+                b: gtp.clone(),
+                a_net: name.clone(),
+                b_net: sch.nets[gnet].name.clone(),
+                measure: "resistance with power off and the supply disconnected".into(),
+                unit: "ohm".into(),
+                min: ASSUMED_SHORT_OHMS,
+                max: None,
+                basis: format!(
+                    "{name} must not read near 0 ohm (a short to ground); decoupling capacitors make the reading climb while the meter charges them, so read after it settles"
+                ),
+                source: vec![assumed(format!(
+                    "{ASSUMED_SHORT_OHMS} ohm short threshold; measure a known-good board for the expected value"
+                ))],
+            });
+        }
+        for other in &tps[1..] {
+            out.push(Unpowered {
+                kind: "continuity".into(),
+                a: first.clone(),
+                b: other.clone(),
+                a_net: name.clone(),
+                b_net: name.clone(),
+                measure: "resistance with power off".into(),
+                unit: "ohm".into(),
+                min: 0.0,
+                max: Some(ASSUMED_CONTINUITY_OHMS),
+                basis: format!("{first} and {other} are the same net {name} on the schematic"),
+                source: vec![
+                    Source {
+                        kind: "schematic".into(),
+                        confidence: "high".into(),
+                        detail: format!("{first} and {other} share net {name}"),
+                    },
+                    assumed(format!(
+                        "{ASSUMED_CONTINUITY_OHMS} ohm limit for meter leads and contact resistance"
+                    )),
+                ],
+            });
+        }
+    }
+    for part in 0..sch.parts.len() {
+        let p = &sch.parts[part];
+        if p.dnp || p.symbol.reference != "D" || p.symbol.pins.len() != 2 {
+            continue;
+        }
+        let find = |names: &[&str]| {
+            p.symbol.pins.iter().position(|q| {
+                let n = q.name.to_ascii_uppercase();
+                names.iter().any(|k| n == *k)
+            })
+        };
+        let (Some(a), Some(k)) =
+            (find(&["A", "A1", "ANODE", "+"]), find(&["K", "C", "K1", "CATHODE", "-"]))
+        else {
+            continue;
+        };
+        let (Some(an), Some(kn)) = (
+            sch.net_of(PinRef { part, pin: a }),
+            sch.net_of(PinRef { part, pin: k }),
+        ) else {
+            continue;
+        };
+        let signal = if b.ground(kn) {
+            an
+        } else if b.ground(an) {
+            kn
+        } else {
+            continue;
+        };
+        let Some(tp) = tp_of_net(sch, signal).into_iter().next() else { continue };
+        let (red, black, red_net, black_net) = if signal == an {
+            (tp, gtp.clone(), sch.nets[an].name.clone(), sch.nets[kn].name.clone())
+        } else {
+            (gtp.clone(), tp, sch.nets[an].name.clone(), sch.nets[kn].name.clone())
+        };
+        let declared = p
+            .fields
+            .get("vf")
+            .or_else(|| p.fields.get("forward_voltage"))
+            .and_then(|v| crate::circuit::si(v, &["v"]));
+        let (min, max, source) = match declared {
+            Some(vf) => (
+                round(vf * 0.8),
+                round(vf * 1.2),
+                vec![Source {
+                    kind: "part field".into(),
+                    confidence: "declared".into(),
+                    detail: format!(
+                        "{} ({}) forward voltage {vf} V, +-20% for the meter's test current",
+                        p.reference,
+                        mpn(sch, part)
+                    ),
+                }],
+            ),
+            None => (
+                ASSUMED_DIODE_DROP[0],
+                ASSUMED_DIODE_DROP[1],
+                vec![assumed(format!(
+                    "{}-{} V covers a Schottky to a silicon diode at a meter's test current; set `vf` on {} to tighten it",
+                    ASSUMED_DIODE_DROP[0], ASSUMED_DIODE_DROP[1], p.reference
+                ))],
+            ),
+        };
+        out.push(Unpowered {
+            kind: "diode drop".into(),
+            a: red,
+            b: black,
+            a_net: red_net,
+            b_net: black_net,
+            measure: format!(
+                "meter in diode mode, red lead on the anode side, across {}",
+                p.reference
+            ),
+            unit: "V".into(),
+            min,
+            max: Some(max),
+            basis: format!(
+                "forward drop of protection diode {} {}; the reverse reading should be open",
+                p.reference, p.value
+            ),
+            source,
+        });
+    }
+    out
+}
+
+pub fn build_with(
+    sch: &Schematic,
+    layout: Option<&Layout>,
+    board: Option<&Board>,
+    models: &Models,
+) -> Plan {
+    let mut b = Builder { sch, board, models, known: HashMap::new(), reasons: HashMap::new() };
     b.regulators();
     b.declared();
     let mut rows: Vec<Row> =
@@ -740,13 +1535,21 @@ pub fn build(sch: &Schematic, layout: Option<&Layout>, board: Option<&Board>) ->
             .cmp(&c.order)
             .then_with(|| crate::footprint::natural_cmp(&a.reference, &c.reference))
     });
-    let mut plan =
-        Plan { design: sch.name.clone(), hash: hash_of(sch), summary: String::new(), rows };
+    let checks = unpowered(&b);
+    let mut plan = Plan {
+        design: sch.name.clone(),
+        hash: hash_of(sch),
+        summary: String::new(),
+        rows,
+        checks,
+    };
     plan.summary = format!(
-        "{} test points, {} unknown, {} assumed",
+        "{} test points, {} unknown, {} assumed, {} firmware, {} unpowered checks",
         plan.rows.len(),
         plan.unknown(),
-        plan.assumed()
+        plan.assumed() + plan.unpowered_assumed(),
+        plan.firmware(),
+        plan.checks.len()
     );
     plan
 }
