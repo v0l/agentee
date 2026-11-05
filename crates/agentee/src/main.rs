@@ -458,6 +458,10 @@ enum Cmd {
         /// Print a CSV list for a production fixture
         #[arg(long)]
         csv: bool,
+        /// Compare readings from a CSV (ref and measured columns, as --csv writes) with the plan
+        /// in NAME.testplan.toml: pass or fail per pad and by how much; exits 1 on any failure
+        #[arg(long, conflicts_with_all = ["md", "csv"])]
+        measured: Option<PathBuf>,
     },
     /// Work out the reflow profile of a board from every part's soldering limits, in NAME.reflow.toml
     Reflow {
@@ -1372,7 +1376,13 @@ fn run(cli: Cli) -> Result<bool, String> {
             print_json(&r);
             Ok(ok)
         }
-        Cmd::Testplan { name, project, md, csv } => {
+        Cmd::Testplan { name, project, md, csv, measured: Some(file) } => {
+            let _ = (md, csv);
+            let c = ops::testplan_measured(&project, &name, &file)?;
+            print!("{}", c.to_text());
+            Ok(c.ok())
+        }
+        Cmd::Testplan { name, project, md, csv, measured: None } => {
             let format = if md {
                 Some("md")
             } else if csv {

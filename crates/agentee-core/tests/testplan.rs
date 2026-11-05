@@ -294,3 +294,55 @@ fn check_reports_a_missing_then_a_stale_plan() {
     let stale: Vec<String> = rules(&c).into_iter().filter(|r| r.starts_with("testplan")).collect();
     assert_eq!(stale, ["testplan-stale"]);
 }
+
+fn bench_plan() -> Plan {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/testplan");
+    let p = Project::load(&dir).unwrap();
+    testplan::build(&p.schematics[0].item, None, p.boards.first().map(|b| &b.item))
+}
+
+fn measured(rows: &[(&str, f64)]) -> Vec<(String, Option<f64>)> {
+    rows.iter().map(|(r, v)| (r.to_string(), Some(*v))).collect()
+}
+
+#[test]
+fn all_readings_in_range_pass() {
+    let plan = bench_plan();
+    let c = plan.compare(&measured(&[("TP1", 3.3), ("TP3", 0.0)]));
+    assert_eq!(c.failed(), 0, "{}", c.to_text());
+    assert!(c.ok());
+    assert_eq!(c.passed(), 2);
+}
+
+#[test]
+fn one_reading_out_of_range_reports_that_pad_and_the_difference() {
+    let plan = bench_plan();
+    let c = plan.compare(&measured(&[("TP1", 3.5), ("TP3", 0.0)]));
+    assert_eq!(c.failed(), 1);
+    assert!(!c.ok());
+    let bad = c.rows.iter().find(|r| r.reference == "TP1").unwrap();
+    assert_eq!(bad.verdict, testplan::Verdict::Fail);
+    assert!((bad.off_by - 0.134).abs() < 1e-9, "{}", bad.off_by);
+    assert!((bad.from_nominal.unwrap() - 0.2).abs() < 1e-9);
+    let text = c.to_text();
+    assert!(text.contains("FAIL TP1") && text.contains("0.134 V above"), "{text}");
+    assert!(!text.contains("FAIL TP3"), "{text}");
+}
+
+#[test]
+fn a_reading_below_the_range_is_negative_and_unknown_pads_are_skipped() {
+    let plan = bench_plan();
+    let c = plan.compare(&measured(&[("TP1", 3.0), ("TP9", 1.0)]));
+    let bad = c.rows.iter().find(|r| r.reference == "TP1").unwrap();
+    assert!(bad.off_by < 0.0);
+    assert_eq!(c.unmatched, ["TP9"]);
+    assert!(c.to_text().contains("below"));
+}
+
+#[test]
+fn the_measured_csv_reads_the_ref_and_measured_columns() {
+    let rows = testplan::parse_measured("order,ref,measured\n1,TP1,3.31\n2,\"TP2\",\n").unwrap();
+    assert_eq!(rows, [("TP1".to_string(), Some(3.31)), ("TP2".to_string(), None)]);
+    assert!(testplan::parse_measured("ref,measured\nTP1,abc\n").is_err());
+    assert!(testplan::parse_measured("ref,volts\n").is_err());
+}

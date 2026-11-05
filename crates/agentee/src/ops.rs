@@ -2746,3 +2746,24 @@ pub fn testplan(root: &Path, name: &str, format: Option<&str>) -> Result<Testpla
     });
     Ok(TestplanOutput { summary, text })
 }
+
+pub fn testplan_measured(
+    root: &Path,
+    name: &str,
+    measured: &Path,
+) -> Result<agentee_core::testplan::Comparison, String> {
+    use agentee_core::testplan as tp;
+    let p = load(root)?;
+    let entry = p
+        .schematics
+        .iter()
+        .find(|s| s.name == name)
+        .or_else(|| p.schematics.iter().find(|s| s.name.eq_ignore_ascii_case(name)))
+        .ok_or_else(|| format!("no schematic named `{name}`"))?;
+    let path = tp::path_for(&entry.path, &entry.name);
+    let src = std::fs::read_to_string(&path)
+        .map_err(|e| format!("{}: {e}; run `agentee testplan {name}` first", path.display()))?;
+    let plan = tp::Plan::parse(&src).map_err(|e| format!("{}: {e}", path.display()))?;
+    let csv = std::fs::read_to_string(measured).map_err(|e| format!("{}: {e}", measured.display()))?;
+    Ok(plan.compare(&tp::parse_measured(&csv)?))
+}

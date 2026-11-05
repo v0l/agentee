@@ -860,3 +860,195 @@ impl Plan {
         out
     }
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Verdict {
+    Pass,
+    Fail,
+    NoExpectation,
+    NotMeasured,
+}
+
+#[derive(Clone, Debug)]
+pub struct Compared {
+    pub reference: String,
+    pub net: String,
+    pub verdict: Verdict,
+    pub measured: Option<f64>,
+    pub unit: String,
+    pub min: f64,
+    pub max: f64,
+    pub off_by: f64,
+    pub from_nominal: Option<f64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Comparison {
+    pub rows: Vec<Compared>,
+    pub unmatched: Vec<String>,
+}
+
+impl Comparison {
+    pub fn failed(&self) -> usize {
+        self.rows.iter().filter(|r| r.verdict == Verdict::Fail).count()
+    }
+
+    pub fn passed(&self) -> usize {
+        self.rows.iter().filter(|r| r.verdict == Verdict::Pass).count()
+    }
+
+    pub fn ok(&self) -> bool {
+        self.failed() == 0 && self.unmatched.is_empty()
+    }
+
+    pub fn summary(&self) -> String {
+        let count = |v: Verdict| self.rows.iter().filter(|r| r.verdict == v).count();
+        format!(
+            "{} pass, {} fail, {} not measured, {} without an expectation",
+            self.passed(),
+            self.failed(),
+            count(Verdict::NotMeasured),
+            count(Verdict::NoExpectation)
+        )
+    }
+
+    pub fn to_text(&self) -> String {
+        let mut out = String::new();
+        for r in &self.rows {
+            let line = match (&r.verdict, r.measured) {
+                (Verdict::Pass, Some(m)) => {
+                    format!("pass {} {}: {} {} within {} to {}", r.reference, r.net, m, r.unit, r.min, r.max)
+                }
+                (Verdict::Fail, Some(m)) => format!(
+                    "FAIL {} {}: {} {} is {} {} {} the {} to {} range",
+                    r.reference,
+                    r.net,
+                    m,
+                    r.unit,
+                    round(r.off_by.abs()),
+                    r.unit,
+                    if r.off_by > 0.0 { "above" } else { "below" },
+                    r.min,
+                    r.max
+                ),
+                (Verdict::NoExpectation, Some(m)) => {
+                    format!("skip {} {}: {} measured, the plan has no expectation", r.reference, r.net, m)
+                }
+                _ => format!("skip {} {}: not measured", r.reference, r.net),
+            };
+            out += &line;
+            out.push('\n');
+        }
+        for u in &self.unmatched {
+            out += &format!("FAIL {u}: measured but not in the plan\n");
+        }
+        out += &format!("{}\n", self.summary());
+        out
+    }
+}
+
+fn split_csv_line(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quoted = false;
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, quoted) {
+            ('"', true) if chars.peek() == Some(&'"') => {
+                cur.push('"');
+                chars.next();
+            }
+            ('"', _) => quoted = !quoted,
+            (',', false) => out.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
+        }
+    }
+    out.push(cur);
+    out
+}
+
+pub fn parse_measured(csv: &str) -> Result<Vec<(String, Option<f64>)>, String> {
+    let mut lines = csv.lines().filter(|l| !l.trim().is_empty());
+    let header = split_csv_line(lines.next().ok_or("the measured file is empty")?);
+    let col = |name: &str| header.iter().position(|h| h.trim().eq_ignore_ascii_case(name));
+    let (Some(r), Some(m)) = (col("ref"), col("measured")) else {
+        return Err("the measured file needs `ref` and `measured` columns in its first line".into());
+    };
+    let mut out = Vec::new();
+    for (i, line) in lines.enumerate() {
+        let cells = split_csv_line(line);
+        let reference = cells.get(r).map(|c| c.trim()).unwrap_or_default();
+        if reference.is_empty() {
+            continue;
+        }
+        let raw = cells.get(m).map(|c| c.trim()).unwrap_or_default();
+        let value = if raw.is_empty() {
+            None
+        } else {
+            Some(
+                raw.parse::<f64>()
+                    .map_err(|_| format!("line {}: `{raw}` for {reference} is not a number", i + 2))?,
+            )
+        };
+        out.push((reference.to_string(), value));
+    }
+    Ok(out)
+}
+
+impl Plan {
+    pub fn compare(&self, measured: &[(String, Option<f64>)]) -> Comparison {
+        let rows = self
+            .rows
+            .iter()
+            .map(|row| {
+                let value = measured
+                    .iter()
+                    .rev()
+                    .find(|(r, _)| r.eq_ignore_ascii_case(&row.reference))
+                    .and_then(|(_, v)| *v);
+                let mut c = Compared {
+                    reference: row.reference.clone(),
+                    net: row.net.clone(),
+                    verdict: Verdict::NotMeasured,
+                    measured: value,
+                    unit: String::new(),
+                    min: 0.0,
+                    max: 0.0,
+                    off_by: 0.0,
+                    from_nominal: None,
+                };
+                match (&row.expect, value) {
+                    (Expect::Unknown(_), Some(_)) => c.verdict = Verdict::NoExpectation,
+                    (Expect::Unknown(_), None) | (_, None) => {
+                        if let Expect::Reading(x) = &row.expect {
+                            c.unit = x.unit.clone();
+                            c.min = x.min;
+                            c.max = x.max;
+                        }
+                    }
+                    (Expect::Reading(x), Some(m)) => {
+                        c.unit = x.unit.clone();
+                        c.min = x.min;
+                        c.max = x.max;
+                        c.from_nominal = x.nominal.map(|n| round(m - n));
+                        c.off_by = if m < x.min {
+                            round(m - x.min)
+                        } else if m > x.max {
+                            round(m - x.max)
+                        } else {
+                            0.0
+                        };
+                        c.verdict = if c.off_by == 0.0 { Verdict::Pass } else { Verdict::Fail };
+                    }
+                }
+                c
+            })
+            .collect();
+        let unmatched = measured
+            .iter()
+            .filter(|(r, v)| v.is_some() && !self.rows.iter().any(|x| x.reference.eq_ignore_ascii_case(r)))
+            .map(|(r, _)| r.clone())
+            .collect();
+        Comparison { rows, unmatched }
+    }
+}
