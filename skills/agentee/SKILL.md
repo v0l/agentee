@@ -446,6 +446,12 @@ unless the design gives a reason not to, and say why in DESIGN.md when you don't
   parts, never on high-speed pairs or RF lines (the stub hurts them). `agentee testpoints NAME`
   adds a `TP` part to the schematic and a routed `TestPoint_Pad_D1.0mm` pad to the layout for
   each net that has no probe access (`--nets`, `--side B`, `--pitch 2.54`).
+- **Test plan.** Once the pads exist, run the sims, then `agentee testplan NAME` (MCP `testplan`)
+  to write `NAME.testplan.toml`: per pad the expected reading with min and max, the conditions and
+  the bring-up order. `--md` prints the procedure, `--csv` the fixture list. Resolve every row
+  that is `unknown` or flagged `assumed`: add the regulator table, tolerance or datasheet figure
+  to the part, or measure a known good board, then rerun. Never invent an expected value and never
+  write a number into the plan by hand. `check` reports `testplan-missing` and `testplan-stale`.
 - **Fiducials and tooling holes.** Two or three fiducials per side that has fine-pitch parts,
   and non-plated tooling holes if the board is tested in a fixture.
 - Every fab package carries `agentee vX.Y.Z-hash` in silk; leave room for it.
@@ -533,7 +539,7 @@ and what it lacks at the bottom. Put off-board parts (housings, crimps, antennas
 `list_items`, `show_item`, `render_item` (returns the PNG inline, takes `focus`, `context`,
 `region` and `rulers`), `stackups`, `run_sim`, `sparam`, `field_solve`, `impedance`,
 `trace_width`, `serpentine`, `place`, `route`, `tie`, `fill`, `tune`, `neck`, `silk`,
-`testpoints`, `layout`, `fit`, `parts`, `kicad_search`, `import_kicad_symbol`,
+`testpoints`, `testplan`, `layout`, `fit`, `parts`, `kicad_search`, `import_kicad_symbol`,
 `import_kicad_footprint`, `new_item`, `models`, `fab`, `export`, `edit`. `edit` takes `target`
 (`sch`, `pcb` or `board`), `item`, and `commands`: the same batch as `agentee edit`, one command
 per line. Send `commands = "help"` for the list.

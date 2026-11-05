@@ -2708,3 +2708,41 @@ pub fn assemble_text(v: &Value) -> String {
     }
     s
 }
+
+pub struct TestplanOutput {
+    pub summary: Value,
+    pub text: Option<String>,
+}
+
+pub fn testplan(root: &Path, name: &str, format: Option<&str>) -> Result<TestplanOutput, String> {
+    use agentee_core::testplan as tp;
+    let p = load(root)?;
+    let entry = p
+        .schematics
+        .iter()
+        .find(|s| s.name == name)
+        .or_else(|| p.schematics.iter().find(|s| s.name.eq_ignore_ascii_case(name)))
+        .ok_or_else(|| format!("no schematic named `{name}`"))?;
+    let layout = p.layouts.iter().find(|l| l.item.schematic == entry.name);
+    let board = layout.and_then(|l| p.boards.iter().find(|b| b.name == l.item.board));
+    let plan = tp::build(&entry.item, layout.map(|l| &l.item), board.map(|b| &b.item));
+    if plan.rows.is_empty() {
+        return Err(format!("`{name}` has no test points (TP parts or TestPoint footprints)"));
+    }
+    let path = tp::path_for(&entry.path, &entry.name);
+    std::fs::write(&path, plan.to_toml()?).map_err(|e| format!("{}: {e}", path.display()))?;
+    let text = match format {
+        Some("md") => Some(plan.to_markdown()),
+        Some("csv") => Some(plan.to_csv()),
+        Some(other) => return Err(format!("format `{other}` is not md or csv")),
+        None => None,
+    };
+    let summary = json!({
+        "file": path,
+        "summary": plan.summary,
+        "points": plan.rows.len(),
+        "unknown": plan.unknown(),
+        "assumed": plan.assumed(),
+    });
+    Ok(TestplanOutput { summary, text })
+}

@@ -914,6 +914,16 @@ the rails it ties to, a net with a low value shunt and a netclass `current` gets
 and a net with no model gets `expect = "unknown"` with a reason, never a guess. The plan stores a
 hash of the netlist so a changed value makes it stale.
 
+`agentee testplan NAME [--md|--csv]` (MCP `testplan`, `format` md or csv) builds the plan for the
+schematic NAME and writes `NAME.testplan.toml` beside it. `--md` prints a printable procedure
+(power off checks, then pads in bring-up order, a checkbox column and a blank column for the
+measured value), `--csv` a list for a production fixture; the one line summary (test points,
+unknown, assumed) goes to stderr. `agentee check` reports `testplan-missing` (info) when a
+top schematic has test points and no plan, and `testplan-stale` (info) when the netlist or a part
+value changed since the plan was written; both can be listed in the board's `[drc] disable`.
+Never edit an `expect` by hand to make a pad pass: fix the part table or datasheet, or measure a
+known good board, then regenerate.
+
 ## Footprint (`*.fp.toml`)
 
 ```toml

@@ -446,6 +446,19 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Write NAME.testplan.toml: the expected reading, tolerance and conditions for every test point
+    /// of a schematic, derived from the design; --md or --csv also print a procedure or a fixture list
+    Testplan {
+        name: String,
+        #[arg(short, long, default_value = ".")]
+        project: PathBuf,
+        /// Print a printable markdown procedure
+        #[arg(long, conflicts_with = "csv")]
+        md: bool,
+        /// Print a CSV list for a production fixture
+        #[arg(long)]
+        csv: bool,
+    },
     /// Work out the reflow profile of a board from every part's soldering limits, in NAME.reflow.toml
     Reflow {
         name: String,
@@ -1358,6 +1371,22 @@ fn run(cli: Cli) -> Result<bool, String> {
                 && r["unrouted"].as_array().is_none_or(|f| f.is_empty());
             print_json(&r);
             Ok(ok)
+        }
+        Cmd::Testplan { name, project, md, csv } => {
+            let format = if md {
+                Some("md")
+            } else if csv {
+                Some("csv")
+            } else {
+                None
+            };
+            let r = ops::testplan(&project, &name, format)?;
+            match r.text {
+                Some(t) => print!("{t}"),
+                None => print_json(&r.summary),
+            }
+            eprintln!("{}", r.summary["summary"].as_str().unwrap_or(""));
+            Ok(true)
         }
         Cmd::Layout { name, project, from, to, only, dry_run, search, keep, json } => {
             let search = (search.is_some() || keep.is_some())

@@ -108,6 +108,14 @@ impl Plan {
     }
 }
 
+pub fn path_for(schematic: &std::path::Path, name: &str) -> std::path::PathBuf {
+    schematic.with_file_name(format!("{name}{EXT}"))
+}
+
+pub fn count(sch: &Schematic) -> usize {
+    (0..sch.parts.len()).filter(|i| is_test_point(sch, *i)).count()
+}
+
 pub fn hash_of(sch: &Schematic) -> String {
     format!("{:016x}", netlist_hash(sch))
 }
@@ -131,7 +139,7 @@ fn round(v: f64) -> f64 {
     (v * 1e6).round() / 1e6
 }
 
-fn is_test_point(sch: &Schematic, part: usize) -> bool {
+pub fn is_test_point(sch: &Schematic, part: usize) -> bool {
     let p = &sch.parts[part];
     let tp = p
         .reference
@@ -741,4 +749,114 @@ pub fn build(sch: &Schematic, layout: Option<&Layout>, board: Option<&Board>) ->
         plan.assumed()
     );
     plan
+}
+
+fn cell(v: &str) -> String {
+    if v.contains([',', '"', '\n']) { format!("\"{}\"", v.replace('"', "\"\"")) } else { v.to_string() }
+}
+
+fn expectation(r: &Row) -> String {
+    match &r.expect {
+        Expect::Unknown(_) => "unknown".into(),
+        Expect::Reading(x) => match x.nominal {
+            Some(n) => format!("{} {} ({} to {})", n, x.unit, x.min, x.max),
+            None => format!("{} to {} {}", x.min, x.max, x.unit),
+        },
+    }
+}
+
+fn place(r: &Row) -> String {
+    match &r.location {
+        Some(l) => format!("{:.1}, {:.1} {}", l.x, l.y, l.side),
+        None => String::new(),
+    }
+}
+
+impl Plan {
+    pub fn to_csv(&self) -> String {
+        let mut out = String::from(
+            "order,ref,net,role,x,y,side,nearest,measure,unit,nominal,min,max,expect,source,conditions,measured\n",
+        );
+        for r in &self.rows {
+            let (unit, nominal, min, max) = match &r.expect {
+                Expect::Reading(x) => (
+                    x.unit.clone(),
+                    x.nominal.map(|n| n.to_string()).unwrap_or_default(),
+                    x.min.to_string(),
+                    x.max.to_string(),
+                ),
+                Expect::Unknown(_) => Default::default(),
+            };
+            let (x, y, side) = match &r.location {
+                Some(l) => (l.x.to_string(), l.y.to_string(), l.side.clone()),
+                None => Default::default(),
+            };
+            let source =
+                r.source.iter().map(|s| format!("{} ({})", s.kind, s.confidence)).collect::<Vec<_>>();
+            let expect = match &r.expect {
+                Expect::Unknown(_) => format!("unknown: {}", r.reason.clone().unwrap_or_default()),
+                Expect::Reading(_) => expectation(r),
+            };
+            let cols = [
+                r.order.to_string(),
+                r.reference.clone(),
+                r.net.clone(),
+                r.role.clone(),
+                x,
+                y,
+                side,
+                r.nearest.clone().unwrap_or_default(),
+                r.measure.clone(),
+                unit,
+                nominal,
+                min,
+                max,
+                expect,
+                source.join("; "),
+                r.conditions.join("; "),
+                String::new(),
+            ];
+            out += &cols.iter().map(|c| cell(c)).collect::<Vec<_>>().join(",");
+            out.push('\n');
+        }
+        out
+    }
+
+    pub fn to_markdown(&self) -> String {
+        let mut out = format!("# Test plan: {}\n\n{}\n\n", self.design, self.summary);
+        let off: Vec<&Row> = self.rows.iter().filter(|r| !r.unpowered.is_empty()).collect();
+        if !off.is_empty() {
+            out += "## Power off\n\n| Done | Pad | Net | Check | Measured |\n|---|---|---|---|---|\n";
+            for r in off {
+                for u in &r.unpowered {
+                    out += &format!("| [ ] | {} | {} | {} | |\n", r.reference, r.net, u);
+                }
+            }
+            out.push('\n');
+        }
+        out += "## Power up\n\nApply power in this order; check each pad before the rails that depend on it.\n\n";
+        out += "| Done | Pad | Net | Where | Measure | Expect | Conditions | Measured |\n|---|---|---|---|---|---|---|---|\n";
+        for r in &self.rows {
+            let near = r.nearest.as_deref().map(|n| format!(", near {n}")).unwrap_or_default();
+            let expect = match &r.expect {
+                Expect::Unknown(_) => {
+                    format!("unknown: {}", r.reason.as_deref().unwrap_or("no model"))
+                }
+                Expect::Reading(_) => expectation(r),
+            };
+            let flag = if r.is_assumed() { " (assumed, check a known good board)" } else { "" };
+            out += &format!(
+                "| [ ] | {} | {} | {}{} | {} | {}{} | {} | |\n",
+                r.reference,
+                r.net,
+                place(r),
+                near,
+                r.measure,
+                expect,
+                flag,
+                r.conditions.join("; ")
+            );
+        }
+        out
+    }
 }

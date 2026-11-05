@@ -320,6 +320,7 @@ impl Project {
         }
         p.cross_check();
         p.resolve_schematics(&sch_files, &pcb_files, true);
+        p.check_testplans();
         for (f, file) in pcb_files {
             let mut d = Diags::new(&file.name);
             let board = p.pick_board(file.board.as_deref(), &mut d).cloned();
@@ -580,6 +581,51 @@ impl Project {
                 path: f.clone(),
                 item,
             });
+        }
+    }
+
+    fn check_testplans(&mut self) {
+        for i in 0..self.schematics.len() {
+            let e = &self.schematics[i];
+            if e.item.parent.is_some() || crate::testplan::count(&e.item) == 0 {
+                continue;
+            }
+            let disabled = |id: &str| {
+                self.boards
+                    .iter()
+                    .find(|b| Some(&b.name) == e.item.board.as_ref())
+                    .is_some_and(|b| !crate::drc::id_enabled(&b.item, id))
+            };
+            let path = crate::testplan::path_for(&e.path, &e.name);
+            let (rule, message) = match crate::vfs::read_to_string(&path) {
+                Err(_) => (
+                    "testplan-missing",
+                    format!(
+                        "{} test points and no test plan; `agentee testplan {}` writes {}",
+                        crate::testplan::count(&e.item),
+                        e.name,
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ),
+                ),
+                Ok(src) => match crate::testplan::Plan::parse(&src) {
+                    Ok(plan) if !plan.is_stale(&e.item) => continue,
+                    Ok(_) => (
+                        "testplan-stale",
+                        format!(
+                            "the schematic changed since the test plan was generated; `agentee testplan {}` rewrites it",
+                            e.name
+                        ),
+                    ),
+                    Err(m) => ("testplan-stale", format!("the test plan does not parse: {m}")),
+                },
+            };
+            if disabled(rule) {
+                continue;
+            }
+            let mut d = Diags::new(&e.name);
+            d.push_rule(Severity::Info, rule, "test plan", message);
+            let found = tag(d, &e.path);
+            self.schematics[i].diags.extend(found);
         }
     }
 

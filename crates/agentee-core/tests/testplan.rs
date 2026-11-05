@@ -274,3 +274,23 @@ fn the_bench_example_covers_regulator_divider_shunt_and_unknown() {
     assert_eq!(row(&plan, "TP5").role, "current sense");
     assert_eq!(reading(&plan, "TP1").nominal, Some(3.3));
 }
+
+fn rules(c: &Case) -> Vec<String> {
+    let p = Project::load(&c.dir).unwrap();
+    p.diagnostics().iter().filter_map(|d| d.rule.clone()).collect()
+}
+
+#[test]
+fn check_reports_a_missing_then_a_stale_plan() {
+    let c = design("rules", "10k", "", "");
+    let missing: Vec<String> =
+        rules(&c).into_iter().filter(|r| r.starts_with("testplan")).collect();
+    assert_eq!(missing, ["testplan-missing"]);
+    let p = plan(&c);
+    std::fs::write(c.dir.join("t.testplan.toml"), p.to_toml().unwrap()).unwrap();
+    assert!(!rules(&c).iter().any(|r| r.starts_with("testplan")));
+    let sch = std::fs::read_to_string(c.dir.join("t.sch.toml")).unwrap();
+    std::fs::write(c.dir.join("t.sch.toml"), sch.replacen("\"10k\"", "\"12k\"", 1)).unwrap();
+    let stale: Vec<String> = rules(&c).into_iter().filter(|r| r.starts_with("testplan")).collect();
+    assert_eq!(stale, ["testplan-stale"]);
+}

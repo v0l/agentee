@@ -268,6 +268,14 @@ fn tools() -> Value {
             }), &["name"]),
         },
         {
+            "name": "testplan",
+            "description": "Write NAME.testplan.toml for a schematic: one row per test point (TP part or TestPoint footprint) in bring-up order with the net's role, board location, what to measure, the expected reading with min and max and its basis, conditions, sources with confidence and power-off checks, all derived from the design (regulator tables, dividers, sense resistors, netclass currents). A net with no model gets expect = \"unknown\" with a reason, never a guess: resolve every unknown and assumed row from the datasheet or a known good board, never invent an expected value. format md returns a printable procedure, csv a production fixture list.",
+            "inputSchema": s(json!({
+                "name": { "type": "string", "description": "the schematic" },
+                "format": { "type": "string", "enum": ["md", "csv"], "description": "also return the procedure or list as text" },
+            }), &["name"]),
+        },
+        {
             "name": "reflow",
             "description": "Work out the reflow soldering profile of a board from NAME.reflow.toml: every part's sourced limits (peak, time at peak, ramps, MSL, passes, reflow capable) combined with the paste's window, a two-node thermal model for the hottest and coldest joints, the limiting part and margins, double sided pass order and floor life, oven setpoints and thermocouple advice. Reports the conflicting parts and options when no profile fits. csv and plot write the time against temperature curve and an SVG plot with the limit bands. Limits with no source are flagged assumed: fetch the datasheet, never guess.",
             "inputSchema": s(json!({
@@ -787,6 +795,13 @@ fn call(root: &Path, name: &str, a: &Value) -> Result<Value, String> {
                 &opts,
             )?))]))
         }
+        "testplan" => {
+            let r = ops::testplan(root, arg(a, "name").ok_or("name is required")?, arg(a, "format"))?;
+            match r.text {
+                Some(t) => Ok(ok(vec![text(pretty(&r.summary)), text(t)])),
+                None => Ok(ok(vec![text(pretty(&r.summary))])),
+            }
+        }
         "reflow" => {
             let o = crate::reflow::Options {
                 csv: arg(a, "csv").map(std::path::PathBuf::from),
@@ -1287,6 +1302,31 @@ mod tests {
         let call = json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": { "name": "show_item", "arguments": { "name": "missing" } } });
         let r = handle(&demo(), &call).unwrap();
         assert_eq!(r["result"]["isError"], true);
+    }
+
+    #[test]
+    fn testplan_tool_writes_the_plan_and_returns_markdown() {
+        let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/hackrf-pro");
+        let dir = std::env::temp_dir().join(format!("agentee-mcp-plan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for sub in ["", "symbols", "footprints"] {
+            std::fs::create_dir_all(dir.join(sub)).unwrap();
+            for e in std::fs::read_dir(from.join(sub)).unwrap() {
+                let path = e.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if name.ends_with(".toml") && !name.ends_with(".sim.toml") {
+                    std::fs::copy(&path, dir.join(sub).join(name)).unwrap();
+                }
+            }
+        }
+        let call = json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": { "name": "testplan", "arguments": { "name": "praline", "format": "md" } } });
+        let r = handle(&dir, &call).unwrap();
+        assert_ne!(r["result"]["isError"], true, "{r}");
+        let summary: Value =
+            serde_json::from_str(r["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert!(summary["points"].as_u64().unwrap() > 0, "{summary}");
+        assert!(r["result"]["content"][1]["text"].as_str().unwrap().contains("# Test plan: praline"));
+        assert!(dir.join("praline.testplan.toml").exists());
     }
 
     #[test]
