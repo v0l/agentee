@@ -240,3 +240,33 @@ mod layer_tests {
         assert_eq!(shown(&[], &["F.SilkS"]), ["F.Cu"]);
     }
 }
+
+pub fn render_test_plan_png(project: &Project, opts: &RenderOptions) -> Result<Vec<u8>, String> {
+    let ctx = egui::Context::default();
+    egui_bench::install(&ctx);
+    let mut state = crate::testplan::State::default();
+    let size = Vec2::new(opts.width as f32, opts.height as f32);
+    let (pw, ph) = (opts.width as usize, opts.height as usize);
+    let mut textures = Textures::default();
+    let mut last = None;
+    for _ in 0..3 {
+        let raw = RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| {
+            egui::Frame::NONE.fill(CHASSIS).show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                crate::testplan::page(ui, &mut state, project, true);
+            });
+        });
+        textures.apply(&mut out.textures_delta);
+        last = Some(out);
+    }
+    let out = last.ok_or("nothing rendered")?;
+    let prims = ctx.tessellate(out.shapes, out.pixels_per_point);
+    let mut canvas = Canvas::new(pw, ph);
+    canvas.rgba.fill(CHASSIS.to_array().map(|c| c as f32 / 255.0));
+    canvas.draw(&prims, &textures, out.pixels_per_point);
+    Ok(encode_png(pw, ph, &canvas.to_rgba8()))
+}

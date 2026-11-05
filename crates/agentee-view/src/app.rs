@@ -27,6 +27,7 @@ enum Tab {
     Item(Kind),
     Assembly,
     Library,
+    TestPlan,
 }
 
 const PANELS: [(&str, &str); 3] = [
@@ -159,6 +160,7 @@ pub struct App {
     assembly: Option<String>,
     show_list: bool,
     library: crate::library::Shelf,
+    plan: crate::testplan::State,
     last: std::collections::HashMap<Kind, String>,
     guides: std::collections::HashMap<String, crate::assembly::Guide>,
     filter: String,
@@ -202,6 +204,7 @@ impl App {
             assembly: None,
             show_list: true,
             library: Default::default(),
+            plan: Default::default(),
             last: Default::default(),
             guides: Default::default(),
             filter: String::new(),
@@ -225,6 +228,7 @@ impl App {
         let tab = match select.as_deref() {
             Some("library") => Some(Tab::Library),
             Some("assembly") => Some(Tab::Assembly),
+            Some("test plan") => Some(Tab::TestPlan),
             _ => None,
         };
         app.open(path, select.filter(|_| tab.is_none()));
@@ -556,6 +560,7 @@ impl App {
                 item(Kind::Footprint, "footprints", p.footprints.len()),
             ],
             vec![(Tab::Assembly, "assembly", None)],
+            vec![(Tab::TestPlan, "test plan", None)],
             vec![(Tab::Library, "library", None)],
         ];
         let mut tab = self.tab;
@@ -643,6 +648,7 @@ impl App {
             Tab::Item(k) => k,
             Tab::Assembly => return self.assembly_list(ui),
             Tab::Library => return crate::library::list(ui, &mut self.library, &self.project),
+            Tab::TestPlan => return crate::testplan::list(ui, &mut self.plan, &self.project),
         };
         if tab == Kind::Layout {
             let dir = self.path.is_dir();
@@ -897,6 +903,14 @@ impl eframe::App for App {
                     return crate::library::page(
                         ui,
                         &mut self.library,
+                        &self.project,
+                        self.st.show_details,
+                    );
+                }
+                Tab::TestPlan => {
+                    return crate::testplan::page(
+                        ui,
+                        &mut self.plan,
                         &self.project,
                         self.st.show_details,
                     );

@@ -5,10 +5,10 @@ use agentee_core::layout::Layout;
 use agentee_core::project::Project;
 use agentee_parts::assembly::{Group, Shelf, Side, shelf_plan, shelf_restore, shelf_save};
 use agentee_parts::library::{Entry, Library};
-use std::path::PathBuf;
 use egui::{Key as KeyCode, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Ui, Vec2};
 use egui_bench::prelude::*;
 use egui_bench::theme::{figure, legend_font};
+use std::path::PathBuf;
 
 const STEP_W: f32 = 360.0;
 const RAIL_H: f32 = 54.0;
@@ -143,7 +143,8 @@ impl Guide {
                 }
                 let fresh = self.library();
                 for g in &mut self.groups {
-                    g.own = g.library.as_deref().and_then(|n| fresh.get(n)).and_then(Entry::self_stock);
+                    g.own =
+                        g.library.as_deref().and_then(|n| fresh.get(n)).and_then(Entry::self_stock);
                 }
                 let short = plan.takes.iter().filter(|t| t.short > 0).count();
                 let mut msg = format!("Saved stock for {} groups.", plan.takes.len());
@@ -364,7 +365,8 @@ fn instruction(ui: &mut Ui, guide: &mut Guide) {
     }
     if let Some(s) = kept {
         ui.add_space(4.0);
-        let text = if s.taken > 0 { format!("put {} back and undo", s.taken) } else { "undo".into() };
+        let text =
+            if s.taken > 0 { format!("put {} back and undo", s.taken) } else { "undo".into() };
         if ui.add(Key::new(text).outline(WARN).min_width(STEP_W - 44.0)).clicked() {
             guide.put_back(step);
         }
@@ -416,7 +418,13 @@ fn stock(ui: &mut Ui, guide: &mut Guide) {
     let plan = guide.plan();
     let ready = !plan.takes.is_empty() || !plan.skipped.is_empty();
     for t in &plan.takes {
-        let c = if t.short > 0 { FAULT } else if t.stale { WARN } else { LEGEND };
+        let c = if t.short > 0 {
+            FAULT
+        } else if t.stale {
+            WARN
+        } else {
+            LEGEND
+        };
         note(ui, t.line(), c);
     }
     for s in &plan.skipped {

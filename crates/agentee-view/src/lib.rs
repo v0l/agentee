@@ -20,9 +20,10 @@ pub mod raster;
 pub mod revision;
 pub mod sheet;
 pub mod simrun;
+pub mod testplan;
 pub mod tools;
 pub mod wave;
 
 pub use app::run;
 pub use focus::Context;
-pub use headless::{RenderOptions, render_png};
+pub use headless::{RenderOptions, render_png, render_test_plan_png};
